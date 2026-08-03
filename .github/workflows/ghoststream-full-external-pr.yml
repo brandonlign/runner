@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - ghoststream_external/run_full_external_replication.py
+      - ghoststream_external/run_full_external_replication_v2.py
       - .github/workflows/ghoststream_full_external.yml
 
 permissions:
@@ -29,13 +30,15 @@ jobs:
       - name: Install scientific dependencies
         run: python -m pip install --upgrade pip numpy pandas scipy requests
       - name: Compile
-        run: python -m py_compile ghoststream_external/run_full_external_replication.py
+        run: |
+          python -m py_compile ghoststream_external/run_full_external_replication.py
+          python -m py_compile ghoststream_external/run_full_external_replication_v2.py
       - name: Run frozen complete-catalog replication
-        run: python ghoststream_external/run_full_external_replication.py
+        run: python ghoststream_external/run_full_external_replication_v2.py
       - name: Upload evidence
         uses: actions/upload-artifact@v4
         with:
-          name: ghoststream-full-external-replication
+          name: ghoststream-full-external-replication-v2
           path: ghoststream_external/results
           if-no-files-found: error
           retention-days: 90
@@ -47,6 +50,6 @@ jobs:
           if git diff --cached --quiet; then
             echo 'No result changes to commit.'
           else
-            git commit -m 'Preserve complete GhostStream external replication results'
+            git commit -m 'Preserve schema-complete GhostStream external replication results'
             git push origin HEAD:${{ github.event.pull_request.head.ref }}
           fi
