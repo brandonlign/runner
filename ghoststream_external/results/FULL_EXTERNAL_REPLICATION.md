@@ -34,7 +34,17 @@ The complete IAU MDC 2026 CAMS v3, SonotaCo, and EDMOND yearly catalogs were eva
 
 ## EDMOND
 
-- Error: `no usable archive`
+- Role: supplementary catalog
+- Valid seasonal rows: **16,005**
+- Frozen-template members: **4**
+- Counts by year: `{'2013': 1, '2014': 1, '2016': 2}`
+- Active years: `[2016]`
+- Activity p: **0.00938538**
+- Shifted-window p: **0.0204082**
+- Orbit median D: **0.06053780938890371**
+- Orbit q90 D: **0.09618439083659128**
+- Orbit-null p: **0.0006**
+- Preserved gate passed: **False**
 
 ## Interpretation boundary
 
