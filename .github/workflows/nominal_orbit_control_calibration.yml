@@ -1,0 +1,103 @@
+name: Nominal orbit 12-shower control calibration
+
+on:
+  pull_request:
+    branches:
+      - agent/nop004-orbit-reconstruction-ls-stage1c
+    paths:
+      - nominal_orbit_control_calibration_stage2/**
+      - .github/workflows/nominal_orbit_control_calibration.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nominal-orbit-control-calibration-stage2
+  cancel-in-progress: true
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CATALOGUE_ARTIFACT_ID: '8874489453'
+      CATALOGUE_ARTIFACT_SHA256: '85ab59ef342afc2723ad1642426433d2dedf020abe17caf36815c096b098c6be'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/nominal-orbit-control-calibration-stage2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: nop004_orbit_reconstruction_stage1/requirements.txt
+      - name: Install unchanged reconstruction dependencies
+        run: python -m pip install --upgrade pip -r nop004_orbit_reconstruction_stage1/requirements.txt
+      - name: Download exact catalogue provenance artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p nominal_orbit_control_calibration_stage2/input/catalogue nominal_orbit_control_calibration_stage2/results
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CATALOGUE_ARTIFACT_ID}/zip" \
+            -o nominal_orbit_control_calibration_stage2/input/catalogue_artifact.zip
+          echo "${CATALOGUE_ARTIFACT_SHA256}  nominal_orbit_control_calibration_stage2/input/catalogue_artifact.zip" | sha256sum -c -
+          unzip -q nominal_orbit_control_calibration_stage2/input/catalogue_artifact.zip \
+            -d nominal_orbit_control_calibration_stage2/input/catalogue
+          test -s nominal_orbit_control_calibration_stage2/input/catalogue/cache/streamfulldata.json
+      - name: Compile calibration lineage
+        run: |
+          python -m py_compile \
+            nop004_orbit_reconstruction_stage1/reconstruct_nominal_orbits.py \
+            nop004_orbit_reconstruction_stage1c/reconstruct_ls_reconciled_orbits.py \
+            nominal_orbit_control_calibration_stage2/verify_control_manifest.py \
+            nominal_orbit_control_calibration_stage2/run_control_calibration.py
+      - name: Reproduce frozen control selection
+        run: |
+          python nominal_orbit_control_calibration_stage2/verify_control_manifest.py \
+            --catalogue nominal_orbit_control_calibration_stage2/input/catalogue/cache/streamfulldata.json \
+            --manifest nominal_orbit_control_calibration_stage2/control_manifest.json \
+            --output nominal_orbit_control_calibration_stage2/results/manifest_verification.json
+      - name: Run frozen 12-shower calibration
+        run: |
+          python nominal_orbit_control_calibration_stage2/run_control_calibration.py \
+            --manifest nominal_orbit_control_calibration_stage2/control_manifest.json \
+            --output nominal_orbit_control_calibration_stage2/results
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p nominal_orbit_control_calibration_stage2/results
+          sha256sum \
+            nop004_orbit_reconstruction_stage1/reconstruct_nominal_orbits.py \
+            nop004_orbit_reconstruction_stage1/PROTOCOL.md \
+            nop004_orbit_reconstruction_stage1/requirements.txt \
+            nop004_orbit_reconstruction_stage1c/reconstruct_ls_reconciled_orbits.py \
+            nop004_orbit_reconstruction_stage1c/PROTOCOL.md \
+            nominal_orbit_control_calibration_stage2/control_manifest.json \
+            nominal_orbit_control_calibration_stage2/verify_control_manifest.py \
+            nominal_orbit_control_calibration_stage2/run_control_calibration.py \
+            nominal_orbit_control_calibration_stage2/PROTOCOL.md \
+            > nominal_orbit_control_calibration_stage2/results/source_sha256.txt
+          sha256sum \
+            nominal_orbit_control_calibration_stage2/input/catalogue_artifact.zip \
+            nominal_orbit_control_calibration_stage2/input/catalogue/cache/streamfulldata.json \
+            > nominal_orbit_control_calibration_stage2/results/input_sha256.txt
+          find nominal_orbit_control_calibration_stage2/results/lookups -type f -print0 2>/dev/null \
+            | sort -z | xargs -0 -r sha256sum \
+            > nominal_orbit_control_calibration_stage2/results/downloaded_lookup_sha256.txt
+          python --version > nominal_orbit_control_calibration_stage2/results/python_version.txt
+          python -m pip freeze > nominal_orbit_control_calibration_stage2/results/environment.txt
+      - name: Upload calibration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nominal-orbit-control-calibration-stage2
+          path: nominal_orbit_control_calibration_stage2/results
+          if-no-files-found: error
+          retention-days: 90
