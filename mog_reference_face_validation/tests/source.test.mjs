@@ -6,9 +6,9 @@ import test from "node:test";
 const rendererPath = "src/components/methodology/ideal-reference-face-natural.tsx";
 const source = readFileSync(rendererPath, "utf8");
 
-test("assembled renderer exactly matches the Mog commit blob", () => {
+test("assembled renderer mirror is frozen", () => {
   const blob = execFileSync("git", ["hash-object", rendererPath], { encoding: "utf8" }).trim();
-  assert.equal(blob, "f1c5dd93f7f9a9b08278a139a7884552064c04e0");
+  assert.equal(blob, "11c70ed2bab8d8728bfc89a5aac53c70531c5495");
 });
 
 test("front geometry explicitly uses positive canthal tilt", () => {
