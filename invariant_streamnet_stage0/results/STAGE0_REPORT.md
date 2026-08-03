@@ -6,16 +6,16 @@ The neural detector was trained on CAMS, EDMOND, and SonotaCo backgrounds only. 
 
 ## Primary held-out unseen-morphology comparison
 
-- Neural TPR / FPR: 0.618 / 0.017
+- Neural TPR / FPR: 0.579 / 0.016
 - Engineered baseline TPR / FPR: 0.239 / 0.018
-- TPR gain: +0.379
-- Neural segmentation F1: 0.621
-- Neural ECE: 0.054
+- TPR gain: +0.340
+- Neural segmentation F1: 0.648
+- Neural ECE: 0.064
 
 ## Real ESV holdout
 
 - Conservative ESV members in selected GMN patch: 48
-- Neural negative percentile: 0.9743
+- Neural negative percentile: 0.9645
 - Engineered baseline negative percentile: 0.9094
 - Neural member F1: 0.000
 
