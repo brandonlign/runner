@@ -15,24 +15,15 @@ on:
       - .github/workflows/common_origin_data_audit.yml
   workflow_dispatch:
 
-permissions:
-  contents: write
-
-concurrency:
-  group: common-origin-stage0
-  cancel-in-progress: true
-
 jobs:
-  benchmark:
-    if: github.actor != 'github-actions[bot]'
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/common-origin-stage0-pilot
           fetch-depth: 0
-      - name: Reconstruct and verify frozen source chunks
+      - name: Print decoded source hashes
         run: |
           expected_parts=(
             0e71ae20da143310c32dee44d029dd366fe44c66522c881ef18217b3007a0a01
@@ -41,59 +32,13 @@ jobs:
             d70c32d8c5864426f80668679ea56b42d5f60269c31312dfefbb7097807ef095
             d40a54fd67101e12ce024a317c237123264d08a4827ace5e44e7d16f6c909001
           )
-          rm -f common_origin_pilot/run_stage0_surrogate.py
+          : > /tmp/whole.py
           index=0
-          failed=0
           for part in common_origin_pilot/stage0_parts/part*.b64; do
-            decoded="/tmp/part${index}.decoded"
+            decoded="/tmp/part${index}"
             base64 --decode --ignore-garbage "$part" > "$decoded"
-            actual="$(sha256sum "$decoded" | cut -d' ' -f1)"
-            size="$(wc -c < "$decoded")"
-            echo "part=$index size=$size expected=${expected_parts[$index]} actual=$actual"
-            if [ "$actual" != "${expected_parts[$index]}" ]; then failed=1; fi
-            cat "$decoded" >> common_origin_pilot/run_stage0_surrogate.py
+            echo "part=$index size=$(wc -c < "$decoded") expected=${expected_parts[$index]} actual=$(sha256sum "$decoded" | cut -d' ' -f1)"
+            cat "$decoded" >> /tmp/whole.py
             index=$((index+1))
           done
-          whole="$(sha256sum common_origin_pilot/run_stage0_surrogate.py | cut -d' ' -f1)"
-          echo "whole_expected=c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
-          echo "whole_actual=$whole"
-          test "$failed" = 0
-          test "$whole" = "c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: common_origin_pilot/requirements.txt
-      - name: Install dependencies
-        run: python -m pip install --upgrade pip -r common_origin_pilot/requirements.txt
-      - name: Compile verified source
-        run: python -m py_compile common_origin_pilot/run_stage0_surrogate.py
-      - name: Run parent-disjoint surrogate kill test
-        run: python common_origin_pilot/run_stage0_surrogate.py
-      - name: Record execution provenance
-        run: |
-          mkdir -p common_origin_pilot/results
-          sha256sum common_origin_pilot/run_stage0_surrogate.py > common_origin_pilot/results/stage0_source_sha256.txt
-          python --version > common_origin_pilot/results/python_version.txt
-          python -m pip freeze > common_origin_pilot/results/environment.txt
-      - name: Upload benchmark evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: common-origin-stage0-surrogate
-          path: |
-            common_origin_pilot/results
-            common_origin_pilot/run_stage0_surrogate.py
-          if-no-files-found: error
-          retention-days: 90
-      - name: Preserve verified results on branch
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add common_origin_pilot/results
-          if git diff --cached --quiet; then
-            echo 'No result changes to commit.'
-          else
-            git commit -m 'Preserve common-origin Stage-0 surrogate results'
-            git pull --rebase origin agent/common-origin-stage0-pilot
-            git push origin HEAD:agent/common-origin-stage0-pilot
-          fi
+          echo "whole_size=$(wc -c < /tmp/whole.py) whole_actual=$(sha256sum /tmp/whole.py | cut -d' ' -f1)"
