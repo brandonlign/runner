@@ -4,7 +4,7 @@
 
 Can a meteor-stream search produce locally calibrated, event-level evidence under the real nonstationary sporadic background, rather than reporting an uncalibrated cluster score or relying on a synthetic global null?
 
-This is a calibration method, not another clustering architecture. A fixed 8-nearest-neighbor physical-coherence score is converted into split-conformal p-values using calibration meteors from the same year and adjacent-month seasonal stratum. The score function is fitted only on a disjoint reference split.
+This is a calibration method, not another clustering architecture. A fixed second-nearest-neighbor physical-coherence score is converted into split-conformal p-values using calibration meteors from the same year and adjacent-month seasonal stratum. The score function is fitted only on a disjoint reference split.
 
 ## Literature boundary
 
@@ -31,7 +31,7 @@ The candidate contribution being tested is narrower: cross-fitted **event-level 
    - Sun-centered ecliptic radiant on the unit sphere,
    - geocentric speed,
    - fixed scales of 2 degrees and 2 km/s.
-7. Fit an 8-nearest-neighbor index on the reference set only. The nonconformity evidence is the negative distance to the eighth reference neighbor; larger values mean more locally coherent events.
+7. Fit a nearest-neighbor index on the reference set only. The evidence score is the negative distance to the **second** reference neighbor; larger values mean more locally coherent events. The second neighbor is frozen from split geometry before any shower-power result: a weak 4–8-member stream sends only about 2–4 members into the 50% reference set, so an eighth-neighbor score could be perfectly calibrated while being structurally unable to detect the target regime.
 8. Convert each test score to the conservative split-conformal p-value
 
    `p = (1 + number of calibration scores >= test score) / (n_calibration + 1)`.
