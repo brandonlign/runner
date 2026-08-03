@@ -1,0 +1,61 @@
+name: Vendor Mog canonical face mesh
+
+on:
+  push:
+    branches:
+      - agent/mog-reference-face-validation
+    paths:
+      - mog_reference_face_validation/fetch_canonical_mesh.py
+      - .github/workflows/mog_canonical_mesh_vendor.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mog-reference-face-validation
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch and convert official MediaPipe canonical mesh
+        run: python mog_reference_face_validation/fetch_canonical_mesh.py
+
+      - name: Validate compact mesh
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('mog_reference_face_validation/generated/canonical_face_model.json')
+          data = json.loads(path.read_text())
+          assert data['license'] == 'Apache-2.0'
+          assert data['vertexCount'] == 468
+          assert data['triangleCount'] > 800
+          assert len(data['positions']) == 468 * 3
+          assert len(data['triangles']) == data['triangleCount'] * 3
+          assert min(data['triangles']) >= 0
+          assert max(data['triangles']) < 468
+          print(path.stat().st_size, 'bytes', data['triangleCount'], 'triangles')
+          PY
+
+      - name: Preserve vendored mesh on runner branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mog_reference_face_validation/generated
+          if git diff --cached --quiet; then
+            echo 'Canonical mesh already current.'
+          else
+            git commit -m 'Vendor MediaPipe canonical face mesh for Mog'
+            git pull --rebase origin agent/mog-reference-face-validation
+            git push origin HEAD:agent/mog-reference-face-validation
+          fi
