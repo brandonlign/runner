@@ -35,6 +35,9 @@ jobs:
       - name: Install validation dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Assemble exact private-branch renderer mirror
+        run: npm run assemble
+
       - name: Verify geometry and rendering invariants
         run: npm test
 
@@ -54,7 +57,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mog-reference-face-renderings-v3
+          name: mog-reference-face-verified-renderings
           path: mog_reference_face_validation/artifacts
           if-no-files-found: warn
           retention-days: 30
