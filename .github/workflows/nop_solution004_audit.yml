@@ -1,0 +1,54 @@
+name: NOP solution 004 provenance audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - nop_solution004_audit/**
+      - .github/workflows/nop_solution004_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nop-solution004-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-classification-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile verified audit
+        run: python -m py_compile nop_solution004_audit/audit_nop_solution004.py
+      - name: Run frozen provenance and coherence gate
+        run: |
+          mkdir -p nop_solution004_audit/cache nop_solution004_audit/results
+          python nop_solution004_audit/audit_nop_solution004.py \
+            --cache nop_solution004_audit/cache \
+            --output nop_solution004_audit/results
+      - name: Record provenance
+        run: |
+          sha256sum \
+            nop_solution004_audit/audit_nop_solution004.py \
+            nop_solution004_audit/audit_nop_solution004.py.gz.b64 \
+            nop_solution004_audit/AUDIT_GATE.md \
+            > nop_solution004_audit/results/source_sha256.txt
+          find nop_solution004_audit/cache -type f -print0 | sort -z | xargs -0 sha256sum \
+            > nop_solution004_audit/results/downloaded_source_sha256.txt
+          python --version > nop_solution004_audit/results/python_version.txt
+      - name: Upload solution 004 audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nop-solution004-provenance-audit
+          path: nop_solution004_audit/results
+          if-no-files-found: error
+          retention-days: 90
