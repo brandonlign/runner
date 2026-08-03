@@ -1,4 +1,4 @@
-name: Common-origin Stage-0 surrogate benchmark
+name: Common-origin Stage-0 source verification
 
 on:
   push:
@@ -32,6 +32,33 @@ jobs:
         with:
           ref: agent/common-origin-stage0-pilot
           fetch-depth: 0
+      - name: Reconstruct and verify frozen source chunks
+        run: |
+          expected_parts=(
+            0e71ae20da143310c32dee44d029dd366fe44c66522c881ef18217b3007a0a01
+            972a6bcfdaaedaff34da7ee5a2052697677ba82491ea3db0c83aee45b8e57517
+            27f50ddd818d98acaccd2463f5dfc5acecf356831335fdbaf9e3ed94cd76977f
+            d70c32d8c5864426f80668679ea56b42d5f60269c31312dfefbb7097807ef095
+            d40a54fd67101e12ce024a317c237123264d08a4827ace5e44e7d16f6c909001
+          )
+          rm -f common_origin_pilot/run_stage0_surrogate.py
+          index=0
+          failed=0
+          for part in common_origin_pilot/stage0_parts/part*.b64; do
+            decoded="/tmp/part${index}.decoded"
+            base64 --decode --ignore-garbage "$part" > "$decoded"
+            actual="$(sha256sum "$decoded" | cut -d' ' -f1)"
+            size="$(wc -c < "$decoded")"
+            echo "part=$index size=$size expected=${expected_parts[$index]} actual=$actual"
+            if [ "$actual" != "${expected_parts[$index]}" ]; then failed=1; fi
+            cat "$decoded" >> common_origin_pilot/run_stage0_surrogate.py
+            index=$((index+1))
+          done
+          whole="$(sha256sum common_origin_pilot/run_stage0_surrogate.py | cut -d' ' -f1)"
+          echo "whole_expected=c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
+          echo "whole_actual=$whole"
+          test "$failed" = 0
+          test "$whole" = "c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -39,18 +66,8 @@ jobs:
           cache-dependency-path: common_origin_pilot/requirements.txt
       - name: Install dependencies
         run: python -m pip install --upgrade pip -r common_origin_pilot/requirements.txt
-      - name: Reconstruct and verify frozen source
-        run: |
-          rm -f common_origin_pilot/run_stage0_surrogate.py
-          for part in common_origin_pilot/stage0_parts/part*.b64; do
-            base64 --decode --ignore-garbage "$part"
-          done > common_origin_pilot/run_stage0_surrogate.py
-          actual="$(sha256sum common_origin_pilot/run_stage0_surrogate.py | cut -d' ' -f1)"
-          expected="c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
-          echo "expected=$expected"
-          echo "actual=$actual"
-          test "$actual" = "$expected"
-          python -m py_compile common_origin_pilot/run_stage0_surrogate.py
+      - name: Compile verified source
+        run: python -m py_compile common_origin_pilot/run_stage0_surrogate.py
       - name: Run parent-disjoint surrogate kill test
         run: python common_origin_pilot/run_stage0_surrogate.py
       - name: Record execution provenance
