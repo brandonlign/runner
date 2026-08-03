@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 BASE = "https://ceresiaumdc.ta3.sk/downloads/LuT/"
-USER_AGENT = "ghoststream-control-lookup-diagnosis/1.1"
+USER_AGENT = "ghoststream-control-lookup-diagnosis/1.2"
 FILENAMES = ("257_ORS.csv", "388_CTA.csv", "0427FED_006.csv", "0394ACA_004.csv")
 
 
@@ -20,14 +20,11 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def candidate_urls(filename: str) -> list[str]:
-    widths = [len(filename), 22] + list(range(18, 33))
+    variants = (filename, filename.ljust(22))
     urls: list[str] = []
-    seen: set[str] = set()
-    for width in widths:
-        padded = filename if width <= len(filename) else filename.ljust(width)
-        url = urllib.parse.urljoin(BASE, urllib.parse.quote(padded, safe=""))
-        if url not in seen:
-            seen.add(url)
+    for variant in variants:
+        url = urllib.parse.urljoin(BASE, urllib.parse.quote(variant, safe=""))
+        if url not in urls:
             urls.append(url)
     return urls
 
