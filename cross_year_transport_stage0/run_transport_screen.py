@@ -6,8 +6,8 @@ import hashlib
 from pathlib import Path
 
 PAYLOAD = Path(__file__).with_name("run_transport_screen.py.gz.b64")
-EXPECTED_BYTES = 10660
-EXPECTED_SHA256 = "a18de8f2396707dd000ffe71b1a71b83eb06974af5c7cc3cd064c459723a0cb4"
+EXPECTED_BYTES = 10719
+EXPECTED_SHA256 = "582cc2a2362d2033662b857207fa14861eef2c465071a272f329c9a03de1799e"
 
 
 def main() -> None:
