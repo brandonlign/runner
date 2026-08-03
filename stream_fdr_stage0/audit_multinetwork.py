@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import statistics
 import urllib.request
 from collections import Counter
@@ -15,6 +16,7 @@ ROOT = Path("stream_fdr_stage0")
 DATA_DIR = ROOT / "data" / "multinetwork"
 OUT_DIR = ROOT / "results" / "multinetwork_audit"
 OBLIQUITY_DEG = 23.43928
+YEAR_PATTERN = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 
 DATASETS = {
     "CAMS": {
@@ -36,16 +38,66 @@ DATASETS = {
 }
 
 ALIASES = {
-    "year": ["Yr", "year", "Year", "YEAR"],
-    "solar_longitude": ["LS", "sol_lon_deg", "sol_lon", "lambda_sun", "solar_longitude"],
-    "ra_geo": ["RA", "rageo_deg", "ra_geo", "RAgeo", "RA_g"],
-    "dec_geo": ["DECL", "decgeo_deg", "dec_geo", "DECgeo", "Dec_g"],
-    "vg": ["Vg", "vgeo_km_s", "vg", "Vgeo", "V_g"],
-    "q": ["q", "q_au", "perihelion_distance"],
-    "e": ["e", "eccentricity"],
-    "inclination": ["i", "i_deg", "inclination"],
-    "argument_perihelion": ["arg", "peri_deg", "omega", "argument_perihelion"],
-    "node": ["nod", "node_deg", "Omega", "ascending_node"],
+    "year": ["Yr", "year", "Year", "YEAR", "_Y_ut"],
+    "datetime": [
+        "datetime_utc",
+        "date_utc",
+        "Beginning_UTC_Time",
+        "beginning_utc_time",
+        "Beginning_Julian_date",
+    ],
+    "solar_longitude": [
+        "LS",
+        "sol_lon_deg",
+        "Sol_lon_deg",
+        "solar_longitude_deg",
+        "sol_lon",
+        "lambda_sun",
+        "solar_longitude",
+        "_sol",
+    ],
+    "ra_geo": [
+        "RA",
+        "rageo_deg",
+        "RAgeo_deg",
+        "ra_geocentric_deg",
+        "ra_geo",
+        "RAgeo",
+        "RA_g",
+        "_ra_t",
+    ],
+    "dec_geo": [
+        "DECL",
+        "decgeo_deg",
+        "DECgeo_deg",
+        "dec_geocentric_deg",
+        "dec_geo",
+        "DECgeo",
+        "Dec_g",
+        "_dc_t",
+    ],
+    "vg": [
+        "Vg",
+        "vgeo_km_s",
+        "Vgeo_km_s",
+        "v_geocentric_km_s",
+        "vg",
+        "Vgeo",
+        "V_g",
+        "_vg",
+    ],
+    "q": ["q", "q_au", "q_AU", "perihelion_distance", "_q"],
+    "e": ["e", "eccentricity", "_e"],
+    "inclination": ["i", "i_deg", "inclination", "_incl"],
+    "argument_perihelion": [
+        "arg",
+        "peri_deg",
+        "arg_perihelion_deg",
+        "omega",
+        "argument_perihelion",
+        "_peri",
+    ],
+    "node": ["nod", "node_deg", "Omega", "ascending_node", "_node"],
 }
 
 UNCERTAINTY_HINTS = (
@@ -105,6 +157,23 @@ def as_float(value: object) -> float | None:
     if not math.isfinite(number):
         return None
     return number
+
+
+def parse_year(row: dict[str, str], columns: dict[str, str | None]) -> float | None:
+    direct_column = columns.get("year")
+    if direct_column:
+        direct = as_float(row.get(direct_column, ""))
+        if direct is not None:
+            return direct
+
+    datetime_column = columns.get("datetime")
+    if not datetime_column:
+        return None
+    text = str(row.get(datetime_column, "")).strip()
+    match = YEAR_PATTERN.search(text)
+    if not match:
+        return None
+    return float(match.group(1))
 
 
 def wrap180(value: float) -> float:
@@ -188,10 +257,12 @@ def profile_dataset(name: str, spec: dict[str, str]) -> dict[str, object]:
             if row_index < 2:
                 first_rows.append({key: row.get(key, "") for key in header[: min(20, len(header))]})
 
-            parsed: dict[str, float | None] = {}
-            for semantic in ("year", "solar_longitude", "ra_geo", "dec_geo", "vg"):
+            parsed: dict[str, float | None] = {"year": parse_year(row, columns)}
+            for semantic in ("solar_longitude", "ra_geo", "dec_geo", "vg"):
                 column = columns.get(semantic)
                 parsed[semantic] = as_float(row.get(column, "")) if column else None
+
+            for semantic in ("year", "solar_longitude", "ra_geo", "dec_geo", "vg"):
                 if parsed[semantic] is None:
                     missing_core[semantic] += 1
 
@@ -230,7 +301,10 @@ def profile_dataset(name: str, spec: dict[str, str]) -> dict[str, object]:
             ):
                 esv_mask_count += 1
 
-    core_available = all(columns.get(key) for key in ("year", "solar_longitude", "ra_geo", "dec_geo", "vg"))
+    time_available = bool(columns.get("year") or columns.get("datetime"))
+    core_available = time_available and all(
+        columns.get(key) for key in ("solar_longitude", "ra_geo", "dec_geo", "vg")
+    )
     orbit_available = all(columns.get(key) for key in ("q", "e", "inclination", "argument_perihelion", "node"))
     return {
         "name": name,
@@ -241,6 +315,7 @@ def profile_dataset(name: str, spec: dict[str, str]) -> dict[str, object]:
         "rows": total_rows,
         "header": header,
         "semantic_columns": columns,
+        "time_source": columns.get("year") or columns.get("datetime"),
         "uncertainty_or_quality_columns": uncertainty_columns,
         "core_coordinates_available": core_available,
         "orbit_coordinates_available": orbit_available,
@@ -302,6 +377,7 @@ def markdown_report(profiles: list[dict[str, object]]) -> str:
             f"### {profile['name']}",
             "",
             f"- semantic mapping: `{json.dumps(profile['semantic_columns'], sort_keys=True)}`",
+            f"- time source: `{profile['time_source']}`",
             f"- valid core fraction: {profile['valid_core_fraction']:.4f}",
             f"- uncertainty/quality candidates: `{', '.join(profile['uncertainty_or_quality_columns'][:20])}`",
             f"- input MD5: `{profile['md5']}`",
