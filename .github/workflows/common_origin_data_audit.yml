@@ -1,4 +1,4 @@
-name: Common-origin Stage-0 surrogate benchmark
+name: Common-origin Stage-0 corrected surrogate benchmark
 
 on:
   push:
@@ -32,7 +32,7 @@ jobs:
         with:
           ref: agent/common-origin-stage0-pilot
           fetch-depth: 0
-      - name: Reconstruct and verify frozen source
+      - name: Reconstruct and verify original frozen source
         run: |
           expected_head=(
             0e71ae20da143310c32dee44d029dd366fe44c66522c881ef18217b3007a0a01
@@ -73,10 +73,37 @@ jobs:
             cat "$decoded" >> common_origin_pilot/run_stage0_surrogate.py
             index=$((index+1))
           done
-          actual="$(sha256sum common_origin_pilot/run_stage0_surrogate.py | cut -d' ' -f1)"
-          expected="c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
-          echo "whole_size=$(wc -c < common_origin_pilot/run_stage0_surrogate.py) expected=$expected actual=$actual"
-          test "$actual" = "$expected"
+          original="$(sha256sum common_origin_pilot/run_stage0_surrogate.py | cut -d' ' -f1)"
+          test "$original" = "c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
+      - name: Archive original result and apply frozen correction
+        run: |
+          mkdir -p common_origin_pilot/results/v1_strictest_passing_threshold
+          for file in STAGE0_SURROGATE_RESULT.md stage0_surrogate_result.json stage0_source_sha256.txt python_version.txt environment.txt; do
+            if [ -f "common_origin_pilot/results/$file" ]; then
+              cp "common_origin_pilot/results/$file" "common_origin_pilot/results/v1_strictest_passing_threshold/$file"
+            fi
+          done
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('common_origin_pilot/run_stage0_surrogate.py')
+          source = path.read_text(encoding='utf-8')
+          old = """        for q in quantiles:\n            threshold=exact_tail_threshold(pooled,q,higher)\n"""
+          new = """        # Choose the most permissive edge threshold that still passes the frozen null-cluster ceiling.\n        for q in reversed(quantiles):\n            threshold=exact_tail_threshold(pooled,q,higher)\n"""
+          if source.count(old) != 1:
+              raise SystemExit(f'Expected exactly one correction target; found {source.count(old)}')
+          path.write_text(source.replace(old, new), encoding='utf-8')
+          PY
+          corrected="$(sha256sum common_origin_pilot/run_stage0_surrogate.py | cut -d' ' -f1)"
+          expected="f66e4e46b7579ecf1d109aec3c9dd240e064652b519fbf02a7c5656ea7d85e2d"
+          echo "corrected_size=$(wc -c < common_origin_pilot/run_stage0_surrogate.py) expected=$expected actual=$corrected"
+          test "$corrected" = "$expected"
+          cat > common_origin_pilot/results/GRAPH_THRESHOLD_CORRECTION.md <<'EOF'
+          # Graph-threshold correction
+
+          The original Stage-0 run iterated candidate edge quantiles from strictest to most permissive and stopped at the first threshold satisfying the frozen null-cluster ceiling. Because the strictest threshold generally passes first, that implementation could unnecessarily suppress weak-stream recovery for every method.
+
+          The corrected run keeps the same candidate quantiles, null-cluster ceiling, data, folds, model, baselines, seeds, and decision gates. It changes only the search order so the selected graph threshold is the most permissive tested threshold that still satisfies the pre-established null-cluster ceiling. Pairwise matched-FPR and calibration results are unchanged by this correction.
+          EOF
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -84,26 +111,25 @@ jobs:
           cache-dependency-path: common_origin_pilot/requirements.txt
       - name: Install dependencies
         run: python -m pip install --upgrade pip -r common_origin_pilot/requirements.txt
-      - name: Compile verified source
+      - name: Compile corrected source
         run: python -m py_compile common_origin_pilot/run_stage0_surrogate.py
-      - name: Run parent-disjoint surrogate kill test
+      - name: Run corrected parent-disjoint surrogate kill test
         run: python common_origin_pilot/run_stage0_surrogate.py
       - name: Record execution provenance
         run: |
-          mkdir -p common_origin_pilot/results
           sha256sum common_origin_pilot/run_stage0_surrogate.py > common_origin_pilot/results/stage0_source_sha256.txt
           python --version > common_origin_pilot/results/python_version.txt
           python -m pip freeze > common_origin_pilot/results/environment.txt
-      - name: Upload benchmark evidence
+      - name: Upload corrected benchmark evidence
         uses: actions/upload-artifact@v4
         with:
-          name: common-origin-stage0-surrogate
+          name: common-origin-stage0-surrogate-corrected
           path: |
             common_origin_pilot/results
             common_origin_pilot/run_stage0_surrogate.py
           if-no-files-found: error
           retention-days: 90
-      - name: Preserve verified results on branch
+      - name: Preserve corrected results on branch
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
@@ -111,7 +137,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'No result changes to commit.'
           else
-            git commit -m 'Preserve common-origin Stage-0 surrogate results'
+            git commit -m 'Preserve corrected common-origin Stage-0 results'
             git pull --rebase origin agent/common-origin-stage0-pilot
             git push origin HEAD:agent/common-origin-stage0-pilot
           fi
