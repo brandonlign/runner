@@ -64,11 +64,11 @@ jobs:
           test -s cross_year_transport_stage0/input/data/selected_events.jsonl.gz
           test -s cross_year_transport_stage0/input/data/audit.json
           test -s cross_year_transport_stage0/input/baseline/baseline_ceiling.json
-      - name: Compile verified launcher
-        run: python -m py_compile cross_year_transport_stage0/run_transport_screen.py
+      - name: Compile frozen source
+        run: python -m py_compile cross_year_transport_stage0/run_transport_screen_source.py
       - name: Run frozen screening panel
         run: |
-          python cross_year_transport_stage0/run_transport_screen.py \
+          python cross_year_transport_stage0/run_transport_screen_source.py \
             --events cross_year_transport_stage0/input/data/selected_events.jsonl.gz \
             --audit cross_year_transport_stage0/input/data/audit.json \
             --baseline cross_year_transport_stage0/input/baseline/baseline_ceiling.json \
@@ -76,8 +76,7 @@ jobs:
       - name: Record provenance
         run: |
           sha256sum \
-            cross_year_transport_stage0/run_transport_screen.py \
-            cross_year_transport_stage0/run_transport_screen.py.gz.b64 \
+            cross_year_transport_stage0/run_transport_screen_source.py \
             cross_year_transport_stage0/PROTOCOL.md \
             > cross_year_transport_stage0/results/source_sha256.txt
           sha256sum \
