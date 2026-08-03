@@ -7,6 +7,12 @@ on:
     paths:
       - stream_fdr_stage0/audit_multinetwork.py
       - .github/workflows/shared_stream_multinetwork_audit.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - stream_fdr_stage0/**
+      - .github/workflows/shared_stream_multinetwork_audit.yml
   workflow_dispatch:
 
 permissions:
@@ -37,7 +43,7 @@ jobs:
         run: |
           mkdir -p stream_fdr_stage0/results/multinetwork_audit
           sha256sum stream_fdr_stage0/audit_multinetwork.py > stream_fdr_stage0/results/multinetwork_audit/source_sha256.txt
-          find stream_fdr_stage0/data/multinetwork -type f -maxdepth 1 -print0 | sort -z | xargs -0 sha256sum > stream_fdr_stage0/results/multinetwork_audit/input_sha256.txt
+          find stream_fdr_stage0/data/multinetwork -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > stream_fdr_stage0/results/multinetwork_audit/input_sha256.txt
           python --version > stream_fdr_stage0/results/multinetwork_audit/python_version.txt
       - name: Upload feasibility evidence
         uses: actions/upload-artifact@v4
@@ -47,6 +53,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Preserve audit results on runner branch
+        if: github.event_name == 'push'
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
