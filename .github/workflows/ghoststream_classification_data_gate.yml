@@ -1,0 +1,106 @@
+name: GhostStream classification data gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ghoststream_classification_stage0/**
+      - .github/workflows/ghoststream_classification_data_gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ghoststream-classification-data-gate
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      CANDIDATE_ARTIFACT_ID: '8814798136'
+      CANDIDATE_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+      REAL_SHOWER_ARTIFACT_ID: '8871850235'
+      REAL_SHOWER_ARTIFACT_SHA256: '5f2501b3eee19b51a5dc81f8493dce67a810ef5c480045dac143de060369534d'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-classification-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ghoststream_classification_stage0/requirements.txt
+      - name: Install frozen dependency
+        run: python -m pip install --upgrade pip -r ghoststream_classification_stage0/requirements.txt
+      - name: Download exact runner evidence artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p ghoststream_classification_stage0/input/canonical \
+                   ghoststream_classification_stage0/input/candidate \
+                   ghoststream_classification_stage0/input/real_shower \
+                   ghoststream_classification_stage0/cache \
+                   ghoststream_classification_stage0/results/data_gate
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANDIDATE_ARTIFACT_ID}/zip" \
+            -o ghoststream_classification_stage0/input/candidate_artifact.zip
+          echo "${CANDIDATE_ARTIFACT_SHA256}  ghoststream_classification_stage0/input/candidate_artifact.zip" | sha256sum -c -
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${REAL_SHOWER_ARTIFACT_ID}/zip" \
+            -o ghoststream_classification_stage0/input/real_shower_artifact.zip
+          echo "${REAL_SHOWER_ARTIFACT_SHA256}  ghoststream_classification_stage0/input/real_shower_artifact.zip" | sha256sum -c -
+          unzip -q ghoststream_classification_stage0/input/candidate_artifact.zip \
+            -d ghoststream_classification_stage0/input/canonical
+          bundle_zip="$(find ghoststream_classification_stage0/input/canonical -name 'GhostStream_Expert_Review_Bundle.zip' -print -quit)"
+          test -n "${bundle_zip}"
+          unzip -q "${bundle_zip}" -d ghoststream_classification_stage0/input/candidate
+          unzip -q ghoststream_classification_stage0/input/real_shower_artifact.zip \
+            -d ghoststream_classification_stage0/input/real_shower
+          test -s ghoststream_classification_stage0/input/real_shower/selected_events.jsonl.gz
+          test -s ghoststream_classification_stage0/input/real_shower/audit.json
+      - name: Compile verified data gate
+        run: python -m py_compile ghoststream_classification_stage0/audit_classification_data.py
+      - name: Run frozen data gate
+        run: |
+          python ghoststream_classification_stage0/audit_classification_data.py \
+            --candidate-root ghoststream_classification_stage0/input/candidate \
+            --events ghoststream_classification_stage0/input/real_shower/selected_events.jsonl.gz \
+            --audit ghoststream_classification_stage0/input/real_shower/audit.json \
+            --cache ghoststream_classification_stage0/cache \
+            --output ghoststream_classification_stage0/results/data_gate
+      - name: Record provenance
+        run: |
+          sha256sum \
+            ghoststream_classification_stage0/audit_classification_data.py \
+            ghoststream_classification_stage0/audit_classification_data.py.gz.b64 \
+            ghoststream_classification_stage0/PROTOCOL.md \
+            > ghoststream_classification_stage0/results/data_gate/source_sha256.txt
+          sha256sum \
+            ghoststream_classification_stage0/input/candidate_artifact.zip \
+            ghoststream_classification_stage0/input/real_shower_artifact.zip \
+            ghoststream_classification_stage0/input/real_shower/selected_events.jsonl.gz \
+            ghoststream_classification_stage0/input/real_shower/audit.json \
+            > ghoststream_classification_stage0/results/data_gate/input_sha256.txt
+          find ghoststream_classification_stage0/cache -type f -print0 | sort -z | xargs -0 sha256sum \
+            > ghoststream_classification_stage0/results/data_gate/gmn_monthly_sha256.txt
+          python --version > ghoststream_classification_stage0/results/data_gate/python_version.txt
+          python -m pip freeze > ghoststream_classification_stage0/results/data_gate/environment.txt
+      - name: Upload classification data-gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-classification-data-gate
+          path: ghoststream_classification_stage0/results/data_gate
+          if-no-files-found: error
+          retention-days: 90
