@@ -27,42 +27,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Compile verified audit
-        run: python -m py_compile nop_solution004_audit/audit_nop_solution004.py
+      - name: Compile readable frozen audit
+        run: python -m py_compile nop_solution004_audit/audit_nop_solution004_source.py
       - name: Run frozen provenance and coherence gate
-        id: audit_run
-        continue-on-error: true
         run: |
           mkdir -p nop_solution004_audit/cache nop_solution004_audit/results
-          python nop_solution004_audit/audit_nop_solution004.py \
+          python nop_solution004_audit/audit_nop_solution004_source.py \
             --cache nop_solution004_audit/cache \
             --output nop_solution004_audit/results
-      - name: Record provenance even on failure
-        if: always()
+      - name: Record provenance
         run: |
-          mkdir -p nop_solution004_audit/results
           sha256sum \
-            nop_solution004_audit/audit_nop_solution004.py \
-            nop_solution004_audit/audit_nop_solution004.py.gz.b64 \
+            nop_solution004_audit/audit_nop_solution004_source.py \
             nop_solution004_audit/AUDIT_GATE.md \
             > nop_solution004_audit/results/source_sha256.txt
-          python - <<'PY'
-          import base64, gzip
-          from pathlib import Path
-          payload = Path('nop_solution004_audit/audit_nop_solution004.py.gz.b64')
-          encoded = ''.join(payload.read_text(encoding='ascii').split()).rstrip('=')
-          encoded += '=' * (-len(encoded) % 4)
-          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
-          Path('nop_solution004_audit/results/audit_nop_solution004_source.py').write_bytes(raw)
-          PY
           find nop_solution004_audit/cache -type f -print0 | sort -z | xargs -0 -r sha256sum \
             > nop_solution004_audit/results/downloaded_source_sha256.txt
           find nop_solution004_audit/cache -type f -printf '%P\t%s bytes\n' | sort \
             > nop_solution004_audit/results/downloaded_source_inventory.txt
           python --version > nop_solution004_audit/results/python_version.txt
-          printf '%s\n' '${{ steps.audit_run.outcome }}' > nop_solution004_audit/results/audit_step_outcome.txt
       - name: Upload solution 004 audit evidence and exact downloads
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nop-solution004-provenance-audit
@@ -71,6 +55,3 @@ jobs:
             nop_solution004_audit/cache
           if-no-files-found: error
           retention-days: 90
-      - name: Preserve failed gate status
-        if: steps.audit_run.outcome == 'failure'
-        run: exit 1
