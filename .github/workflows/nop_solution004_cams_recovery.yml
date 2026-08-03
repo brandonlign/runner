@@ -57,12 +57,15 @@ jobs:
           cp "${lookup}" nop_solution004_cams_recovery/input/0149NOP_004.csv
           echo "9ec720202966f1eda18c99c8decaa338d9be0bae913be4c2ff6ed34f2661282e  nop_solution004_cams_recovery/input/0149NOP_004.csv" | sha256sum -c -
       - name: Compile official-CAMS recovery audit
-        run: python -m py_compile nop_solution004_cams_recovery/recover_official_cams_orbits.py
+        run: |
+          python -m py_compile \
+            nop_solution004_cams_recovery/recover_official_cams_orbits.py \
+            nop_solution004_cams_recovery/run_cams_recovery.py
       - name: Run frozen official-CAMS gate
         shell: bash
         run: |
           set -o pipefail
-          python nop_solution004_cams_recovery/recover_official_cams_orbits.py \
+          python nop_solution004_cams_recovery/run_cams_recovery.py \
             --lookup nop_solution004_cams_recovery/input/0149NOP_004.csv \
             --cache nop_solution004_cams_recovery/cache \
             --output nop_solution004_cams_recovery/results \
@@ -104,6 +107,7 @@ jobs:
           mkdir -p nop_solution004_cams_recovery/results
           sha256sum \
             nop_solution004_cams_recovery/recover_official_cams_orbits.py \
+            nop_solution004_cams_recovery/run_cams_recovery.py \
             nop_solution004_cams_recovery/CAMS_RECOVERY_GATE.md \
             nop_solution004_cams_recovery/requirements.txt \
             > nop_solution004_cams_recovery/results/source_sha256.txt
