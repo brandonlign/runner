@@ -1,0 +1,81 @@
+name: Real-shower baseline ceiling
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - real_shower_meta_stage0/**
+      - .github/workflows/real_shower_meta_baseline_ceiling.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: real-shower-baseline-ceiling
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      SOURCE_ARTIFACT_ID: '8871480252'
+      SOURCE_ARTIFACT_SHA256: 'ce7023bea56ccb8da22055c9c350587a88ddd16cb7a3ab158b3ce68bef823fea'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/real-shower-meta-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Download exact data-audit artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p real_shower_meta_stage0/input real_shower_meta_stage0/results/baseline_ceiling
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip" \
+            -o real_shower_meta_stage0/input/data_audit.zip
+          echo "${SOURCE_ARTIFACT_SHA256}  real_shower_meta_stage0/input/data_audit.zip" | sha256sum -c -
+          unzip -q real_shower_meta_stage0/input/data_audit.zip -d real_shower_meta_stage0/input/data_audit
+          test -s real_shower_meta_stage0/input/data_audit/selected_events.jsonl.gz
+          test -s real_shower_meta_stage0/input/data_audit/audit.json
+      - name: Compile verified launcher
+        run: python -m py_compile real_shower_meta_stage0/run_baseline_ceiling.py
+      - name: Run five-fold baseline ceiling
+        run: |
+          python real_shower_meta_stage0/run_baseline_ceiling.py \
+            --events real_shower_meta_stage0/input/data_audit/selected_events.jsonl.gz \
+            --audit real_shower_meta_stage0/input/data_audit/audit.json \
+            --output real_shower_meta_stage0/results/baseline_ceiling
+      - name: Record provenance
+        run: |
+          sha256sum \
+            real_shower_meta_stage0/run_baseline_ceiling.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            real_shower_meta_stage0/BASELINE_CEILING_GATE.md \
+            real_shower_meta_stage0/PROTOCOL.md \
+            > real_shower_meta_stage0/results/baseline_ceiling/source_sha256.txt
+          sha256sum \
+            real_shower_meta_stage0/input/data_audit/selected_events.jsonl.gz \
+            real_shower_meta_stage0/input/data_audit/audit.json \
+            > real_shower_meta_stage0/results/baseline_ceiling/input_sha256.txt
+          python --version > real_shower_meta_stage0/results/baseline_ceiling/python_version.txt
+          python -m pip freeze > real_shower_meta_stage0/results/baseline_ceiling/environment.txt
+      - name: Upload baseline evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-shower-baseline-ceiling
+          path: real_shower_meta_stage0/results/baseline_ceiling
+          if-no-files-found: error
+          retention-days: 90
