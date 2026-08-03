@@ -1,5 +1,7 @@
 # StreamTube Stage-0 protocol
 
+**Frozen before authoritative execution:** 2026-08-03.
+
 ## Question
 
 Can a physically constrained drifting stream-tube detector recover sparse meteor streams that are too weak to form a significant static density peak, without increasing catalog-level false detections?
