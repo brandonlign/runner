@@ -1,0 +1,43 @@
+name: Recover valid NOP solution 004 audit source
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/nop_solution004_source_recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b271d61309fd0bf7f20e97263749e5179ecd3509
+      - name: Decode last known-valid audit source
+        run: |
+          mkdir -p recovered
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          payload = Path('nop_solution004_audit/audit_nop_solution004.py.gz.b64')
+          encoded = ''.join(payload.read_text(encoding='ascii').split()).rstrip('=')
+          encoded += '=' * (-len(encoded) % 4)
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          Path('recovered/audit_nop_solution004_source.py').write_bytes(raw)
+          Path('recovered/source_sha256.txt').write_text(
+              f"{hashlib.sha256(raw).hexdigest()}  audit_nop_solution004_source.py\n"
+          )
+          print('bytes', len(raw), 'sha256', hashlib.sha256(raw).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nop-solution004-valid-source
+          path: recovered
+          if-no-files-found: error
+          retention-days: 7
