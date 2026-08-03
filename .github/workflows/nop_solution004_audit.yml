@@ -46,6 +46,15 @@ jobs:
             nop_solution004_audit/audit_nop_solution004.py.gz.b64 \
             nop_solution004_audit/AUDIT_GATE.md \
             > nop_solution004_audit/results/source_sha256.txt
+          python - <<'PY'
+          import base64, gzip
+          from pathlib import Path
+          payload = Path('nop_solution004_audit/audit_nop_solution004.py.gz.b64')
+          encoded = ''.join(payload.read_text(encoding='ascii').split()).rstrip('=')
+          encoded += '=' * (-len(encoded) % 4)
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          Path('nop_solution004_audit/results/audit_nop_solution004_source.py').write_bytes(raw)
+          PY
           find nop_solution004_audit/cache -type f -print0 | sort -z | xargs -0 -r sha256sum \
             > nop_solution004_audit/results/downloaded_source_sha256.txt
           find nop_solution004_audit/cache -type f -printf '%P\t%s bytes\n' | sort \
