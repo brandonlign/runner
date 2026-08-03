@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/mog_reference_face_validation.yml
+      - mog_reference_face_validation/**
   workflow_dispatch:
 
 permissions:
@@ -19,66 +20,44 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      MOG_REPO_TOKEN: ${{ secrets.MOG_REPO_TOKEN }}
-      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
-      REPO_PAT: ${{ secrets.REPO_PAT }}
-      GH_PAT: ${{ secrets.GH_PAT }}
-      PAT: ${{ secrets.PAT }}
+    defaults:
+      run:
+        working-directory: mog_reference_face_validation
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/mog-reference-face-validation
 
-      - name: Check out exact Mog commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          token="${MOG_REPO_TOKEN:-${PRIVATE_REPO_TOKEN:-${REPO_PAT:-${GH_PAT:-${PAT:-}}}}}"
-          if [ -z "$token" ]; then
-            echo "No cross-repository token is configured in the runner repository."
-            exit 2
-          fi
-          echo "::add-mask::$token"
-          git clone --filter=blob:none "https://x-access-token:${token}@github.com/brandonlign/mog.git" mog
-          cd mog
-          git checkout --detach a31f3ca3bbdf4984754d4f2231bb9273949c739e
-          test "$(git rev-parse HEAD)" = "a31f3ca3bbdf4984754d4f2231bb9273949c739e"
-
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: mog/package-lock.json
 
-      - name: Install frozen dependencies
-        working-directory: mog
-        run: npm ci
+      - name: Install validation dependencies
+        run: npm install --no-audit --no-fund
 
-      - name: Verify renderer replacement
-        working-directory: mog
-        run: |
-          test -f src/components/methodology/ideal-reference-face-natural.tsx
-          test ! -e src/components/methodology/ideal-reference-face.tsx
-          grep -F 'ideal-reference-face-natural' src/app/methodology/page.tsx
-          grep -F 'Positive canthal tilt' src/components/methodology/ideal-reference-face-natural.tsx
+      - name: Assemble exact Mog renderer mirror
+        run: npm run assemble
 
-      - name: Lint
-        working-directory: mog
-        run: npm run lint
-
-      - name: Typecheck
-        working-directory: mog
-        run: npm run typecheck
-
-      - name: Unit tests
-        working-directory: mog
+      - name: Verify exact source identity and renderer invariants
         run: npm test
 
-      - name: Logic tests
-        working-directory: mog
-        run: npm run test:logic
+      - name: Typecheck isolated Next app
+        run: npm run typecheck
 
       - name: Production build
-        working-directory: mog
         run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Render all four views
+        run: npm run test:e2e
+
+      - name: Upload visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mog-reference-face-renderings
+          path: mog_reference_face_validation/artifacts
+          if-no-files-found: warn
+          retention-days: 30
