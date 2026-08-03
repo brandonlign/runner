@@ -1,0 +1,58 @@
+name: InvariantStreamNet data audit
+
+on:
+  push:
+    branches:
+      - agent/invariant-streamnet-stage0
+    paths:
+      - invariant_streamnet_stage0/**
+      - .github/workflows/invariant_streamnet_data_audit.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - invariant_streamnet_stage0/**
+      - .github/workflows/invariant_streamnet_data_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: invariant-streamnet-data-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/invariant-streamnet-stage0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Inspect four independent network datasets
+        run: python invariant_streamnet_stage0/inspect_data.py
+      - name: Upload schema evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: invariant-streamnet-data-audit
+          path: invariant_streamnet_stage0/results
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve schema result
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add invariant_streamnet_stage0/results
+          if git diff --cached --quiet; then
+            echo 'No result changes to commit.'
+          else
+            git commit -m 'Preserve InvariantStreamNet data audit'
+            git pull --rebase origin agent/invariant-streamnet-stage0
+            git push origin HEAD:agent/invariant-streamnet-stage0
+          fi
