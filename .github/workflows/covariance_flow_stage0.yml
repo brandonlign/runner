@@ -60,9 +60,10 @@ jobs:
           python -m py_compile dynamical_matching_stage0/run_static_matching.py
           python -m py_compile covariance_flow_stage0/run_covariance_flow.py
           python -m py_compile covariance_flow_stage0/run_covariance_flow_recording.py
-      - name: Run covariance-flow benchmark with invalid-group recording
+          python -m py_compile covariance_flow_stage0/run_covariance_flow_fresh_primary.py
+      - name: Run fresh-primary covariance-flow benchmark
         run: |
-          python covariance_flow_stage0/run_covariance_flow_recording.py \
+          python covariance_flow_stage0/run_covariance_flow_fresh_primary.py \
             --events covariance_flow_stage0/input/data_gate/selected_events.jsonl.gz \
             --output covariance_flow_stage0/results/stage0
       - name: Record provenance
@@ -70,6 +71,7 @@ jobs:
           sha256sum \
             covariance_flow_stage0/run_covariance_flow.py \
             covariance_flow_stage0/run_covariance_flow_recording.py \
+            covariance_flow_stage0/run_covariance_flow_fresh_primary.py \
             covariance_flow_stage0/PROTOCOL.md \
             covariance_flow_stage0/requirements.txt \
             dynamical_matching_stage0/run_static_matching.py \
