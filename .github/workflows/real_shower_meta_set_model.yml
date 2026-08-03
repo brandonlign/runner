@@ -23,9 +23,10 @@ jobs:
     timeout-minutes: 240
     env:
       DATA_ARTIFACT_ID: '8871480252'
-      DATA_ARTIFACT_SHA256: 'ce7023bea56ccb8da22055c9c350587a88ddd16cb7a3ab158b3ce68bef823fea'
       BASELINE_ARTIFACT_ID: '8871912750'
-      BASELINE_ARTIFACT_SHA256: '47b416afc1581e218458b9e3eac2e0d963fd46627a8993e05278682b3c758e06'
+      SELECTED_EVENTS_SHA256: 'cbec0d01ae7b157cc6d0ca149aeea5b3eb8e53bcffdab2f1f8d8f2fb9da2a068'
+      DATA_AUDIT_JSON_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+      BASELINE_JSON_SHA256: 'f3d36e231722891a3f6c4c5d81e0b645e7ee4212a417cbd66e606111d94a95ba'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,7 +51,6 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${DATA_ARTIFACT_ID}/zip" \
             -o real_shower_meta_stage0/input/data_audit.zip
-          echo "${DATA_ARTIFACT_SHA256}  real_shower_meta_stage0/input/data_audit.zip" | sha256sum -c -
           unzip -q real_shower_meta_stage0/input/data_audit.zip -d real_shower_meta_stage0/input/data_audit
 
           curl --fail-with-body -L \
@@ -59,12 +59,11 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASELINE_ARTIFACT_ID}/zip" \
             -o real_shower_meta_stage0/input/baseline.zip
-          echo "${BASELINE_ARTIFACT_SHA256}  real_shower_meta_stage0/input/baseline.zip" | sha256sum -c -
           unzip -q real_shower_meta_stage0/input/baseline.zip -d real_shower_meta_stage0/input/baseline
 
-          test -s real_shower_meta_stage0/input/data_audit/selected_events.jsonl.gz
-          test -s real_shower_meta_stage0/input/data_audit/audit.json
-          test -s real_shower_meta_stage0/input/baseline/baseline_ceiling.json
+          echo "${SELECTED_EVENTS_SHA256}  real_shower_meta_stage0/input/data_audit/selected_events.jsonl.gz" | sha256sum -c -
+          echo "${DATA_AUDIT_JSON_SHA256}  real_shower_meta_stage0/input/data_audit/audit.json" | sha256sum -c -
+          echo "${BASELINE_JSON_SHA256}  real_shower_meta_stage0/input/baseline/baseline_ceiling.json" | sha256sum -c -
       - name: Compile verified launcher
         run: python -m py_compile real_shower_meta_stage0/run_set_model_pilot.py
       - name: Run five-fold real-shower set-model benchmark
@@ -97,5 +96,3 @@ jobs:
           path: real_shower_meta_stage0/results/set_model
           if-no-files-found: error
           retention-days: 90
-
-# Execution marker: frozen Stage-0 configuration above is unchanged.
