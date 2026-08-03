@@ -33,9 +33,9 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip pandas requests
       - name: Compile
-        run: python -m py_compile common_origin_pilot/audit_data.py
+        run: python -m py_compile common_origin_pilot/audit_data.py common_origin_pilot/audit_data_v2.py
       - name: Audit public catalogue schemas and labels
-        run: python common_origin_pilot/audit_data.py
+        run: python common_origin_pilot/audit_data_v2.py
       - name: Upload audit evidence
         uses: actions/upload-artifact@v4
         with:
@@ -52,5 +52,6 @@ jobs:
             echo 'No result changes to commit.'
           else
             git commit -m 'Preserve common-origin data audit results'
+            git pull --rebase origin agent/common-origin-stage0-pilot
             git push origin HEAD:agent/common-origin-stage0-pilot
           fi
