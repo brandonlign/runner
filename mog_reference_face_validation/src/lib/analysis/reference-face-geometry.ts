@@ -14,15 +14,19 @@ function point(x: number, y: number): Point2D {
 }
 
 function landmarks(view: "front" | "profile", raw: RawPoints): FacialLandmarks {
+  const mapped: Partial<Record<LandmarkId, Point2D>> = {};
+  for (const [id, value] of Object.entries(raw)) {
+    if (!value) continue;
+    mapped[id as LandmarkId] = point(value[0], value[1]);
+  }
+
   return {
     view,
     imageWidth: IMAGE_SIZE,
     imageHeight: 1200,
     detectionConfidence: 1,
     poseWarnings: [],
-    points: Object.fromEntries(
-      Object.entries(raw).map(([id, [x, y]]) => [id, point(x, y)]),
-    ) as Partial<Record<LandmarkId, Point2D>>,
+    points: mapped,
   };
 }
 
