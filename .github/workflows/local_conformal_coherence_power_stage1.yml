@@ -1,0 +1,88 @@
+name: Local conformal coherence Stage-1 power
+
+on:
+  pull_request:
+    branches:
+      - agent/local-conformal-coherence-stage0
+    paths:
+      - .github/workflows/local_conformal_coherence_power_stage1.yml
+      - local_conformal_coherence_stage1/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: local-conformal-coherence-power-stage1
+  cancel-in-progress: true
+
+jobs:
+  complex-heldout-power:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
+      AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+      SOURCE_SHA256: 'db21c2056ee1ce954c6d38d324a4148920b109407214c3e777bfc601f77b5519'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/local-conformal-coherence-power-stage1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Retrieve exact PR14 data artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p input output
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo "${EVENTS_SHA256}  input/selected_events.jsonl.gz" | sha256sum -c -
+          echo "${AUDIT_SHA256}  input/audit.json" | sha256sum -c -
+      - name: Decode and verify frozen Stage-1 source
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          encoded = ''.join(Path('local_conformal_coherence_stage1/run_power_gate.py.gz.b64').read_text().split())
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest != '${{ env.SOURCE_SHA256 }}':
+              raise RuntimeError(f'source hash mismatch: {digest}')
+          Path('local_conformal_coherence_stage1/run_power_gate.py').write_bytes(raw)
+          print('source bytes:', len(raw))
+          print('source sha256:', digest)
+          PY
+          python -m py_compile local_conformal_coherence_stage1/run_power_gate.py
+      - name: Run frozen complex-heldout power gate
+        run: |
+          python local_conformal_coherence_stage1/run_power_gate.py \
+            --events input/selected_events.jsonl.gz \
+            --audit input/audit.json \
+            --stage0-result local_conformal_coherence_stage0/STAGE0_RESULT.md \
+            --output output
+          cat output/LOCAL_CONFORMAL_POWER_REPORT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum \
+            local_conformal_coherence_stage1/PROTOCOL.md \
+            local_conformal_coherence_stage1/run_power_gate.py.gz.b64 \
+            local_conformal_coherence_stage0/STAGE0_RESULT.md \
+            > output/source_sha256.txt
+          sha256sum input/selected_events.jsonl.gz input/audit.json > output/input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload Stage-1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-conformal-coherence-power-stage1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
