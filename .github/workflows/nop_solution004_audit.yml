@@ -27,17 +27,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Compile readable frozen audit
-        run: python -m py_compile nop_solution004_audit/audit_nop_solution004_source.py
+      - name: Compile verified audit launcher
+        run: |
+          python -m py_compile \
+            nop_solution004_audit/run_nop_solution004_audit.py \
+            nop_solution004_audit/audit_nop_solution004_source.py
       - name: Run frozen provenance and coherence gate
+        id: audit_run
+        continue-on-error: true
         run: |
           mkdir -p nop_solution004_audit/cache nop_solution004_audit/results
-          python nop_solution004_audit/audit_nop_solution004_source.py \
+          python nop_solution004_audit/run_nop_solution004_audit.py \
             --cache nop_solution004_audit/cache \
             --output nop_solution004_audit/results
       - name: Record provenance
+        if: always()
         run: |
+          mkdir -p nop_solution004_audit/results
           sha256sum \
+            nop_solution004_audit/run_nop_solution004_audit.py \
             nop_solution004_audit/audit_nop_solution004_source.py \
             nop_solution004_audit/AUDIT_GATE.md \
             > nop_solution004_audit/results/source_sha256.txt
@@ -46,7 +54,9 @@ jobs:
           find nop_solution004_audit/cache -type f -printf '%P\t%s bytes\n' | sort \
             > nop_solution004_audit/results/downloaded_source_inventory.txt
           python --version > nop_solution004_audit/results/python_version.txt
+          printf '%s\n' '${{ steps.audit_run.outcome }}' > nop_solution004_audit/results/audit_step_outcome.txt
       - name: Upload solution 004 audit evidence and exact downloads
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nop-solution004-provenance-audit
@@ -55,3 +65,6 @@ jobs:
             nop_solution004_audit/cache
           if-no-files-found: error
           retention-days: 90
+      - name: Preserve failed gate status
+        if: steps.audit_run.outcome == 'failure'
+        run: exit 1
