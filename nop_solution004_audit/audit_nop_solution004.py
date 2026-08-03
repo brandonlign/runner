@@ -6,8 +6,8 @@ import hashlib
 from pathlib import Path
 
 PAYLOAD = Path(__file__).with_name("audit_nop_solution004.py.gz.b64")
-EXPECTED_BYTES = 23611
-EXPECTED_SHA256 = "30888093854f1a90634b9f1f0a74e0c83db68eec15194f9ffae843fabb2d5229"
+EXPECTED_BYTES = 23613
+EXPECTED_SHA256 = "1dca091f0cb5740057f8c583d944333b0bf2e00157d4845b9e850426134de1fb"
 
 
 def main() -> None:
