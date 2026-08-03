@@ -7,8 +7,8 @@ import runpy
 import sys
 from pathlib import Path
 
-EXPECTED_SIZE = 24866
-EXPECTED_SHA256 = "2c8444e45cfc554778b63e6dd8284678688c61b881a38ae777e95c4e2b3f907d"
+EXPECTED_SIZE = 26677
+EXPECTED_SHA256 = "26826f694204ced2607b72c3dedb72cdab2c25dcf34e0f707e2fb3a404e92e03"
 ROOT = Path(__file__).resolve().parent
 PAYLOAD = ROOT / "run_stage0.py.gz.b64"
 EXTRACTED = ROOT / "_run_stage0_extracted.py"
