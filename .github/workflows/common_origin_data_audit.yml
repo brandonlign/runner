@@ -39,13 +39,13 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip -r common_origin_pilot/requirements.txt
       - name: Compile
-        run: python -m py_compile common_origin_pilot/probe_lookup_access.py
-      - name: Probe public lookup access
-        run: python common_origin_pilot/probe_lookup_access.py
+        run: python -m py_compile common_origin_pilot/audit_lookup_table.py common_origin_pilot/audit_lookup_table_v2.py
+      - name: Audit published shower lookup table
+        run: python common_origin_pilot/audit_lookup_table_v2.py
       - name: Upload audit evidence
         uses: actions/upload-artifact@v4
         with:
-          name: common-origin-lookup-access-probe
+          name: common-origin-lookup-audit
           path: common_origin_pilot/results
           if-no-files-found: error
           retention-days: 90
@@ -57,7 +57,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'No result changes to commit.'
           else
-            git commit -m 'Preserve lookup access probe results'
+            git commit -m 'Preserve shower lookup audit results'
             git pull --rebase origin agent/common-origin-stage0-pilot
             git push origin HEAD:agent/common-origin-stage0-pilot
           fi
