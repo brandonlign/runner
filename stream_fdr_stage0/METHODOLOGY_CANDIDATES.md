@@ -1,123 +1,124 @@
-# GhostStream methodology search: pressure-tested candidates
+# GhostStream methodology search: pressure-test ledger
 
-This file is a methodology incubator, not part of the validated GhostStream pipeline. Nothing here may be described as a GhostStream method unless it passes the frozen external benchmarks below.
+This runner-only directory is a methodology incubator. Nothing here is part of the validated GhostStream pipeline, and no candidate may be attached to GhostStream unless it passes frozen external benchmarks unrelated to GhostStream.
 
-## Problem definition
+## Current conclusion
 
-The useful methodological gap is not pairwise orbit similarity. The corrected Stage-0 common-origin benchmark showed that standard D-criteria already solve that subproblem better than the attempted learned score.
+**No tested methodology candidate has survived.**
 
-The remaining general problem is blind discovery of weak meteor streams in heterogeneous surveys while controlling false stream discoveries after an adaptive search over candidate locations, scales, algorithms, and hyperparameters.
+The search has produced useful negative results and isolated recurring failure modes, but it has not yet produced a method comparable to ExoSeek's successful central algorithm. Rebranding any failed candidate as a framework would be scientifically misleading.
 
-## Candidate A — survey-preserving target-decoy discovery
+## Closed directions
 
-Generate decoy catalogs by breaking stream coherence while attempting to preserve each survey's seasonal and geometric selection structure. Run the complete adaptive discovery pipeline on target and decoy catalogs, then estimate the false-stream fraction from high-scoring decoy clusters.
+### Learned common-origin pair metric
 
-### Why it could matter
+- worse than `D_SH`/`D_D` at matched false-positive rate;
+- zero weak-stream recovery;
+- poor calibration and catastrophic threshold transfer;
+- final decision: kill.
 
-- calibrates the complete search rather than a fixed bin or one chosen cluster;
-- can in principle use the full catalog rather than discarding a validation split;
-- reports a catalog-level false discovery rate rather than only local membership contamination.
+### Neural invariant detector
 
-### Fatal weakness
+- strong synthetic held-out performance;
+- zero real-control F1 and inadequate real-data ranking;
+- synthetic-to-real gap invalidated the method;
+- final decision: kill.
 
-The guarantee depends on null target clusters and decoy clusters being exchangeable. Meteor sporadic structure varies with solar longitude, radiant direction, network latitude, weather, and operational history. A permutation that destroys showers may also destroy real background structure, making decoys too easy and the estimated false discovery rate anti-conservative.
+### Recurrence/replicability statistic
 
-### Decision
+- weaker recovery than pooled discovery plus annual confirmation;
+- shared-background null false positives remained excessive;
+- final decision: kill.
 
-**Secondary candidate only.** Continue only if a pre-GhostStream exchangeability benchmark shows that target-null and decoy top-cluster score distributions match across network-years. No tuning of the scramble is allowed after seeing GhostStream.
+### Fixed physical stream-tube filter
 
-## Candidate B — cross-fitted adaptive stream significance
+- weak recovery gain was too small;
+- sharp background mismatch produced catastrophic false positives;
+- final decision: kill.
 
-Use one independent subset of years or networks for unrestricted candidate generation and hyperparameter selection, then test the frozen candidate trajectory in held-out data against survey-matched analogues. Reverse the split and combine evidence with a finite-sample-valid multi-split procedure. Apply catalog-level multiple-testing control to held-out candidate tests.
+### Shared multi-network modeling
 
-### Why it could matter
+Four public catalogs were compatible, so the idea received three increasingly realistic tests:
 
-- selection can be arbitrarily adaptive without contaminating the held-out test;
-- directly addresses double-dipping in blind cluster discovery;
-- permits a rigorous comparison between naive post-selection significance and honest significance.
+1. fixed-scale shared-support scan;
+2. multiplicity-calibrated multiscale leave-one-network-out scan;
+3. shared latent-flux Poisson likelihood.
 
-### Fatal weakness
+The methods rejected one-network artifacts and sometimes improved balanced injections, but they lost power whenever legitimate survey amplitudes differed, a stream was absent from one network, or GMN was removed. The best shared-flux formulation gained only 2.1 percentage points over pooled search and failed the frozen continuation gates.
 
-Weak streams may not survive data splitting. A method that controls errors but loses nearly all low-member streams is not useful.
+Final decision: close the shared-network direction for GhostStream.
 
-### Decision
+### Sequential predictive evidence
 
-**Valid fallback and benchmark baseline.** Continue only if it detects an embedded real weak stream and materially outperforms a single 50/50 split at the same realized false discovery rate.
+Two null models were tested:
 
-## Candidate C — shared latent-stream model with network-specific backgrounds
+1. geometric local-background e-process;
+2. held-out-year matched-analogue rank e-process.
 
-Fit multiple meteor networks jointly. A real stream is represented by one shared physical radiant/speed trajectory and intrinsic dispersion, while each network retains its own background intensity, measurement covariance, coverage, calibration offsets, and stream amplitude. Candidate discovery is driven by cross-network predictive evidence rather than pooling incompatible catalogs.
+The geometric null had 33.6% false acceptance at a nominal 10% threshold. Matched analogues repaired false-positive control and strongly recovered compact stable injections, but failed intermittent, late-onset, diffuse signals and the untouched real M2026-A1 control.
 
-A minimal model is
+Final decision: close the sequential-evidence direction.
 
-`intensity_network(x) = background_network(x) + sum_k amplitude_network,k * shared_stream_k(x)`
+### Robust low-rank background decomposition
 
-with group sparsity on stream components and leave-one-network-out predictive testing.
+Two representations were tested:
 
-### Why it could matter
+1. fixed phase-space voxels;
+2. event-centered annual local-density fields.
 
-- directly addresses the documented failure of thresholds calibrated on statistically dissimilar combined catalogs;
-- turns independent-network replication into the discovery objective rather than an after-the-fact check;
-- can recover a shared weak component that is individually sub-threshold in several networks;
-- remains useful even when a specific astronomical candidate is rejected.
+Both controlled false positives and rejected broad structured background, but both classified compact recurring stream evidence as background. The event-centered confirmation recovered only 5.2% of sparse injections versus 14.6% for a simple recurrent-deviance baseline and only 1.0% of strong injections.
 
-### Closest prior work found
+Final decision: close low-rank plus group-sparse background decomposition.
 
-- meteor databases have been pooled and clustered directly;
-- individual networks have been searched separately and compared;
-- recent work uses network-matched KDE nulls and cross-network confirmation;
-- multi-observer count-rate models account for observer-specific backgrounds;
-- no direct precedent was found for blind event-level meteor-stream discovery with a shared latent component, separate catalog backgrounds, and leave-one-network-out error calibration.
+### Activity-marginalized Bayes scan
 
-This is a provisional novelty boundary, not a first-ever claim.
+The method integrated over all activity subsets spanning at least three years and multiple active-year concentration levels.
 
-### Fatal weaknesses
+- controlled false positives;
+- detected and localized M2026-A1;
+- modestly improved late-onset recovery;
+- nevertheless lost sparse recurring recovery to pooled search;
+- accepted too many one-year artifacts;
+- failed diffuse, drifting, intermittent, and strong-stream gates.
 
-- network-specific selection functions may be too poorly documented to identify a shared component;
-- one dominant network could determine the component while other networks add negligible evidence;
-- a flexible background model could absorb real weak streams or a flexible stream model could absorb background structure;
-- available labels may be circular because network shower codes are themselves produced by established association rules.
-
-### Decision
-
-**Primary candidate.** It earns a full pilot only if the data audit confirms compatible event-level coordinates in at least three networks and the benchmark can use held-out known streams or injected streams without relying solely on inherited shower labels.
+Final decision: close the activity-marginalized Bayes direction without prior tuning.
 
 ## Ideas rejected before implementation
 
-### Another learned orbit-distance metric
-
-Rejected by the corrected parent-disjoint benchmark. It underperformed D_SH/D_D, recovered no weak streams, and transferred catastrophically.
-
 ### Uncertainty-aware DBSCAN/HDBSCAN
 
-Too close to prior meteor clustering work that already propagates measurement uncertainty and evaluates cluster occurrence. At most an implementation improvement.
+Close prior meteor work already propagates uncertainty and assesses cluster occurrence. This would be an implementation improvement, not a major method.
 
 ### Persistence across clustering scales
 
-HDBSCAN already operationalizes density persistence. Rebranding hyperparameter stability as a new framework would not be substantial.
+HDBSCAN already operationalizes density persistence. Renaming hyperparameter stability would not be substantive novelty.
 
-### Radiant-track matched filtering
+### Radiant-track or Hough-style matched filtering
 
-Gridded radiant searches, wavelet transforms, radiant drift models, and fixed template searches already cover the core concept. A new implementation would need a separate statistical contribution.
+Radiant maps, wavelets, drift models, and physical stream tubes already cover the central idea; the tested stream-tube implementation also failed under realistic background mismatch.
 
-### Generic Bayesian mixture model on one catalog
+### Generic one-catalog mixture model
 
-Mixture models are standard, and without the multi-network shared-physics constraint this is mainly a model substitution.
+Without a new inferential or physical contribution, this is a model substitution rather than a major method.
 
-## Frozen primary Stage-0 gates
+### Direct backward orbital convergence as a blind detector
 
-The shared-network candidate is killed unless all conditions hold on data and candidates unrelated to GhostStream:
+Numerical integrations and clone convergence are established in meteor-stream age and parent-body studies. Chaotic near-Earth dynamics, uncertain nongravitational forces, and old-stream decoherence make simple backward convergence unreliable as a general blind-discovery score.
 
-1. At least three networks provide compatible solar longitude, geocentric radiant, speed, year/time, and uncertainty or quality fields.
-2. Leave-one-network-out recovery of known weak streams improves by at least 10 percentage points over both pooled HDBSCAN and separate-network HDBSCAN union at matched false discovery rate.
-3. At least half of the gain remains when the largest network is excluded.
-4. Null catalogs produce a realized catalog-level false discovery rate no greater than 0.10 with an upper 95% confidence bound no greater than 0.15.
-5. Recovery does not collapse by more than 20 percentage points under alternate background bandwidths, network offsets, or doubled measurement noise.
-6. The model must recover at least one real weak stream not used for tuning and reject at least one plausible false/removed stream.
-7. GhostStream remains completely excluded until all gates are frozen and passed.
+## Shared lessons from the failures
+
+1. Pairwise similarity is not the bottleneck; established orbital criteria are already strong.
+2. Real sporadic backgrounds contain persistent anisotropic structure that invalidates simple geometric, shuffled, or overly smooth nulls.
+3. Requiring equal evidence across surveys or years destroys power for real heterogeneous streams.
+4. Flexible background models tend to absorb the weak recurring signal being sought.
+5. Synthetic performance is not persuasive without an untouched real weak-stream control.
+6. A method that only recognizes compact stable annual streams is not suitable for GhostStream.
+7. M2026-A1 is a useful external control but cannot be used to tune methods.
 
 ## Current ranking
 
-1. Shared latent-stream / separate-background model.
-2. Cross-fitted adaptive significance.
-3. Target-decoy catalog FDR, conditional on an unusually strong exchangeability result.
+There is **no active primary candidate**.
+
+The next idea must be genuinely different from local-count recurrence, learned pair similarity, low-rank residual separation, fixed trajectory filtering, or cross-network agreement. It must be frozen and benchmarked on real backgrounds before any GhostStream application.
+
+The most plausible remaining frontier is a physically dynamical representation that uses information beyond present-epoch density and similarity, but existing backward-integration and stream-evolution literature makes the novelty and feasibility bar high. No dynamical implementation is authorized until a narrower gap and a real held-out benchmark are identified.
