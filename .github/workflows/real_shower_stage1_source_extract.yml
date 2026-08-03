@@ -1,0 +1,46 @@
+name: Real-shower Stage-1 source extraction
+
+on:
+  pull_request:
+    branches:
+      - agent/real-shower-meta-stage0
+    paths:
+      - .github/workflows/real_shower_stage1_source_extract.yml
+      - real_shower_meta_stage0/run_set_model_pilot.py.gz.b64
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-shower-stage1-source-extract
+  cancel-in-progress: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/real-shower-relation-clique-stage1
+      - name: Decode frozen Stage-0 source
+        run: |
+          mkdir -p source_extract
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          src = Path('real_shower_meta_stage0/run_set_model_pilot.py.gz.b64')
+          raw = gzip.decompress(base64.b64decode(''.join(src.read_text().split()), validate=True))
+          Path('source_extract/run_set_model_pilot_source.py').write_bytes(raw)
+          Path('source_extract/source_sha256.txt').write_text(hashlib.sha256(raw).hexdigest() + '  run_set_model_pilot_source.py\n')
+          print('decoded bytes:', len(raw))
+          print('sha256:', hashlib.sha256(raw).hexdigest())
+          PY
+      - name: Upload exact frozen source
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-shower-stage0-decoded-source
+          path: source_extract
+          if-no-files-found: error
+          retention-days: 7
