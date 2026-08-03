@@ -49,12 +49,16 @@ jobs:
           python - <<'PY'
           import base64, gzip, hashlib
           from pathlib import Path
-          encoded = ''.join(Path('local_conformal_coherence_stage1/run_power_gate.py.gz.b64').read_text().split())
+          parts = sorted(Path('local_conformal_coherence_stage1/source_parts').glob('part*.b64'))
+          if [path.name for path in parts] != ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']:
+              raise RuntimeError(f'unexpected source parts: {[path.name for path in parts]}')
+          encoded = ''.join(''.join(path.read_text().split()) for path in parts)
           raw = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(raw).hexdigest()
           if digest != '${{ env.SOURCE_SHA256 }}':
               raise RuntimeError(f'source hash mismatch: {digest}')
           Path('local_conformal_coherence_stage1/run_power_gate.py').write_bytes(raw)
+          print('source parts:', [path.name for path in parts])
           print('source bytes:', len(raw))
           print('source sha256:', digest)
           PY
@@ -72,7 +76,10 @@ jobs:
         run: |
           sha256sum \
             local_conformal_coherence_stage1/PROTOCOL.md \
-            local_conformal_coherence_stage1/run_power_gate.py.gz.b64 \
+            local_conformal_coherence_stage1/source_parts/part00.b64 \
+            local_conformal_coherence_stage1/source_parts/part01.b64 \
+            local_conformal_coherence_stage1/source_parts/part02.b64 \
+            local_conformal_coherence_stage1/source_parts/part03.b64 \
             local_conformal_coherence_stage0/STAGE0_RESULT.md \
             > output/source_sha256.txt
           sha256sum input/selected_events.jsonl.gz input/audit.json > output/input_sha256.txt
