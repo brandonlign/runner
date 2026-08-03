@@ -1,0 +1,47 @@
+name: Diagnose frozen control lookup failures
+
+on:
+  pull_request:
+    branches:
+      - agent/nop004-orbit-reconstruction-ls-stage1c
+    paths:
+      - nominal_orbit_control_calibration_stage2/diagnose_lookup_failures.py
+      - .github/workflows/nominal_orbit_control_lookup_diagnosis.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nominal-orbit-control-lookup-diagnosis
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/nominal-orbit-control-calibration-stage2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile diagnostic
+        run: python -m py_compile nominal_orbit_control_calibration_stage2/diagnose_lookup_failures.py
+      - name: Preserve exact responses and redirect headers
+        run: |
+          python nominal_orbit_control_calibration_stage2/diagnose_lookup_failures.py \
+            --output nominal_orbit_control_calibration_stage2/lookup_diagnosis
+      - name: Record provenance
+        run: |
+          sha256sum \
+            nominal_orbit_control_calibration_stage2/diagnose_lookup_failures.py \
+            > nominal_orbit_control_calibration_stage2/lookup_diagnosis/source_sha256.txt
+          python --version > nominal_orbit_control_calibration_stage2/lookup_diagnosis/python_version.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nominal-orbit-control-lookup-diagnosis
+          path: nominal_orbit_control_calibration_stage2/lookup_diagnosis
+          if-no-files-found: error
+          retention-days: 90
