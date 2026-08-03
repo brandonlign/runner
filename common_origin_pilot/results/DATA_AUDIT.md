@@ -8,25 +8,33 @@ This audit checks whether the public IAU MDC video-orbit catalogues expose usabl
 
 - Rows: **53,401**
 - Columns: `IID, DB, IC, Ano, Yr, Mn, Dayy, delta_Dayy, LS, delta_LS, mv, delta_mv, HB, delta_HB, HM, delta_HM, HE, delta_HE, RA, delta_RA, DECL, delta_DECL, Vi, delta_Vi, Vg, delta_Vg, Vh, delta_Vh, cZ, delta_cZ, Qm, q, delta_q, e, delta_e, a1, delta_a1, a, delta_a, Qa, delta_Qa, i, delta_i, arg, delta_arg, nod, delta_nod, pi, delta_pi, sh, Mas, delta_Mas, lgM, delta_lgM, cor, crh, mr, delta_mr, Hrf, delta_Hrf, LpA, delta_LpA, dur`
-- No plausible label column found.
+- Best label candidate: `sh`
+- Known-code hits: **0**
+- Recognized codes: `{}`
 
 ## CAMS
 
 - Rows: **110,352**
 - Columns: `IID, DB, IC, Ano, Yr, Mn, Dayy, delta_Dayy, LS, delta_LS, mv, delta_mv, HB, delta_HB, HM, delta_HM, HE, delta_HE, RA, delta_RA, DECL, delta_DECL, Vi, delta_Vi, Vg, delta_Vg, Vh, delta_Vh, cZ, delta_cZ, Qm, q, delta_q, e, delta_e, a1, delta_a1, a, delta_a, Qa, delta_Qa, i, delta_i, arg, delta_arg, nod, delta_nod, pi, delta_pi, sh, Mas, delta_Mas, lgM, delta_lgM, cor, crh, mr, delta_mr, Hrf, delta_Hrf, LpA, delta_LpA, dur`
-- No plausible label column found.
+- Best label candidate: `sh`
+- Known-code hits: **0**
+- Recognized codes: `{}`
 
 ## SonotaCo
 
 - Rows: **29,200**
 - Columns: `IID, DB, IC, Ano, Yr, Mn, Dayy, delta_Dayy, LS, delta_LS, mv, delta_mv, HB, delta_HB, HM, delta_HM, HE, delta_HE, RA, delta_RA, DECL, delta_DECL, Vi, delta_Vi, Vg, delta_Vg, Vh, delta_Vh, cZ, delta_cZ, Qm, q, delta_q, e, delta_e, a1, delta_a1, a, delta_a, Qa, delta_Qa, i, delta_i, arg, delta_arg, nod, delta_nod, pi, delta_pi, sh, Mas, delta_Mas, lgM, delta_lgM, cor, crh, mr, delta_mr, Hrf, delta_Hrf, LpA, delta_LpA, dur`
-- No plausible label column found.
+- Best label candidate: `sh`
+- Known-code hits: **0**
+- Recognized codes: `{}`
 
 ## SonotaCo
 
 - Rows: **47,087**
 - Columns: `IID, DB, IC, Ano, Yr, Mn, Dayy, delta_Dayy, LS, delta_LS, mv, delta_mv, HB, delta_HB, HM, delta_HM, HE, delta_HE, RA, delta_RA, DECL, delta_DECL, Vi, delta_Vi, Vg, delta_Vg, Vh, delta_Vh, cZ, delta_cZ, Qm, q, delta_q, e, delta_e, a1, delta_a1, a, delta_a, Qa, delta_Qa, i, delta_i, arg, delta_arg, nod, delta_nod, pi, delta_pi, sh, Mas, delta_Mas, lgM, delta_lgM, cor, crh, mr, delta_mr, Hrf, delta_Hrf, LpA, delta_LpA, dur`
-- No plausible label column found.
+- Best label candidate: `sh`
+- Known-code hits: **0**
+- Recognized codes: `{}`
 
 ## EDMOND
 
