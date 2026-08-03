@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 BASE = "https://ceresiaumdc.ta3.sk/downloads/LuT/"
-USER_AGENT = "ghoststream-control-lookup-diagnosis/1.0"
+USER_AGENT = "ghoststream-control-lookup-diagnosis/1.1"
 FILENAMES = ("257_ORS.csv", "388_CTA.csv", "0427FED_006.csv", "0394ACA_004.csv")
 
 
@@ -25,11 +25,10 @@ def candidate_urls(filename: str) -> list[str]:
     seen: set[str] = set()
     for width in widths:
         padded = filename if width <= len(filename) else filename.ljust(width)
-        for base in (BASE, BASE.replace("https://", "http://")):
-            url = urllib.parse.urljoin(base, urllib.parse.quote(padded, safe=""))
-            if url not in seen:
-                seen.add(url)
-                urls.append(url)
+        url = urllib.parse.urljoin(BASE, urllib.parse.quote(padded, safe=""))
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
     return urls
 
 
@@ -40,7 +39,7 @@ def request_once(url: str) -> tuple[bytes, dict[str, Any]]:
         headers={"User-Agent": USER_AGENT, "Accept": "text/csv,*/*;q=0.5"},
     )
     try:
-        with opener.open(request, timeout=120) as response:
+        with opener.open(request, timeout=20) as response:
             raw = response.read(64 * 1024 * 1024 + 1)
             return raw, {
                 "url": url,
