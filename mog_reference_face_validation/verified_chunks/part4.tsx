@@ -1,0 +1,80 @@
+      ) : (
+        <g>
+          <path d={faceContour} fill="none" stroke="var(--ink)" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={backContour} fill="none" stroke="var(--ink)" strokeWidth="1.35" strokeLinecap="round" />
+          <path d={`M ${orbitale.x - 18} ${orbitale.y - 2} Q ${orbitale.x + 1} ${orbitale.y - 9} ${orbitale.x + 16} ${orbitale.y - 2}`} fill="none" stroke="var(--ink)" strokeWidth="1.3" />
+          <ellipse cx={tragion.x} cy={tragion.y + 29} rx="20" ry="34" fill="none" stroke="var(--ink)" strokeWidth="1.1" />
+          <g fill="none" stroke="var(--muted)" strokeWidth="1" strokeDasharray="5 5">
+            <line x1={tragion.x - 22} y1={tragion.y} x2={orbitale.x + 155} y2={orbitale.y} />
+            <line x1={nasion.x} y1={nasion.y} x2={pronasale.x} y2={pronasale.y} />
+            <line x1={pronasale.x} y1={pronasale.y} x2={pogonion.x} y2={pogonion.y} />
+            <line x1={subnasale.x} y1={subnasale.y} x2={pogonion.x} y2={pogonion.y} />
+            <line x1={gonion.x} y1={gonion.y} x2={menton.x} y2={menton.y} />
+            <line x1={gonion.x} y1={gonion.y} x2={ramus.x} y2={ramus.y} />
+            <line x1={menton.x} y1={menton.y} x2={cervical.x} y2={cervical.y} />
+            <line x1={cervical.x} y1={cervical.y} x2={throat.x} y2={throat.y} />
+          </g>
+          {structureIds.map((id) => {
+            const point = q(id);
+            return <circle key={id} cx={point.x} cy={point.y} r="3.7" fill="white" stroke="var(--accent)" strokeWidth="1.7"><title>{id}</title></circle>;
+          })}
+          <g fill="var(--muted)" fontSize="11">
+            <text x={tragion.x - 4} y={tragion.y - 11}>Frankfort plane</text>
+            <text x={pronasale.x + 9} y={pronasale.y - 5}>tip</text>
+            <text x={pogonion.x + 9} y={pogonion.y}>pogonion</text>
+            <text x={gonion.x - 53} y={gonion.y - 9}>gonion</text>
+          </g>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function Toggle<T extends string>({ value, options, onChange, label }: { value: T; options: readonly T[]; onChange: (value: T) => void; label: string }) {
+  return (
+    <div className="flex border border-[var(--line)] bg-white p-1" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button key={option} type="button" onClick={() => onChange(option)} aria-pressed={value === option} className={`px-3 py-2 text-sm capitalize transition-colors ${value === option ? "bg-[var(--ink)] text-white" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}>
+          {option === "rendered" ? "Realistic" : option === "profile" ? "Side" : option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function IdealReferenceFace() {
+  const [view, setView] = useState<FaceView>("front");
+  const [mode, setMode] = useState<RenderMode>("structure");
+  const front = useMemo(referenceFrontLandmarks, []);
+  const profile = useMemo(referenceProfileLandmarks, []);
+  const report = useMemo(() => calculateAnalysisReport(front, profile, "neutral"), [front, profile]);
+  const metrics = report.metrics.filter((metric) => metric.view === view && metric.referenceBand);
+  const allWithin = metrics.every((metric) => metric.fitStatus === "within");
+
+  return (
+    <section id="ideal-reference" className="mt-12 scroll-mt-24 border border-[var(--line)] bg-white">
+      <div className="border-b border-[var(--line)] p-5 sm:p-7">
+        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">Verified reference geometry</p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">One face that satisfies Mog’s own measurements</h2>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">Structure and realistic modes use the exact same solved landmarks. The portrait adds only smooth anatomical interpolation and neutral clay styling; none of those illustrative details enters the harmony score.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Toggle value={view} options={["front", "profile"] as const} onChange={setView} label="Face view" />
+            <Toggle value={mode} options={["structure", "rendered"] as const} onChange={setMode} label="Rendering mode" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+        <div className="min-h-[560px] border-b border-[var(--line)] bg-[var(--paper)] p-4 sm:p-8 lg:border-b-0 lg:border-r">
+          <div className="mx-auto max-w-[580px]">{view === "front" ? <FrontReference mode={mode} landmarks={front} /> : <ProfileReference mode={mode} landmarks={profile} />}</div>
+        </div>
+        <div className="p-5 sm:p-7">
+          <div className={`border px-3 py-2 text-xs font-semibold ${allWithin ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+            {allWithin ? `${metrics.length}/${metrics.length} scored measurements recompute inside their target bands.` : "This reference does not yet satisfy every displayed target."}
+          </div>
+          <h3 className="mt-5 font-semibold">Measurements used in this view</h3>
+          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">Each value is recomputed from the displayed landmarks. Metrics without a defensible comparison convention remain raw measurements and are not presented as ideal targets.</p>
+          <dl className="mt-5 max-h-[560px] divide-y divide-[var(--line)] overflow-y-auto border-y border-[var(--line)] pr-2">
