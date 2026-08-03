@@ -18,6 +18,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: common-origin-stage0
+  cancel-in-progress: true
+
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -26,20 +30,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/common-origin-stage0-pilot
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: common_origin_pilot/requirements.txt
       - name: Install dependencies
-        run: python -m pip install --upgrade pip pandas requests
+        run: python -m pip install --upgrade pip -r common_origin_pilot/requirements.txt
       - name: Compile
-        run: python -m py_compile common_origin_pilot/audit_data.py common_origin_pilot/audit_data_v2.py
-      - name: Audit public catalogue schemas and labels
-        run: python common_origin_pilot/audit_data_v2.py
+        run: python -m py_compile common_origin_pilot/audit_lookup_table.py
+      - name: Audit published shower lookup table
+        run: python common_origin_pilot/audit_lookup_table.py
       - name: Upload audit evidence
         uses: actions/upload-artifact@v4
         with:
-          name: common-origin-data-audit
+          name: common-origin-lookup-audit
           path: common_origin_pilot/results
           if-no-files-found: error
           retention-days: 90
@@ -51,7 +57,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'No result changes to commit.'
           else
-            git commit -m 'Preserve common-origin data audit results'
+            git commit -m 'Preserve shower lookup audit results'
             git pull --rebase origin agent/common-origin-stage0-pilot
             git push origin HEAD:agent/common-origin-stage0-pilot
           fi
