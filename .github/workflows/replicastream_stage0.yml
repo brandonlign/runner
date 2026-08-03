@@ -1,0 +1,88 @@
+name: ReplicaStream Stage-0
+
+on:
+  push:
+    branches:
+      - agent/replicastream-stage0
+    paths:
+      - replicastream_stage0/**
+      - .github/workflows/replicastream_stage0.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - replicastream_stage0/**
+      - .github/workflows/replicastream_stage0.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: replicastream-stage0
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/replicastream-stage0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: replicastream_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r replicastream_stage0/requirements.txt
+      - name: Verify launcher and frozen source
+        run: |
+          python -m py_compile replicastream_stage0/run_stage0.py
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          payload = Path('replicastream_stage0/run_stage0.py.gz.b64')
+          source = gzip.decompress(base64.b64decode(''.join(payload.read_text().split()), validate=True))
+          expected = '26826f694204ced2607b72c3dedb72cdab2c25dcf34e0f707e2fb3a404e92e03'
+          actual = hashlib.sha256(source).hexdigest()
+          print(f'bytes={len(source)} sha256={actual}')
+          assert len(source) == 26677
+          assert actual == expected
+          compile(source, '<frozen-replicastream-stage0>', 'exec')
+          PY
+      - name: Run frozen real-background kill test
+        run: python replicastream_stage0/run_stage0.py --calibration-trials 30 --null-trials 25 --injection-trials 25
+      - name: Record execution provenance
+        run: |
+          mkdir -p replicastream_stage0/results
+          sha256sum replicastream_stage0/run_stage0.py.gz.b64 replicastream_stage0/run_stage0.py > replicastream_stage0/results/source_files_sha256.txt
+          python --version > replicastream_stage0/results/python_version.txt
+          python -m pip freeze > replicastream_stage0/results/environment.txt
+      - name: Upload benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: replicastream-stage0
+          path: |
+            replicastream_stage0/results
+            replicastream_stage0/PROTOCOL.md
+            replicastream_stage0/PRIOR_ART_BOUNDARY.md
+            replicastream_stage0/run_stage0.py
+            replicastream_stage0/run_stage0.py.gz.b64
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve benchmark result on runner branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add replicastream_stage0/results
+          if git diff --cached --quiet; then
+            echo 'No result changes to commit.'
+          else
+            git commit -m 'Preserve ReplicaStream Stage-0 result'
+            git pull --rebase origin agent/replicastream-stage0
+            git push origin HEAD:agent/replicastream-stage0
+          fi
