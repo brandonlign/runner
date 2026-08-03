@@ -70,6 +70,32 @@ jobs:
             --lookup nop_solution004_iau_gmn_recovery/input/0149NOP_004.csv \
             --cache nop_solution004_iau_gmn_recovery/cache \
             --output nop_solution004_iau_gmn_recovery/results
+      - name: Preserve archive structure and raw headers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          root = Path('nop_solution004_iau_gmn_recovery/cache')
+          output = Path('nop_solution004_iau_gmn_recovery/results/archive_probe.txt')
+          chunks = []
+          for archive in sorted(root.glob('*.zip')):
+              chunks.append(f'ARCHIVE {archive.name} {archive.stat().st_size} bytes')
+              with zipfile.ZipFile(archive) as bundle:
+                  for member in bundle.infolist():
+                      chunks.append(
+                          f'MEMBER {member.filename!r} compressed={member.compress_size} uncompressed={member.file_size}'
+                      )
+                      if member.is_dir():
+                          continue
+                      with bundle.open(member) as handle:
+                          sample = handle.read(8192)
+                      chunks.append('SAMPLE_HEX ' + sample[:128].hex())
+                      chunks.append('SAMPLE_TEXT_START')
+                      chunks.append(sample.decode('utf-8-sig', 'replace'))
+                      chunks.append('SAMPLE_TEXT_END')
+          output.write_text('\n'.join(chunks), encoding='utf-8')
+          PY
       - name: Record provenance
         run: |
           sha256sum \
