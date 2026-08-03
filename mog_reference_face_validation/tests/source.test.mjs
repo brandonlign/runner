@@ -2,34 +2,38 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync("src/components/methodology/ideal-reference-face-v3.tsx", "utf8");
+const source = readFileSync("src/components/methodology/ideal-reference-face-verified.tsx", "utf8");
+const geometry = readFileSync("src/lib/analysis/reference-face-geometry.ts", "utf8");
 
-test("front geometry enforces positive canthal tilt", () => {
-  assert.match(source, /const rise = Math\.tan\(target\("front-average-canthal", 5\)/);
-  assert.match(source, /leftInner = \{ x: g\.cx - g\.innerGap \/ 2, y: g\.eyeY \+ g\.rise \/ 2 \}/);
-  assert.match(source, /leftOuter = \{ x: leftInner\.x - g\.eyeWidth, y: g\.eyeY - g\.rise \/ 2 \}/);
-  assert.match(source, /rightOuter = \{ x: rightInner\.x \+ g\.eyeWidth, y: g\.eyeY - g\.rise \/ 2 \}/);
-  assert.match(source, />positive canthal tilt</);
+test("the renderer reads the canonical scoring landmarks", () => {
+  assert.match(source, /referenceFrontLandmarks/);
+  assert.match(source, /referenceProfileLandmarks/);
+  assert.match(source, /calculateAnalysisReport\(front, profile, "neutral"\)/);
+  assert.doesNotMatch(source, /function frontGeometry\(/);
+  assert.doesNotMatch(source, /function profileGeometry\(/);
 });
 
-test("profile columella moves down and back from the tip", () => {
-  assert.match(source, /const columella = \{ x: pronasale\.x - 25, y: pronasale\.y \+ 21 \+ \(tipRotation - 100\) \* 0\.12 \}/);
-});
-
-test("structure and realistic modes share one geometry definition per view", () => {
-  assert.equal((source.match(/function frontGeometry\(/g) ?? []).length, 1);
-  assert.equal((source.match(/function profileGeometry\(/g) ?? []).length, 1);
-  assert.match(source, /<FrontPortrait mode=\{mode\} \/>/);
-  assert.match(source, /<ProfilePortrait mode=\{mode\} \/>/);
+test("front and profile structure share anchors with rendered mode", () => {
   assert.equal((source.match(/mode === "rendered"/g) ?? []).length, 2);
+  assert.match(source, /<FrontReference mode=\{mode\} landmarks=\{front\} \/>/);
+  assert.match(source, /<ProfileReference mode=\{mode\} landmarks=\{profile\} \/>/);
+  assert.match(source, /Structure and realistic modes use the exact same solved landmarks/);
 });
 
-test("target values come from the scoring bands", () => {
-  assert.match(source, /getReferenceBand\(id, "neutral"\)/);
-  assert.match(source, /Every numeric target is read directly from Mog’s neutral harmony reference bands/);
+test("the canonical front has positive five-degree outward canthal tilt", () => {
+  assert.match(geometry, /Math\.cos\(5 \* Math\.PI \/ 180\)/);
+  assert.match(geometry, /Math\.sin\(5 \* Math\.PI \/ 180\)/);
+  assert.match(source, />\+5° canthal tilt</);
 });
 
-test("portrait styling is not a scoring input", () => {
-  assert.match(source, /Appearance styling never enters the score/);
-  assert.match(source, /the measured anchors stay identical between modes/);
+test("the profile and front use the production solved coordinates", () => {
+  assert.match(geometry, /pronasale: \[0\.203497, 0\.570531\]/);
+  assert.match(geometry, /softTissuePogonion: \[0\.05687, 0\.923903\]/);
+  assert.match(geometry, /const faceWidth = 0\.78/);
+  assert.match(geometry, /const jawWidth = faceWidth \/ 1\.25/);
+});
+
+test("illustrative styling is explicitly excluded from scoring", () => {
+  assert.match(source, /none of those illustrative details enters the harmony score/);
+  assert.match(source, /Metrics without a defensible comparison convention remain raw measurements/);
 });
