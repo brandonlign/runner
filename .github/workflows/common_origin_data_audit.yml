@@ -1,4 +1,4 @@
-name: Common-origin Stage-0 source verification
+name: Common-origin Stage-0 surrogate benchmark
 
 on:
   push:
@@ -15,30 +15,103 @@ on:
       - .github/workflows/common_origin_data_audit.yml
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: common-origin-stage0
+  cancel-in-progress: true
+
 jobs:
-  verify:
+  benchmark:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/common-origin-stage0-pilot
           fetch-depth: 0
-      - name: Print decoded source hashes
+      - name: Reconstruct and verify frozen source
         run: |
-          expected_parts=(
+          expected_head=(
             0e71ae20da143310c32dee44d029dd366fe44c66522c881ef18217b3007a0a01
             972a6bcfdaaedaff34da7ee5a2052697677ba82491ea3db0c83aee45b8e57517
-            27f50ddd818d98acaccd2463f5dfc5acecf356831335fdbaf9e3ed94cd76977f
-            d70c32d8c5864426f80668679ea56b42d5f60269c31312dfefbb7097807ef095
-            d40a54fd67101e12ce024a317c237123264d08a4827ace5e44e7d16f6c909001
           )
-          : > /tmp/whole.py
+          expected_tail=(
+            d566a32d0bca598c52df172e6001344cf222e8f3e24fe484de5414569cb7fa45
+            9bf17732d9840a0287ab1de2c7568a64864776bc74d0331d0ab2f462a452334f
+            9e1652372ac652c2b180332aa63b905556c4692a7f51e8b6371e222baa18b8a2
+            50aee687e55fa0509576c2afc7be942c2b93a02768aafe602844e53f20a1fbb4
+            7b06c6abcf7458c408790769797a5de2c2677ab65de49c7081c4601967396a13
+            c86a5d9c91f61ab3502693bc78284b3a1f09907d1db09557507257488bec3964
+            1ac93923b6c5eff9abfd68f53382721e32ac48b92921c5182eb09ad16c9034b3
+            946b12abf081ea16adcc64b61e4713da00f5ce74b2d5a62a0feb895980051dd3
+            abb76a80771b011be507d24349b6207f15cd750db7e6ddf17031c2605ba1be6c
+            93811747b7704fb7eaf3e285c1c10479ceb7d2c2465f6751ab1b8df402116044
+            317f1ce8e55961233f054064e3393c8df14a122c86d41cf2c61f128b1fe1755d
+            b65d8a753386c0c6f44052861e147f71a50647b6975a7c2a38fce14a5a923383
+          )
+          : > common_origin_pilot/run_stage0_surrogate.py
           index=0
-          for part in common_origin_pilot/stage0_parts/part*.b64; do
-            decoded="/tmp/part${index}"
+          for part in common_origin_pilot/stage0_parts/part00.b64 common_origin_pilot/stage0_parts/part01.b64; do
+            decoded="/tmp/head${index}.decoded"
             base64 --decode --ignore-garbage "$part" > "$decoded"
-            echo "part=$index size=$(wc -c < "$decoded") expected=${expected_parts[$index]} actual=$(sha256sum "$decoded" | cut -d' ' -f1)"
-            cat "$decoded" >> /tmp/whole.py
+            actual="$(sha256sum "$decoded" | cut -d' ' -f1)"
+            echo "head=$index size=$(wc -c < "$decoded") expected=${expected_head[$index]} actual=$actual"
+            test "$actual" = "${expected_head[$index]}"
+            cat "$decoded" >> common_origin_pilot/run_stage0_surrogate.py
             index=$((index+1))
           done
-          echo "whole_size=$(wc -c < /tmp/whole.py) whole_actual=$(sha256sum /tmp/whole.py | cut -d' ' -f1)"
+          index=0
+          for part in common_origin_pilot/stage0_tail/tail*.b64; do
+            decoded="/tmp/tail${index}.decoded"
+            base64 --decode --ignore-garbage "$part" > "$decoded"
+            actual="$(sha256sum "$decoded" | cut -d' ' -f1)"
+            echo "tail=$index size=$(wc -c < "$decoded") expected=${expected_tail[$index]} actual=$actual"
+            test "$actual" = "${expected_tail[$index]}"
+            cat "$decoded" >> common_origin_pilot/run_stage0_surrogate.py
+            index=$((index+1))
+          done
+          actual="$(sha256sum common_origin_pilot/run_stage0_surrogate.py | cut -d' ' -f1)"
+          expected="c0ba3eeef11e0826ad1332956fde5b3afb82ae0515faf1b7b9f7dc8484653edb"
+          echo "whole_size=$(wc -c < common_origin_pilot/run_stage0_surrogate.py) expected=$expected actual=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: common_origin_pilot/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip -r common_origin_pilot/requirements.txt
+      - name: Compile verified source
+        run: python -m py_compile common_origin_pilot/run_stage0_surrogate.py
+      - name: Run parent-disjoint surrogate kill test
+        run: python common_origin_pilot/run_stage0_surrogate.py
+      - name: Record execution provenance
+        run: |
+          mkdir -p common_origin_pilot/results
+          sha256sum common_origin_pilot/run_stage0_surrogate.py > common_origin_pilot/results/stage0_source_sha256.txt
+          python --version > common_origin_pilot/results/python_version.txt
+          python -m pip freeze > common_origin_pilot/results/environment.txt
+      - name: Upload benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: common-origin-stage0-surrogate
+          path: |
+            common_origin_pilot/results
+            common_origin_pilot/run_stage0_surrogate.py
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve verified results on branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add common_origin_pilot/results
+          if git diff --cached --quiet; then
+            echo 'No result changes to commit.'
+          else
+            git commit -m 'Preserve common-origin Stage-0 surrogate results'
+            git pull --rebase origin agent/common-origin-stage0-pilot
+            git push origin HEAD:agent/common-origin-stage0-pilot
+          fi
