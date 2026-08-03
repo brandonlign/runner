@@ -1,0 +1,166 @@
+name: Empirical-window null untouched even years
+
+on:
+  pull_request:
+    branches:
+      - agent/local-conformal-coherence-stage0
+    paths:
+      - .github/workflows/empirical_window_null_evenyear_stage0.yml
+      - empirical_window_null_evenyear_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: empirical-window-null-evenyear-stage0
+  cancel-in-progress: true
+
+jobs:
+  untouched-evenyear-data-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/empirical-window-null-evenyear-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify and derive untouched even-year audit
+        run: |
+          test "$(git hash-object real_shower_meta_stage0/audit_real_shower_data.py)" = "4a029051230f7c6e99b09e911f8a9e5228a58783"
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('real_shower_meta_stage0/audit_real_shower_data.py').read_text()
+          replacements = {
+              'OUT_DIR = ROOT / "results" / "data_audit"': 'OUT_DIR = Path("empirical_window_null_evenyear_stage0/results/data_audit")',
+              'YEARS = (2019, 2021, 2023, 2025)': 'YEARS = (2020, 2022, 2024)',
+              'profile["strong"] = bool(profile["quality_events"] >= 1000 and profile["represented_years"] == 4)': 'profile["strong"] = bool(profile["quality_events"] >= 750 and profile["represented_years"] == 3)',
+              '"strong_showers_at_least_12": len(strong) >= 12': '"strong_showers_at_least_10": len(strong) >= 10',
+              '"multi_shower_complex_units_at_least_6": len(multi_shower_complexes) >= 6': '"multi_shower_complex_units_at_least_5": len(multi_shower_complexes) >= 5',
+              '"quality_sporadics_at_least_200000": total_sporadic_quality >= 200_000': '"quality_sporadics_at_least_150000": total_sporadic_quality >= 150_000',
+              'GhostStream was excluded. Data came from 48 official GMN monthly trajectory summaries and the IAU MDC shower file.': 'Untouched confirmation data came from 36 official GMN monthly trajectory summaries and the IAU MDC shower file.',
+          }
+          for old, new in replacements.items():
+              if source.count(old) != 1:
+                  raise RuntimeError(f'Expected exactly one source occurrence: {old!r}')
+              source = source.replace(old, new)
+          destination = Path('/tmp/audit_evenyear_data.py')
+          destination.write_text(source)
+          print('derived bytes:', destination.stat().st_size)
+          PY
+          python -m py_compile /tmp/audit_evenyear_data.py
+      - name: Download and audit untouched even-year data
+        run: python /tmp/audit_evenyear_data.py
+      - name: Enforce frozen data gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('empirical_window_null_evenyear_stage0/results/data_audit/audit.json').read_text())
+          print(json.dumps({
+              'eligible_count': audit['eligible_count'],
+              'strong_count': audit['strong_count'],
+              'eligible_complex_units': audit['eligible_complex_units'],
+              'total_quality_sporadics': audit['total_quality_sporadics'],
+              'gates': audit['gates'],
+              'verdict': audit['verdict'],
+          }, indent=2))
+          if not all(audit['gates'].values()):
+              raise SystemExit('Frozen untouched even-year data gate failed')
+          PY
+      - name: Record data provenance
+        if: always()
+        run: |
+          mkdir -p empirical_window_null_evenyear_stage0/results/data_audit
+          git hash-object real_shower_meta_stage0/audit_real_shower_data.py > empirical_window_null_evenyear_stage0/results/data_audit/base_source_blob_sha.txt
+          sha256sum empirical_window_null_evenyear_stage0/PROTOCOL.md empirical_window_null_evenyear_stage0/DEVELOPMENT_RECORD.md > empirical_window_null_evenyear_stage0/results/data_audit/protocol_sha256.txt
+      - name: Upload untouched even-year artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: empirical-window-null-evenyear-data
+          path: empirical_window_null_evenyear_stage0/results/data_audit
+          if-no-files-found: error
+          retention-days: 90
+
+  untouched-evenyear-null-audit:
+    needs: untouched-evenyear-data-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      NULL_SOURCE_SHA256: '63a13c9d96c755eeb09a1823ef49445e050c11cd574c10db922029b2a917cd6a'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/empirical-window-null-evenyear-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: empirical-window-null-evenyear-data
+          path: input
+      - name: Verify data gate and decode frozen null source
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib, json
+          from pathlib import Path
+          audit = json.loads(Path('input/audit.json').read_text())
+          if tuple(audit['configuration']['years']) != (2020, 2022, 2024):
+              raise RuntimeError('Unexpected confirmation years')
+          if not all(audit['gates'].values()):
+              raise RuntimeError('Data gate did not pass')
+          encoded = ''.join(Path('empirical_window_null_evenyear_stage0/run_empirical_window_null_audit.py.gz.b64').read_text().split())
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest != '${{ env.NULL_SOURCE_SHA256 }}':
+              raise RuntimeError(f'null source hash mismatch: {digest}')
+          Path('/tmp/run_empirical_window_null_audit.py').write_bytes(raw)
+          print('selected events sha256:', hashlib.sha256(Path('input/selected_events.jsonl.gz').read_bytes()).hexdigest())
+          print('null source sha256:', digest)
+          PY
+          python -m py_compile /tmp/run_empirical_window_null_audit.py
+      - name: Run label-blind untouched null audit
+        run: |
+          mkdir -p output
+          python /tmp/run_empirical_window_null_audit.py \
+            --events input/selected_events.jsonl.gz \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --output output
+          cat output/EMPIRICAL_WINDOW_NULL_AUDIT.md
+      - name: Enforce frozen null gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/empirical_window_null_audit.json').read_text())
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen untouched even-year null gate failed')
+          PY
+      - name: Record null provenance
+        if: always()
+        run: |
+          sha256sum \
+            empirical_window_null_evenyear_stage0/PROTOCOL.md \
+            empirical_window_null_evenyear_stage0/DEVELOPMENT_RECORD.md \
+            empirical_window_null_evenyear_stage0/run_empirical_window_null_audit.py.gz.b64 \
+            input/selected_events.jsonl.gz \
+            input/audit.json \
+            > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload untouched null evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: empirical-window-null-evenyear-stage0
+          path: output
+          if-no-files-found: error
+          retention-days: 90
