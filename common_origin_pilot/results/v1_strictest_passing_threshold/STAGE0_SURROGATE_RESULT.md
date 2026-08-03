@@ -8,8 +8,8 @@
 - Best baseline TPR at matched 1% FPR: **0.967**
 - Pair TPR gain: **-0.111**
 - Learned weak-stream recovery (k=4,6,8): **0.000**
-- Best baseline weak-stream recovery: **0.102**
-- Weak-stream recovery gain: **-0.102**
+- Best baseline weak-stream recovery: **0.058**
+- Weak-stream recovery gain: **-0.058**
 - Expected calibration error: **0.117**
 - FPR after transferring the calibration threshold to unseen parents: **0.592**
 
