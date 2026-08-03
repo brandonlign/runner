@@ -11,7 +11,7 @@ test("front and side structure and realistic views render naturally", async ({ p
   await page.goto("/");
   const section = page.locator("#ideal-reference");
   await expect(section).toBeVisible();
-  await expect(page.getByText("positive canthal tilt", { exact: true })).toBeVisible();
+  await expect(page.getByText("+5° canthal tilt", { exact: true })).toBeVisible();
   await expect(section.locator("svg")).toHaveAttribute("aria-label", "Front target face in structure mode");
   await section.screenshot({ path: `${output}/front-structure.png` });
 
