@@ -1,0 +1,50 @@
+name: Dynamical-coherence labeled data gate
+
+on:
+  push:
+    branches:
+      - agent/dynamical-coherence-stage0
+    paths:
+      - dynamical_coherence_stage0/**
+      - .github/workflows/dynamical_coherence_data_gate.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - dynamical_coherence_stage0/**
+      - .github/workflows/dynamical_coherence_data_gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dynamical-coherence-data-gate
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/dynamical-coherence-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile frozen extraction
+        run: python -m py_compile dynamical_coherence_stage0/extract_controls.py
+      - name: Extract labeled controls and matched-month sporadics
+        run: python dynamical_coherence_stage0/extract_controls.py
+      - name: Record provenance
+        run: |
+          sha256sum dynamical_coherence_stage0/extract_controls.py dynamical_coherence_stage0/PROTOCOL.md > dynamical_coherence_stage0/results/data_gate/source_sha256.txt
+          python --version > dynamical_coherence_stage0/results/data_gate/python_version.txt
+      - name: Upload data-gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamical-coherence-data-gate
+          path: dynamical_coherence_stage0/results/data_gate
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,57 @@
+name: Covariance-flow fresh-primary probe
+
+on:
+  push:
+    branches:
+      - agent/dynamical-coherence-stage0
+    paths:
+      - covariance_flow_stage0/probe_rebound_fresh_primary.py
+      - covariance_flow_stage0/requirements.txt
+      - .github/workflows/covariance_flow_fresh_primary_probe.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - covariance_flow_stage0/probe_rebound_fresh_primary.py
+      - covariance_flow_stage0/requirements.txt
+      - .github/workflows/covariance_flow_fresh_primary_probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: covariance-flow-fresh-primary-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/dynamical-coherence-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: covariance_flow_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r covariance_flow_stage0/requirements.txt
+      - name: Compile probe
+        run: python -m py_compile covariance_flow_stage0/probe_rebound_fresh_primary.py
+      - name: Run fresh-primary multi-particle probe
+        run: python covariance_flow_stage0/probe_rebound_fresh_primary.py
+      - name: Record provenance
+        run: |
+          sha256sum covariance_flow_stage0/probe_rebound_fresh_primary.py > covariance_flow_stage0/results/fresh_primary_probe/source_sha256.txt
+          python --version > covariance_flow_stage0/results/fresh_primary_probe/python_version.txt
+          python -m pip freeze > covariance_flow_stage0/results/fresh_primary_probe/environment.txt
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: covariance-flow-fresh-primary-probe
+          path: covariance_flow_stage0/results/fresh_primary_probe
+          if-no-files-found: error
+          retention-days: 90
