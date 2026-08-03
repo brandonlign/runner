@@ -12,7 +12,8 @@ OUT_DIR = Path("covariance_flow_stage0/results/rebound_probe")
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     simulation = rebound.Simulation()
-    rebound.data.add_outer_solar_system(simulation)
+    # REBOUND 5.x loads the packaged test configuration through Simulation.add.
+    simulation.add("outer solar system")
     simulation.integrator = "ias15"
     simulation.move_to_com()
 
@@ -38,6 +39,7 @@ def main() -> None:
 
     payload = {
         "rebound_version": rebound.__version__,
+        "packaged_initial_conditions": "outer solar system",
         "particle_count_outer_solar_system": particle_count,
         "initial_energy": initial_energy,
         "final_energy_after_one_nominal_year_backward": final_energy,
