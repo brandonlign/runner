@@ -57,10 +57,12 @@ jobs:
           test -s dynamical_matching_stage0/input/data_gate/selected_events.jsonl.gz
           test -s dynamical_matching_stage0/input/data_gate/data_gate.json
       - name: Compile frozen matching gate
-        run: python -m py_compile dynamical_matching_stage0/run_static_matching.py
-      - name: Run static matched-null gate
         run: |
-          python dynamical_matching_stage0/run_static_matching.py \
+          python -m py_compile dynamical_matching_stage0/run_static_matching.py
+          python -m py_compile dynamical_matching_stage0/run_static_matching_corrected.py
+      - name: Run clone-ready static matched-null gate
+        run: |
+          python dynamical_matching_stage0/run_static_matching_corrected.py \
             --events dynamical_matching_stage0/input/data_gate/selected_events.jsonl.gz \
             --data-gate dynamical_matching_stage0/input/data_gate/data_gate.json \
             --output dynamical_matching_stage0/results
@@ -68,6 +70,7 @@ jobs:
         run: |
           sha256sum \
             dynamical_matching_stage0/run_static_matching.py \
+            dynamical_matching_stage0/run_static_matching_corrected.py \
             dynamical_matching_stage0/PROTOCOL.md \
             dynamical_matching_stage0/FEASIBILITY_CORRECTION.md \
             > dynamical_matching_stage0/results/source_sha256.txt
