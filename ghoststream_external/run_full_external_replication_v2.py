@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Authoritative schema-complete rerun.
 from __future__ import annotations
 import io, zipfile
 from pathlib import Path
