@@ -1,0 +1,84 @@
+name: Mog reference-face validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/mog_reference_face_validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mog-reference-face-validation
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MOG_REPO_TOKEN: ${{ secrets.MOG_REPO_TOKEN }}
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      REPO_PAT: ${{ secrets.REPO_PAT }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+      PAT: ${{ secrets.PAT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mog-reference-face-validation
+
+      - name: Check out exact Mog commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="${MOG_REPO_TOKEN:-${PRIVATE_REPO_TOKEN:-${REPO_PAT:-${GH_PAT:-${PAT:-}}}}}"
+          if [ -z "$token" ]; then
+            echo "No cross-repository token is configured in the runner repository."
+            exit 2
+          fi
+          echo "::add-mask::$token"
+          git clone --filter=blob:none "https://x-access-token:${token}@github.com/brandonlign/mog.git" mog
+          cd mog
+          git checkout --detach a31f3ca3bbdf4984754d4f2231bb9273949c739e
+          test "$(git rev-parse HEAD)" = "a31f3ca3bbdf4984754d4f2231bb9273949c739e"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mog/package-lock.json
+
+      - name: Install frozen dependencies
+        working-directory: mog
+        run: npm ci
+
+      - name: Verify renderer replacement
+        working-directory: mog
+        run: |
+          test -f src/components/methodology/ideal-reference-face-natural.tsx
+          test ! -e src/components/methodology/ideal-reference-face.tsx
+          grep -F 'ideal-reference-face-natural' src/app/methodology/page.tsx
+          grep -F 'Positive canthal tilt' src/components/methodology/ideal-reference-face-natural.tsx
+
+      - name: Lint
+        working-directory: mog
+        run: npm run lint
+
+      - name: Typecheck
+        working-directory: mog
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: mog
+        run: npm test
+
+      - name: Logic tests
+        working-directory: mog
+        run: npm run test:logic
+
+      - name: Production build
+        working-directory: mog
+        run: npm run build
