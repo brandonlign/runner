@@ -1,0 +1,109 @@
+name: Mondrian scorer interface audit
+
+on:
+  pull_request:
+    branches:
+      - agent/mondrian-clique-coverage-normalized-development
+    paths:
+      - .github/workflows/mondrian_scorer_interface_audit.yml
+      - mondrian_scorer_interface_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mondrian-scorer-interface-audit
+  cancel-in-progress: true
+
+jobs:
+  no-score-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mondrian-scorer-interface-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode exact passed scorer and inspect interface
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('mondrian_clique_development/source_parts_v2')
+          parts = sorted(root.glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected_digest = 'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8'
+          if digest != expected_digest:
+              raise RuntimeError(f'scorer source mismatch: {digest}')
+          source_path = Path('output/run_mondrian_clique_development.py')
+          source_path.write_bytes(source)
+
+          tree = ast.parse(source.decode('utf-8'))
+          functions = []
+          constants = {}
+          imports = []
+          for node in tree.body:
+              if isinstance(node, (ast.Import, ast.ImportFrom)):
+                  imports.append(ast.unparse(node))
+              elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  functions.append({
+                      'name': node.name,
+                      'signature': ast.unparse(node.args),
+                      'lineno': node.lineno,
+                  })
+              elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+          interface = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'imports': imports,
+              'constants': constants,
+              'functions': functions,
+          }
+          Path('output/interface.json').write_text(json.dumps(interface, indent=2, sort_keys=True))
+          Path('output/SOURCE_AUDIT.md').write_text(
+              '# Mondrian scorer source audit\n\n'
+              f'- SHA-256: `{digest}`\n'
+              f'- bytes: **{len(source):,}**\n'
+              f'- functions: **{len(functions)}**\n'
+              '- scientific scores computed: **0**\n'
+          )
+          print(json.dumps(interface, indent=2, sort_keys=True))
+          PY
+          python -m py_compile output/run_mondrian_clique_development.py
+      - name: Record provenance
+        run: |
+          sha256sum \
+            mondrian_scorer_interface_audit/PROTOCOL.md \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            output/run_mondrian_clique_development.py \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload exact source audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: mondrian-scorer-interface-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
