@@ -1,0 +1,174 @@
+name: SonotaCo confirmation wrapper source interface audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2024-fixed4-confirmation
+    paths:
+      - .github/workflows/sonotaco_confirmation_wrapper_source_interface_audit.yml
+      - sonotaco_confirmation_wrapper_source_interface/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-confirmation-wrapper-source-interface-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-confirmation-wrapper-source-interface-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode and inventory exact confirmation wrapper
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          echo 'c558141ce984f3b9d5ee5eecf7e80d3df54ce7ac0e0ac1e46ca5d84a7b7017d2  sonotaco_fixed4_confirmation/source_parts/part00.b64' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          payload = Path('sonotaco_fixed4_confirmation/source_parts/part00.b64')
+          encoded = ''.join(payload.read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '94081bcc564170b7273704f94d098fd8bb2d5b0e63e53d95117b48415f1031e7'
+          if digest != expected:
+              raise RuntimeError(f'confirmation wrapper source mismatch: {digest}')
+          compile(source, 'confirmation_wrapper.py', 'exec')
+          text = source.decode('utf-8')
+          tree = ast.parse(text)
+
+          constants = {}
+          functions = []
+          strings = []
+          gate_names = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+              elif isinstance(node, ast.FunctionDef):
+                  functions.append({
+                      'name': node.name,
+                      'args': [arg.arg for arg in node.args.args],
+                      'line': node.lineno,
+                      'end_line': node.end_lineno,
+                  })
+              elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                  strings.append(node.value)
+              elif isinstance(node, ast.Dict):
+                  for key in node.keys:
+                      if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                          value = key.value
+                          if any(token in value for token in ('fpr', 'auc', 'recall', 'parser', 'support', 'fold', 'mapped', 'native', 'blind')):
+                              gate_names.append(value)
+
+          seed_literals = sorted({value for value in strings if 'confirmation-' in value})
+          archive_literals = sorted({value for value in strings if any(token in value for token in ('024a', '20240101', '.zip', '.csv'))})
+          source_hash_literals = sorted({value for value in strings if len(value) == 64 and all(ch in '0123456789abcdef' for ch in value)})
+          required_gate_fragments = [
+              'candidate_fpr_005_le_006',
+              'candidate_fpr_001_le_002',
+              'candidate_worst_sector_fpr_005_le_012',
+              'candidate_weak_auc_ge_075',
+              'candidate_auc_within_003_of_strongest_comparator',
+              'candidate_auc_exceeds_density',
+              'candidate_auc_exceeds_dbscan',
+              'four_of_five_folds_auc_ge_070',
+              'no_fold_auc_below_065',
+              'recall_005_k4_ge_015',
+              'recall_001_k4_ge_005',
+              'recall_005_k6_ge_030',
+              'recall_001_k6_ge_015',
+              'recall_005_k8_ge_045',
+              'recall_001_k8_ge_025',
+              'recall_monotonic_005',
+              'recall_monotonic_001',
+          ]
+          gates = {
+              'payload_hash_exact': hashlib.sha256(payload.read_bytes()).hexdigest() == 'c558141ce984f3b9d5ee5eecf7e80d3df54ce7ac0e0ac1e46ca5d84a7b7017d2',
+              'source_hash_exact': digest == expected,
+              'source_compiles_and_parses': True,
+              'fixed_candidate_scale_4': constants.get('CANDIDATE_SCALE') == 4.0,
+              'original_scale_2': constants.get('ORIGINAL_SCALE') == 2.0,
+              'two_scales_only': constants.get('SOLAR_SCALES') == (2.0, 4.0),
+              'year_specific_identity_exposed': constants.get('YEAR') == 2024 and constants.get('CORPUS') == 'sonotaco-2024-fixed4-confirmation',
+              'four_confirmation_seed_prefixes': len(seed_literals) == 4,
+              'complete_scientific_gates_present': all(fragment in text for fragment in required_gate_fragments),
+              'parser_function_present': any(item['name'] == 'parse_sonotaco_events' for item in functions),
+              'detector_not_executed': True,
+              'archive_not_downloaded': True,
+              'zip_member_not_opened': True,
+          }
+          verdict = 'PASS_SONOTACO_CONFIRMATION_WRAPPER_SOURCE_INTERFACE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_CONFIRMATION_WRAPPER_SOURCE_INTERFACE_AUDIT'
+          result = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'constants': constants,
+              'functions': functions,
+              'seed_literals': seed_literals,
+              'archive_literals': archive_literals,
+              'source_hash_literals': source_hash_literals,
+              'gate_names': sorted(set(gate_names)),
+              'gates': gates,
+              'data_opened': False,
+              'score_executed': False,
+              'verdict': verdict,
+          }
+          Path('output/confirmation_wrapper_source.py').write_text(text, encoding='utf-8')
+          Path('output/source_interface.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          report = [
+              '# SonotaCo confirmation-wrapper source-interface audit',
+              '',
+              f'Verdict: **{verdict}**',
+              '',
+              f'- source SHA-256: `{digest}`',
+              f'- source bytes: {len(source)}',
+              f'- functions: {len(functions)}',
+              f'- confirmation seed prefixes: {len(seed_literals)}',
+              f'- archive/member literals: {len(archive_literals)}',
+              '- archive downloaded: no',
+              '- ZIP member opened: no',
+              '- detector score executed: no',
+              '',
+              '## Gates',
+              '',
+          ]
+          report.extend(f"- {'PASS' if value else 'FAIL'} — `{key}`" for key, value in gates.items())
+          Path('output/SOURCE_INTERFACE_RESULT.md').write_text('\n'.join(report) + '\n', encoding='utf-8')
+          print('\n'.join(report))
+          if not all(gates.values()):
+              raise SystemExit('Frozen confirmation-wrapper source-interface audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_confirmation_wrapper_source_interface/PROTOCOL.md \
+            sonotaco_fixed4_confirmation/PROTOCOL.md \
+            sonotaco_fixed4_confirmation/source_parts/part00.b64 \
+            > output/source_files_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload source-interface evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-confirmation-wrapper-source-interface-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
