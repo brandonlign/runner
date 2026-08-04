@@ -1,0 +1,44 @@
+name: Export validated Mondrian source
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/export_mondrian_source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mondrian-clique-2018-confirmation
+      - name: Decode validated source
+        run: |
+          mkdir -p output
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+          path = Path('mondrian_clique_development/run_mondrian_clique_development.py.gz.b64')
+          source = gzip.decompress(base64.b64decode(''.join(path.read_text().split()), validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != 'e3dc3dfcbfbfdc15bead220464213ee271f7411cbf550bbecf0536153b85344e':
+              raise RuntimeError(digest)
+          Path('output/run_mondrian_clique_development.py').write_bytes(source)
+          Path('output/source_sha256.txt').write_text(digest + '\n')
+          print(digest, len(source))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validated-mondrian-source
+          path: output
+          if-no-files-found: error
+          retention-days: 30
