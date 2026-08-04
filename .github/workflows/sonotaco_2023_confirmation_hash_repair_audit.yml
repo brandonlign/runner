@@ -1,0 +1,243 @@
+name: SonotaCo 2023 confirmation hash repair audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2023-schema-source-audit
+    paths:
+      - .github/workflows/sonotaco_2023_confirmation_hash_repair_audit.yml
+      - sonotaco_2023_confirmation_hash_repair/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-2023-confirmation-hash-repair-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2023-confirmation-hash-repair-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download exact PR144 schema/source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download 30920089789 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-schema-source-audit \
+            --dir input
+          echo '9619dfc0b339b39d287833778769f12a643e2b0157fdcd6115cd9c40be528322  input/audit_sonotaco_2023_v2.py' | sha256sum -c -
+          echo '1c119e0dfc154f34da06097da6c4a4cb2f7c6b11b7a1e6a9a9330baf25f1567e  input/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo '6057e584ad23409996cd04ff595222c76cddff1d05f2da4a3e8c10bed973ca67  input/sonotaco_2023_confirmation.py.gz.b64' | sha256sum -c -
+      - name: Apply and prove exactly three transport-hash substitutions
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          parser_path = Path('input/audit_sonotaco_2023_v2.py')
+          source_path = Path('input/run_sonotaco_2023_fixed4_confirmation.py')
+          parser_bytes = parser_path.read_bytes()
+          source_bytes = source_path.read_bytes()
+          parser_text = parser_bytes.decode('utf-8')
+          source_text = source_bytes.decode('utf-8')
+
+          old_archive = '409bb958c6f114e542d818e7c4fcf7a58d89b2fb33090a442c8087bdcaa1540f'
+          new_archive = '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430'
+          old_member = '0f25a0f9ea174c2b99915f48a61b35e35e3cde7f3117d82d4e05f8c4112acb00'
+          new_member = '3f1cfedf59553568d6471e022ad032ec5ba71ce5287a24071d30bcc1e8bac685'
+          old_parser = 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b'
+          new_parser = '9619dfc0b339b39d287833778769f12a643e2b0157fdcd6115cd9c40be528322'
+          substitutions = [
+              (old_archive, new_archive, 'archive_sha256'),
+              (old_member, new_member, 'member_sha256'),
+              (old_parser, new_parser, 'parser_source_sha256'),
+          ]
+
+          counts = {}
+          repaired = source_text
+          for old, new, name in substitutions:
+              counts[name] = {
+                  'old_before': repaired.count(old),
+                  'new_before': repaired.count(new),
+              }
+              if repaired.count(old) != 1 or repaired.count(new) != 0:
+                  raise RuntimeError(f'unauthorized multiplicity before {name} repair')
+              repaired = repaired.replace(old, new, 1)
+              counts[name].update({
+                  'old_after': repaired.count(old),
+                  'new_after': repaired.count(new),
+              })
+
+          repaired_bytes = repaired.encode('utf-8')
+          repaired_sha = hashlib.sha256(repaired_bytes).hexdigest()
+          if len(repaired_bytes) != 30395:
+              raise RuntimeError(f'repaired source byte mismatch: {len(repaired_bytes)}')
+          expected_repaired_sha = '32d199a652a9469c10ac3b2d9496177c11bb12901ccf2c3c9b24bbfd86ff4cb7'
+          if repaired_sha != expected_repaired_sha:
+              raise RuntimeError(f'repaired source hash mismatch: {repaired_sha}')
+
+          compile(repaired_bytes, 'run_sonotaco_2023_fixed4_confirmation.py', 'exec')
+          repaired_tree = ast.parse(repaired, filename='run_sonotaco_2023_fixed4_confirmation.py')
+          constants = {}
+          for node in repaired_tree.body:
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+
+          payload = base64.b64encode(gzip.compress(repaired_bytes, compresslevel=9, mtime=0)).decode('ascii') + '\n'
+          payload_sha = hashlib.sha256(payload.encode('ascii')).hexdigest()
+          expected_payload_sha = 'c6fc5283a55e6b496748dd327607fd9a0cfed0d303fbf96b1f6e4b368feaeee4'
+          if payload_sha != expected_payload_sha:
+              raise RuntimeError(f'repaired payload hash mismatch: {payload_sha}')
+
+          reversed_confirmation = repaired
+          for old, new, _ in reversed(substitutions):
+              if reversed_confirmation.count(new) != 1:
+                  raise RuntimeError('reversal multiplicity mismatch')
+              reversed_confirmation = reversed_confirmation.replace(new, old, 1)
+          reversed_confirmation = reversed_confirmation.replace('023a', '024a').replace('2023', '2024')
+          reversed_confirmation_sha = hashlib.sha256(reversed_confirmation.encode('utf-8')).hexdigest()
+          expected_2024_confirmation = '94081bcc564170b7273704f94d098fd8bb2d5b0e63e53d95117b48415f1031e7'
+
+          reversed_parser = parser_text.replace(new_member, old_member)
+          reversed_parser = reversed_parser.replace(new_archive, old_archive)
+          reversed_parser = reversed_parser.replace('023a.zip', '024a.zip').replace('2023', '2024')
+          reversed_parser_sha = hashlib.sha256(reversed_parser.encode('utf-8')).hexdigest()
+          expected_2024_parser = 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b'
+
+          required_gate_literals = {
+              'at_least_20_supported_bins',
+              'at_least_30_eligible_showers',
+              'pooled_fpr_005_le_006',
+              'pooled_fpr_001_le_002',
+              'worst_reporting_sector_fpr_005_le_012',
+              'candidate_weak_auc_ge_075',
+              'candidate_auc_within_003_of_strongest_comparator',
+              'candidate_auc_exceeds_density',
+              'candidate_auc_exceeds_dbscan',
+              'four_of_five_folds_auc_ge_070',
+              'no_fold_auc_below_065',
+              'recall_005_k4_ge_015',
+              'recall_001_k4_ge_005',
+              'recall_005_k6_ge_030',
+              'recall_001_k6_ge_015',
+              'recall_005_k8_ge_045',
+              'recall_001_k8_ge_025',
+              'recall_monotonic_at_005',
+              'recall_monotonic_at_001',
+          }
+          string_literals = {
+              node.value for node in ast.walk(repaired_tree)
+              if isinstance(node, ast.Constant) and isinstance(node.value, str)
+          }
+          gates = {
+              'exact_input_parser_hash': hashlib.sha256(parser_bytes).hexdigest() == new_parser,
+              'exact_unrepaired_source_hash': hashlib.sha256(source_bytes).hexdigest() == '1c119e0dfc154f34da06097da6c4a4cb2f7c6b11b7a1e6a9a9330baf25f1567e',
+              'exact_three_one_occurrence_substitutions': all(
+                  item['old_before'] == 1 and item['new_before'] == 0 and item['old_after'] == 0 and item['new_after'] == 1
+                  for item in counts.values()
+              ),
+              'repaired_source_bytes_exact': len(repaired_bytes) == 30395,
+              'repaired_source_hash_exact': repaired_sha == expected_repaired_sha,
+              'repaired_payload_hash_exact': payload_sha == expected_payload_sha,
+              'repaired_source_compiles_and_parses': True,
+              'year_exact_2023': constants.get('YEAR') == 2023,
+              'archive_hash_exact_2023': constants.get('ARCHIVE_SHA256') == new_archive,
+              'member_exact_2023': constants.get('MEMBER') == '023a/_U2_20230101_S.csv',
+              'member_hash_exact_2023': constants.get('MEMBER_SHA256') == new_member,
+              'parser_hash_exact_2023': constants.get('PARSER_V2_SOURCE_SHA256') == new_parser,
+              'fixed_solar_scale_exact_4': constants.get('FIXED_SOLAR_SCALE') == 4.0,
+              'blind_interval_exact_20_55': constants.get('BLIND_SOLAR_MIN') == 20.0 and constants.get('BLIND_SOLAR_MAX') == 55.0,
+              'all_scientific_gates_present': required_gate_literals <= string_literals,
+              'confirmation_reverse_exact_2024': reversed_confirmation_sha == expected_2024_confirmation,
+              'parser_reverse_exact_2024': reversed_parser_sha == expected_2024_parser,
+              'sonotaco_2024_archive_not_accessed': True,
+              'no_archive_or_mapping_download': True,
+              'no_detector_execution': True,
+              'no_scientific_endpoint': True,
+          }
+          verdict = 'PASS_SONOTACO_2023_CONFIRMATION_HASH_REPAIR_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_2023_CONFIRMATION_HASH_REPAIR_AUDIT'
+
+          Path('output/audit_sonotaco_2023_v2.py').write_bytes(parser_bytes)
+          Path('output/run_sonotaco_2023_fixed4_confirmation.py').write_bytes(repaired_bytes)
+          Path('output/sonotaco_2023_confirmation.py.gz.b64').write_text(payload, encoding='ascii')
+          result = {
+              'input': {
+                  'schema_source_run': 30920089789,
+                  'parser_sha256': hashlib.sha256(parser_bytes).hexdigest(),
+                  'unrepaired_confirmation_sha256': hashlib.sha256(source_bytes).hexdigest(),
+              },
+              'substitution_counts': counts,
+              'output': {
+                  'repaired_source_bytes': len(repaired_bytes),
+                  'repaired_source_sha256': repaired_sha,
+                  'repaired_payload_sha256': payload_sha,
+                  'reverse_confirmation_sha256': reversed_confirmation_sha,
+                  'reverse_parser_sha256': reversed_parser_sha,
+              },
+              'constants': {
+                  key: constants.get(key) for key in [
+                      'YEAR', 'CORPUS', 'ARCHIVE_SHA256', 'MEMBER', 'MEMBER_SHA256',
+                      'PARSER_V2_SOURCE_SHA256', 'FIXED_SOLAR_SCALE',
+                      'BLIND_SOLAR_MIN', 'BLIND_SOLAR_MAX',
+                  ]
+              },
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/sonotaco_2023_confirmation_hash_repair_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# SonotaCo 2023 confirmation hash repair audit', '',
+              f'Verdict: **{verdict}**', '',
+              f'- repaired source SHA-256: `{repaired_sha}`',
+              f'- repaired payload SHA-256: `{payload_sha}`',
+              f'- reverse 2024 confirmation SHA-256: `{reversed_confirmation_sha}`',
+              f'- reverse 2024 parser SHA-256: `{reversed_parser_sha}`', '',
+              '## Gates', '',
+          ]
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_2023_CONFIRMATION_HASH_REPAIR_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen 2023 confirmation hash repair audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_2023_confirmation_hash_repair/PROTOCOL.md \
+            .github/workflows/sonotaco_2023_confirmation_hash_repair_audit.yml \
+            input/audit_sonotaco_2023_v2.py \
+            input/run_sonotaco_2023_fixed4_confirmation.py \
+            input/sonotaco_2023_confirmation.py.gz.b64 \
+            > output/source_files_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload exact repaired confirmation sources
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2023-confirmation-hash-repair-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
