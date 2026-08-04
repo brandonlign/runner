@@ -30,10 +30,14 @@ jobs:
           python-version: '3.12'
       - name: Install frozen analysis dependency
         run: python -m pip install --upgrade pip scipy==1.16.1
-      - name: Verify synthesis source
+      - name: Verify exact committed synthesis source
         run: |
           set -euo pipefail
-          echo '14af5ad4765706c3905c9e199858c6d239e165ad1d2da2aba28fad3f0869c0b8  sonotaco_fixed4_replication_synthesis/synthesize.py' | sha256sum -c -
+          observed="$(git hash-object sonotaco_fixed4_replication_synthesis/synthesize.py)"
+          expected='509c2513d169270876e3db20890a7182c1cbdfc3'
+          echo "synthesis source Git blob: $observed"
+          test "$observed" = "$expected"
+          sha256sum sonotaco_fixed4_replication_synthesis/synthesize.py
           python -m py_compile sonotaco_fixed4_replication_synthesis/synthesize.py
       - name: Download immutable 2025 development artifact
         env:
