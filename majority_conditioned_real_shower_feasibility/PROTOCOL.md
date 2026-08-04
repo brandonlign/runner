@@ -18,11 +18,18 @@ For seven years, the pointwise annual median is the fourth order statistic. A sh
 
 - official GMN monthly trajectory summaries for every month of 2019 through 2025 inclusive: exactly 84 URLs under `https://globalmeteornetwork.org/data/traj_summary_data/monthly/`;
 - exact PR #14 quality parser from commit `bbd3eb514df2c0af7e8648ebc3ced5edbb7eec87`;
-- exact parser SHA-256 `4a029051230f7c6e99b09e911f8a9e5228a58783`;
+- exact parser Git blob SHA `4a029051230f7c6e99b09e911f8a9e5228a58783`;
+- the extracted parser file's SHA-256 is recorded as provenance output before any data download;
 - exact PR #14 audit artifact from runner workflow `30855193522`;
 - audit SHA-256 `f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778`.
 
 The prior audit supplies only the frozen IAU-number-to-complex mapping. New monthly source hashes and aggregate counts are recorded as outputs of this data gate.
+
+## Manifest-v2 correction
+
+Workflow `30881045533` stopped before any monthly source or prior audit artifact was opened because manifest v1 incorrectly supplied the 40-character Git blob ID to `sha256sum`. That infrastructure failure is preserved in `MANIFEST_V1_RESULT.md`.
+
+Manifest v2 changes only provenance verification: it compares the immutable commit-path Git blob to the exact frozen blob SHA, extracts that file, records its ordinary SHA-256, and compiles it. Every scientific year, month, URL, parser byte, blind interval, support definition, output boundary, and continuation gate remains unchanged.
 
 ## GhostStream blindness
 
