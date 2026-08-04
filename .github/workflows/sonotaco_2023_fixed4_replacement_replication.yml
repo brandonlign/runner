@@ -1,0 +1,104 @@
+name: SonotaCo 2023 fixed4 replacement replication
+
+on:
+  pull_request:
+    branches: [agent/sonotaco-2023-confirmation-source-repair-v2]
+    paths:
+      - .github/workflows/sonotaco_2023_fixed4_replacement_replication.yml
+      - sonotaco_2023_fixed4_replacement_replication/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-2023-fixed4-replacement-replication
+  cancel-in-progress: true
+
+jobs:
+  replicate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2023-fixed4-replacement-replication
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Retrieve exact repaired sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download 30920687116 --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 --dir input
+          echo '9619dfc0b339b39d287833778769f12a643e2b0157fdcd6115cd9c40be528322  input/audit_sonotaco_2023_v2.py' | sha256sum -c -
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo '2b09fafcb8a2d7886cb2e0b1b90f2447580b308d755269addd500535f2f4da0f  input/sonotaco_2023_confirmation_v2.py.gz.b64' | sha256sum -c -
+          python -m py_compile input/audit_sonotaco_2023_v2.py input/run_sonotaco_2023_fixed4_confirmation.py
+      - name: Retrieve exact mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/mapping
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit --dir input/mapping
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
+          cp input/mapping/audit.json input/audit.json
+      - name: Download exact SonotaCo 2023 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+      - name: Execute frozen one-shot replication
+        run: |
+          set -euo pipefail
+          python input/run_sonotaco_2023_fixed4_confirmation.py \
+            --archive input/023a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --phase-source-parts sonotaco_k4_phase_scale_diagnostic/source_parts \
+            --parser-v2-source input/audit_sonotaco_2023_v2.py \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2023_FIXED4_CONFIRMATION.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum sonotaco_2023_fixed4_replacement_replication/PROTOCOL.md \
+            .github/workflows/sonotaco_2023_fixed4_replacement_replication.yml \
+            input/audit_sonotaco_2023_v2.py input/run_sonotaco_2023_fixed4_confirmation.py \
+            input/sonotaco_2023_confirmation_v2.py.gz.b64 input/audit.json input/023a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          git rev-parse HEAD > output/head_commit.txt
+      - name: Upload immutable evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2023-fixed4-replacement-replication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sonotaco_2023_fixed4_confirmation.json').read_text())
+          print(json.dumps({'gates': result['gates'], 'verdict': result['verdict']}, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen replacement replication gate failed')
+          PY
