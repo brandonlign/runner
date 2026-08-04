@@ -1,0 +1,72 @@
+name: Worst-family recurrence Stage-0
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/worst_family_recurrence_stage0.yml
+      - worst_family_recurrence_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worst-family-recurrence-stage0
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/worst-family-recurrence-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: replicastream_stage0/requirements.txt
+      - run: python -m pip install --upgrade pip -r replicastream_stage0/requirements.txt
+      - name: Decode and verify frozen source
+        run: |
+          mkdir -p worst_family_recurrence_stage0/results
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          encoded = ''.join(Path('worst_family_recurrence_stage0/run_stage0.py.gz.b64').read_text().split())
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          expected = '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac'
+          if digest != expected:
+              raise RuntimeError(f'Frozen source mismatch: {digest}')
+          Path('/tmp/run_worst_family_recurrence.py').write_bytes(raw)
+          print('source bytes:', len(raw))
+          print('source sha256:', digest)
+          PY
+          python -m py_compile /tmp/run_worst_family_recurrence.py
+      - name: Run worst-family calibrated benchmark
+        run: |
+          python /tmp/run_worst_family_recurrence.py \
+            --calibration-trials 80 \
+            --null-trials 60 \
+            --injection-trials 60 \
+            --results worst_family_recurrence_stage0/results
+          cat worst_family_recurrence_stage0/results/STAGE0_REPORT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum /tmp/run_worst_family_recurrence.py worst_family_recurrence_stage0/run_stage0.py.gz.b64 worst_family_recurrence_stage0/PROTOCOL.md > worst_family_recurrence_stage0/results/source_sha256.txt
+          python --version > worst_family_recurrence_stage0/results/python_version.txt
+          python -m pip freeze > worst_family_recurrence_stage0/results/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: worst-family-recurrence-stage0
+          path: |
+            worst_family_recurrence_stage0/results
+            worst_family_recurrence_stage0/PROTOCOL.md
+          if-no-files-found: error
+          retention-days: 90
