@@ -29,7 +29,7 @@ jobs:
         run: |
           git fetch --no-tags origin \
             agent/partition-invariant-clique-2026h1:refs/remotes/origin/agent/partition-invariant-clique-2026h1
-      - name: Decode and verify exact H1 data source
+      - name: Decode and verify exact H1 data source and passed scorer
         run: |
           set -euo pipefail
           mkdir -p extracted
@@ -49,14 +49,31 @@ jobs:
           if actual != expected:
               raise RuntimeError(f'H1 data source mismatch: {actual}')
           Path('extracted/build_2026_h1_data_authoritative.py').write_bytes(source)
-          Path('extracted/SOURCE_HASH.txt').write_text(
+
+          parts = sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
+          if [part.name for part in parts] != ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']:
+              raise RuntimeError(f'unexpected scorer parts: {[part.name for part in parts]}')
+          scorer_encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          if len(scorer_encoded) != 9000:
+              raise RuntimeError(f'unexpected scorer payload length: {len(scorer_encoded)}')
+          scorer = gzip.decompress(base64.b64decode(scorer_encoded, validate=True))
+          scorer_expected = 'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8'
+          scorer_actual = hashlib.sha256(scorer).hexdigest()
+          if scorer_actual != scorer_expected:
+              raise RuntimeError(f'Mondrian scorer mismatch: {scorer_actual}')
+          Path('extracted/run_mondrian_clique_passed.py').write_bytes(scorer)
+
+          Path('extracted/SOURCE_HASHES.txt').write_text(
               f'{actual}  build_2026_h1_data_authoritative.py\n'
+              f'{scorer_actual}  run_mondrian_clique_passed.py\n'
           )
-          print('source bytes:', len(source))
-          print('source sha256:', actual)
+          print('data source bytes / sha256:', len(source), actual)
+          print('scorer bytes / sha256:', len(scorer), scorer_actual)
           PY
-          python -m py_compile extracted/build_2026_h1_data_authoritative.py
-      - name: Upload authoritative source
+          python -m py_compile \
+            extracted/build_2026_h1_data_authoritative.py \
+            extracted/run_mondrian_clique_passed.py
+      - name: Upload authoritative sources
         uses: actions/upload-artifact@v4
         with:
           name: mondrian-clique-july-authoritative-source
