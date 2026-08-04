@@ -1,0 +1,113 @@
+name: SonotaCo fixed4 seed robustness source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-k4-phase-scale-diagnostic
+    paths:
+      - .github/workflows/sonotaco_fixed4_seed_robustness_source_audit.yml
+      - sonotaco_fixed4_seed_robustness_source_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-fixed4-seed-robustness-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-fixed4-seed-robustness-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode, verify, compile, and audit frozen robustness candidate
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast, base64, gzip, hashlib, json
+          from pathlib import Path
+
+          parts = sorted(Path('sonotaco_fixed4_seed_robustness_source_audit/source_parts').glob('part*.b64'))
+          expected_parts = [f'part{i:02d}.b64' for i in range(9)]
+          if [part.name for part in parts] != expected_parts:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          if len(encoded) != 8184:
+              raise RuntimeError(f'encoded length mismatch: {len(encoded)}')
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '8424f5c1d0a88fc6e2c275437e5d9587eaa1ba71143ab4b4cc87205dcf9b20f0'
+          text = source.decode('utf-8')
+          tree = ast.parse(text)
+          constants = {}
+          functions = set()
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  functions.add(node.name)
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+          gates = {
+              'source_sha256_exact': digest == expected,
+              'fixed_scale_exactly_4': constants.get('FIXED_SCALE') == 4.0,
+              'panels_exact': constants.get('PANELS') == ('original','robust_a','robust_b','robust_c'),
+              'fresh_panels_exact': constants.get('FRESH_PANELS') == ('robust_a','robust_b','robust_c'),
+              'required_functions_present': {
+                  'pairwise_scaled_distance','clique_score_and_indices','score_for_episode',
+                  '_score_background','metric_pass','main'
+              } <= functions,
+              'original_seed_prefixes_exact': 'mondrian-development-calibration' in text and 'mondrian-development-negative' in text,
+              'fresh_seed_prefix_frozen': 'mondrian-fixed4-robustness-{panel}-{kind}' in text,
+              'positive_seed_prefix_exact': 'mondrian-development-positive' in text,
+              'support_seed_prefix_exact': 'mondrian-development-support' in text,
+              'calibration_count_not_changed': 'scorer.CALIBRATION_NEGATIVES_PER_BIN == 128' in text,
+              'test_count_not_changed': 'scorer.TEST_NEGATIVES_PER_BIN == 64' in text,
+              'two_of_three_rule_present': 'fresh_full_passes >= 2' in text,
+              'no_scale_sweep': 'SOLAR_SCALES' not in text,
+              'sonotaco_2024_absent': '024a.zip' not in text and 'SonotaCo 2024' not in text,
+              'ghoststream_absent': 'GhostStream' not in text and 'ghoststream' not in text,
+          }
+          verdict = 'PASS_SONOTACO_FIXED4_SEED_ROBUSTNESS_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_FIXED4_SEED_ROBUSTNESS_SOURCE_AUDIT'
+          Path('output/candidate_source.py').write_bytes(source)
+          Path('output/source_audit.json').write_text(json.dumps({
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'encoded_length': len(encoded),
+              'constants': {key: constants.get(key) for key in ('FIXED_SCALE','PANELS','FRESH_PANELS')},
+              'functions': sorted(functions),
+              'gates': gates,
+              'verdict': verdict,
+          }, indent=2), encoding='utf-8')
+          lines = ['# Fixed-4° seed-robustness source audit','',f'Verdict: **{verdict}**','']
+          lines += [f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items()]
+          Path('output/SOURCE_AUDIT_RESULT.md').write_text('\n'.join(lines)+'\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen source audit failed')
+          PY
+          python -m py_compile output/candidate_source.py
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum \
+            sonotaco_fixed4_seed_robustness_source_audit/PROTOCOL.md \
+            sonotaco_fixed4_seed_robustness_source_audit/source_parts/*.b64 \
+            > output/source_files_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload source-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-fixed4-seed-robustness-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
