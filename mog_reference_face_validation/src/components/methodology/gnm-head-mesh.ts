@@ -17,7 +17,12 @@ export const GNM_HEAD_MESH = {
   minimum: GNM_POSITION_DATA.minimum,
   maximum: GNM_POSITION_DATA.maximum,
   positionsBase64: GNM_POSITION_DATA.base64,
-  trianglesBase64: GNM_TRIANGLES_1 + GNM_TRIANGLES_2 + GNM_TRIANGLES_3_1 + GNM_TRIANGLES_3_2,
+  triangleChunksBase64: [
+    GNM_TRIANGLES_1,
+    GNM_TRIANGLES_2,
+    GNM_TRIANGLES_3_1,
+    GNM_TRIANGLES_3_2,
+  ] as const,
   landmarkVertexIndices: [479, 476, 752, 702, 638, 551, 468, 820, 822, 823, 755, 703, 641, 552, 469, 477, 480, 798, 864, 865, 866, 866, 867, 867, 868, 869, 801, 861, 891, 891, 892, 842, 842, 887, 843, 843, 791, 858, 859, 793, 859, 858, 794, 862, 863, 796, 863, 862, 835, 836, 884, 885, 885, 837, 838, 838, 883, 883, 882, 836, 835, 836, 885, 837, 838, 837, 883, 836] as const,
 } as const;
 
@@ -25,7 +30,21 @@ function decodeUint16(base64: string): Uint16Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  if (bytes.byteLength % 2 !== 0) {
+    throw new Error(`GNM binary chunk has an odd byte length: ${bytes.byteLength}.`);
+  }
   return new Uint16Array(bytes.buffer);
+}
+
+function concatenateUint16(chunks: readonly Uint16Array[]): Uint16Array {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const combined = new Uint16Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return combined;
 }
 
 export type GnmVertex = { x: number; y: number; z: number };
@@ -33,15 +52,16 @@ export type GnmTriangle = readonly [number, number, number];
 
 export function decodeGnmHeadMesh(): { vertices: GnmVertex[]; triangles: GnmTriangle[] } {
   const quantized = decodeUint16(GNM_HEAD_MESH.positionsBase64);
-  const encodedIndices = decodeUint16(GNM_HEAD_MESH.trianglesBase64);
+  const indices = concatenateUint16(
+    GNM_HEAD_MESH.triangleChunksBase64.map(decodeUint16),
+  );
   if (quantized.length !== GNM_HEAD_MESH.vertexCount * 3) {
     throw new Error(`GNM position payload has ${quantized.length} values; expected ${GNM_HEAD_MESH.vertexCount * 3}.`);
   }
   const expectedIndexCount = GNM_HEAD_MESH.triangleCount * 3;
-  if (encodedIndices.length < expectedIndexCount) {
-    throw new Error(`GNM triangle payload has ${encodedIndices.length} values; expected at least ${expectedIndexCount}.`);
+  if (indices.length !== expectedIndexCount) {
+    throw new Error(`GNM triangle payload has ${indices.length} values; expected ${expectedIndexCount}.`);
   }
-  const indices = encodedIndices.subarray(0, expectedIndexCount);
   if (indices.some((value) => value >= GNM_HEAD_MESH.vertexCount)) {
     throw new Error("GNM triangle payload contains an out-of-range vertex index.");
   }
