@@ -26,35 +26,40 @@ export const GNM_HEAD_MESH = {
   landmarkVertexIndices: [479, 476, 752, 702, 638, 551, 468, 820, 822, 823, 755, 703, 641, 552, 469, 477, 480, 798, 864, 865, 866, 866, 867, 867, 868, 869, 801, 861, 891, 891, 892, 842, 842, 887, 843, 843, 791, 858, 859, 793, 859, 858, 794, 862, 863, 796, 863, 862, 835, 836, 884, 885, 885, 837, 838, 838, 883, 883, 882, 836, 835, 836, 885, 837, 838, 837, 883, 836] as const,
 } as const;
 
-function decodeUint16(base64: string): Uint16Array {
+function decodeBytes(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  if (bytes.byteLength % 2 !== 0) {
-    throw new Error(`GNM binary chunk has an odd byte length: ${bytes.byteLength}.`);
-  }
-  return new Uint16Array(bytes.buffer);
+  return bytes;
 }
 
-function concatenateUint16(chunks: readonly Uint16Array[]): Uint16Array {
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const combined = new Uint16Array(totalLength);
+function concatenateBytes(chunks: readonly Uint8Array[]): Uint8Array {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
   let offset = 0;
   for (const chunk of chunks) {
     combined.set(chunk, offset);
-    offset += chunk.length;
+    offset += chunk.byteLength;
   }
   return combined;
+}
+
+function bytesToUint16(bytes: Uint8Array, label: string): Uint16Array {
+  if (bytes.byteLength % 2 !== 0) {
+    throw new Error(`${label} has an odd byte length: ${bytes.byteLength}.`);
+  }
+  return new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
 }
 
 export type GnmVertex = { x: number; y: number; z: number };
 export type GnmTriangle = readonly [number, number, number];
 
 export function decodeGnmHeadMesh(): { vertices: GnmVertex[]; triangles: GnmTriangle[] } {
-  const quantized = decodeUint16(GNM_HEAD_MESH.positionsBase64);
-  const indices = concatenateUint16(
-    GNM_HEAD_MESH.triangleChunksBase64.map(decodeUint16),
+  const quantized = bytesToUint16(decodeBytes(GNM_HEAD_MESH.positionsBase64), "GNM position payload");
+  const indexBytes = concatenateBytes(
+    GNM_HEAD_MESH.triangleChunksBase64.map(decodeBytes),
   );
+  const indices = bytesToUint16(indexBytes, "GNM triangle payload");
   if (quantized.length !== GNM_HEAD_MESH.vertexCount * 3) {
     throw new Error(`GNM position payload has ${quantized.length} values; expected ${GNM_HEAD_MESH.vertexCount * 3}.`);
   }
