@@ -88,7 +88,6 @@ jobs:
               and {int(item['month']) for item in sources} == set(range(1, 13))
               and all(int(item.get('bytes', 0)) > 0 for item in sources)
           )
-
           events = []
           with gzip.open(root / 'selected_events.jsonl.gz', 'rt', encoding='utf-8') as handle:
               for line in handle:
@@ -167,6 +166,7 @@ jobs:
     timeout-minutes: 240
     env:
       SOURCE_SHA256: f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8
+      WRAPPER_SHA256: bc11723aab6c1a80e9c70515e77a559a64babd477c7cbcc6295b5663a5e803d5
       BASELINE_PAYLOAD_SHA256: 2cb82a8c12913a6176ddd7c6333b57a4d672334934c0d2ca4b572e878590cfa2
       BASELINE_SOURCE_SHA256: 7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50
     steps:
@@ -213,6 +213,10 @@ jobs:
               raise RuntimeError(f'confirmation source mismatch: {source_hash}')
           Path('/tmp/run_mondrian_clique_2018.py').write_bytes(source)
 
+          wrapper_hash = hashlib.sha256(Path('mondrian_clique_2018/run_exact_2018_wrapper.py').read_bytes()).hexdigest()
+          if wrapper_hash != '${{ env.WRAPPER_SHA256 }}':
+              raise RuntimeError(f'interface wrapper mismatch: {wrapper_hash}')
+
           payload_hash = hashlib.sha256(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_bytes()).hexdigest()
           if payload_hash != '${{ env.BASELINE_PAYLOAD_SHA256 }}':
               raise RuntimeError(f'baseline payload mismatch: {payload_hash}')
@@ -226,12 +230,14 @@ jobs:
           print('audit SHA-256:', hashlib.sha256(Path('input/audit.json').read_bytes()).hexdigest())
           print('coverage SHA-256:', hashlib.sha256(Path('input/coverage.json').read_bytes()).hexdigest())
           print('confirmation source SHA-256:', source_hash)
+          print('interface wrapper SHA-256:', wrapper_hash)
           PY
-          python -m py_compile /tmp/run_mondrian_clique_2018.py
+          python -m py_compile /tmp/run_mondrian_clique_2018.py mondrian_clique_2018/run_exact_2018_wrapper.py
       - name: Run one-shot untouched 2018 confirmation
         run: |
           mkdir -p output
-          python /tmp/run_mondrian_clique_2018.py \
+          python mondrian_clique_2018/run_exact_2018_wrapper.py \
+            --source /tmp/run_mondrian_clique_2018.py -- \
             --events input/selected_events.jsonl.gz \
             --year 2018 \
             --corpus complete-year-2018-confirmation \
@@ -266,6 +272,7 @@ jobs:
         run: |
           sha256sum \
             mondrian_clique_2018/PROTOCOL.md \
+            mondrian_clique_2018/run_exact_2018_wrapper.py \
             mondrian_clique_development/source_parts_v2/part00.b64 \
             mondrian_clique_development/source_parts_v2/part01.b64 \
             mondrian_clique_development/source_parts_v2/part02.b64 \
