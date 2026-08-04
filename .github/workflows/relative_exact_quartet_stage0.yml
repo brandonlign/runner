@@ -50,7 +50,7 @@ jobs:
           import base64,gzip,hashlib
           from pathlib import Path
           parts=sorted(Path('relative_exact_quartet_stage0/source_parts').glob('part*.b64'))
-          expected=['part00.b64']
+          expected=[f'part{i:02d}.b64' for i in range(8)]
           if [p.name for p in parts] != expected: raise RuntimeError([p.name for p in parts])
           src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
           digest=hashlib.sha256(src).hexdigest()
