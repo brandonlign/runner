@@ -1,4 +1,4 @@
-name: Uncertainty-Mondrian source audit
+name: Uncertainty-Mondrian quartet screen
 
 on:
   pull_request:
@@ -11,15 +11,20 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: uncertainty-mondrian-source-audit
+  group: uncertainty-mondrian-quartet-stage0
   cancel-in-progress: true
 
 jobs:
-  source-audit:
+  development-screen:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 240
+    env:
+      SOURCE_SHA256: '7aad1aadd9ae3674abd9c175ae141982ab4463d7e63520fed9660fbfcc12b9c6'
+      EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
+      AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,37 +32,94 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Decode and verify exact uncertainty-quartet source
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Retrieve exact odd-year development artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p output
+          mkdir -p input output
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo "${EVENTS_SHA256}  input/selected_events.jsonl.gz" | sha256sum -c -
+          echo "${AUDIT_SHA256}  input/audit.json" | sha256sum -c -
+      - name: Decode and verify frozen composition source
+        run: |
+          set -euo pipefail
           python - <<'PY'
           import base64
           import gzip
           import hashlib
           from pathlib import Path
 
-          parts = sorted(Path('uncertainty_inflated_quartet_stage0/source_parts').glob('part*.b64'))
+          parts = sorted(Path('uncertainty_mondrian_quartet_stage0/source_parts').glob('part*.b64'))
           expected = ['part00.b64', 'part01.b64', 'part02.b64']
           if [part.name for part in parts] != expected:
               raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
           encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          if len(encoded) != 7144:
+              raise RuntimeError(f'unexpected encoded source length: {len(encoded)}')
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
-          expected_digest = '12cc8c9b0bcf674e918cca35bc572accd4b4139f0c16989d719df6857f6daf5b'
-          if digest != expected_digest:
-              raise RuntimeError(f'source mismatch: {digest}')
-          Path('output/run_uncertainty_quartet.py').write_bytes(source)
-          Path('output/SOURCE_AUDIT.txt').write_text(
-              f'encoded_length={len(encoded)}\nsource_bytes={len(source)}\nsource_sha256={digest}\n'
-          )
-          print(Path('output/SOURCE_AUDIT.txt').read_text())
+          if digest != '${{ env.SOURCE_SHA256 }}':
+              raise RuntimeError(f'candidate source mismatch: {digest}')
+          Path('/tmp/run_uncertainty_mondrian_quartet.py').write_bytes(source)
+          print('source bytes:', len(source))
+          print('source SHA-256:', digest)
           PY
-          python -m py_compile output/run_uncertainty_quartet.py
-      - name: Upload no-score source audit
+          python -m py_compile /tmp/run_uncertainty_mondrian_quartet.py
+      - name: Run frozen development screen
+        run: |
+          python /tmp/run_uncertainty_mondrian_quartet.py \
+            --events input/selected_events.jsonl.gz \
+            --audit input/audit.json \
+            --output output
+          cat output/UNCERTAINTY_MONDRIAN_QUARTET_REPORT.md
+      - name: Enforce frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/uncertainty_mondrian_quartet_dev.json').read_text())
+          print(json.dumps({
+              'counts': result['counts'],
+              'weak_auc': result['weak_auc'],
+              'false_positive': result['false_positive']['uncertain'],
+              'recall': result['recall']['uncertain'],
+              'fold_results': result['fold_results'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen uncertainty-Mondrian quartet gate failed')
+          if result['verdict'] != 'PROCEED_TO_PROSPECTIVE_AUGUST_2026_CONFIRMATION':
+              raise SystemExit(f"Unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            uncertainty_mondrian_quartet_stage0/PROTOCOL.md \
+            uncertainty_mondrian_quartet_stage0/source_parts/part00.b64 \
+            uncertainty_mondrian_quartet_stage0/source_parts/part01.b64 \
+            uncertainty_mondrian_quartet_stage0/source_parts/part02.b64 \
+            input/selected_events.jsonl.gz \
+            input/audit.json \
+            > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen development evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: uncertainty-mondrian-source-audit
+          name: uncertainty-mondrian-quartet-stage0
           path: output
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
