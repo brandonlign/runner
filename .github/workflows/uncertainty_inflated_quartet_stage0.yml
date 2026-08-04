@@ -1,104 +1,63 @@
-name: Uncertainty-inflated quartet screen
+name: Uncertainty-Mondrian source audit
 
 on:
   pull_request:
     branches:
-      - agent/empirical-window-null-evenyear-stage0
+      - agent/uncertainty-inflated-quartet-stage0
     paths:
       - .github/workflows/uncertainty_inflated_quartet_stage0.yml
-      - uncertainty_inflated_quartet_stage0/**
+      - uncertainty_mondrian_quartet_stage0/**
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
-  group: uncertainty-inflated-quartet-stage0
+  group: uncertainty-mondrian-source-audit
   cancel-in-progress: true
 
 jobs:
-  development-screen:
+  source-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-    env:
-      SOURCE_SHA256: '12cc8c9b0bcf674e918cca35bc572accd4b4139f0c16989d719df6857f6daf5b'
-      EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
-      AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/uncertainty-inflated-quartet-stage0
+          ref: agent/uncertainty-mondrian-quartet-stage0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
-          cache-dependency-path: real_shower_meta_stage0/requirements.txt
-      - name: Install frozen dependencies
-        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
-      - name: Retrieve exact odd-year development artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Decode and verify exact uncertainty-quartet source
         run: |
           set -euo pipefail
-          mkdir -p input output
-          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
-          echo "${{ env.EVENTS_SHA256 }}  input/selected_events.jsonl.gz" | sha256sum -c -
-          echo "${{ env.AUDIT_SHA256 }}  input/audit.json" | sha256sum -c -
-      - name: Decode and verify frozen candidate source
-        run: |
-          python - <<'PY'
-          import base64, gzip, hashlib
-          from pathlib import Path
-          parts=sorted(Path('uncertainty_inflated_quartet_stage0/source_parts').glob('part*.b64'))
-          expected=['part00.b64','part01.b64','part02.b64']
-          if [p.name for p in parts] != expected:
-              raise RuntimeError(f'unexpected source parts: {[p.name for p in parts]}')
-          encoded=''.join(''.join(p.read_text().split()) for p in parts)
-          source=gzip.decompress(base64.b64decode(encoded,validate=True))
-          digest=hashlib.sha256(source).hexdigest()
-          if digest != '${{ env.SOURCE_SHA256 }}':
-              raise RuntimeError(f'candidate source mismatch: {digest}')
-          Path('/tmp/run_uncertainty_quartet.py').write_bytes(source)
-          print('source bytes:',len(source))
-          print('source sha256:',digest)
-          PY
-          python -m py_compile /tmp/run_uncertainty_quartet.py
-      - name: Run frozen development screen
-        run: |
-          python /tmp/run_uncertainty_quartet.py --events input/selected_events.jsonl.gz --audit input/audit.json --output output
-          cat output/UNCERTAINTY_QUARTET_DEV_REPORT.md
-      - name: Enforce frozen continuation gates
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          r=json.loads(Path('output/uncertainty_quartet_dev.json').read_text())
-          print(json.dumps({
-            'weak_auc':r['weak_auc'],
-            'false_positive':r['false_positive']['uncertain'],
-            'recall':r['recall']['uncertain'],
-            'fold_results':r['fold_results'],
-            'gates':r['gates'],
-            'verdict':r['verdict'],
-          },indent=2))
-          if not all(r['gates'].values()):
-              raise SystemExit('Frozen uncertainty-inflated quartet gate failed')
-          if r['verdict'] != 'PROCEED_TO_FROZEN_UNCERTAINTY_CONFIRMATION':
-              raise SystemExit(f"Unexpected verdict: {r['verdict']}")
-          PY
-      - name: Record provenance
-        if: always()
-        run: |
           mkdir -p output
-          sha256sum uncertainty_inflated_quartet_stage0/PROTOCOL.md uncertainty_inflated_quartet_stage0/source_parts/*.b64 input/selected_events.jsonl.gz input/audit.json > output/source_and_input_sha256.txt
-          python --version > output/python_version.txt
-          python -m pip freeze > output/environment.txt
-      - name: Upload frozen development evidence
-        if: always()
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('uncertainty_inflated_quartet_stage0/source_parts').glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64', 'part02.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected_digest = '12cc8c9b0bcf674e918cca35bc572accd4b4139f0c16989d719df6857f6daf5b'
+          if digest != expected_digest:
+              raise RuntimeError(f'source mismatch: {digest}')
+          Path('output/run_uncertainty_quartet.py').write_bytes(source)
+          Path('output/SOURCE_AUDIT.txt').write_text(
+              f'encoded_length={len(encoded)}\nsource_bytes={len(source)}\nsource_sha256={digest}\n'
+          )
+          print(Path('output/SOURCE_AUDIT.txt').read_text())
+          PY
+          python -m py_compile output/run_uncertainty_quartet.py
+      - name: Upload no-score source audit
         uses: actions/upload-artifact@v4
         with:
-          name: uncertainty-inflated-quartet-stage0
+          name: uncertainty-mondrian-source-audit
           path: output
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 30
