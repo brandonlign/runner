@@ -235,14 +235,25 @@ function normal(a: GnmVertex, b: GnmVertex, c: GnmVertex): GnmVertex {
   return { x: cross.x / length, y: cross.y / length, z: cross.z / length };
 }
 
+function faceNormal(face: GnmTriangle): GnmVertex {
+  return normal(
+    decodedMesh.vertices[face[0]],
+    decodedMesh.vertices[face[1]],
+    decodedMesh.vertices[face[2]],
+  );
+}
+
+function facesForView(view: FaceView): GnmTriangle[] {
+  return VISIBLE_TRIANGLES.filter((face) => {
+    const value = faceNormal(face);
+    return view === "front" ? value.z < 0 : value.x > 0;
+  });
+}
+
 const vertexNormals = (() => {
   const sums = decodedMesh.vertices.map(() => ({ x: 0, y: 0, z: 0 }));
   for (const face of VISIBLE_TRIANGLES) {
-    const value = normal(
-      decodedMesh.vertices[face[0]],
-      decodedMesh.vertices[face[1]],
-      decodedMesh.vertices[face[2]],
-    );
+    const value = faceNormal(face);
     for (const index of face) {
       sums[index].x += value.x;
       sums[index].y += value.y;
@@ -267,8 +278,8 @@ function clayFill(face: GnmTriangle, view: FaceView): string {
   return `rgb(${Math.round(brightness * 255)} ${Math.round(brightness * 249)} ${Math.round(brightness * 242)})`;
 }
 
-function fitProjection(rawPoints: Point[]): FittedProjection {
-  const used = new Set(VISIBLE_TRIANGLES.flatMap((face) => [...face]));
+function fitProjection(rawPoints: Point[], visibleFaces: GnmTriangle[]): FittedProjection {
+  const used = new Set(visibleFaces.flatMap((face) => [...face]));
   const visible = rawPoints.filter((_, index) => used.has(index));
   const minimumX = Math.min(...visible.map((point) => point.x));
   const maximumX = Math.max(...visible.map((point) => point.x));
@@ -290,8 +301,9 @@ function polygonPoints(face: GnmTriangle, projected: Point[]): string {
 function buildFaces(view: FaceView, landmarks: FacialLandmarks): { faces: ProjectedFace[]; fitted: FittedProjection } {
   const sourceProjection = decodedMesh.vertices.map(view === "front" ? frontSource : profileSource);
   const warp = thinPlateWarp(view === "front" ? frontControls(landmarks) : profileControls(landmarks));
-  const fitted = fitProjection(sourceProjection.map(warp));
-  const faces = VISIBLE_TRIANGLES.map((face) => ({
+  const renderFaces = facesForView(view);
+  const fitted = fitProjection(sourceProjection.map(warp), renderFaces);
+  const faces = renderFaces.map((face) => ({
     face,
     points: polygonPoints(face, fitted.points),
     depth: view === "front"
@@ -327,7 +339,6 @@ function GnmClayMesh({ view, landmarks }: { view: FaceView; landmarks: FacialLan
   const projection = useMemo(() => buildFaces(view, landmarks), [view, landmarks]);
   return (
     <g aria-label={`Google GNM neutral clay ${view} illustration`}>
-      <ClayEyes view={view} landmarks={landmarks} fitted={projection.fitted} />
       {projection.faces.map(({ face, points, fill }, index) => (
         <polygon
           key={`${face[0]}-${face[1]}-${face[2]}-${index}`}
@@ -336,6 +347,7 @@ function GnmClayMesh({ view, landmarks }: { view: FaceView; landmarks: FacialLan
           stroke="none"
         />
       ))}
+      <ClayEyes view={view} landmarks={landmarks} fitted={projection.fitted} />
     </g>
   );
 }
