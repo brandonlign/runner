@@ -33,7 +33,7 @@ export function IdealReferenceFace() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">Verified reference geometry</p>
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">One face that satisfies Mog’s own measurements</h2>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">Structure and realistic modes use the exact same solved landmarks. Realistic mode warps a licensed canonical facial mesh to those anchors and adds neutral clay shading; none of those illustrative details enters the harmony score.</p>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">Structure mode plots the exact solved scoring landmarks. Realistic mode aligns a licensed neutral Google GNM head surface to the same view; its surface vertices and clay shading are illustrative and never enter the harmony score.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Toggle value={view} options={["front", "profile"] as const} onChange={setView} label="Face view" />
