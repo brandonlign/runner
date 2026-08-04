@@ -39,7 +39,11 @@ jobs:
           python - <<'PY'
           import base64, gzip, hashlib
           from pathlib import Path
-          encoded = ''.join(Path('sonotaco_phase_normalized/source_parts/part00.b64').read_text().split())
+          parts = sorted(Path('sonotaco_phase_normalized/source_parts').glob('part*.b64'))
+          expected_parts = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected_parts:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
           expected = '64e7ce227545b697da5c8568d687fca3490aafd548d9593a3e70c07cdcefe6c0'
@@ -86,6 +90,9 @@ jobs:
           sha256sum \
             sonotaco_phase_normalized/PROTOCOL.md \
             sonotaco_phase_normalized/source_parts/part00.b64 \
+            sonotaco_phase_normalized/source_parts/part01.b64 \
+            sonotaco_phase_normalized/source_parts/part02.b64 \
+            sonotaco_phase_normalized/source_parts/part03.b64 \
             sonotaco_mondrian_development/source_parts/part00.b64 \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             mondrian_clique_development/source_parts_v2/part00.b64 \
