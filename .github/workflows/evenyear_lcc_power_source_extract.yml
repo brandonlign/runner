@@ -1,0 +1,76 @@
+name: Even-year LCC power source extraction
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/evenyear_lcc_power_source_extract.yml
+      - evenyear_lcc_power_stage1/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evenyear-lcc-power-source-extract
+  cancel-in-progress: true
+
+jobs:
+  extract-authoritative-sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/evenyear-lcc-power-stage1
+          fetch-depth: 0
+      - name: Fetch authoritative development power branch
+        run: |
+          git fetch --no-tags origin \
+            agent/local-conformal-coherence-power-stage1:refs/remotes/origin/agent/local-conformal-coherence-power-stage1
+      - name: Decode exact prior power and current null sources
+        run: |
+          set -euo pipefail
+          mkdir -p extracted /tmp/power_parts
+          for part in part00.b64 part01.b64 part02.b64 part03.b64; do
+            git show "origin/agent/local-conformal-coherence-power-stage1:local_conformal_coherence_stage1/source_parts/${part}" > "/tmp/power_parts/${part}"
+          done
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('/tmp/power_parts').glob('part*.b64'))
+          encoded = ''.join(''.join(path.read_text().split()) for path in parts)
+          power = gzip.decompress(base64.b64decode(encoded, validate=True))
+          expected_power = 'db21c2056ee1ce954c6d38d324a4148920b109407214c3e777bfc601f77b5519'
+          actual_power = hashlib.sha256(power).hexdigest()
+          if actual_power != expected_power:
+              raise RuntimeError(f'power source mismatch: {actual_power}')
+          Path('extracted/run_power_gate_oddyear_authoritative.py').write_bytes(power)
+
+          encoded_null = ''.join(Path('empirical_window_null_evenyear_stage0/run_empirical_window_null_audit.py.gz.b64').read_text().split())
+          null = gzip.decompress(base64.b64decode(encoded_null, validate=True))
+          expected_null = '63a13c9d96c755eeb09a1823ef49445e050c11cd574c10db922029b2a917cd6a'
+          actual_null = hashlib.sha256(null).hexdigest()
+          if actual_null != expected_null:
+              raise RuntimeError(f'null source mismatch: {actual_null}')
+          Path('extracted/run_empirical_window_null_evenyear_authoritative.py').write_bytes(null)
+
+          Path('extracted/SOURCE_HASHES.txt').write_text(
+              f'{actual_power}  run_power_gate_oddyear_authoritative.py\n'
+              f'{actual_null}  run_empirical_window_null_evenyear_authoritative.py\n'
+          )
+          print(Path('extracted/SOURCE_HASHES.txt').read_text())
+          PY
+          python -m py_compile extracted/run_power_gate_oddyear_authoritative.py
+          python -m py_compile extracted/run_empirical_window_null_evenyear_authoritative.py
+      - name: Upload exact sources for adaptation audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: evenyear-lcc-authoritative-sources
+          path: extracted
+          if-no-files-found: error
+          retention-days: 14
