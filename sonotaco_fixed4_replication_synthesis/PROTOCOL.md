@@ -21,4 +21,6 @@ Using exact event-record p-values, report for each year and descriptively pooled
 
 The synthesis must preserve the formal 2024 verdict `FAIL_SONOTACO_2024_FIXED4_CONFIRMATION`. Pooled development-plus-confirmation values may describe consistency but may never replace or rescue that verdict.
 
-Frozen synthesis source SHA-256: `14af5ad4765706c3905c9e199858c6d239e165ad1d2da2aba28fad3f0869c0b8`.
+## Source identity repair
+
+The first workflow attempt stopped before downloading either evidence artifact because the pre-upload SHA-256 did not match GitHub's committed text representation. The already committed source is authoritative and unchanged. Its exact Git blob identity is `509c2513d169270876e3db20890a7182c1cbdfc3`; the workflow verifies that blob identity with `git hash-object` and compiles the file before any artifact access.
