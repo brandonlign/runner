@@ -1,0 +1,151 @@
+name: Consensus-lowpass recurrence source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/majority-conditioned-recurrence-source-audit
+    paths:
+      - .github/workflows/consensus_lowpass_source_audit.yml
+      - consensus_lowpass_recurrence_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: consensus-lowpass-recurrence-source-audit
+  cancel-in-progress: true
+
+jobs:
+  no-score-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PINNED_BASE_COMMIT: 'b8748f3e641e52dfe3b1500d6c7356bd9732f54a'
+      WORST_FAMILY_SHA256: '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac'
+      MAJORITY_SOURCE_SHA256: '3d60e3622d7ec406bb03cd4ab43faec84be1eff4d0dd70afa6ed79b8fd777281'
+      CANDIDATE_SOURCE_SHA256: '9f630c8eca2ffb1a5bdbc0598b744dffccb6026d2476467b99c6caa3d410a9fa'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/consensus-lowpass-recurrence-source-audit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct exact majority-conditioned parent source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pinned/source_parts /tmp/pinned output
+          git fetch --depth=1 origin "${PINNED_BASE_COMMIT}"
+          for part in part00.b64 part01.b64 part02.b64 part03.b64; do
+            git show "FETCH_HEAD:worst_family_recurrence_stage0/source_parts/${part}" > "/tmp/pinned/source_parts/${part}"
+          done
+          git show FETCH_HEAD:majority_conditioned_recurrence_stage0/derive_candidate.py > /tmp/pinned/derive_majority.py
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('/tmp/pinned/source_parts').glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '${{ env.WORST_FAMILY_SHA256 }}':
+              raise RuntimeError(f'worst-family source mismatch: {digest}')
+          Path('/tmp/pinned/worst_family.py').write_bytes(source)
+          print('worst-family source SHA-256:', digest)
+          PY
+          python /tmp/pinned/derive_majority.py \
+            /tmp/pinned/worst_family.py \
+            /tmp/pinned/majority_conditioned.py
+          python -m py_compile /tmp/pinned/majority_conditioned.py
+          echo "${MAJORITY_SOURCE_SHA256}  /tmp/pinned/majority_conditioned.py" | sha256sum -c -
+      - name: Decode, compile, and statically inspect exact candidate
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          parts = sorted(Path('consensus_lowpass_recurrence_stage0/source_parts').glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected candidate parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '${{ env.CANDIDATE_SOURCE_SHA256 }}':
+              raise RuntimeError(f'candidate source mismatch: {digest}')
+          text = source.decode('utf-8')
+          tree = ast.parse(text)
+          functions = sorted(node.name for node in tree.body if isinstance(node, ast.FunctionDef))
+          checks = {
+              'fixed_persistent_active_years': 'PERSISTENT_ACTIVE_YEARS = 12' in text,
+              'inherited_smooth_sigma': 'CONSENSUS_SMOOTH_SIGMA = (1.6, 1.6, 1.0, 0.9)' in text,
+              'annual_median_present': 'consensus_evidence = np.median(per_year_evidence, axis=0)' in text,
+              'smooth_consensus_present': 'sigma=CONSENSUS_SMOOTH_SIGMA' in text,
+              'smooth_only_subtraction_present': 'per_year_evidence - smooth_consensus[None, ...]' in text,
+              'third_year_recurrence_retained': 'consensus_lowpass_score = ordered_consensus[-self.r_required]' in text,
+              'persistent_shared_condition_present': 'persistent_shared_records' in text,
+              'shared_background_injection_present': 'persistent_base = sample_shared_structure_histograms' in text,
+              'majority_comparator_retained': '"majority_conditioned"' in text,
+              'candidate_method_key_present': '"consensus_lowpass"' in text,
+              'candidate_verdict_present': 'CONTINUE_CONSENSUS_LOWPASS_FULL_STAGE0' in text,
+              'original_minority_recurrent_injection_retained': 'recurrent_records' in text,
+              'transient_injection_retained': 'transient_records' in text,
+              'ideal_null_retained': 'sample_ideal_histograms' in text,
+              'shared_structure_null_retained': 'sample_shared_structure_histograms' in text,
+          }
+          if not all(checks.values()):
+              raise RuntimeError(f'static candidate check failed: {checks}')
+          candidate = Path('output/run_consensus_lowpass.py')
+          candidate.write_bytes(source)
+          audit = {
+              'parent_majority_sha256': '${{ env.MAJORITY_SOURCE_SHA256 }}',
+              'candidate_sha256': digest,
+              'candidate_bytes': len(source),
+              'candidate_lines': len(text.splitlines()),
+              'functions': functions,
+              'checks': checks,
+          }
+          Path('output/source_audit.json').write_text(json.dumps(audit, indent=2, sort_keys=True))
+          Path('output/RESULT.md').write_text(
+              '# Consensus-lowpass candidate source audit\n\n'
+              f"- parent majority source SHA-256: `{audit['parent_majority_sha256']}`\n"
+              f"- candidate source SHA-256: `{digest}`\n"
+              f"- candidate bytes: **{len(source):,}**\n"
+              f"- candidate lines: **{len(text.splitlines()):,}**\n"
+              '- all frozen static checks: **PASS**\n'
+          )
+          print(json.dumps(audit, indent=2, sort_keys=True))
+          PY
+          python -m py_compile output/run_consensus_lowpass.py
+          cat output/RESULT.md
+      - name: Record provenance
+        run: |
+          sha256sum \
+            consensus_lowpass_recurrence_stage0/SOURCE_AUDIT_PROTOCOL.md \
+            consensus_lowpass_recurrence_stage0/TRANSFORMATION.md \
+            consensus_lowpass_recurrence_stage0/source_parts/*.b64 \
+            /tmp/pinned/derive_majority.py \
+            /tmp/pinned/worst_family.py \
+            /tmp/pinned/majority_conditioned.py \
+            output/run_consensus_lowpass.py \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload exact candidate source audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: consensus-lowpass-recurrence-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
