@@ -1,0 +1,87 @@
+name: Phase-marginal support July development
+
+on:
+  pull_request:
+    branches:
+      - agent/phase-adaptive-conformal-july2026
+    paths:
+      - .github/workflows/phase_marginal_support_dev.yml
+      - phase_marginal_support_dev/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase-marginal-support-july-development
+  cancel-in-progress: true
+
+jobs:
+  full-development-power:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase-marginal-support-development
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Retrieve exact retired July artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p input/data input/null output
+          gh run download 30875478565 --repo "$GITHUB_REPOSITORY" --name phase-adaptive-july-data --dir input/data
+          gh run download 30875478565 --repo "$GITHUB_REPOSITORY" --name phase-adaptive-july-null --dir input/null
+          echo "a487db835e36431666b1db95fe98ca9ce90803d85819d86ca01529f4902a74c5  input/data/selected_events.jsonl.gz" | sha256sum -c -
+      - name: Decode exact PR48 source and derive candidate
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('phase_adaptive_conformal_july2026/source_parts').glob('part*.b64'))
+          raw = gzip.decompress(base64.b64decode(''.join(''.join(path.read_text().split()) for path in parts), validate=True))
+          original = hashlib.sha256(raw).hexdigest()
+          if original != '11f7590675cca5812566a39fa11e07de7a905c0a468c45ef184246cd65c9eec7':
+              raise RuntimeError(f'PR48 source mismatch: {original}')
+          source = raw.decode('utf-8')
+          start = source.index('def coherence_score(')
+          end = source.index('\n\nclass LocalNormalizer', start)
+          replacement = '''def coherence_score(base: types.ModuleType, episode: Any, distance: np.ndarray | None = None) -> float:\n    \"\"\"Negative mean diameter of the eight tightest phase-marginal four-stars.\"\"\"\n    lon = np.asarray(episode.sun_lon, dtype=np.float64)\n    lat = np.asarray(episode.ecl_lat, dtype=np.float64)\n    vg = np.asarray(episode.vg, dtype=np.float64)\n    dlon = (lon[:, None] - lon[None, :] + 180.0) % 360.0 - 180.0\n    dlat = lat[:, None] - lat[None, :]\n    dvg = vg[:, None] - vg[None, :]\n    feature_distance = np.sqrt((dlon / 2.0) ** 2 + (dlat / 2.0) ** 2 + (dvg / 2.0) ** 2)\n    work = feature_distance.copy()\n    np.fill_diagonal(work, np.inf)\n    nearest = np.argpartition(work, 3, axis=1)[:, :3]\n    stars = np.concatenate((np.arange(feature_distance.shape[0], dtype=np.int64)[:, None], nearest), axis=1)\n    diameters = np.max(feature_distance[stars[:, :, None], stars[:, None, :]], axis=(1, 2))\n    return -float(np.mean(np.sort(diameters)[:8]))\n'''
+          source = source[:start] + replacement + source[end:]
+          derived = source.encode('utf-8')
+          Path('/tmp/run_phase_marginal_support.py').write_bytes(derived)
+          Path('output/SOURCE_HASHES.txt').write_text(
+              f'{original}  original_pr48_source.py\n'
+              f'{hashlib.sha256(derived).hexdigest()}  run_phase_marginal_support.py\n'
+          )
+          print(Path('output/SOURCE_HASHES.txt').read_text())
+          PY
+          python -m py_compile /tmp/run_phase_marginal_support.py
+      - name: Run full retired-July benchmark
+        run: |
+          python /tmp/run_phase_marginal_support.py power \
+            --events input/data/selected_events.jsonl.gz \
+            --audit input/data/audit.json \
+            --null-result input/null/phase_adaptive_null.json \
+            --output output
+          cat output/PHASE_ADAPTIVE_POWER_REPORT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum /tmp/run_phase_marginal_support.py phase_marginal_support_dev/DEVELOPMENT_PROTOCOL.md input/data/selected_events.jsonl.gz input/data/audit.json input/null/phase_adaptive_null.json > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-marginal-support-july-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
