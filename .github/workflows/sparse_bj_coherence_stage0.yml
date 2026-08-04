@@ -1,0 +1,88 @@
+name: Sparse Berk-Jones coherence preflight
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/sparse_bj_coherence_stage0.yml
+      - sparse_bj_coherence_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sparse-bj-coherence-stage0
+  cancel-in-progress: true
+
+jobs:
+  development-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      SOURCE_SHA256: '90b550ee4f682d05a81b1b6a6ea5e8ca6c2d3264b4dee5769e213dca95ef7de6'
+      EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
+      AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sparse-bj-coherence-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Retrieve frozen odd-year development artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p input output
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo "${{ env.EVENTS_SHA256 }}  input/selected_events.jsonl.gz" | sha256sum -c -
+          echo "${{ env.AUDIT_SHA256 }}  input/audit.json" | sha256sum -c -
+      - name: Decode and verify source
+        run: |
+          python - <<'PY2'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          parts=sorted(Path('sparse_bj_coherence_stage0/source_parts').glob('part*.b64'))
+          expected=['part00.b64']
+          if [p.name for p in parts] != expected: raise RuntimeError([p.name for p in parts])
+          src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
+          digest=hashlib.sha256(src).hexdigest()
+          if digest != '${{ env.SOURCE_SHA256 }}': raise RuntimeError(digest)
+          Path('/tmp/run_sparse_bj.py').write_bytes(src)
+          print(digest)
+          PY2
+          python -m py_compile /tmp/run_sparse_bj.py
+      - name: Run frozen development preflight
+        run: |
+          python /tmp/run_sparse_bj.py --events input/selected_events.jsonl.gz --audit input/audit.json --output output
+          cat output/SPARSE_BJ_REPORT.md
+      - name: Enforce gates
+        run: |
+          python - <<'PY2'
+          import json
+          r=json.load(open('output/sparse_bj.json'))
+          print(json.dumps({'auc':r['auc'],'fpr':r['fpr']['bj'],'recall':r['recall']['bj'],'gates':r['gates'],'verdict':r['verdict']},indent=2))
+          if all(r['gates'].values()): raise SystemExit(0)
+          raise SystemExit('Frozen sparse Berk-Jones gate failed')
+          PY2
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum sparse_bj_coherence_stage0/PROTOCOL.md sparse_bj_coherence_stage0/source_parts/*.b64 input/selected_events.jsonl.gz input/audit.json > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparse-bj-coherence-stage0
+          path: output
+          if-no-files-found: error
+          retention-days: 90
