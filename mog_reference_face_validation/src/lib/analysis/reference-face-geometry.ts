@@ -114,25 +114,30 @@ export function referenceFrontLandmarks(): FacialLandmarks {
   });
 }
 
-/** One jointly solved neutral profile configuration for all scored v2 bands. */
+/**
+ * One jointly solved neutral profile configuration for all scored v2 bands.
+ * The solution is additionally regularized for a coherent photographic
+ * silhouette; the mentolabial sulcus remains an internal crease rather than
+ * an outer-contour point.
+ */
 export function referenceProfileLandmarks(): FacialLandmarks {
   return landmarks("profile", {
     trichion: [-0.02, 0],
-    upperForehead: [0.025665, 0.159366],
-    glabella: [0.084444, 0.239477],
-    browRidge: [0.057753, 0.288065],
-    nasion: [0.053877, 0.316959],
+    upperForehead: [0.015, 0.16],
+    glabella: [0.055, 0.24],
+    browRidge: [0.05, 0.285],
+    nasion: [0.035, 0.32],
     orbitale: [0.08, 0.4],
     tragion: [-0.25, 0.4],
 
     pronasale: [0.203497, 0.570531],
-    columella: [0.151211, 0.56886],
-    subnasale: [0.09932, 0.579425],
+    columella: [0.151, 0.575],
+    subnasale: [0.09, 0.59],
     alare: [0.032732, 0.599787],
-    labialeSuperius: [0.10208, 0.684293],
-    stomion: [0.085246, 0.704957],
-    labialeInferius: [0.089978, 0.75335],
-    mentolabialSulcus: [0.125528, 0.843378],
+    labialeSuperius: [0.085, 0.68],
+    stomion: [0.078, 0.705],
+    labialeInferius: [0.08, 0.75],
+    mentolabialSulcus: [0.015871, 0.833935],
 
     softTissuePogonion: [0.05687, 0.923903],
     pogonion: [0.05687, 0.923903],
