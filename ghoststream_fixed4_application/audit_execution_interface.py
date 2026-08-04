@@ -29,6 +29,16 @@ def decode_parts(path: Path) -> bytes:
     return gzip.decompress(base64.b64decode(encoded, validate=True))
 
 
+def json_safe(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, set):
+        return [json_safe(item) for item in sorted(value, key=repr)]
+    return value
+
+
 def interface(source: bytes) -> dict[str, object]:
     text = source.decode("utf-8")
     tree = ast.parse(text)
@@ -65,12 +75,12 @@ def interface(source: bytes) -> dict[str, object]:
                         constants[target.id] = ast.literal_eval(node.value)
                     except Exception:
                         pass
-    return {
+    return json_safe({
         "imports": imports,
         "functions": functions,
         "classes": classes,
         "constants": constants,
-    }
+    })
 
 
 def main() -> int:
@@ -95,13 +105,15 @@ def main() -> int:
         }
         (output / f"frozen_{name}.py").write_bytes(source)
 
-    scorer_text = sources["scorer"].decode("utf-8")
+    baseline_constants = records["baseline"]["interface"]["constants"]
+    scorer_constants = records["scorer"]["interface"]["constants"]
     gates.update({
-        "episode_size_128": "EPISODE_SIZE = 128" in scorer_text,
-        "calibration_count_128": "CALIBRATION_NEGATIVES_PER_BIN = 128" in scorer_text,
-        "test_negative_count_64": "TEST_NEGATIVES_PER_BIN = 64" in scorer_text,
-        "all_k_exact": "ALL_K = (4, 6, 8, 12)" in scorer_text,
-        "mondrian_width_10": "MONDRIAN_WIDTH_DEG = 10.0" in scorer_text,
+        "episode_size_128": baseline_constants.get("EPISODE_SIZE") == 128,
+        "calibration_count_128": scorer_constants.get("CALIBRATION_NEGATIVES_PER_BIN") == 128,
+        "test_negative_count_64": scorer_constants.get("TEST_NEGATIVES_PER_BIN") == 64,
+        "positive_replicates_4": scorer_constants.get("POSITIVE_REPLICATES") == 4,
+        "all_k_exact": scorer_constants.get("ALL_K") == [4, 6, 8, 12],
+        "mondrian_width_10": scorer_constants.get("MONDRIAN_BIN_WIDTH_DEG") == 10.0,
         "no_ghoststream_token": all("ghoststream" not in source.decode("utf-8").lower() for source in sources.values()),
     })
     verdict = "PASS_GHOSTSTREAM_FIXED4_EXECUTION_INTERFACE_AUDIT" if all(gates.values()) else "FAIL_GHOSTSTREAM_FIXED4_EXECUTION_INTERFACE_AUDIT"
