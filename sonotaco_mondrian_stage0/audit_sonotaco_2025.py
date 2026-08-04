@@ -18,7 +18,7 @@ ENCODINGS = ("utf-8-sig", "cp932", "shift_jis", "latin-1")
 DELIMITERS = (",", ";", "\t", "|")
 
 
-def decode_csv(payload: bytes) -> tuple[str, str]:
+def decode_csv(payload: bytes) -> tuple[str, str, str]:
     for encoding in ENCODINGS:
         try:
             text = payload.decode(encoding)
@@ -30,7 +30,7 @@ def decode_csv(payload: bytes) -> tuple[str, str]:
         except csv.Error:
             dialect = None
         delimiter = dialect.delimiter if dialect is not None else ","
-        return text, delimiter
+        return text, delimiter, encoding
     raise RuntimeError("no frozen encoding candidate decoded the CSV")
 
 
@@ -40,7 +40,7 @@ def safe_member(name: str) -> bool:
 
 
 def inspect_csv(payload: bytes) -> dict:
-    text, delimiter = decode_csv(payload)
+    text, delimiter, encoding = decode_csv(payload)
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
     try:
         header = next(reader)
@@ -58,9 +58,7 @@ def inspect_csv(payload: bytes) -> dict:
             malformed_rows += 1
 
     return {
-        "encoding": next(
-            encoding for encoding in ENCODINGS if payload.decode(encoding, errors="ignore") == text
-        ),
+        "encoding": encoding,
         "delimiter": delimiter,
         "header": header,
         "field_count": expected_width,
