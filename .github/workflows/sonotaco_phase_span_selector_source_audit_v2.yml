@@ -1,0 +1,114 @@
+name: SonotaCo phase-span selector source audit v2
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-phase-span-selector-source-audit
+    paths:
+      - .github/workflows/sonotaco_phase_span_selector_source_audit_v2.yml
+      - sonotaco_phase_span_selector_source_audit_v2/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-phase-span-selector-source-audit-v2
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-phase-span-selector-source-audit-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact one-literal repair and audit corrected source
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast, base64, gzip, hashlib, json
+          from pathlib import Path
+
+          def decode(directory, expected_names, expected_length):
+              parts = sorted(Path(directory).glob('part*.b64'))
+              if [part.name for part in parts] != expected_names:
+                  raise RuntimeError(f'unexpected parts in {directory}: {[part.name for part in parts]}')
+              encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+              if len(encoded) != expected_length:
+                  raise RuntimeError(f'encoded length mismatch in {directory}: {len(encoded)}')
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          names = [f'part{i:02d}.b64' for i in range(8)]
+          v1 = decode('sonotaco_phase_span_selector_source_audit/source_parts', names, 8024)
+          v2 = decode('sonotaco_phase_span_selector_source_audit_v2/source_parts', names, 8036)
+          old = b'"reference": "mondrian-span-selector-reference",'
+          new = b'"reference": "mondrian-multiview-hires-reference",'
+          exact_repair = v1.count(old) == 1 and old not in v2 and v2 == v1.replace(old, new, 1)
+          digest = hashlib.sha256(v2).hexdigest()
+          expected = '1fc071aeb742b70cadbf19be9bac719e79d57ca7a74ab0ce1cb960a827df4f2a'
+          text = v2.decode('utf-8')
+          tree = ast.parse(text)
+          constants = {}
+          functions = set()
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  functions.add(node.name)
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+          gates = {
+              'exact_one_literal_repair': exact_repair,
+              'source_sha256_exact': digest == expected,
+              'thresholds_exact': constants.get('THRESHOLDS') == (2.5, 5.0, 7.5),
+              'original_calibration_128': constants.get('ORIGINAL_CALIBRATION_NEGATIVES_PER_BIN') == 128,
+              'reference_512': constants.get('REFERENCE_NEGATIVES_PER_BIN') == 512,
+              'selector_calibration_512': constants.get('SELECTOR_CALIBRATION_NEGATIVES_PER_BIN') == 512,
+              'required_functions_present': {'selector_fields','selection_tuple','component_fields','worker','main'} <= functions,
+              'exact_pr112_reference_prefix_present': '"reference": "mondrian-multiview-hires-reference",' in text,
+              'conditional_selector_unchanged': 'selected_view = "original" if phase3_span <= threshold + 1e-12 else "phase3"' in text,
+              'sonotaco_2024_absent': '024a.zip' not in text and 'SonotaCo 2024' not in text,
+              'ghoststream_absent': 'GhostStream' not in text and 'ghoststream' not in text,
+          }
+          verdict = 'PASS_SONOTACO_PHASE_SPAN_SELECTOR_SOURCE_AUDIT_V2' if all(gates.values()) else 'KILL_SONOTACO_PHASE_SPAN_SELECTOR_SOURCE_AUDIT_V2'
+          Path('output/candidate_source_v2.py').write_bytes(v2)
+          Path('output/source_audit_v2.json').write_text(json.dumps({
+              'v1_sha256': hashlib.sha256(v1).hexdigest(),
+              'v2_sha256': digest,
+              'v1_bytes': len(v1),
+              'v2_bytes': len(v2),
+              'gates': gates,
+              'verdict': verdict,
+          }, indent=2), encoding='utf-8')
+          lines = ['# SonotaCo phase-span selector source audit v2','',f'Verdict: **{verdict}**','']
+          lines += [f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items()]
+          Path('output/SOURCE_AUDIT_V2_RESULT.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Corrected source audit failed')
+          PY
+          python -m py_compile output/candidate_source_v2.py
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum \
+            sonotaco_phase_span_selector_source_audit/PROTOCOL.md \
+            sonotaco_phase_span_selector_source_audit/source_parts/*.b64 \
+            sonotaco_phase_span_selector_source_audit_v2/PROTOCOL.md \
+            sonotaco_phase_span_selector_source_audit_v2/source_parts/*.b64 \
+            > output/source_files_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload corrected source-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-phase-span-selector-source-audit-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
