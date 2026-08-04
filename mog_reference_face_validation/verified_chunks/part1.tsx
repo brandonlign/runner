@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { CanonicalClayFace } from "./canonical-clay-face";
 import { calculateAnalysisReport } from "@/lib/analysis/calculate-report";
 import type { FacialLandmarks, LandmarkId, Point2D } from "@/lib/analysis/landmarks";
 import {
@@ -92,4 +93,3 @@ function FrontReference({ mode, landmarks }: { mode: RenderMode; landmarks: Faci
   const rightJaw = q("rightGonion");
   const leftTragion = q("leftTragion");
   const rightTragion = q("rightTragion");
-
