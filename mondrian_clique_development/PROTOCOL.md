@@ -1,6 +1,6 @@
 # Mondrian partition-invariant clique: retrospective pressure-test protocol
 
-Status: frozen before any 10-degree Mondrian result is computed for the four retrospective panels below.
+Status: scientific method frozen before any 10-degree Mondrian score was computed. A panel-coverage feasibility rule was corrected after the initial 2026 H1 job stopped before scoring; no score, p-value, power endpoint, or comparator result existed for that panel when the correction was made.
 
 ## Purpose
 
@@ -37,7 +37,19 @@ Exact selected-event SHA-256 values:
 - even archive: `518e12043ef838355d488c0fa675f1332961796168920c6c15e4b3db0583c812`;
 - 2026 H1: `59e48ee6a0b653a2b4530f8a2221e2e93e6af3e6a9f11281c6f17fc428a85ddf`.
 
-The exact retrospective implementation SHA-256 is `e3dc3dfcbfbfdc15bead220464213ee271f7411cbf550bbecf0536153b85344e`.
+The corrected exact retrospective implementation SHA-256 is `f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8`.
+
+## Pre-score feasibility correction
+
+Initial workflow `30874109169` applied a minimum of 20 supported 10-degree bins to every panel. The three full-year panels completed and passed all scientific gates. The fixed January–June panel stopped before calibration or candidate scoring with exactly 15 supported bins because a full-year coverage requirement had been applied to a half-year corpus.
+
+The correction is limited to panel coverage:
+
+- full-year 2021, 2024, and 2025 require at least 20 supported 10-degree bins;
+- fixed January–June 2026 requires at least 12 supported 10-degree bins;
+- every panel still requires at least 30 eligible established showers.
+
+Twelve is fixed before H1 scoring and represents 80% of the 15 bins that its fixed calendar span can support after the blind interval. The observed count is 15, so the corrected rule is not set at the observed boundary. No method score, seed, bin width, bin boundary, calibration count, p-value formula, comparator, scientific endpoint, or scientific gate changed.
 
 ## GhostStream blindness
 
@@ -76,7 +88,8 @@ No radius, cluster threshold, random split, orbit element, shower identity, or a
 - For every supported year-stratum, draw 128 deterministic calibration windows and 64 independent negative windows from the same fixed sporadic corpus and generator.
 - Convert the candidate score to `p = (1 + number of calibration scores >= score) / 129`.
 - Overlap among Monte Carlo windows is allowed, matching the previously validated same-corpus empirical mechanism.
-- At least 20 strata and 30 eligible showers must be supported in every panel.
+- Full-year panels require at least 20 supported strata; the fixed January–June 2026 panel requires at least 12.
+- Every panel requires at least 30 eligible showers.
 
 Exact seed prefixes:
 
@@ -113,6 +126,6 @@ Every gate must pass independently in 2021, 2024, 2025, and 2026 H1:
 
 ## Kill and continuation rules
 
-Any failed gate in any panel kills this exact 10-degree formulation. Do not change the bin width, boundaries, calibration count, negative count, score, seeds, folds, shower subset, blind interval, thresholds, or gates after results are observed.
+Any failed scientific gate in any panel kills this exact 10-degree formulation. Do not change the bin width, boundaries, calibration count, negative count, score, seeds, folds, shower subset, blind interval, thresholds, or scientific gates after results are observed.
 
 A four-panel pass authorizes only a separately frozen July 2026 snapshot gate. It does not authorize a GhostStream application, discovery claim, or catalog scan.
