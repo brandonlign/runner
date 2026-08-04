@@ -1,0 +1,174 @@
+name: Affine v4 pinned execution
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/affine_v4_pinned_execution.yml
+      - affine_v4_pinned_execution/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: affine-v4-pinned-execution
+  cancel-in-progress: true
+
+jobs:
+  development-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PINNED_COMMIT: 'e06867d8c60aaeb8cb1a73d2c5bfdbb63de936ea'
+      SOURCE_SHA256: '7ec195a34fa286129f01d181b7a8365623a0266d76c153a155d98d220cc833f3'
+      EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
+      AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+      BASELINE_SOURCE_SHA256: '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50'
+      SCORER_SOURCE_SHA256: 'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/affine-v4-pinned-execution-main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Extract every implementation file from exact pinned commit
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pinned/affine/source_parts \
+                   /tmp/pinned/baseline \
+                   /tmp/pinned/scorer/source_parts_v2 \
+                   input output
+          git fetch --depth=1 origin "${PINNED_COMMIT}"
+          git show FETCH_HEAD:affine_stream_tube_preflight_v4/PROTOCOL.md > /tmp/pinned/affine/PROTOCOL.md
+          git show FETCH_HEAD:affine_stream_tube_preflight_v4/source_parts/part00.b64 > /tmp/pinned/affine/source_parts/part00.b64
+          git show FETCH_HEAD:affine_stream_tube_preflight_v4/source_parts/part01.b64 > /tmp/pinned/affine/source_parts/part01.b64
+          git show FETCH_HEAD:real_shower_meta_stage0/requirements.txt > /tmp/pinned/baseline/requirements.txt
+          git show FETCH_HEAD:real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 > /tmp/pinned/baseline/run_baseline_ceiling.py.gz.b64
+          for part in part00.b64 part01.b64 part02.b64 part03.b64; do
+            git show "FETCH_HEAD:mondrian_clique_development/source_parts_v2/${part}" > "/tmp/pinned/scorer/source_parts_v2/${part}"
+          done
+          git rev-parse FETCH_HEAD
+          sha256sum \
+            /tmp/pinned/affine/PROTOCOL.md \
+            /tmp/pinned/affine/source_parts/*.b64 \
+            /tmp/pinned/baseline/requirements.txt \
+            /tmp/pinned/baseline/run_baseline_ceiling.py.gz.b64 \
+            /tmp/pinned/scorer/source_parts_v2/*.b64
+      - name: Install pinned dependencies
+        run: python -m pip install --upgrade pip -r /tmp/pinned/baseline/requirements.txt
+      - name: Retrieve exact retired development artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo "${EVENTS_SHA256}  input/selected_events.jsonl.gz" | sha256sum -c -
+          echo "${AUDIT_SHA256}  input/audit.json" | sha256sum -c -
+      - name: Decode and verify exact candidate and inherited sources
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          candidate_parts = sorted(Path('/tmp/pinned/affine/source_parts').glob('part*.b64'))
+          if [part.name for part in candidate_parts] != ['part00.b64', 'part01.b64']:
+              raise RuntimeError(f'unexpected candidate parts: {[part.name for part in candidate_parts]}')
+          candidate = gzip.decompress(base64.b64decode(
+              ''.join(''.join(part.read_text().split()) for part in candidate_parts), validate=True
+          ))
+          candidate_hash = hashlib.sha256(candidate).hexdigest()
+          if candidate_hash != '${{ env.SOURCE_SHA256 }}':
+              raise RuntimeError(f'candidate source mismatch: {candidate_hash}')
+          Path('/tmp/run_affine_tube_preflight_v4.py').write_bytes(candidate)
+          Path('output/run_affine_tube_preflight_v4.py').write_bytes(candidate)
+
+          scorer_parts = sorted(Path('/tmp/pinned/scorer/source_parts_v2').glob('part*.b64'))
+          scorer = gzip.decompress(base64.b64decode(
+              ''.join(''.join(part.read_text().split()) for part in scorer_parts), validate=True
+          ))
+          scorer_hash = hashlib.sha256(scorer).hexdigest()
+          if scorer_hash != '${{ env.SCORER_SOURCE_SHA256 }}':
+              raise RuntimeError(f'scorer source mismatch: {scorer_hash}')
+
+          baseline_encoded = ''.join(Path(
+              '/tmp/pinned/baseline/run_baseline_ceiling.py.gz.b64'
+          ).read_text().split())
+          baseline = gzip.decompress(base64.b64decode(baseline_encoded, validate=True))
+          baseline_hash = hashlib.sha256(baseline).hexdigest()
+          if baseline_hash != '${{ env.BASELINE_SOURCE_SHA256 }}':
+              raise RuntimeError(f'baseline source mismatch: {baseline_hash}')
+
+          print('candidate source sha256:', candidate_hash)
+          print('candidate source bytes:', len(candidate))
+          print('scorer source sha256:', scorer_hash)
+          print('baseline source sha256:', baseline_hash)
+          PY
+          python -m py_compile /tmp/run_affine_tube_preflight_v4.py
+      - name: Run exact pinned preflight
+        run: |
+          set -euo pipefail
+          python /tmp/run_affine_tube_preflight_v4.py \
+            --events input/selected_events.jsonl.gz \
+            --audit input/audit.json \
+            --baseline-payload /tmp/pinned/baseline/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/pinned/scorer/source_parts_v2 \
+            --output output \
+            --workers 4
+          cat output/AFFINE_TUBE_PREFLIGHT.md
+      - name: Enforce frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/affine_tube_preflight.json').read_text())
+          print(json.dumps({
+              'counts': result['counts'],
+              'supported_bin_years': result['supported_bin_years'],
+              'weak_auc': result['weak_auc'],
+              'false_positive': result['false_positive'],
+              'worst_bin_fpr_005': result['worst_bin_fpr_005'],
+              'recall': result['recall'],
+              'fold_auc': result['fold_auc'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen affine stream-tube preflight failed')
+          if result['verdict'] != 'PROCEED_TO_FULL_AFFINE_TUBE_BENCHMARK':
+              raise SystemExit(f"Unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            affine_v4_pinned_execution/PROTOCOL.md \
+            /tmp/pinned/affine/PROTOCOL.md \
+            /tmp/pinned/affine/source_parts/*.b64 \
+            /tmp/pinned/baseline/requirements.txt \
+            /tmp/pinned/baseline/run_baseline_ceiling.py.gz.b64 \
+            /tmp/pinned/scorer/source_parts_v2/*.b64 \
+            input/selected_events.jsonl.gz \
+            input/audit.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: affine-v4-pinned-execution
+          path: output
+          if-no-files-found: error
+          retention-days: 90
