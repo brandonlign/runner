@@ -1,0 +1,121 @@
+name: SonotaCo cross-predictive source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-radiant-drift-development
+    paths:
+      - .github/workflows/sonotaco_cross_predictive_source_audit.yml
+      - sonotaco_cross_predictive_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-cross-predictive-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-cross-predictive-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode exact radiant-drift source
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          parts = sorted(Path('sonotaco_radiant_drift_development/source_parts').glob('part*.b64'))
+          expected_parts = [f'part{i:02d}.b64' for i in range(8)]
+          if [part.name for part in parts] != expected_parts:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text(encoding='ascii').split()) for part in parts)
+          if len(encoded) != 9068:
+              raise RuntimeError(f'encoded length mismatch: {len(encoded)}')
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'f72f7bd9478414c32edffc68209e8e8dd4de8b36bfef884be17c93cbe5b3b0af'
+          if digest != expected:
+              raise RuntimeError(f'radiant-drift source mismatch: {digest}')
+          decoded = source.decode('utf-8')
+          compile(decoded, 'frozen_radiant_drift.py', 'exec')
+          tree = ast.parse(decoded, filename='frozen_radiant_drift.py')
+          definitions = []
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                  definitions.append({
+                      'kind': type(node).__name__,
+                      'name': node.name,
+                      'lineno': node.lineno,
+                      'end_lineno': node.end_lineno,
+                      'args': [arg.arg for arg in node.args.args] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else [],
+                  })
+          gates = {
+              'exact_source_hash': digest == expected,
+              'source_compiles': True,
+              'source_ast_parses': True,
+              'definition_inventory_nonempty': bool(definitions),
+              'no_data_or_score_execution': True,
+          }
+          verdict = 'PASS_SONOTACO_CROSS_PREDICTIVE_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_CROSS_PREDICTIVE_SOURCE_AUDIT'
+          result = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'definitions': definitions,
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/frozen_radiant_drift.py').write_text(decoded, encoding='utf-8')
+          Path('output/source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# SonotaCo cross-predictive source audit', '',
+              f'Verdict: **{verdict}**', '',
+              f'- source SHA-256: `{digest}`',
+              f'- source bytes: {len(source)}',
+              f'- top-level definitions: {len(definitions)}', '',
+              '## Gates', '',
+          ]
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_CROSS_PREDICTIVE_SOURCE_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('frozen source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_cross_predictive_stage0/PROTOCOL.md \
+            sonotaco_radiant_drift_development/source_parts/part00.b64 \
+            sonotaco_radiant_drift_development/source_parts/part01.b64 \
+            sonotaco_radiant_drift_development/source_parts/part02.b64 \
+            sonotaco_radiant_drift_development/source_parts/part03.b64 \
+            sonotaco_radiant_drift_development/source_parts/part04.b64 \
+            sonotaco_radiant_drift_development/source_parts/part05.b64 \
+            sonotaco_radiant_drift_development/source_parts/part06.b64 \
+            sonotaco_radiant_drift_development/source_parts/part07.b64 \
+            > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload source-only audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-cross-predictive-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
