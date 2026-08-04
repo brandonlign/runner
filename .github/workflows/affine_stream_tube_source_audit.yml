@@ -3,44 +3,90 @@ name: Affine stream-tube source audit
 on:
   pull_request:
     branches:
-      - agent/mondrian-clique-coverage-normalized-development
+      - agent/affine-stream-tube-preflight
     paths:
       - .github/workflows/affine_stream_tube_source_audit.yml
+      - affine_stream_tube_source_audit/**
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: affine-stream-tube-source-audit
+  cancel-in-progress: true
+
 jobs:
-  source-audit:
+  no-score-source-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/affine-stream-tube-preflight
+          ref: agent/affine-stream-tube-source-audit
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Decode exact frozen candidate source
+      - name: Decode exact failed source and inspect interface
         run: |
+          set -euo pipefail
           mkdir -p output
           python - <<'PY'
-          import base64, gzip, hashlib
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
           from pathlib import Path
-          parts=sorted(Path('affine_stream_tube_preflight/source_parts').glob('part*.b64'))
-          source=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
-          digest=hashlib.sha256(source).hexdigest()
-          if digest != 'e82eef021326cb5b570521064a6c78001cc5d0cac53fdb2e1e966362f3d4c1bb':
-              raise RuntimeError(digest)
-          Path('output/run_affine_tube_preflight.py').write_bytes(source)
-          Path('output/source_sha256.txt').write_text(digest+'\n')
-          print(digest,len(source))
+
+          parts = sorted(Path('affine_stream_tube_preflight/source_parts').glob('part*.b64'))
+          expected_parts = ['part00.b64', 'part01.b64']
+          if [p.name for p in parts] != expected_parts:
+              raise RuntimeError(f'unexpected source parts: {[p.name for p in parts]}')
+          encoded = ''.join(''.join(p.read_text().split()) for p in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'e82eef021326cb5b570521064a6c78001cc5d0cac53fdb2e1e966362f3d4c1bb'
+          if digest != expected:
+              raise RuntimeError(f'source mismatch: {digest}')
+          source_path = Path('output/run_affine_tube_preflight.py')
+          source_path.write_bytes(source)
+          tree = ast.parse(source.decode('utf-8'))
+          functions = [
+              {'name': node.name, 'lineno': node.lineno, 'signature': ast.unparse(node.args)}
+              for node in tree.body if isinstance(node, ast.FunctionDef)
+          ]
+          calls = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Call):
+                  try:
+                      calls.append({'lineno': node.lineno, 'call': ast.unparse(node.func)})
+                  except Exception:
+                      pass
+          interface = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'functions': functions,
+              'calls': calls,
+          }
+          Path('output/interface.json').write_text(json.dumps(interface, indent=2, sort_keys=True))
+          print(json.dumps(interface, indent=2, sort_keys=True))
           PY
           python -m py_compile output/run_affine_tube_preflight.py
-      - uses: actions/upload-artifact@v4
+          sed -n '115,165p' output/run_affine_tube_preflight.py
+      - name: Record provenance
+        run: |
+          sha256sum \
+            affine_stream_tube_source_audit/PROTOCOL.md \
+            affine_stream_tube_preflight/source_parts/part00.b64 \
+            affine_stream_tube_preflight/source_parts/part01.b64 \
+            output/run_affine_tube_preflight.py \
+            > output/source_sha256_full.txt
+          python --version > output/python_version.txt
+      - name: Upload exact source audit
+        uses: actions/upload-artifact@v4
         with:
           name: affine-stream-tube-source-audit
           path: output
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
