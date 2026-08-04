@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 240
     env:
       PR14_COMMIT: 'bbd3eb514df2c0af7e8648ebc3ced5edbb7eec87'
-      PARSER_SHA256: '4a029051230f7c6e99b09e911f8a9e5228a58783'
+      PARSER_BLOB_SHA: '4a029051230f7c6e99b09e911f8a9e5228a58783'
       AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
     steps:
       - uses: actions/checkout@v4
@@ -38,9 +38,14 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/pr14 input output
           git fetch --depth=1 origin "${PR14_COMMIT}"
+          observed_blob="$(git rev-parse 'FETCH_HEAD:real_shower_meta_stage0/audit_real_shower_data.py')"
+          if [ "${observed_blob}" != "${PARSER_BLOB_SHA}" ]; then
+            echo "parser Git blob mismatch: ${observed_blob}" >&2
+            exit 1
+          fi
           git show "FETCH_HEAD:real_shower_meta_stage0/audit_real_shower_data.py" \
             > /tmp/pr14/audit_real_shower_data.py
-          echo "${PARSER_SHA256}  /tmp/pr14/audit_real_shower_data.py" | sha256sum -c -
+          sha256sum /tmp/pr14/audit_real_shower_data.py | tee output/parser_file_sha256.txt
           python -m py_compile /tmp/pr14/audit_real_shower_data.py
           python -m py_compile majority_conditioned_real_shower_feasibility/run_feasibility.py
       - name: Retrieve exact prior MDC complex-mapping audit
@@ -99,6 +104,7 @@ jobs:
           mkdir -p output
           sha256sum \
             majority_conditioned_real_shower_feasibility/PROTOCOL.md \
+            majority_conditioned_real_shower_feasibility/MANIFEST_V1_RESULT.md \
             majority_conditioned_real_shower_feasibility/run_feasibility.py \
             /tmp/pr14/audit_real_shower_data.py \
             input/audit.json \
