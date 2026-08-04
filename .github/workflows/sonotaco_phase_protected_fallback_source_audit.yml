@@ -1,0 +1,149 @@
+name: SonotaCo phase protected fallback source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-phase-span-selector-development-v2
+    paths:
+      - .github/workflows/sonotaco_phase_protected_fallback_source_audit.yml
+      - sonotaco_phase_protected_fallback/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-phase-protected-fallback-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-phase-protected-fallback-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact protected-fallback formulation
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          def decode(directory, encoded_length, expected_sha):
+              parts = sorted(Path(directory).glob('part*.b64'))
+              expected_parts = [f'part{i:02d}.b64' for i in range(8)]
+              names = [part.name for part in parts]
+              if names != expected_parts:
+                  raise RuntimeError(f'{directory}: unexpected parts {names}')
+              encoded = ''.join(''.join(part.read_text(encoding='ascii').split()) for part in parts)
+              if len(encoded) != encoded_length:
+                  raise RuntimeError(f'{directory}: encoded length mismatch {len(encoded)}')
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != expected_sha:
+                  raise RuntimeError(f'{directory}: source mismatch {digest}')
+              compile(source, directory + '.py', 'exec')
+              return source.decode('utf-8'), digest
+
+          parent, parent_sha = decode(
+              'sonotaco_phase_span_selector_reference_repair/source_parts',
+              8036,
+              '1fc071aeb742b70cadbf19be9bac719e79d57ca7a74ab0ce1cb960a827df4f2a',
+          )
+          candidate, candidate_sha = decode(
+              'sonotaco_phase_protected_fallback/source_parts',
+              8096,
+              '3cfd613a0beefaab1bff975dec296d7db8bed3cc9fc2cd9f176a7678d7c86085',
+          )
+
+          tree = ast.parse(candidate)
+          constants = {}
+          functions = {}
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+              elif isinstance(node, ast.FunctionDef):
+                  functions[node.name] = ast.get_source_segment(candidate, node) or ''
+
+          selector = functions.get('selector_fields', '')
+          required_parent_controls = [
+              'original_reproduction_fpr_alpha_0p05',
+              'original_reproduction_fpr_alpha_0p01',
+              'phase3_reproduction_fpr_alpha_0p05',
+              'phase3_reproduction_fpr_alpha_0p01',
+              'candidate_pooled_fpr_alpha_0p05',
+              'candidate_pooled_fpr_alpha_0p01',
+              'candidate_weak_auc',
+              'candidate_k4_recall_alpha_0p05',
+              'candidate_k4_recall_alpha_0p01',
+              'candidate_k6_no_material_drop',
+              'candidate_k8_no_material_drop',
+              'candidate_monotonic_alpha_0p05',
+              'candidate_monotonic_alpha_0p01',
+          ]
+          gates = {
+              'parent_source_exact': parent_sha == '1fc071aeb742b70cadbf19be9bac719e79d57ca7a74ab0ce1cb960a827df4f2a',
+              'candidate_source_exact': candidate_sha == '3cfd613a0beefaab1bff975dec296d7db8bed3cc9fc2cd9f176a7678d7c86085',
+              'sources_compile': True,
+              'fixed_threshold_exact': constants.get('THRESHOLDS') == (2.5,),
+              'calibration_sizes_exact': constants.get('ORIGINAL_CALIBRATION_NEGATIVES_PER_BIN') == 128 and constants.get('REFERENCE_NEGATIVES_PER_BIN') == 512 and constants.get('SELECTOR_CALIBRATION_NEGATIVES_PER_BIN') == 512,
+              'exact_pr112_reference_stream': candidate.count('mondrian-multiview-hires-reference') == 1 and 'mondrian-span-selector-reference' not in candidate,
+              'phase3_primary_rule_exact': 'selected_ref_p = min(phase3_ref_p, original_ref_p) if narrow else phase3_ref_p' in selector,
+              'fallback_only_when_stronger': 'fallback_active = narrow and original_ref_p < phase3_ref_p' in selector,
+              'narrow_gate_exact': 'narrow = phase3_span <= threshold + 1e-12' in selector,
+              'all_parent_scientific_gates_retained': all(name in candidate for name in required_parent_controls),
+              'fixed_candidate_gates_present': 'protected_fallback_fixed_2p5' in candidate and 'all_folds_use_fixed_2p5' in candidate,
+              'verdict_and_outputs_exact': 'PASS_SONOTACO_PHASE_PROTECTED_FALLBACK_DEVELOPMENT' in candidate and 'KILL_SONOTACO_PHASE_PROTECTED_FALLBACK_DEVELOPMENT' in candidate and 'sonotaco_phase_protected_fallback_development.json' in candidate,
+              'blind_sources_absent': 'SonotaCo 2024' not in candidate and 'GhostStream' not in candidate and '024a.zip' not in candidate,
+          }
+          verdict = 'PASS_SONOTACO_PHASE_PROTECTED_FALLBACK_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_PHASE_PROTECTED_FALLBACK_SOURCE_AUDIT'
+          result = {
+              'parent_sha256': parent_sha,
+              'candidate_sha256': candidate_sha,
+              'candidate_bytes': len(candidate.encode('utf-8')),
+              'constants': constants,
+              'gates': gates,
+              'data_opened': False,
+              'score_executed': False,
+              'verdict': verdict,
+          }
+          Path('output/protected_fallback_candidate.py').write_text(candidate, encoding='utf-8')
+          Path('output/source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          report = ['# SonotaCo phase3-primary protected-fallback source audit', '', f'Verdict: **{verdict}**', '', f'- parent SHA-256: `{parent_sha}`', f'- candidate SHA-256: `{candidate_sha}`', '- meteor archive opened: no', '- detector score executed: no', '', '## Gates', '']
+          report.extend(f"- {'PASS' if value else 'FAIL'} — `{key}`" for key, value in gates.items())
+          Path('output/SOURCE_AUDIT_RESULT.md').write_text('\n'.join(report) + '\n', encoding='utf-8')
+          print('\n'.join(report))
+          if not all(gates.values()):
+              raise SystemExit('Frozen protected-fallback source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_phase_protected_fallback/PROTOCOL.md \
+            sonotaco_phase_protected_fallback/source_parts/*.b64 \
+            sonotaco_phase_span_selector_reference_repair/source_parts/*.b64 \
+            > output/source_files_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload source audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-phase-protected-fallback-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
