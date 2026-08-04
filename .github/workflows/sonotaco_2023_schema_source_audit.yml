@@ -1,0 +1,307 @@
+name: SonotaCo 2023 schema source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2023-replacement-feasibility
+    paths:
+      - .github/workflows/sonotaco_2023_schema_source_audit.yml
+      - sonotaco_2023_schema_source_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-2023-schema-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2023-schema-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact pinned 2024 parser and confirmation sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/contents/sonotaco_2024_confirmation_v2/audit_sonotaco_2024_v2.py?ref=60bbe701981256b89aaa1c9361efef2bbb2dd57e" \
+            --jq .content \
+            | tr -d '\n' \
+            | base64 --decode \
+            > input/audit_sonotaco_2024_v2.py
+          echo 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b  input/audit_sonotaco_2024_v2.py' | sha256sum -c -
+
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/contents/sonotaco_fixed4_confirmation/source_parts/part00.b64?ref=8ac287c377ef3b140691217dd30285b723dd2cdf" \
+            --jq .content \
+            | tr -d '\n' \
+            | base64 --decode \
+            > input/sonotaco_2024_confirmation.py.gz.b64
+          echo 'c558141ce984f3b9d5ee5eecf7e80d3df54ce7ac0e0ac1e46ca5d84a7b7017d2  input/sonotaco_2024_confirmation.py.gz.b64' | sha256sum -c -
+
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          encoded = ''.join(Path('input/sonotaco_2024_confirmation.py.gz.b64').read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '94081bcc564170b7273704f94d098fd8bb2d5b0e63e53d95117b48415f1031e7'
+          if digest != expected:
+              raise RuntimeError(f'confirmation source mismatch: {digest}')
+          Path('input/sonotaco_2024_confirmation.py').write_bytes(source)
+          compile(source, 'sonotaco_2024_confirmation.py', 'exec')
+          print('confirmation source bytes:', len(source))
+          print('confirmation source SHA-256:', digest)
+          PY
+      - name: Download exact SonotaCo 2023 replacement archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+      - name: Hash member, decode header only, and generate reversible 2023 sources
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          import base64
+          import csv
+          import gzip
+          import hashlib
+          import io
+          import json
+          import re
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          archive_path = Path('input/023a.zip')
+          parser_2024_bytes = Path('input/audit_sonotaco_2024_v2.py').read_bytes()
+          confirmation_2024_bytes = Path('input/sonotaco_2024_confirmation.py').read_bytes()
+          parser_2024 = parser_2024_bytes.decode('utf-8')
+          confirmation_2024 = confirmation_2024_bytes.decode('utf-8')
+
+          if '2023' in parser_2024 or '2023' in confirmation_2024:
+              raise RuntimeError('pinned 2024 source already contains 2023; reversible global year substitution is ambiguous')
+
+          parser_tree = ast.parse(parser_2024, filename='audit_sonotaco_2024_v2.py')
+          parser_constants = {}
+          for node in parser_tree.body:
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      parser_constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+
+          expected_basename = '_U2_20230101_S.csv'
+          matching = []
+          member_hash = hashlib.sha256()
+          member_bytes = 0
+          header_bytes = bytearray()
+          header_complete = False
+
+          with zipfile.ZipFile(archive_path, 'r') as zf:
+              for info in zf.infolist():
+                  if not info.is_dir() and PurePosixPath(info.filename).name == expected_basename:
+                      matching.append(info)
+              if len(matching) != 1:
+                  raise RuntimeError(f'expected exactly one {expected_basename}, found {len(matching)}')
+              info = matching[0]
+              with zf.open(info, 'r') as stream:
+                  while True:
+                      chunk = stream.read(1024 * 1024)
+                      if not chunk:
+                          break
+                      member_hash.update(chunk)
+                      member_bytes += len(chunk)
+                      if not header_complete:
+                          newline = chunk.find(b'\n')
+                          if newline >= 0:
+                              header_bytes.extend(chunk[: newline + 1])
+                              header_complete = True
+                          else:
+                              header_bytes.extend(chunk)
+                              if len(header_bytes) > 65536:
+                                  raise RuntimeError('header exceeds frozen 64 KiB ceiling')
+
+          if not header_complete:
+              raise RuntimeError('main member contains no line ending')
+          member_sha256 = member_hash.hexdigest()
+
+          encodings = tuple(parser_constants['ENCODINGS'])
+          delimiters = tuple(parser_constants['DELIMITERS'])
+          decoded_header = None
+          encoding_used = None
+          for encoding in encodings:
+              try:
+                  decoded_header = bytes(header_bytes).decode(encoding)
+                  encoding_used = encoding
+                  break
+              except UnicodeDecodeError:
+                  continue
+          if decoded_header is None or encoding_used is None:
+              raise RuntimeError('header does not decode under frozen encoding candidates')
+
+          sample = decoded_header
+          try:
+              dialect = csv.Sniffer().sniff(sample, delimiters=''.join(delimiters))
+              delimiter = dialect.delimiter
+          except csv.Error:
+              delimiter = ','
+          raw_header = next(csv.reader(io.StringIO(decoded_header, newline=''), delimiter=delimiter))
+
+          def normalize(text: str) -> str:
+              return re.sub(r'[^a-z0-9]+', '', text.strip().lower())
+
+          raw_normalized = [normalize(field) for field in raw_header]
+          trailing_blank = bool(raw_normalized and raw_normalized[-1] == '')
+          effective_header = raw_header[:-1] if trailing_blank else raw_header
+          normalized_header = [normalize(field) for field in effective_header]
+          normalized_set = set(normalized_header)
+
+          required_geometry = dict(parser_constants['REQUIRED_GEOMETRY_HEADERS'])
+          required_uncertainties = tuple(parser_constants['REQUIRED_MEASUREMENT_UNCERTAINTIES'])
+          required_diagnostics = tuple(parser_constants['REQUIRED_MATCH_DIAGNOSTICS'])
+          semantic_presence = {key: value in normalized_set for key, value in required_geometry.items()}
+          uncertainty_presence = {name: name in normalized_set for name in required_uncertainties}
+          diagnostic_presence = {name: name in normalized_set for name in required_diagnostics}
+
+          old_archive_hash = '409bb958c6f114e542d818e7c4fcf7a58d89b2fb33090a442c8087bdcaa1540f'
+          new_archive_hash = '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430'
+          old_member_hash = '0f25a0f9ea174c2b99915f48a61b35e35e3cde7f3117d82d4e05f8c4112acb00'
+
+          parser_2023 = parser_2024.replace('2024', '2023')
+          parser_2023 = parser_2023.replace('024a.zip', '023a.zip')
+          parser_2023 = parser_2023.replace(old_archive_hash, new_archive_hash)
+          parser_2023 = parser_2023.replace(old_member_hash, member_sha256)
+          parser_reversed = parser_2023.replace(member_sha256, old_member_hash)
+          parser_reversed = parser_reversed.replace(new_archive_hash, old_archive_hash)
+          parser_reversed = parser_reversed.replace('023a.zip', '024a.zip')
+          parser_reversed = parser_reversed.replace('2023', '2024')
+
+          confirmation_2023 = confirmation_2024.replace('2024', '2023').replace('024a', '023a')
+          confirmation_reversed = confirmation_2023.replace('023a', '024a').replace('2023', '2024')
+
+          parser_2023_bytes = parser_2023.encode('utf-8')
+          confirmation_2023_bytes = confirmation_2023.encode('utf-8')
+          compile(parser_2023_bytes, 'audit_sonotaco_2023_v2.py', 'exec')
+          compile(confirmation_2023_bytes, 'run_sonotaco_2023_fixed4_confirmation.py', 'exec')
+          ast.parse(parser_2023, filename='audit_sonotaco_2023_v2.py')
+          ast.parse(confirmation_2023, filename='run_sonotaco_2023_fixed4_confirmation.py')
+
+          parser_2023_sha = hashlib.sha256(parser_2023_bytes).hexdigest()
+          confirmation_2023_sha = hashlib.sha256(confirmation_2023_bytes).hexdigest()
+          confirmation_payload = base64.b64encode(gzip.compress(confirmation_2023_bytes, compresslevel=9, mtime=0)).decode('ascii') + '\n'
+          confirmation_payload_sha = hashlib.sha256(confirmation_payload.encode('ascii')).hexdigest()
+
+          Path('output/audit_sonotaco_2023_v2.py').write_bytes(parser_2023_bytes)
+          Path('output/run_sonotaco_2023_fixed4_confirmation.py').write_bytes(confirmation_2023_bytes)
+          Path('output/sonotaco_2023_confirmation.py.gz.b64').write_text(confirmation_payload, encoding='ascii')
+          Path('output/header_bytes.bin').write_bytes(bytes(header_bytes))
+
+          gates = {
+              'exact_archive_hash': hashlib.sha256(archive_path.read_bytes()).hexdigest() == new_archive_hash,
+              'exactly_one_main_member': len(matching) == 1,
+              'member_hash_recorded': len(member_sha256) == 64,
+              'header_only_decoded': True,
+              'no_data_row_retained_or_decoded': True,
+              'frozen_encoding_candidate': encoding_used in encodings,
+              'frozen_delimiter_candidate': delimiter in delimiters,
+              'effective_header_at_least_40_unique_nonempty_fields': len(effective_header) >= 40 and all(normalized_header) and len(normalized_set) == len(normalized_header),
+              'trailing_blank_at_most_one': raw_normalized.count('') <= 1 and (not trailing_blank or raw_normalized[-1] == ''),
+              'exact_geometry_and_label_headers': all(semantic_presence.values()),
+              'exact_uncertainty_headers': all(uncertainty_presence.values()),
+              'exact_match_diagnostics': all(diagnostic_presence.values()),
+              'parser_compiles_and_parses': True,
+              'confirmation_compiles_and_parses': True,
+              'parser_reverse_byte_exact': parser_reversed.encode('utf-8') == parser_2024_bytes,
+              'confirmation_reverse_byte_exact': confirmation_reversed.encode('utf-8') == confirmation_2024_bytes,
+              'parser_contains_exact_2023_archive_hash': new_archive_hash in parser_2023,
+              'parser_contains_exact_2023_member_hash': member_sha256 in parser_2023,
+              'parser_contains_exact_2023_member_name': expected_basename in parser_2023,
+              'parser_contains_exact_2023_url': 'https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip' in parser_2023,
+              'no_2024_archive_access_in_generated_sources': '024a.zip' not in parser_2023 and '024a.zip' not in confirmation_2023,
+              'no_source_execution': True,
+              'no_detector_score_or_endpoint': True,
+          }
+          verdict = 'PASS_SONOTACO_2023_SCHEMA_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_2023_SCHEMA_SOURCE_AUDIT'
+          result = {
+              'archive_sha256': new_archive_hash,
+              'member_name': matching[0].filename,
+              'member_sha256': member_sha256,
+              'member_bytes': member_bytes,
+              'header': {
+                  'encoding': encoding_used,
+                  'delimiter': delimiter,
+                  'raw_field_count': len(raw_header),
+                  'effective_field_count': len(effective_header),
+                  'trailing_blank': trailing_blank,
+                  'normalized_header': normalized_header,
+                  'semantic_presence': semantic_presence,
+                  'uncertainty_presence': uncertainty_presence,
+                  'diagnostic_presence': diagnostic_presence,
+              },
+              'sources': {
+                  'parser_2024_sha256': hashlib.sha256(parser_2024_bytes).hexdigest(),
+                  'parser_2023_sha256': parser_2023_sha,
+                  'confirmation_2024_sha256': hashlib.sha256(confirmation_2024_bytes).hexdigest(),
+                  'confirmation_2023_sha256': confirmation_2023_sha,
+                  'confirmation_2023_payload_sha256': confirmation_payload_sha,
+              },
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/sonotaco_2023_schema_source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# SonotaCo 2023 schema and source audit', '',
+              f'Verdict: **{verdict}**', '',
+              f'- archive SHA-256: `{new_archive_hash}`',
+              f'- member: `{matching[0].filename}`',
+              f'- member SHA-256: `{member_sha256}`',
+              f'- member bytes streamed: {member_bytes}',
+              f'- header fields raw/effective: {len(raw_header)} / {len(effective_header)}',
+              f'- encoding / delimiter: `{encoding_used}` / `{delimiter!r}`',
+              f'- generated parser SHA-256: `{parser_2023_sha}`',
+              f'- generated confirmation SHA-256: `{confirmation_2023_sha}`',
+              f'- generated payload SHA-256: `{confirmation_payload_sha}`', '',
+              '## Gates', '',
+          ]
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_2023_SCHEMA_SOURCE_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen SonotaCo 2023 schema/source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_2023_schema_source_audit/PROTOCOL.md \
+            .github/workflows/sonotaco_2023_schema_source_audit.yml \
+            input/audit_sonotaco_2024_v2.py \
+            input/sonotaco_2024_confirmation.py.gz.b64 \
+            input/sonotaco_2024_confirmation.py \
+            input/023a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload schema and source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2023-schema-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
