@@ -1,3 +1,8 @@
+  const leftInner = q("leftEndocanthion");
+  const leftOuter = q("leftExocanthion");
+  const rightInner = q("rightEndocanthion");
+  const rightOuter = q("rightExocanthion");
+  const leftPupil = q("leftPupilCenter");
   const rightPupil = q("rightPupilCenter");
   const eyeHeight = Math.abs(q("leftInferiorEyelid").y - q("leftSuperiorEyelid").y);
   const leftEye = eyePath(leftInner, leftOuter, eyeHeight);
@@ -28,16 +33,17 @@
     leftTemple,
   ], 0.115);
 
-  const hairPath = smoothClosedPath([
-    leftTemple,
-    { x: leftTemple.x + 10, y: leftTemple.y - 66 },
-    { x: trichion.x + 82, y: 21 },
-    { x: trichion.x, y: 14 },
-    { x: trichion.x - 82, y: 21 },
-    { x: rightTemple.x - 10, y: rightTemple.y - 66 },
-    rightTemple,
-    { x: trichion.x, y: trichion.y + 20 },
-  ], 0.105);
+  // Trichion is the hairline, not the top of the skull. Rendered mode infers a
+  // continuous scalp above it while the structure view remains landmark-exact.
+  const renderedHeadPath = `M ${trichion.x} 13
+    C ${trichion.x + 92} 12, ${leftTemple.x + 10} ${leftTemple.y - 62}, ${leftTemple.x} ${leftTemple.y}
+    C ${leftTemple.x + 8} ${leftTemple.y + 54}, ${leftCheek.x + 4} ${leftCheek.y - 38}, ${leftCheek.x} ${leftCheek.y}
+    C ${leftCheek.x + 4} ${leftCheek.y + 62}, ${leftJaw.x + 10} ${leftJaw.y - 28}, ${leftJaw.x} ${leftJaw.y}
+    C ${leftJaw.x - 9} ${menton.y - 35}, ${menton.x + 54} ${menton.y - 4}, ${menton.x} ${menton.y}
+    C ${menton.x - 54} ${menton.y - 4}, ${rightJaw.x + 9} ${menton.y - 35}, ${rightJaw.x} ${rightJaw.y}
+    C ${rightJaw.x - 10} ${rightJaw.y - 28}, ${rightCheek.x - 4} ${rightCheek.y + 62}, ${rightCheek.x} ${rightCheek.y}
+    C ${rightCheek.x - 4} ${rightCheek.y - 38}, ${rightTemple.x - 8} ${rightTemple.y + 54}, ${rightTemple.x} ${rightTemple.y}
+    C ${rightTemple.x - 10} ${rightTemple.y - 62}, ${trichion.x - 92} 12, ${trichion.x} 13 Z`;
 
   const neckPath = smoothClosedPath([
     { x: menton.x - 51, y: menton.y - 11 },
@@ -74,10 +80,6 @@
           <stop offset="52%" stopColor="#ddd5ce" />
           <stop offset="100%" stopColor="#b9aca2" />
         </linearGradient>
-        <linearGradient id="verifiedFrontHair" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#3c3936" />
-          <stop offset="100%" stopColor="#5b5550" />
-        </linearGradient>
         <radialGradient id="verifiedFrontLight" cx="42%" cy="28%" r="76%">
           <stop offset="0%" stopColor="#ffffff" stopOpacity="0.42" />
           <stop offset="68%" stopColor="#ffffff" stopOpacity="0" />
@@ -88,13 +90,6 @@
 
       {mode === "rendered" ? (
         <g>
-          <path d={shoulders} fill="#c1bbb5" />
+          <path d={shoulders} fill="#c5c0bb" />
           <path d={neckPath} fill="url(#verifiedFrontClay)" />
-          <ellipse cx={leftTragion.x - 1} cy={leftTragion.y + 14} rx="13" ry="33" fill="#d2c8bf" />
-          <ellipse cx={rightTragion.x + 1} cy={rightTragion.y + 14} rx="13" ry="33" fill="#d2c8bf" />
-          <path d={facePath} fill="url(#verifiedFrontClay)" stroke="#91857d" strokeWidth="0.65" />
-          <path d={facePath} fill="url(#verifiedFrontLight)" />
-          <path d={hairPath} fill="url(#verifiedFrontHair)" opacity="0.96" />
-
-          <ellipse cx={leftPupil.x - 11} cy={leftPupil.y + 61} rx="43" ry="30" fill="#746158" opacity="0.055" filter="url(#verifiedFrontBlur)" />
-          <ellipse cx={rightPupil.x + 11} cy={rightPupil.y + 61} rx="43" ry="30" fill="#746158" opacity="0.055" filter="url(#verifiedFrontBlur)" />
+          <ellipse cx={leftTragion.x - 1} cy={leftTragion.y + 14} rx="12" ry="31" fill="#d4cbc3" />
