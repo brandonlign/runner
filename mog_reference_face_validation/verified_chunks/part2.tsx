@@ -1,3 +1,4 @@
+
   const leftInner = q("leftEndocanthion");
   const leftOuter = q("leftExocanthion");
   const rightInner = q("rightEndocanthion");
@@ -86,10 +87,9 @@
           <stop offset="100%" stopColor="#66574e" stopOpacity="0.12" />
         </radialGradient>
         <filter id="verifiedFrontBlur" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="10" /></filter>
+        <filter id="verifiedFrontMeshShadow" x="-20%" y="-20%" width="140%" height="150%">
+          <feDropShadow dx="0" dy="10" stdDeviation="11" floodColor="#6e6259" floodOpacity="0.13" />
+        </filter>
       </defs>
 
       {mode === "rendered" ? (
-        <g>
-          <path d={shoulders} fill="#c5c0bb" />
-          <path d={neckPath} fill="url(#verifiedFrontClay)" />
-          <ellipse cx={leftTragion.x - 1} cy={leftTragion.y + 14} rx="12" ry="31" fill="#d4cbc3" />
