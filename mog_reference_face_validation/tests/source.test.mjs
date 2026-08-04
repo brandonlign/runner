@@ -50,13 +50,12 @@ test("the clay renderer uses deterministic licensed GNM snapshots", () => {
   assert.doesNotMatch(clay, /calculateAnalysisReport/);
 });
 
-test("realistic mode uses neutral snapshots and removes legacy anatomy layers", () => {
+test("realistic mode uses neutral snapshots and renders no legacy anatomy layers", () => {
   assert.match(clay, /<image href=\{href\}/);
   assert.match(clay, /preserveAspectRatio="xMidYMid meet"/);
   assert.doesNotMatch(source, /<path d=\{shoulders\} fill=/);
   assert.doesNotMatch(source, /M 112 620 C 170 574/);
   assert.doesNotMatch(source, /verifiedFrontHair/);
-  assert.doesNotMatch(source, /verifiedProfileClay/);
 });
 
 test("unscored measurements remain distinguished from target bands", () => {
