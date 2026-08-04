@@ -1,0 +1,227 @@
+name: Four-star coherence H1 2026 confirmation
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/fourstar_h1_2026.yml
+      - fourstar_h1_2026/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fourstar-h1-2026-confirmation
+  cancel-in-progress: true
+
+jobs:
+  frozen-data-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fourstar-h1-2026-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Derive exact H1 2026 audit from PR14 parser
+        run: |
+          test "$(git hash-object real_shower_meta_stage0/audit_real_shower_data.py)" = "4a029051230f7c6e99b09e911f8a9e5228a58783"
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('real_shower_meta_stage0/audit_real_shower_data.py').read_text()
+          replacements = {
+              'OUT_DIR = ROOT / "results" / "data_audit"': 'OUT_DIR = Path("fourstar_h1_2026/results/data_audit")',
+              'YEARS = (2019, 2021, 2023, 2025)': 'YEARS = (2026,)',
+              'MONTHS = tuple(range(1, 13))': 'MONTHS = (1, 2, 3, 4, 5, 6)',
+              'profile["quality_events"] >= 200\n            and profile["represented_years"] >= 3\n            and profile["years_ge_20"] >= 3': 'profile["quality_events"] >= 20\n            and profile["represented_years"] == 1\n            and profile["years_ge_20"] == 1',
+              'profile["strong"] = bool(profile["quality_events"] >= 1000 and profile["represented_years"] == 4)': 'profile["strong"] = bool(profile["quality_events"] >= 100 and profile["represented_years"] == 1)',
+              '"eligible_showers_at_least_30": len(eligible) >= 30': '"eligible_showers_at_least_20": len(eligible) >= 20',
+              '"strong_showers_at_least_12": len(strong) >= 12': '"strong_showers_at_least_10": len(strong) >= 10',
+              '"eligible_complex_units_at_least_20": len(complex_members) >= 20': '"eligible_complex_units_at_least_15": len(complex_members) >= 15',
+              '"multi_shower_complex_units_at_least_6": len(multi_shower_complexes) >= 6': '"multi_shower_complex_units_at_least_3": len(multi_shower_complexes) >= 3',
+              '"quality_sporadics_at_least_200000": total_sporadic_quality >= 200_000': '"quality_sporadics_at_least_100000": total_sporadic_quality >= 100_000',
+              'GhostStream was excluded. Data came from 48 official GMN monthly trajectory summaries and the IAU MDC shower file.': 'Untouched confirmation data came from the six official January-June 2026 GMN monthly trajectory summaries and the IAU MDC shower file.',
+          }
+          for old, new in replacements.items():
+              if source.count(old) != 1:
+                  raise RuntimeError(f'Expected exactly one source occurrence: {old!r}; found {source.count(old)}')
+              source = source.replace(old, new)
+          destination = Path('/tmp/audit_h1_2026.py')
+          destination.write_text(source)
+          PY
+          python -m py_compile /tmp/audit_h1_2026.py
+      - name: Download and audit frozen January-June 2026 data
+        run: python /tmp/audit_h1_2026.py
+      - name: Record and upload data evidence
+        if: always()
+        run: |
+          mkdir -p fourstar_h1_2026/results/data_audit
+          git hash-object real_shower_meta_stage0/audit_real_shower_data.py > fourstar_h1_2026/results/data_audit/base_source_blob_sha.txt
+          sha256sum fourstar_h1_2026/PROTOCOL.md fourstar_h1_2026/DEVELOPMENT_RECORD.md > fourstar_h1_2026/results/data_audit/protocol_sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fourstar-h1-2026-data
+          path: fourstar_h1_2026/results/data_audit
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen data gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('fourstar_h1_2026/results/data_audit/audit.json').read_text())
+          assert tuple(audit['configuration']['years']) == (2026,)
+          assert tuple(audit['configuration']['months']) == (1, 2, 3, 4, 5, 6)
+          if not all(audit['gates'].values()):
+              raise SystemExit('Frozen H1 2026 data gate failed')
+          PY
+
+  label-blind-null:
+    needs: frozen-data-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fourstar-h1-2026-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: fourstar-h1-2026-data
+          path: input
+      - name: Reconstruct and verify frozen null source and data gate
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib, json
+          from pathlib import Path
+          audit = json.loads(Path('input/audit.json').read_text())
+          if tuple(audit['configuration']['years']) != (2026,) or tuple(audit['configuration']['months']) != (1,2,3,4,5,6):
+              raise RuntimeError('Unexpected H1 2026 artifact')
+          if not all(audit['gates'].values()):
+              raise RuntimeError('Data gate failed')
+          encoded = ''.join(Path('empirical_window_null_evenyear_stage0/run_empirical_window_null_audit.py.gz.b64').read_text().split())
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest != '63a13c9d96c755eeb09a1823ef49445e050c11cd574c10db922029b2a917cd6a':
+              raise RuntimeError(f'Original null source mismatch: {digest}')
+          Path('/tmp/original_null.py').write_bytes(raw)
+          PY
+          python fourstar_h1_2026/derive_sources.py null /tmp/original_null.py /tmp/run_null_audit.py
+          echo "0db9b71f16b6fe13e202b5b10d5fd5c1b79d51d05786b47efb95bf086ec761c3  /tmp/run_null_audit.py" | sha256sum -c -
+          python -m py_compile /tmp/run_null_audit.py
+      - name: Run label-blind four-star null audit
+        run: |
+          mkdir -p output
+          python /tmp/run_null_audit.py \
+            --events input/selected_events.jsonl.gz \
+            --output output
+          cat output/EMPIRICAL_WINDOW_NULL_AUDIT.md
+      - name: Record and upload null evidence
+        if: always()
+        run: |
+          sha256sum /tmp/run_null_audit.py fourstar_h1_2026/derive_sources.py fourstar_h1_2026/PROTOCOL.md input/selected_events.jsonl.gz input/audit.json > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fourstar-h1-2026-null
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen null gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/empirical_window_null_audit.json').read_text())
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen H1 2026 four-star null gate failed')
+          PY
+
+  untouched-power:
+    needs: label-blind-null
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fourstar-h1-2026-stage0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: fourstar-h1-2026-data
+          path: input/data
+      - uses: actions/download-artifact@v4
+        with:
+          name: fourstar-h1-2026-null
+          path: input/null
+      - name: Reconstruct and verify frozen power source
+        run: |
+          git fetch --no-tags origin agent/evenyear-lcc-power-stage1:refs/remotes/origin/agent/evenyear-lcc-power-stage1
+          mkdir -p /tmp/power_parts
+          for part in part00.b64 part01.b64 part02.b64 part03.b64; do
+            git show "origin/agent/evenyear-lcc-power-stage1:evenyear_lcc_power_stage1/source_parts/${part}" > "/tmp/power_parts/${part}"
+          done
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts = sorted(Path('/tmp/power_parts').glob('part*.b64'))
+          encoded = ''.join(''.join(path.read_text().split()) for path in parts)
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest != '8c69bddb7e8bd52694f32f62a5e105a0fda4ca330734d55704ee26e0d0faff1c':
+              raise RuntimeError(f'Original power source mismatch: {digest}')
+          Path('/tmp/original_power.py').write_bytes(raw)
+          PY
+          python fourstar_h1_2026/derive_sources.py power /tmp/original_power.py /tmp/run_power_gate.py
+          echo "12570d93c1001a15f0e793307389b3c16fc30abb41d87f1c6f5af9eec3328485  /tmp/run_power_gate.py" | sha256sum -c -
+          python -m py_compile /tmp/run_power_gate.py
+      - name: Run untouched H1 2026 power gate
+        run: |
+          mkdir -p output
+          python /tmp/run_power_gate.py \
+            --events input/data/selected_events.jsonl.gz \
+            --audit input/data/audit.json \
+            --null-result input/null/empirical_window_null_audit.json \
+            --output output
+          cat output/H1_2026_FOURSTAR_POWER_REPORT.md
+      - name: Record and upload power evidence
+        if: always()
+        run: |
+          sha256sum /tmp/run_power_gate.py fourstar_h1_2026/derive_sources.py fourstar_h1_2026/PROTOCOL.md fourstar_h1_2026/DEVELOPMENT_RECORD.md input/data/selected_events.jsonl.gz input/data/audit.json input/null/empirical_window_null_audit.json > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fourstar-h1-2026-power
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen power gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/h1_2026_fourstar_power.json').read_text())
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen H1 2026 four-star power gate failed')
+          PY
