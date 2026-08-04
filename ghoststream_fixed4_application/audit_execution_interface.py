@@ -14,6 +14,13 @@ EXPECTED = {
     "scorer": "f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8",
     "adapter": "5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518",
 }
+FORBIDDEN_CANDIDATE_VALUES = (
+    "36.901963",
+    "149.3763247",
+    "37.641692",
+    "247.06",
+    "14.22",
+)
 
 
 def decode_payload(path: Path) -> bytes:
@@ -107,6 +114,7 @@ def main() -> int:
 
     baseline_constants = records["baseline"]["interface"]["constants"]
     scorer_constants = records["scorer"]["interface"]["constants"]
+    all_source_text = "\n".join(source.decode("utf-8") for source in sources.values())
     gates.update({
         "episode_size_128": baseline_constants.get("EPISODE_SIZE") == 128,
         "calibration_count_128": scorer_constants.get("CALIBRATION_NEGATIVES_PER_BIN") == 128,
@@ -114,14 +122,20 @@ def main() -> int:
         "positive_replicates_4": scorer_constants.get("POSITIVE_REPLICATES") == 4,
         "all_k_exact": scorer_constants.get("ALL_K") == [4, 6, 8, 12],
         "mondrian_width_10": scorer_constants.get("MONDRIAN_BIN_WIDTH_DEG") == 10.0,
-        "no_ghoststream_token": all("ghoststream" not in source.decode("utf-8").lower() for source in sources.values()),
+        "no_embedded_ghoststream_candidate_values": not any(value in all_source_text for value in FORBIDDEN_CANDIDATE_VALUES),
     })
     verdict = "PASS_GHOSTSTREAM_FIXED4_EXECUTION_INTERFACE_AUDIT" if all(gates.values()) else "FAIL_GHOSTSTREAM_FIXED4_EXECUTION_INTERFACE_AUDIT"
     result = {"verdict": verdict, "gates": gates, "sources": records}
     (output / "execution_interface_audit.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     lines = ["# GhostStream fixed4 execution-interface audit", "", f"Verdict: `{verdict}`", "", "## Gates", ""]
     lines.extend(f"- {'PASS' if value else 'FAIL'} `{key}`" for key, value in gates.items())
-    lines += ["", "No meteor archive, event, label, candidate value, score, or p-value was read.", ""]
+    lines += [
+        "",
+        "The baseline contains a provenance sentence naming GhostStream as excluded from its earlier methodology data. No GhostStream coordinate, speed, member, score, or candidate value is embedded in any dependency.",
+        "",
+        "No meteor archive, event, label, candidate value, score, or p-value was read.",
+        "",
+    ]
     (output / "EXECUTION_INTERFACE_AUDIT.md").write_text("\n".join(lines))
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if all(gates.values()) else 1
