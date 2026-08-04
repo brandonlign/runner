@@ -1,0 +1,46 @@
+name: Affine stream-tube source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/mondrian-clique-coverage-normalized-development
+    paths:
+      - .github/workflows/affine_stream_tube_source_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/affine-stream-tube-preflight
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode exact frozen candidate source
+        run: |
+          mkdir -p output
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts=sorted(Path('affine_stream_tube_preflight/source_parts').glob('part*.b64'))
+          source=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
+          digest=hashlib.sha256(source).hexdigest()
+          if digest != 'e82eef021326cb5b570521064a6c78001cc5d0cac53fdb2e1e966362f3d4c1bb':
+              raise RuntimeError(digest)
+          Path('output/run_affine_tube_preflight.py').write_bytes(source)
+          Path('output/source_sha256.txt').write_text(digest+'\n')
+          print(digest,len(source))
+          PY
+          python -m py_compile output/run_affine_tube_preflight.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: affine-stream-tube-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 30
