@@ -1,0 +1,264 @@
+name: SonotaCo 2023 confirmation source repair v2
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2023-schema-source-audit
+    paths:
+      - .github/workflows/sonotaco_2023_confirmation_source_repair_v2.yml
+      - sonotaco_2023_confirmation_source_repair_v2/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-2023-confirmation-source-repair-v2
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2023-confirmation-source-repair-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact pinned parser and confirmation sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/contents/sonotaco_2024_confirmation_v2/audit_sonotaco_2024_v2.py?ref=60bbe701981256b89aaa1c9361efef2bbb2dd57e" \
+            --jq .content | tr -d '\n' | base64 --decode \
+            > input/audit_sonotaco_2024_v2.py
+          echo 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b  input/audit_sonotaco_2024_v2.py' | sha256sum -c -
+
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/contents/sonotaco_fixed4_confirmation/source_parts/part00.b64?ref=8ac287c377ef3b140691217dd30285b723dd2cdf" \
+            --jq .content | tr -d '\n' | base64 --decode \
+            > input/sonotaco_2024_confirmation.py.gz.b64
+          echo 'c558141ce984f3b9d5ee5eecf7e80d3df54ce7ac0e0ac1e46ca5d84a7b7017d2  input/sonotaco_2024_confirmation.py.gz.b64' | sha256sum -c -
+
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          encoded = ''.join(Path('input/sonotaco_2024_confirmation.py.gz.b64').read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '94081bcc564170b7273704f94d098fd8bb2d5b0e63e53d95117b48415f1031e7'
+          if digest != expected:
+              raise RuntimeError(f'confirmation source mismatch: {digest}')
+          Path('input/sonotaco_2024_confirmation.py').write_bytes(source)
+          compile(source, 'sonotaco_2024_confirmation.py', 'exec')
+          PY
+      - name: Download exact SonotaCo 2023 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+      - name: Derive opaque structural row count and generate exact repaired sources
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          archive = Path('input/023a.zip')
+          parser_2024_bytes = Path('input/audit_sonotaco_2024_v2.py').read_bytes()
+          confirmation_2024_bytes = Path('input/sonotaco_2024_confirmation.py').read_bytes()
+          parser_2024 = parser_2024_bytes.decode('utf-8')
+          confirmation_2024 = confirmation_2024_bytes.decode('utf-8')
+
+          old_archive_hash = '409bb958c6f114e542d818e7c4fcf7a58d89b2fb33090a442c8087bdcaa1540f'
+          new_archive_hash = '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430'
+          old_member_hash = '0f25a0f9ea174c2b99915f48a61b35e35e3cde7f3117d82d4e05f8c4112acb00'
+          new_member_hash = '3f1cfedf59553568d6471e022ad032ec5ba71ce5287a24071d30bcc1e8bac685'
+          old_parser_hash = 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b'
+          member_name = '023a/_U2_20230101_S.csv'
+
+          member_digest = hashlib.sha256()
+          member_bytes = 0
+          lf_count = 0
+          quote_count = 0
+          final_byte = None
+          with zipfile.ZipFile(archive, 'r') as zf:
+              names = [info.filename for info in zf.infolist() if not info.is_dir()]
+              if any(PurePosixPath(name).is_absolute() or '..' in PurePosixPath(name).parts for name in names):
+                  raise RuntimeError('unsafe ZIP member path')
+              exact = [name for name in names if name == member_name]
+              if exact != [member_name]:
+                  raise RuntimeError(f'expected one exact member, found {exact}')
+              with zf.open(member_name, 'r') as stream:
+                  while True:
+                      chunk = stream.read(1024 * 1024)
+                      if not chunk:
+                          break
+                      member_digest.update(chunk)
+                      member_bytes += len(chunk)
+                      lf_count += chunk.count(b'\n')
+                      quote_count += chunk.count(b'"')
+                      final_byte = chunk[-1]
+
+          observed_member_hash = member_digest.hexdigest()
+          physical_lines = lf_count + (0 if final_byte == 0x0A else 1)
+          expected_rows = physical_lines - 1
+          if expected_rows < 1:
+              raise RuntimeError(f'nonpositive derived data-row count: {expected_rows}')
+
+          parser_2023 = parser_2024.replace('2024', '2023')
+          parser_2023 = parser_2023.replace('024a.zip', '023a.zip')
+          parser_2023 = parser_2023.replace(old_archive_hash, new_archive_hash)
+          parser_2023 = parser_2023.replace(old_member_hash, new_member_hash)
+          parser_2023_bytes = parser_2023.encode('utf-8')
+          parser_2023_sha = hashlib.sha256(parser_2023_bytes).hexdigest()
+
+          confirmation_2023 = confirmation_2024.replace('2024', '2023').replace('024a', '023a')
+          required_replacements = {
+              old_archive_hash: new_archive_hash,
+              old_member_hash: new_member_hash,
+              old_parser_hash: parser_2023_sha,
+              'EXPECTED_ROWS = 38_793': f'EXPECTED_ROWS = {expected_rows:_}',
+          }
+          for old, new in required_replacements.items():
+              if confirmation_2023.count(old) != 1:
+                  raise RuntimeError(f'expected exactly one confirmation source occurrence of {old!r}, found {confirmation_2023.count(old)}')
+              confirmation_2023 = confirmation_2023.replace(old, new)
+
+          parser_reversed = parser_2023.replace(new_member_hash, old_member_hash)
+          parser_reversed = parser_reversed.replace(new_archive_hash, old_archive_hash)
+          parser_reversed = parser_reversed.replace('023a.zip', '024a.zip')
+          parser_reversed = parser_reversed.replace('2023', '2024')
+
+          confirmation_reversed = confirmation_2023.replace(f'EXPECTED_ROWS = {expected_rows:_}', 'EXPECTED_ROWS = 38_793')
+          confirmation_reversed = confirmation_reversed.replace(parser_2023_sha, old_parser_hash)
+          confirmation_reversed = confirmation_reversed.replace(new_member_hash, old_member_hash)
+          confirmation_reversed = confirmation_reversed.replace(new_archive_hash, old_archive_hash)
+          confirmation_reversed = confirmation_reversed.replace('023a', '024a').replace('2023', '2024')
+
+          confirmation_2023_bytes = confirmation_2023.encode('utf-8')
+          compile(parser_2023_bytes, 'audit_sonotaco_2023_v2.py', 'exec')
+          compile(confirmation_2023_bytes, 'run_sonotaco_2023_fixed4_confirmation.py', 'exec')
+          ast.parse(parser_2023, filename='audit_sonotaco_2023_v2.py')
+          ast.parse(confirmation_2023, filename='run_sonotaco_2023_fixed4_confirmation.py')
+
+          confirmation_2023_sha = hashlib.sha256(confirmation_2023_bytes).hexdigest()
+          payload_text = base64.b64encode(gzip.compress(confirmation_2023_bytes, compresslevel=9, mtime=0)).decode('ascii') + '\n'
+          payload_sha = hashlib.sha256(payload_text.encode('ascii')).hexdigest()
+
+          forbidden_2024_literals = [old_archive_hash, old_member_hash, old_parser_hash, 'EXPECTED_ROWS = 38_793', '024a', '2024']
+          gates = {
+              'exact_archive_hash': hashlib.sha256(archive.read_bytes()).hexdigest() == new_archive_hash,
+              'exact_member_hash': observed_member_hash == new_member_hash,
+              'member_bytes_exact': member_bytes == 16_426_445,
+              'zero_quote_bytes': quote_count == 0,
+              'positive_opaque_row_count': expected_rows >= 1,
+              'parser_compiles_and_parses': True,
+              'confirmation_compiles_and_parses': True,
+              'parser_reverse_byte_exact': parser_reversed.encode('utf-8') == parser_2024_bytes,
+              'confirmation_reverse_byte_exact': confirmation_reversed.encode('utf-8') == confirmation_2024_bytes,
+              'confirmation_contains_exact_archive_hash': new_archive_hash in confirmation_2023,
+              'confirmation_contains_exact_member_hash': new_member_hash in confirmation_2023,
+              'confirmation_contains_exact_parser_hash': parser_2023_sha in confirmation_2023,
+              'confirmation_contains_exact_row_count': f'EXPECTED_ROWS = {expected_rows:_}' in confirmation_2023,
+              'confirmation_contains_no_corresponding_2024_literal': not any(value in confirmation_2023 for value in forbidden_2024_literals),
+              'fixed_scale_4_only': 'FIXED_SOLAR_SCALE = 4.0' in confirmation_2023,
+              'blind_interval_exact': 'BLIND_SOLAR_MIN = 20.0' in confirmation_2023 and 'BLIND_SOLAR_MAX = 55.0' in confirmation_2023,
+              'unchanged_confirmation_gates': all(fragment in confirmation_2023 for fragment in (
+                  'pooled_fpr_005_le_006', 'pooled_fpr_001_le_002',
+                  'candidate_weak_auc_ge_075', 'candidate_auc_within_003_of_strongest_comparator',
+                  'candidate_auc_exceeds_density', 'candidate_auc_exceeds_dbscan',
+                  'recall_005_k4_ge_015', 'recall_001_k4_ge_005',
+                  'recall_005_k6_ge_030', 'recall_001_k6_ge_015',
+                  'recall_005_k8_ge_045', 'recall_001_k8_ge_025',
+                  'recall_monotonic_at_005', 'recall_monotonic_at_001',
+              )),
+              'no_source_execution': True,
+              'no_data_row_decoded_or_retained': True,
+              'no_scientific_endpoint': True,
+          }
+          verdict = 'PASS_SONOTACO_2023_CONFIRMATION_SOURCE_REPAIR_V2' if all(gates.values()) else 'KILL_SONOTACO_2023_CONFIRMATION_SOURCE_REPAIR_V2'
+
+          Path('output/audit_sonotaco_2023_v2.py').write_bytes(parser_2023_bytes)
+          Path('output/run_sonotaco_2023_fixed4_confirmation.py').write_bytes(confirmation_2023_bytes)
+          Path('output/sonotaco_2023_confirmation_v2.py.gz.b64').write_text(payload_text, encoding='ascii')
+          result = {
+              'archive_sha256': new_archive_hash,
+              'member_name': member_name,
+              'member_sha256': observed_member_hash,
+              'member_bytes': member_bytes,
+              'opaque_structure': {
+                  'lf_count': lf_count,
+                  'final_byte_hex': None if final_byte is None else f'{final_byte:02x}',
+                  'physical_lines': physical_lines,
+                  'header_lines': 1,
+                  'expected_data_rows': expected_rows,
+                  'quote_byte_count': quote_count,
+              },
+              'sources': {
+                  'parser_2023_sha256': parser_2023_sha,
+                  'confirmation_2023_sha256': confirmation_2023_sha,
+                  'confirmation_payload_sha256': payload_sha,
+              },
+              'gates': gates,
+              'data_row_decoded': False,
+              'source_executed': False,
+              'verdict': verdict,
+          }
+          Path('output/sonotaco_2023_confirmation_source_repair_v2.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          report = [
+              '# SonotaCo 2023 confirmation-source repair v2', '',
+              f'Verdict: **{verdict}**', '',
+              f'- member SHA-256: `{observed_member_hash}`',
+              f'- opaque physical lines: {physical_lines}',
+              f'- frozen data rows: {expected_rows}',
+              f'- quote bytes: {quote_count}',
+              f'- parser SHA-256: `{parser_2023_sha}`',
+              f'- confirmation source SHA-256: `{confirmation_2023_sha}`',
+              f'- confirmation payload SHA-256: `{payload_sha}`',
+              '- data row decoded or retained: no',
+              '- source executed: no',
+              '- scientific endpoint computed: no', '',
+              '## Gates', '',
+          ]
+          report.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_2023_CONFIRMATION_SOURCE_REPAIR_V2.md').write_text('\n'.join(report) + '\n', encoding='utf-8')
+          print('\n'.join(report))
+          if not all(gates.values()):
+              raise SystemExit('Frozen SonotaCo 2023 confirmation source repair v2 failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_2023_confirmation_source_repair_v2/PROTOCOL.md \
+            .github/workflows/sonotaco_2023_confirmation_source_repair_v2.yml \
+            input/audit_sonotaco_2024_v2.py \
+            input/sonotaco_2024_confirmation.py.gz.b64 \
+            input/sonotaco_2024_confirmation.py \
+            input/023a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload repaired source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2023-confirmation-source-repair-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
