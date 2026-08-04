@@ -1,0 +1,114 @@
+name: Majority-conditioned real-shower feasibility
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/majority_conditioned_real_shower_feasibility.yml
+      - majority_conditioned_real_shower_feasibility/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: majority-conditioned-real-shower-feasibility
+  cancel-in-progress: true
+
+jobs:
+  seven-year-support-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PR14_COMMIT: 'bbd3eb514df2c0af7e8648ebc3ced5edbb7eec87'
+      PARSER_SHA256: '4a029051230f7c6e99b09e911f8a9e5228a58783'
+      AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/majority-conditioned-real-shower-feasibility
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Extract and verify exact PR14 quality parser
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pr14 input output
+          git fetch --depth=1 origin "${PR14_COMMIT}"
+          git show "FETCH_HEAD:real_shower_meta_stage0/audit_real_shower_data.py" \
+            > /tmp/pr14/audit_real_shower_data.py
+          echo "${PARSER_SHA256}  /tmp/pr14/audit_real_shower_data.py" | sha256sum -c -
+          python -m py_compile /tmp/pr14/audit_real_shower_data.py
+          python -m py_compile majority_conditioned_real_shower_feasibility/run_feasibility.py
+      - name: Retrieve exact prior MDC complex-mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo "${AUDIT_SHA256}  input/audit.json" | sha256sum -c -
+      - name: Run frozen seven-year support-only audit
+        run: |
+          set -euo pipefail
+          python majority_conditioned_real_shower_feasibility/run_feasibility.py \
+            --parser-source /tmp/pr14/audit_real_shower_data.py \
+            --audit input/audit.json \
+            --output output
+          cat output/RESULT.md
+      - name: Enforce aggregate-only boundary and gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/real_shower_feasibility.json').read_text())
+          if result['configuration']['years'] != [2019, 2020, 2021, 2022, 2023, 2024, 2025]:
+              raise RuntimeError('unexpected years')
+          forbidden = [
+              'event_rows_emitted',
+              'event_ids_emitted',
+              'shower_identities_emitted',
+              'complex_identities_emitted',
+              'geometry_or_orbit_distributions_emitted',
+              'detector_score_computed',
+              'ghoststream_region_values_parsed',
+          ]
+          if any(result[key] for key in forbidden):
+              raise RuntimeError('forbidden output boundary violated')
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen real-shower feasibility gate failed')
+          if result['verdict'] != 'PASS_MAJORITY_CONDITIONED_REAL_SHOWER_FEASIBILITY':
+              raise SystemExit(f"unexpected verdict: {result['verdict']}")
+          print(json.dumps({
+              'counts': result['counts'],
+              'quality_sporadics_by_year': result['quality_sporadics_by_year'],
+              'anonymous_support': result['anonymous_support'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2, sort_keys=True))
+          PY
+      - name: Record exact provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            majority_conditioned_real_shower_feasibility/PROTOCOL.md \
+            majority_conditioned_real_shower_feasibility/run_feasibility.py \
+            /tmp/pr14/audit_real_shower_data.py \
+            input/audit.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload frozen feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: majority-conditioned-real-shower-feasibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90
