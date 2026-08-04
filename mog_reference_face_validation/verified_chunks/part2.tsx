@@ -1,80 +1,100 @@
-          <ellipse cx={subnasale.x - 15} cy={subnasale.y + 2.5} rx="4.1" ry="1.9" fill="#514b47" opacity="0.46" />
-          <ellipse cx={subnasale.x + 15} cy={subnasale.y + 2.5} rx="4.1" ry="1.9" fill="#514b47" opacity="0.46" />
+  const rightPupil = q("rightPupilCenter");
+  const eyeHeight = Math.abs(q("leftInferiorEyelid").y - q("leftSuperiorEyelid").y);
+  const leftEye = eyePath(leftInner, leftOuter, eyeHeight);
+  const rightEye = eyePath(rightInner, rightOuter, eyeHeight);
 
-          <path d={upperLipPath} fill="#967575" opacity="0.9" />
-          <path d={lowerLipPath} fill="#ab8380" opacity="0.9" />
-          <path d={`M ${leftMouth.x + 4} ${stomion.y} Q ${stomion.x} ${stomion.y + 1.5} ${rightMouth.x - 4} ${stomion.y}`} fill="none" stroke="#5f4d4e" strokeWidth="1" />
-          <path d={`M ${menton.x - 29} ${menton.y - 27} Q ${menton.x} ${menton.y - 18} ${menton.x + 29} ${menton.y - 27}`} fill="none" stroke="#8e7c70" strokeWidth="0.95" opacity="0.38" />
-        </g>
-      ) : (
-        <g>
-          <path d={facePath} fill="none" stroke="var(--ink)" strokeWidth="1.55" />
-          <path d={leftEye} fill="none" stroke="var(--ink)" strokeWidth="1.35" />
-          <path d={rightEye} fill="none" stroke="var(--ink)" strokeWidth="1.35" />
-          <path d={`M ${leftBrowLateral.x} ${leftBrowLateral.y} Q ${leftBrowHigh.x} ${leftBrowHigh.y - 3} ${leftBrowMedial.x} ${leftBrowMedial.y}`} fill="none" stroke="var(--ink)" strokeWidth="1.9" />
-          <path d={`M ${rightBrowMedial.x} ${rightBrowMedial.y} Q ${rightBrowHigh.x} ${rightBrowHigh.y - 3} ${rightBrowLateral.x} ${rightBrowLateral.y}`} fill="none" stroke="var(--ink)" strokeWidth="1.9" />
-          <path d={`M ${glabella.x} ${glabella.y + 14} L ${subnasale.x} ${subnasale.y - 14} M ${leftAlare.x} ${leftAlare.y} Q ${subnasale.x} ${subnasale.y + 6} ${rightAlare.x} ${rightAlare.y}`} fill="none" stroke="var(--ink)" strokeWidth="1.35" />
-          <path d={upperLipPath} fill="none" stroke="var(--ink)" strokeWidth="1.15" />
-          <path d={lowerLipPath} fill="none" stroke="var(--ink)" strokeWidth="1.15" />
-          <g fill="none" stroke="var(--muted)" strokeWidth="1" strokeDasharray="5 5">
-            <line x1="88" y1={trichion.y} x2="512" y2={trichion.y} />
-            <line x1="88" y1={glabella.y} x2="512" y2={glabella.y} />
-            <line x1="88" y1={subnasale.y} x2="512" y2={subnasale.y} />
-            <line x1="88" y1={menton.y} x2="512" y2={menton.y} />
-            <line x1={trichion.x} y1="24" x2={menton.x} y2={menton.y + 22} />
-            <line x1={leftCheek.x} y1={leftCheek.y} x2={rightCheek.x} y2={rightCheek.y} />
-            <line x1={leftJaw.x} y1={leftJaw.y} x2={rightJaw.x} y2={rightJaw.y} />
-            <line x1={leftOuter.x} y1={leftOuter.y} x2={leftInner.x} y2={leftInner.y} />
-            <line x1={rightInner.x} y1={rightInner.y} x2={rightOuter.x} y2={rightOuter.y} />
-            <line x1={leftAlare.x} y1={leftAlare.y} x2={rightAlare.x} y2={rightAlare.y} />
-            <line x1={leftMouth.x} y1={stomion.y} x2={rightMouth.x} y2={stomion.y} />
-          </g>
-          {structureIds.map((id) => {
-            const point = q(id);
-            return <circle key={id} cx={point.x} cy={point.y} r="3.7" fill="white" stroke="var(--accent)" strokeWidth="1.7"><title>{id}</title></circle>;
-          })}
-          <g fill="var(--muted)" fontSize="11">
-            <text x="96" y={trichion.y - 7}>upper third</text>
-            <text x="96" y={glabella.y - 7}>middle third</text>
-            <text x="96" y={subnasale.y - 7}>lower third</text>
-            <text x={rightOuter.x + 10} y={rightOuter.y - 7}>+5° canthal tilt</text>
-          </g>
-        </g>
-      )}
-    </svg>
-  );
-}
-
-function ProfileReference({ mode, landmarks }: { mode: RenderMode; landmarks: FacialLandmarks }) {
-  const q = (id: LandmarkId) => profileMap(requiredPoint(landmarks, id));
-  const trichion = q("trichion");
-  const upperForehead = q("upperForehead");
-  const glabella = q("glabella");
-  const nasion = q("nasion");
-  const pronasale = q("pronasale");
-  const columella = q("columella");
-  const subnasale = q("subnasale");
+  const leftBrowMedial = q("leftEyebrowMedial");
+  const leftBrowLateral = q("leftEyebrowLateral");
+  const leftBrowHigh = q("leftEyebrowHigh");
+  const rightBrowMedial = q("rightEyebrowMedial");
+  const rightBrowLateral = q("rightEyebrowLateral");
+  const rightBrowHigh = q("rightEyebrowHigh");
+  const leftAlare = q("leftAlare");
+  const rightAlare = q("rightAlare");
+  const leftMouth = q("leftCheilion");
+  const rightMouth = q("rightCheilion");
   const upperLip = q("labialeSuperius");
   const stomion = q("stomion");
   const lowerLip = q("labialeInferius");
-  const sulcus = q("mentolabialSulcus");
-  const pogonion = q("softTissuePogonion");
-  const menton = q("menton");
-  const gonion = q("gonion");
-  const ramus = q("ramusPoint");
-  const cervical = q("cervicalPoint");
-  const throat = q("throatPoint");
-  const tragion = q("tragion");
-  const orbitale = q("orbitale");
-  const cheek = q("cheekProjection");
 
-  const skullBack: SvgPoint = { x: 145, y: 190 };
-  const crown: SvgPoint = { x: 230, y: 28 };
-  const neckBack: SvgPoint = { x: 205, y: 560 };
-  const neckFront: SvgPoint = { x: 350, y: 560 };
+  const facePath = smoothClosedPath([
+    trichion,
+    rightTemple,
+    rightCheek,
+    rightJaw,
+    menton,
+    leftJaw,
+    leftCheek,
+    leftTemple,
+  ], 0.115);
 
-  const faceContour = `M ${trichion.x} ${trichion.y}
-    C ${upperForehead.x - 9} ${upperForehead.y - 30}, ${upperForehead.x + 1} ${upperForehead.y - 7}, ${upperForehead.x} ${upperForehead.y}
-    C ${upperForehead.x + 4} ${upperForehead.y + 27}, ${glabella.x + 4} ${glabella.y - 12}, ${glabella.x} ${glabella.y}
-    Q ${nasion.x - 7} ${nasion.y - 6} ${nasion.x} ${nasion.y}
-    C ${nasion.x + 19} ${nasion.y + 8}, ${pronasale.x - 30} ${pronasale.y - 22}, ${pronasale.x - 4} ${pronasale.y - 7}
+  const hairPath = smoothClosedPath([
+    leftTemple,
+    { x: leftTemple.x + 10, y: leftTemple.y - 66 },
+    { x: trichion.x + 82, y: 21 },
+    { x: trichion.x, y: 14 },
+    { x: trichion.x - 82, y: 21 },
+    { x: rightTemple.x - 10, y: rightTemple.y - 66 },
+    rightTemple,
+    { x: trichion.x, y: trichion.y + 20 },
+  ], 0.105);
+
+  const neckPath = smoothClosedPath([
+    { x: menton.x - 51, y: menton.y - 11 },
+    { x: menton.x - 57, y: menton.y + 21 },
+    { x: menton.x - 68, y: 578 },
+    { x: menton.x + 68, y: 578 },
+    { x: menton.x + 57, y: menton.y + 21 },
+    { x: menton.x + 51, y: menton.y - 11 },
+  ], 0.12);
+  const shoulders = "M 68 620 C 132 574, 218 571, 244 555 C 269 581, 331 581, 356 555 C 382 571, 468 574, 532 620 Z";
+
+  const upperLipPath = `M ${leftMouth.x} ${stomion.y}
+    C ${leftMouth.x + 18} ${upperLip.y + 1}, ${upperLip.x - 16} ${upperLip.y - 2}, ${upperLip.x} ${upperLip.y}
+    C ${upperLip.x + 16} ${upperLip.y - 2}, ${rightMouth.x - 18} ${upperLip.y + 1}, ${rightMouth.x} ${stomion.y}
+    C ${rightMouth.x - 22} ${stomion.y + 2}, ${leftMouth.x + 22} ${stomion.y + 2}, ${leftMouth.x} ${stomion.y} Z`;
+  const lowerLipPath = `M ${leftMouth.x} ${stomion.y}
+    C ${leftMouth.x + 18} ${lowerLip.y - 1}, ${lowerLip.x - 17} ${lowerLip.y + 3}, ${lowerLip.x} ${lowerLip.y}
+    C ${lowerLip.x + 17} ${lowerLip.y + 3}, ${rightMouth.x - 18} ${lowerLip.y - 1}, ${rightMouth.x} ${stomion.y}
+    C ${rightMouth.x - 23} ${stomion.y + 1}, ${leftMouth.x + 23} ${stomion.y + 1}, ${leftMouth.x} ${stomion.y} Z`;
+
+  const structureIds: LandmarkId[] = [
+    "trichion", "glabella", "nasion", "subnasale", "menton",
+    "leftZygion", "rightZygion", "leftGonion", "rightGonion",
+    "leftEndocanthion", "leftExocanthion", "rightEndocanthion", "rightExocanthion",
+    "leftPupilCenter", "rightPupilCenter", "leftAlare", "rightAlare",
+    "leftCheilion", "rightCheilion",
+  ];
+
+  return (
+    <svg viewBox="0 0 600 620" role="img" aria-label={`Front target face in ${mode} mode`} className="h-auto w-full">
+      <defs>
+        <linearGradient id="verifiedFrontClay" x1="0.12" y1="0" x2="0.9" y2="1">
+          <stop offset="0%" stopColor="#f4f0eb" />
+          <stop offset="52%" stopColor="#ddd5ce" />
+          <stop offset="100%" stopColor="#b9aca2" />
+        </linearGradient>
+        <linearGradient id="verifiedFrontHair" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#3c3936" />
+          <stop offset="100%" stopColor="#5b5550" />
+        </linearGradient>
+        <radialGradient id="verifiedFrontLight" cx="42%" cy="28%" r="76%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.42" />
+          <stop offset="68%" stopColor="#ffffff" stopOpacity="0" />
+          <stop offset="100%" stopColor="#66574e" stopOpacity="0.12" />
+        </radialGradient>
+        <filter id="verifiedFrontBlur" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="10" /></filter>
+      </defs>
+
+      {mode === "rendered" ? (
+        <g>
+          <path d={shoulders} fill="#c1bbb5" />
+          <path d={neckPath} fill="url(#verifiedFrontClay)" />
+          <ellipse cx={leftTragion.x - 1} cy={leftTragion.y + 14} rx="13" ry="33" fill="#d2c8bf" />
+          <ellipse cx={rightTragion.x + 1} cy={rightTragion.y + 14} rx="13" ry="33" fill="#d2c8bf" />
+          <path d={facePath} fill="url(#verifiedFrontClay)" stroke="#91857d" strokeWidth="0.65" />
+          <path d={facePath} fill="url(#verifiedFrontLight)" />
+          <path d={hairPath} fill="url(#verifiedFrontHair)" opacity="0.96" />
+
+          <ellipse cx={leftPupil.x - 11} cy={leftPupil.y + 61} rx="43" ry="30" fill="#746158" opacity="0.055" filter="url(#verifiedFrontBlur)" />
+          <ellipse cx={rightPupil.x + 11} cy={rightPupil.y + 61} rx="43" ry="30" fill="#746158" opacity="0.055" filter="url(#verifiedFrontBlur)" />
