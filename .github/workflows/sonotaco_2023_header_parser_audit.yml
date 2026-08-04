@@ -1,0 +1,203 @@
+name: SonotaCo 2023 header parser audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2023-replacement-feasibility
+    paths:
+      - .github/workflows/sonotaco_2023_header_parser_audit.yml
+      - sonotaco_2023_header_parser_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-2023-header-parser-audit
+  cancel-in-progress: true
+
+jobs:
+  header-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2023-header-parser-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact frozen final model source
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          payload = Path('sonotaco_fixed4_final_development/candidate.py.gz.b64')
+          encoded = ''.join(payload.read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301'
+          if digest != expected:
+              raise RuntimeError(f'frozen final source mismatch: {digest}')
+          compile(source, 'frozen_fixed4_final.py', 'exec')
+          Path('output/final_model_source_sha256.txt').write_text(digest + '\n', encoding='utf-8')
+          print('final-model SHA-256:', digest)
+          PY
+      - name: Fetch and verify exact frozen parser source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/contents/sonotaco_2024_confirmation_v2/audit_sonotaco_2024_v2.py?ref=60bbe701981256b89aaa1c9361efef2bbb2dd57e" \
+            --jq .content \
+            | tr -d '\n' \
+            | base64 --decode \
+            > input/frozen_parser.py
+          echo 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b  input/frozen_parser.py' | sha256sum -c -
+          python -m py_compile input/frozen_parser.py
+      - name: Download exact SonotaCo 2023 replacement archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --dump-header output/023a_http_headers.txt \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+      - name: Read exactly one physical header line and audit parser interface
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import hashlib
+          import importlib.util
+          import io
+          import json
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          archive = Path('input/023a.zip')
+          archive_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          expected_archive = '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430'
+          expected_member = '023a/_U2_20230101_S.csv'
+          max_header_bytes = 65536
+
+          spec = importlib.util.spec_from_file_location('frozen_parser', 'input/frozen_parser.py')
+          parser = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(parser)
+
+          with zipfile.ZipFile(archive, 'r') as zf:
+              infos = zf.infolist()
+              matches = [info for info in infos if info.filename == expected_member and not info.is_dir()]
+              basename_matches = [
+                  info.filename for info in infos
+                  if PurePosixPath(info.filename).name == '_U2_20230101_S.csv' and not info.is_dir()
+              ]
+              if len(matches) != 1:
+                  raise RuntimeError(f'expected exactly one main member, found {len(matches)}')
+              info = matches[0]
+              with zf.open(info, 'r') as stream:
+                  header_bytes = stream.readline(max_header_bytes + 1)
+
+          header_within_bound = len(header_bytes) <= max_header_bytes
+          header_terminated = header_bytes.endswith(b'\n') or header_bytes.endswith(b'\r')
+          if not header_within_bound or not header_terminated:
+              raise RuntimeError('header did not terminate within frozen bound')
+          if b'\n' in header_bytes[:-1] or b'\r' in header_bytes[:-2]:
+              raise RuntimeError('more than one physical line was exposed')
+
+          text, delimiter, encoding = parser.decode_csv(header_bytes)
+          reader = csv.reader(io.StringIO(text, newline=''), delimiter=delimiter)
+          raw_header = next(reader)
+          raw_normalized = [parser.normalize(field) for field in raw_header]
+          trailing_blank = bool(raw_normalized and raw_normalized[-1] == '')
+          effective_header = raw_header[:-1] if trailing_blank else raw_header
+          normalized = [parser.normalize(field) for field in effective_header]
+
+          required = {
+              **parser.REQUIRED_GEOMETRY_HEADERS,
+              **{name: name for name in parser.REQUIRED_MEASUREMENT_UNCERTAINTIES},
+              **{name: name for name in parser.REQUIRED_MATCH_DIAGNOSTICS},
+          }
+          required_counts = {key: normalized.count(value) for key, value in required.items()}
+          safe_members = all(
+              parser.safe_member(item.filename) for item in infos
+          )
+          gates = {
+              'exact_archive_sha256': archive_digest == expected_archive,
+              'exactly_one_required_main_member': len(matches) == 1 and basename_matches == [expected_member],
+              'safe_central_directory_members': safe_members,
+              'header_only_read_within_65536_bytes': header_within_bound and header_terminated,
+              'frozen_encoding_candidate': encoding in parser.ENCODINGS,
+              'frozen_delimiter_candidate': delimiter in parser.DELIMITERS,
+              'effective_header_at_least_40_fields': len(normalized) >= 40,
+              'effective_header_unique_nonempty': all(normalized) and len(set(normalized)) == len(normalized),
+              'all_required_fields_present_exactly_once': all(count == 1 for count in required_counts.values()),
+              'frozen_parser_source_exact': hashlib.sha256(Path('input/frozen_parser.py').read_bytes()).hexdigest() == 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b',
+              'frozen_final_model_source_exact': Path('output/final_model_source_sha256.txt').read_text().strip() == '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301',
+              'sonotaco_2024_archive_absent': not Path('input/024a.zip').exists(),
+              'no_second_line_or_meteor_row_read': True,
+              'no_detector_execution': True,
+              'no_scientific_endpoint_computed': True,
+          }
+          verdict = 'PASS_SONOTACO_2023_HEADER_PARSER_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_2023_HEADER_PARSER_AUDIT'
+          result = {
+              'archive_sha256': archive_digest,
+              'archive_bytes': archive.stat().st_size,
+              'member': expected_member,
+              'member_compressed_bytes': info.compress_size,
+              'member_uncompressed_bytes': info.file_size,
+              'header_bytes_read': len(header_bytes),
+              'header_sha256': hashlib.sha256(header_bytes).hexdigest(),
+              'encoding': encoding,
+              'delimiter': delimiter,
+              'raw_field_count': len(raw_header),
+              'effective_field_count': len(normalized),
+              'trailing_blank_header_field': trailing_blank,
+              'normalized_header': normalized,
+              'required_counts': required_counts,
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/sonotaco_2023_header_parser_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# SonotaCo 2023 header-only parser audit', '',
+              f'Verdict: **{verdict}**', '',
+              f'- archive SHA-256: `{archive_digest}`',
+              f'- member: `{expected_member}`',
+              f'- header bytes read: **{len(header_bytes)}**',
+              f'- header SHA-256: `{result["header_sha256"]}`',
+              f'- encoding / delimiter: `{encoding}` / `{delimiter!r}`',
+              f'- raw/effective fields: **{len(raw_header)} / {len(normalized)}**',
+              f'- trailing blank field: **{trailing_blank}**', '',
+              '## Gates', '',
+          ]
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_2023_HEADER_PARSER_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen SonotaCo 2023 header/parser gate failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_2023_header_parser_audit/PROTOCOL.md \
+            .github/workflows/sonotaco_2023_header_parser_audit.yml \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            input/frozen_parser.py input/023a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload header-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2023-header-parser-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
