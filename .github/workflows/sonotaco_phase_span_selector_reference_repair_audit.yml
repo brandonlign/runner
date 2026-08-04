@@ -1,0 +1,139 @@
+name: SonotaCo phase-span selector reference repair audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-phase-span-selector-development
+    paths:
+      - .github/workflows/sonotaco_phase_span_selector_reference_repair_audit.yml
+      - sonotaco_phase_span_selector_reference_repair/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-phase-span-selector-reference-repair-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-phase-span-selector-reference-repair-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact one-prefix repair
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import difflib
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          def decode(directory: str, expected_names: list[str], expected_encoded_length: int, expected_sha: str) -> str:
+              parts = sorted(Path(directory).glob('part*.b64'))
+              names = [part.name for part in parts]
+              if names != expected_names:
+                  raise RuntimeError(f'{directory}: unexpected parts {names}')
+              encoded = ''.join(''.join(part.read_text(encoding='ascii').split()) for part in parts)
+              if len(encoded) != expected_encoded_length:
+                  raise RuntimeError(f'{directory}: encoded length {len(encoded)}')
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != expected_sha:
+                  raise RuntimeError(f'{directory}: source mismatch {digest}')
+              compile(source, directory + '.py', 'exec')
+              return source.decode('utf-8')
+
+          original = decode(
+              'sonotaco_phase_span_selector_source_audit/source_parts',
+              [f'part{i:02d}.b64' for i in range(8)],
+              8024,
+              'aab855db949bd520aa142a51a140c6e181918be0428bdee082b427fd1240a569',
+          )
+          repaired = decode(
+              'sonotaco_phase_span_selector_reference_repair/source_parts',
+              [f'part{i:02d}.b64' for i in range(8)],
+              8036,
+              '1fc071aeb742b70cadbf19be9bac719e79d57ca7a74ab0ce1cb960a827df4f2a',
+          )
+          old = 'mondrian-span-selector-reference'
+          new = 'mondrian-multiview-hires-reference'
+          exact_replacement = original.count(old) == 1 and repaired == original.replace(old, new)
+
+          tree = ast.parse(repaired)
+          constants = {}
+          functions = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+              elif isinstance(node, ast.FunctionDef):
+                  functions.add(node.name)
+
+          diff = list(difflib.unified_diff(original.splitlines(), repaired.splitlines(), fromfile='invalid.py', tofile='repaired.py', lineterm=''))
+          changed = [line for line in diff if (line.startswith('+') or line.startswith('-')) and not line.startswith('+++') and not line.startswith('---')]
+          gates = {
+              'original_source_exact': hashlib.sha256(original.encode()).hexdigest() == 'aab855db949bd520aa142a51a140c6e181918be0428bdee082b427fd1240a569',
+              'repaired_source_exact': hashlib.sha256(repaired.encode()).hexdigest() == '1fc071aeb742b70cadbf19be9bac719e79d57ca7a74ab0ce1cb960a827df4f2a',
+              'exact_single_prefix_replacement': exact_replacement,
+              'diff_exactly_one_removed_one_added': len(changed) == 2 and changed[0].startswith('-') and changed[1].startswith('+'),
+              'wrong_prefix_absent': old not in repaired,
+              'exact_pr112_prefix_once': repaired.count(new) == 1,
+              'thresholds_exact': constants.get('THRESHOLDS') == (2.5, 5.0, 7.5),
+              'calibration_sizes_exact': constants.get('ORIGINAL_CALIBRATION_NEGATIVES_PER_BIN') == 128 and constants.get('REFERENCE_NEGATIVES_PER_BIN') == 512 and constants.get('SELECTOR_CALIBRATION_NEGATIVES_PER_BIN') == 512,
+              'selector_interfaces_present': {'selector_fields', 'selection_tuple', 'threshold_name', 'worker'}.issubset(functions),
+              'pseudofold_seed_preserved': 'phase-span-selector-pseudofold' in repaired,
+              'blind_interval_not_embedded': 'GhostStream' not in repaired and 'SonotaCo 2024' not in repaired,
+          }
+          verdict = 'PASS_SONOTACO_PHASE_SPAN_SELECTOR_REFERENCE_REPAIR_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_PHASE_SPAN_SELECTOR_REFERENCE_REPAIR_AUDIT'
+          result = {
+              'original_sha256': hashlib.sha256(original.encode()).hexdigest(),
+              'repaired_sha256': hashlib.sha256(repaired.encode()).hexdigest(),
+              'changed_lines': changed,
+              'constants': constants,
+              'gates': gates,
+              'data_opened': False,
+              'score_executed': False,
+              'verdict': verdict,
+          }
+          Path('output/repaired_candidate_source.py').write_text(repaired, encoding='utf-8')
+          Path('output/source_repair_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          report = ['# SonotaCo phase-span selector reference repair audit', '', f'Verdict: **{verdict}**', '', '## Exact diff', '', '```diff', *changed, '```', '', '## Gates', '']
+          report.extend(f"- {'PASS' if value else 'FAIL'} — `{key}`" for key, value in gates.items())
+          report += ['', '- meteor archive opened: no', '- detector score executed: no']
+          Path('output/SOURCE_REPAIR_AUDIT_RESULT.md').write_text('\n'.join(report) + '\n', encoding='utf-8')
+          print('\n'.join(report))
+          if not all(gates.values()):
+              raise SystemExit('Frozen reference-stream repair audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_phase_span_selector_reference_repair/PROTOCOL.md \
+            sonotaco_phase_span_selector_reference_repair/source_parts/*.b64 \
+            sonotaco_phase_span_selector_source_audit/source_parts/*.b64 \
+            > output/source_files_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload repair audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-phase-span-selector-reference-repair-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
