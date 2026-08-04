@@ -43,7 +43,7 @@ The window score is the negative minimum residual among all 128 anchored subsets
 - exact PR #14 episode/geometry source SHA-256 `7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50`;
 - exact PR #38 scorer source SHA-256 `f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8`;
 - candidate source SHA-256 `1a9a69e7968840703f9a4199ef211bc597d318ac54f4602c6524b0028aa37759`;
-- gzip/base64 encoded source length 8,608 characters in exactly three v4 chunks.
+- gzip/base64 encoded source length 8,608 characters in exactly twelve v5 chunks: eleven 720-character chunks and one 688-character chunk.
 
 ## Execution-integrity repair
 
