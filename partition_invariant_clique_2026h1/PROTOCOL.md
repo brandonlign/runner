@@ -15,6 +15,24 @@ This is a new method, not a rescue of PR #31. The PR #31 score, thresholds, seed
 - The 2026 files have not appeared in any prior GhostStream methodology score, power benchmark, threshold selection, or model comparison.
 - No 2026 shower label may be used until this protocol and the data-extraction source are committed.
 - The 2026 data gate may inspect counts, completeness, complex membership, and local-window feasibility only. It may not compute the candidate score or any power endpoint.
+- The exact frozen power source SHA-256 is `22b9ddeab4b628a8991d255c740ba709ffe7977c209fd21a2ad9083c2c726e2f`.
+
+## Fresh data gate result before scoring
+
+Runner workflow `30873092919` passed all eight frozen data gates without computing any candidate or comparator score.
+
+- artifact: `8878551241`;
+- artifact digest: `sha256:a0d49849f30db3af4c51d13d5e7e6e8bc6dbdd70c41d1aed189f57aec75572f4`;
+- selected events SHA-256: `59e48ee6a0b653a2b4530f8a2221e2e93e6af3e6a9f11281c6f17fc428a85ddf`;
+- audit SHA-256: `45a367043ff91f4b44be4934d56d5b923ac4aea555ddf41fdd7cebfa7bc5d28e`;
+- 119 eligible showers and 26 strong showers;
+- 114 eligible complex/parent units and 5 multi-shower units;
+- 274,308 raw quality sporadics;
+- 23,726 retained sporadics outside the blind interval;
+- supported sectors: 0, 1, 4, and 5;
+- selected feature completeness: 1.0.
+
+These feasibility results do not alter the already frozen score, gates, seeds, or endpoints.
 
 ## GhostStream blindness
 
