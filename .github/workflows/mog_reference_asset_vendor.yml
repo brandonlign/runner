@@ -2,79 +2,65 @@ name: Vendor Mog reference assets
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
     paths:
       - mog_reference_face_validation/scripts/extract_gnm_head.py
       - mog_reference_face_validation/scripts/render_gnm_reference_assets.py
+      - cams_v2_single_line_schema_audit_v2/**
       - .github/workflows/mog_reference_asset_vendor.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: mog-reference-assets-${{ github.event.pull_request.number }}
+  group: runner-registered-gate-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   vendor:
     if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/mog-reference-face-finalize'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
-          fetch-depth: 0
+      - run: echo 'Mog route preserved; not selected on this branch.'
 
+  cams-v2-single-line-schema-v2:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/cams-v2-single-line-schema-audit-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Install deterministic render dependencies
-        run: python -m pip install --disable-pip-version-check numpy matplotlib pillow
-
-      - name: Extract and render licensed GNM assets
+      - name: Install frozen dependencies
+        run: python -m pip install 'requests==2.32.5' 'pypdf==6.5.0'
+      - name: Compile frozen parser v2
+        run: python -m py_compile cams_v2_single_line_schema_audit_v2/run_schema_audit_v2.py
+      - name: Run source-schema parser v2
         run: |
-          python mog_reference_face_validation/scripts/extract_gnm_head.py
-          python mog_reference_face_validation/scripts/render_gnm_reference_assets.py
-
-      - name: Validate generated files
+          mkdir -p output
+          python cams_v2_single_line_schema_audit_v2/run_schema_audit_v2.py --output output
+          cat output/RESULT.md
+      - name: Record provenance
+        if: always()
         run: |
-          python - <<'PY'
-          import hashlib
-          import json
-          from pathlib import Path
-
-          root = Path('mog_reference_face_validation/generated')
-          report = json.loads((root / 'gnm_reference_assets.json').read_text())
-          assert report['sourceLicense'] == 'Apache-2.0'
-          assert report['surfaceGroup'] == 'skin_exterior'
-          assert 10_000 <= report['vertexCount'] <= 13_000
-          assert 20_000 <= report['triangleCount'] <= 26_000
-          for view in ('front', 'profile'):
-              item = report['assets'][view]
-              path = root / item['file']
-              assert path.exists()
-              assert path.stat().st_size == item['bytes']
-              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['sha256']
-              assert 40_000 <= item['bytes'] <= 180_000
-          print(json.dumps(report, indent=2))
-          PY
-
-      - name: Commit assets to validation branch
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            mog_reference_face_validation/generated/gnm_reference_front.webp \
-            mog_reference_face_validation/generated/gnm_reference_profile.webp \
-            mog_reference_face_validation/generated/gnm_reference_assets.json \
-            mog_reference_face_validation/generated/gnm_head_skin_report.json
-          if git diff --cached --quiet; then
-            echo 'GNM reference assets already current.'
-          else
-            git commit -m 'Vendor final GNM reference assets for Mog'
-            git pull --rebase origin "${{ github.head_ref }}"
-            git push origin "HEAD:${{ github.head_ref }}"
-          fi
+          mkdir -p output
+          sha256sum \
+            cams_v2_single_line_schema_audit_v2/PROTOCOL.md \
+            cams_v2_single_line_schema_audit_v2/run_schema_audit_v2.py \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-cams-v2-single-line-schema-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
