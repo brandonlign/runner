@@ -1,0 +1,156 @@
+name: Consensus-lowpass recurrence reduced screen
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/consensus_lowpass_recurrence_screen.yml
+      - consensus_lowpass_recurrence_screen/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: consensus-lowpass-recurrence-reduced-screen
+  cancel-in-progress: true
+
+jobs:
+  reduced-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PINNED_SOURCE_COMMIT: 'e6fa3cbcf3dacc3287592874e12fda21f3a8d245'
+      CANDIDATE_SOURCE_SHA256: '9f630c8eca2ffb1a5bdbc0598b744dffccb6026d2476467b99c6caa3d410a9fa'
+      DATA_MD5: 'f57a2ac71832ceca9227441c00b8cd58'
+      SCREEN_SEED: '20260807'
+      CALIBRATION_TRIALS: '30'
+      NULL_TRIALS: '30'
+      INJECTION_TRIALS: '30'
+      ALPHA: '0.1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/consensus-lowpass-recurrence-screen
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Extract and verify exact audited candidate
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pinned/source_parts /tmp/pinned output input
+          git fetch --depth=1 origin "${PINNED_SOURCE_COMMIT}"
+          git show FETCH_HEAD:consensus_lowpass_recurrence_stage0/source_parts/part00.b64 > /tmp/pinned/source_parts/part00.b64
+          git show FETCH_HEAD:consensus_lowpass_recurrence_stage0/source_parts/part01.b64 > /tmp/pinned/source_parts/part01.b64
+          git show FETCH_HEAD:replicastream_stage0/requirements.txt > /tmp/pinned/requirements.txt
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('/tmp/pinned/source_parts').glob('part*.b64'))
+          if [part.name for part in parts] != ['part00.b64', 'part01.b64']:
+              raise RuntimeError(f'unexpected candidate parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '${{ env.CANDIDATE_SOURCE_SHA256 }}':
+              raise RuntimeError(f'candidate source mismatch: {digest}')
+          Path('/tmp/pinned/run_consensus_lowpass.py').write_bytes(source)
+          Path('output/run_consensus_lowpass.py').write_bytes(source)
+          print('candidate source SHA-256:', digest)
+          print('candidate source bytes:', len(source))
+          PY
+          python -m py_compile /tmp/pinned/run_consensus_lowpass.py
+      - name: Install exact frozen dependencies
+        run: python -m pip install --upgrade pip -r /tmp/pinned/requirements.txt
+      - name: Download exact public observed subset
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/SonotaCo_shober_2026_subset.csv \
+            'https://zenodo.org/records/18664293/files/SonotaCo_shober_2026_subset.csv?download=1'
+          echo "${DATA_MD5}  input/SonotaCo_shober_2026_subset.csv" | md5sum -c -
+      - name: Run frozen reduced kill screen
+        run: |
+          set -euo pipefail
+          python /tmp/pinned/run_consensus_lowpass.py \
+            --data input/SonotaCo_shober_2026_subset.csv \
+            --results output \
+            --seed "${SCREEN_SEED}" \
+            --calibration-trials "${CALIBRATION_TRIALS}" \
+            --null-trials "${NULL_TRIALS}" \
+            --injection-trials "${INJECTION_TRIALS}" \
+            --alpha "${ALPHA}"
+          test -s output/stage0_result.json
+          cat output/STAGE0_REPORT.md
+      - name: Enforce exact frozen design and gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/stage0_result.json').read_text())
+          expected_design = {
+              'seed': 20260807,
+              'calibration_trials': 30,
+              'null_trials': 30,
+              'injection_trials': 30,
+              'alpha': 0.1,
+              'active_years': 5,
+              'persistent_active_years': 12,
+              'consensus_smooth_sigma': [1.6, 1.6, 1.0, 0.9],
+          }
+          observed = {key: result[key] for key in expected_design}
+          if observed != expected_design:
+              raise RuntimeError(f'design mismatch: {observed}')
+          expected_gates = {
+              'ideal_null_fwer_at_most_0_20',
+              'shared_structure_null_fwer_at_most_0_20',
+              'minority_weak_recovery_loss_vs_best_at_most_0_05',
+              'weak_one_year_artifact_detection_at_most_0_20',
+              'persistent_shared_weak_recovery_gain_at_least_0_05',
+              'persistent_shared_margin_gain_at_least_0_05',
+              'persistent_shared_strong_power_no_material_collapse',
+          }
+          if set(result['gates']) != expected_gates:
+              raise RuntimeError(f'unexpected gates: {sorted(result["gates"])}')
+          summary = {
+              'design': observed,
+              'ideal_null': result['ideal_null']['consensus_lowpass'],
+              'shared_structure_null': result['shared_structure_null']['consensus_lowpass'],
+              'metrics': result['metrics'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+              'runtime_seconds': result['runtime_seconds'],
+          }
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen consensus-lowpass reduced gate failed')
+          if result['verdict'] != 'CONTINUE_CONSENSUS_LOWPASS_FULL_STAGE0':
+              raise SystemExit(f"unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record exact provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            consensus_lowpass_recurrence_screen/PROTOCOL.md \
+            /tmp/pinned/source_parts/*.b64 \
+            /tmp/pinned/run_consensus_lowpass.py \
+            /tmp/pinned/requirements.txt \
+            input/SonotaCo_shober_2026_subset.csv \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen screen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: consensus-lowpass-recurrence-reduced-screen
+          path: output
+          if-no-files-found: error
+          retention-days: 90
