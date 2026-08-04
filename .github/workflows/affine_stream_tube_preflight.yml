@@ -22,7 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
-      SOURCE_SHA256: 'ff1b024c28f240b2efa114c9e93c54a3d62d187bb2d1be0d75db891185950fb6'
+      SOURCE_SHA256: '1a9a69e7968840703f9a4199ef211bc597d318ac54f4602c6524b0028aa37759'
+      SOURCE_ENCODED_LENGTH: '8608'
       EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
       AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
       BASELINE_PAYLOAD_SHA256: '2cb82a8c12913a6176ddd7c6333b57a4d672334934c0d2ca4b572e878590cfa2'
@@ -55,32 +56,33 @@ jobs:
       - name: Decode and verify frozen candidate and inherited sources
         run: |
           python - <<'PY'
-          import base64, gzip, hashlib
+          import base64, gzip, hashlib, os
           from pathlib import Path
 
-          parts=sorted(Path('affine_stream_tube_preflight/source_parts_v2').glob('part*.b64'))
+          parts=sorted(Path('affine_stream_tube_preflight/source_parts_v4').glob('part*.b64'))
           expected=['part00.b64','part01.b64','part02.b64']
           if [p.name for p in parts] != expected:
               raise RuntimeError(f'unexpected candidate parts: {[p.name for p in parts]}')
           encoded=''.join(''.join(p.read_text().split()) for p in parts)
-          if len(encoded) != 7000:
+          expected_length=int(os.environ['SOURCE_ENCODED_LENGTH'])
+          if len(encoded) != expected_length:
               raise RuntimeError(f'unexpected encoded source length: {len(encoded)}')
           source=gzip.decompress(base64.b64decode(encoded,validate=True))
           digest=hashlib.sha256(source).hexdigest()
-          if digest != '${{ env.SOURCE_SHA256 }}':
+          if digest != os.environ['SOURCE_SHA256']:
               raise RuntimeError(f'candidate source mismatch: {digest}')
           Path('/tmp/run_affine_tube_preflight.py').write_bytes(source)
 
           scorer_parts=sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
           scorer=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in scorer_parts),validate=True))
           scorer_digest=hashlib.sha256(scorer).hexdigest()
-          if scorer_digest != '${{ env.SCORER_SOURCE_SHA256 }}':
+          if scorer_digest != os.environ['SCORER_SOURCE_SHA256']:
               raise RuntimeError(f'scorer source mismatch: {scorer_digest}')
 
           baseline_encoded=''.join(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_text().split())
           baseline=gzip.decompress(base64.b64decode(baseline_encoded,validate=True))
           baseline_digest=hashlib.sha256(baseline).hexdigest()
-          if baseline_digest != '${{ env.BASELINE_SOURCE_SHA256 }}':
+          if baseline_digest != os.environ['BASELINE_SOURCE_SHA256']:
               raise RuntimeError(f'baseline source mismatch: {baseline_digest}')
 
           print('candidate source sha256:',digest)
@@ -104,20 +106,23 @@ jobs:
           import json
           from pathlib import Path
           result=json.loads(Path('output/affine_tube_preflight.json').read_text())
-          print(json.dumps({
-            'counts':result['counts'],
-            'weak_auc':result['weak_auc'],
-            'false_positive':result['false_positive'],
-            'worst_bin_fpr_005':result['worst_bin_fpr_005'],
-            'recall':result['recall'],
-            'fold_auc':result['fold_auc'],
-            'gates':result['gates'],
-            'verdict':result['verdict'],
-          },indent=2))
-          if not all(result['gates'].values()):
+          summary={
+            'counts':result.get('counts'),
+            'weak_auc':result.get('weak_auc'),
+            'false_positive':result.get('false_positive'),
+            'worst_bin_fpr_005':result.get('worst_bin_fpr_005'),
+            'recall':result.get('recall'),
+            'fold_auc':result.get('fold_auc'),
+            'gates':result.get('gates'),
+            'verdict':result.get('verdict'),
+            'error':result.get('error'),
+          }
+          print(json.dumps(summary,indent=2))
+          gates=result.get('gates',{})
+          if not gates or not all(gates.values()):
               raise SystemExit('Frozen affine stream-tube preflight failed')
-          if result['verdict'] != 'PROCEED_TO_FULL_AFFINE_TUBE_BENCHMARK':
-              raise SystemExit(f"Unexpected verdict: {result['verdict']}")
+          if result.get('verdict') != 'PROCEED_TO_FULL_AFFINE_TUBE_BENCHMARK':
+              raise SystemExit(f"Unexpected verdict: {result.get('verdict')}")
           PY
       - name: Record provenance
         if: always()
@@ -125,7 +130,7 @@ jobs:
           mkdir -p output
           sha256sum \
             affine_stream_tube_preflight/PROTOCOL.md \
-            affine_stream_tube_preflight/source_parts_v2/*.b64 \
+            affine_stream_tube_preflight/source_parts_v4/*.b64 \
             input/selected_events.jsonl.gz \
             input/audit.json \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
