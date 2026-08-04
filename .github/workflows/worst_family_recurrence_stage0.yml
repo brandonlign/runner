@@ -36,13 +36,18 @@ jobs:
           python - <<'PY'
           import base64, gzip, hashlib
           from pathlib import Path
-          encoded = ''.join(Path('worst_family_recurrence_stage0/run_stage0.py.gz.b64').read_text().split())
+          parts = sorted(Path('worst_family_recurrence_stage0/source_parts').glob('part*.b64'))
+          expected_names = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [path.name for path in parts] != expected_names:
+              raise RuntimeError(f'Unexpected source parts: {[path.name for path in parts]}')
+          encoded = ''.join(''.join(path.read_text().split()) for path in parts)
           raw = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(raw).hexdigest()
           expected = '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac'
           if digest != expected:
               raise RuntimeError(f'Frozen source mismatch: {digest}')
           Path('/tmp/run_worst_family_recurrence.py').write_bytes(raw)
+          print('source parts:', [path.name for path in parts])
           print('source bytes:', len(raw))
           print('source sha256:', digest)
           PY
@@ -58,7 +63,14 @@ jobs:
       - name: Record provenance
         if: always()
         run: |
-          sha256sum /tmp/run_worst_family_recurrence.py worst_family_recurrence_stage0/run_stage0.py.gz.b64 worst_family_recurrence_stage0/PROTOCOL.md > worst_family_recurrence_stage0/results/source_sha256.txt
+          sha256sum \
+            /tmp/run_worst_family_recurrence.py \
+            worst_family_recurrence_stage0/source_parts/part00.b64 \
+            worst_family_recurrence_stage0/source_parts/part01.b64 \
+            worst_family_recurrence_stage0/source_parts/part02.b64 \
+            worst_family_recurrence_stage0/source_parts/part03.b64 \
+            worst_family_recurrence_stage0/PROTOCOL.md \
+            > worst_family_recurrence_stage0/results/source_sha256.txt
           python --version > worst_family_recurrence_stage0/results/python_version.txt
           python -m pip freeze > worst_family_recurrence_stage0/results/environment.txt
       - uses: actions/upload-artifact@v4
