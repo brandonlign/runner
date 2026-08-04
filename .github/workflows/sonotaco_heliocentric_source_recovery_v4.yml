@@ -1,0 +1,120 @@
+name: SonotaCo heliocentric source recovery v4
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-heliocentric-drift-development-v3
+    paths:
+      - .github/workflows/sonotaco_heliocentric_source_recovery_v4.yml
+      - sonotaco_heliocentric_drift_development/V4_SOURCE_RECOVERY_PROTOCOL.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-heliocentric-source-recovery-v4
+  cancel-in-progress: true
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-heliocentric-source-recovery-v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Recover exact verified v1 source and shape interface
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          echo '0667645c0fe3cbe279fd44e01e0e46f991a738561397c40b03c088ce8d812fef  sonotaco_heliocentric_drift_development/source_parts/part00.b64' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          payload = Path('sonotaco_heliocentric_drift_development/source_parts/part00.b64')
+          encoded = ''.join(payload.read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '9a3873758b87aff129603fa6e375fa55c5eb4d22b2cf7231d0ffad359c2eae4e'
+          if digest != expected:
+              raise RuntimeError(f'v1 source mismatch: {digest}')
+          compile(source, 'recovered_v1.py', 'exec')
+          text = source.decode('utf-8')
+          Path('output/recovered_v1_source.py').write_text(text, encoding='utf-8')
+
+          tree = ast.parse(text)
+          comparisons = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Compare):
+                  segment = ast.get_source_segment(text, node)
+                  if segment and '.shape' in segment:
+                      comparisons.append({'line': node.lineno, 'expression': segment})
+          shape_lines = [
+              {'line': index, 'text': line}
+              for index, line in enumerate(text.splitlines(), start=1)
+              if 'shape' in line.lower()
+          ]
+          gates = {
+              'payload_hash_exact': True,
+              'source_hash_exact': digest == expected,
+              'source_compiles': True,
+              'shape_comparison_exposed': len(comparisons) >= 1,
+          }
+          verdict = 'PASS_SONOTACO_HELIOCENTRIC_SOURCE_RECOVERY_V4' if all(gates.values()) else 'KILL_SONOTACO_HELIOCENTRIC_SOURCE_RECOVERY_V4'
+          result = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'shape_comparisons': comparisons,
+              'shape_lines': shape_lines,
+              'gates': gates,
+              'data_opened': False,
+              'score_executed': False,
+              'verdict': verdict,
+          }
+          Path('output/source_recovery.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          report = [
+              '# SonotaCo heliocentric source recovery v4',
+              '',
+              f'Verdict: **{verdict}**',
+              '',
+              f'- source SHA-256: `{digest}`',
+              f'- source bytes: {len(source)}',
+              f'- shape comparisons: {len(comparisons)}',
+              '- meteor data opened: no',
+              '- detector score executed: no',
+              '',
+              '## Shape comparisons',
+              '',
+          ]
+          report.extend(f"- line {item['line']}: `{item['expression']}`" for item in comparisons)
+          Path('output/SOURCE_RECOVERY_RESULT.md').write_text('\n'.join(report) + '\n', encoding='utf-8')
+          print('\n'.join(report))
+          if not all(gates.values()):
+              raise SystemExit('Frozen source recovery gate failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_heliocentric_drift_development/V4_SOURCE_RECOVERY_PROTOCOL.md \
+            sonotaco_heliocentric_drift_development/source_parts/part00.b64 \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload source recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-heliocentric-source-recovery-v4
+          path: output
+          if-no-files-found: error
+          retention-days: 90
