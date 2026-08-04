@@ -6,7 +6,8 @@
 import { GNM_POSITION_DATA } from "./gnm-head-mesh-positions";
 import { GNM_TRIANGLES_1 } from "./gnm-head-mesh-triangles-1";
 import { GNM_TRIANGLES_2 } from "./gnm-head-mesh-triangles-2";
-import { GNM_TRIANGLES_3 } from "./gnm-head-mesh-triangles-3";
+import { GNM_TRIANGLES_3_1 } from "./gnm-head-mesh-triangles-3-1";
+import { GNM_TRIANGLES_3_2 } from "./gnm-head-mesh-triangles-3-2";
 
 export const GNM_HEAD_MESH = {
   source: "Google GNM v3.0 head template",
@@ -16,7 +17,7 @@ export const GNM_HEAD_MESH = {
   minimum: GNM_POSITION_DATA.minimum,
   maximum: GNM_POSITION_DATA.maximum,
   positionsBase64: GNM_POSITION_DATA.base64,
-  trianglesBase64: GNM_TRIANGLES_1 + GNM_TRIANGLES_2 + GNM_TRIANGLES_3,
+  trianglesBase64: GNM_TRIANGLES_1 + GNM_TRIANGLES_2 + GNM_TRIANGLES_3_1 + GNM_TRIANGLES_3_2,
   landmarkVertexIndices: [479, 476, 752, 702, 638, 551, 468, 820, 822, 823, 755, 703, 641, 552, 469, 477, 480, 798, 864, 865, 866, 866, 867, 867, 868, 869, 801, 861, 891, 891, 892, 842, 842, 887, 843, 843, 791, 858, 859, 793, 859, 858, 794, 862, 863, 796, 863, 862, 835, 836, 884, 885, 885, 837, 838, 838, 883, 883, 882, 836, 835, 836, 885, 837, 838, 837, 883, 836] as const,
 } as const;
 
