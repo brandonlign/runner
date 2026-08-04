@@ -1,0 +1,82 @@
+name: GhostStream final scientific synthesis
+
+on:
+  pull_request:
+    branches:
+      - agent/ghoststream-fixed4-frozen-application
+    paths:
+      - ghoststream_final_scientific_synthesis/**
+      - .github/workflows/ghoststream_final_scientific_synthesis.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ghoststream-final-scientific-synthesis
+  cancel-in-progress: true
+
+jobs:
+  synthesis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-final-scientific-synthesis
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile frozen synthesis verifier
+        run: python -m py_compile ghoststream_final_scientific_synthesis/verify_synthesis.py
+      - name: Download exact evidence artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          for artifact_id in \
+            8814798136 \
+            8899766878 \
+            8874131590 \
+            8874517049 \
+            8875235491 \
+            8875426322
+          do
+            curl --fail-with-body --location \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              --output "input/${artifact_id}.zip"
+          done
+      - name: Verify final evidence synthesis
+        run: |
+          set -euo pipefail
+          python ghoststream_final_scientific_synthesis/verify_synthesis.py \
+            --manifest ghoststream_final_scientific_synthesis/evidence_manifest.json \
+            --input input \
+            --output output
+          cat output/GHOSTSTREAM_FINAL_SCIENTIFIC_SYNTHESIS.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            ghoststream_final_scientific_synthesis/evidence_manifest.json \
+            ghoststream_final_scientific_synthesis/FINAL_SCIENTIFIC_POSITION.md \
+            ghoststream_final_scientific_synthesis/verify_synthesis.py \
+            .github/workflows/ghoststream_final_scientific_synthesis.yml \
+            > output/synthesis_source_sha256.txt
+          find input -type f -name '*.zip' -print0 2>/dev/null | sort -z | xargs -0 -r sha256sum \
+            > output/downloaded_artifact_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload final synthesis evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-final-scientific-synthesis
+          path: output
+          if-no-files-found: error
+          retention-days: 90
