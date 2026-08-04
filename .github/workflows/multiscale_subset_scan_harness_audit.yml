@@ -1,0 +1,39 @@
+name: Multiscale subset scan harness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/multiscale_subset_scan_harness_audit.yml
+      - multiscale_subset_scan_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multiscale-subset-scan-harness-audit
+  cancel-in-progress: true
+
+jobs:
+  no-score-harness-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/multiscale-subset-scan-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode and inspect prior development harness
+        run: |
+          python multiscale_subset_scan_stage0/introspect_harness.py
+      - name: Upload interface audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: multiscale-subset-scan-harness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 30
