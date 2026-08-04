@@ -59,11 +59,8 @@
       </defs>
 
       {mode === "rendered" ? (
-        <g>
-          <path d="M 112 620 C 170 574, 250 554, 303 548 C 363 552, 443 578, 510 620 Z" fill="#c6c0ba" />
-          <g filter="url(#verifiedProfileMeshShadow)">
-            <CanonicalClayFace view="profile" landmarks={landmarks} />
-          </g>
+        <g filter="url(#verifiedProfileMeshShadow)">
+          <CanonicalClayFace view="profile" landmarks={landmarks} />
         </g>
       ) : (
         <g>

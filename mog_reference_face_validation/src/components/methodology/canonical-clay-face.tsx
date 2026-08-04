@@ -339,6 +339,7 @@ function GnmClayMesh({ view, landmarks }: { view: FaceView; landmarks: FacialLan
   const projection = useMemo(() => buildFaces(view, landmarks), [view, landmarks]);
   return (
     <g aria-label={`Google GNM neutral clay ${view} illustration`}>
+      <rect x="-100" y="-100" width="800" height="820" fill="var(--paper)" />
       {projection.faces.map(({ face, points, fill }, index) => (
         <polygon
           key={`${face[0]}-${face[1]}-${face[2]}-${index}`}

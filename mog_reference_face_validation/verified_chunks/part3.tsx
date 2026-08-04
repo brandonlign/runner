@@ -1,11 +1,5 @@
-        <g>
-          <path d={shoulders} fill="#c6c0ba" />
-          <path d={neckPath} fill="url(#verifiedFrontClay)" />
-          <ellipse cx={leftTragion.x - 1} cy={leftTragion.y + 14} rx="12" ry="31" fill="#d4cbc3" />
-          <ellipse cx={rightTragion.x + 1} cy={rightTragion.y + 14} rx="12" ry="31" fill="#d4cbc3" />
-          <g filter="url(#verifiedFrontMeshShadow)">
-            <CanonicalClayFace view="front" landmarks={landmarks} />
-          </g>
+        <g filter="url(#verifiedFrontMeshShadow)">
+          <CanonicalClayFace view="front" landmarks={landmarks} />
         </g>
       ) : (
         <g>
