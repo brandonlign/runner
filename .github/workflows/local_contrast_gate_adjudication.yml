@@ -1,0 +1,88 @@
+name: Local-contrast gate adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/local-contrast-recurrence-development
+    paths:
+      - .github/workflows/local_contrast_gate_adjudication.yml
+      - local_contrast_gate_adjudication/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: local-contrast-gate-adjudication
+  cancel-in-progress: true
+
+jobs:
+  gate-only-adjudication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/local-contrast-gate-adjudication
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile frozen adjudicator before evidence retrieval
+        run: |
+          set -euo pipefail
+          python -m py_compile local_contrast_gate_adjudication/adjudicate.py
+          sha256sum \
+            local_contrast_gate_adjudication/PROTOCOL.md \
+            local_contrast_gate_adjudication/adjudicate.py
+      - name: Retrieve exact preserved development evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download 30877969736 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name local-contrast-recurrence-development \
+            --dir input
+          echo '1cbc95994afbe7121282f3e0ef98ec87323571d239695031c560130b71f1b96d  input/DEVELOPMENT_PROTOCOL.md' | sha256sum -c -
+          echo '6eae2e4d5d9afa5778efda2cb134806a3d0fb4e9fcd2dc455f885c01a13e7c91  input/results/stage0_result.json' | sha256sum -c -
+      - name: Apply pre-run written protocol gates only
+        run: |
+          set -euo pipefail
+          python local_contrast_gate_adjudication/adjudicate.py \
+            --protocol input/DEVELOPMENT_PROTOCOL.md \
+            --result input/results/stage0_result.json \
+            --source-sha-file input/results/source_sha256.txt \
+            --output output
+          cat output/ADJUDICATION.md
+      - name: Enforce written-protocol decision
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/local_contrast_gate_adjudication.json').read_text())
+          print(json.dumps(result, indent=2, sort_keys=True))
+          if result['verdict'] != 'AUTHORIZE_LOCAL_CONTRAST_FULL_STAGE0_FROM_PROTOCOL':
+              raise SystemExit('Written protocol did not authorize full Stage-0')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            local_contrast_gate_adjudication/PROTOCOL.md \
+            local_contrast_gate_adjudication/adjudicate.py \
+            input/DEVELOPMENT_PROTOCOL.md \
+            input/results/stage0_result.json \
+            input/results/source_sha256.txt \
+            > output/source_and_evidence_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload adjudication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-contrast-gate-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
