@@ -101,10 +101,16 @@ def main() -> None:
         positions = np.asarray(model["positions"], dtype=np.float64)
         triangles = np.asarray(model["triangles"], dtype=np.int32)
 
-    if positions.shape != (12466, 3):
-        raise ValueError(f"Unexpected GNM skin vertex shape: {positions.shape}")
-    if triangles.shape != (24820, 3):
-        raise ValueError(f"Unexpected GNM skin triangle shape: {triangles.shape}")
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError(f"Unexpected GNM exterior vertex shape: {positions.shape}")
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise ValueError(f"Unexpected GNM exterior triangle shape: {triangles.shape}")
+    if not 10_000 <= positions.shape[0] <= 13_000:
+        raise ValueError(f"Unexpected GNM exterior vertex count: {positions.shape[0]}")
+    if not 20_000 <= triangles.shape[0] <= 26_000:
+        raise ValueError(f"Unexpected GNM exterior triangle count: {triangles.shape[0]}")
+    if triangles.min() < 0 or triangles.max() >= positions.shape[0]:
+        raise ValueError("GNM exterior triangle indices are out of bounds")
 
     normals = _face_normals(positions, triangles)
     assets = {
@@ -115,7 +121,8 @@ def main() -> None:
         _render(positions, triangles, normals, view, destination)
 
     report = {
-        "source": "Google GNM v3 head template, skin component",
+        "source": "Google GNM v3 head template",
+        "surfaceGroup": "skin_exterior",
         "sourceLicense": "Apache-2.0",
         "renderer": RENDER_VERSION,
         "vertexCount": int(positions.shape[0]),
