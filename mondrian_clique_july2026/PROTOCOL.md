@@ -2,43 +2,41 @@
 
 Status: frozen before `traj_summary_monthly_202607.txt` is downloaded or any July shower label, candidate score, comparator score, p-value, or power endpoint is read.
 
+## Source-payload repair record
+
+The first source-audit attempt failed before any July network request because the committed gzip/base64 July payload ended before its gzip end-of-stream marker. No July file was downloaded and no July count, label, score, or endpoint was observed. The incomplete payloads were replaced with complete, locally syntax-checked implementations while the untouched-data boundary remained intact. No scientific threshold, bin, score, seed, comparator, endpoint, or gate changed.
+
+- frozen July data implementation SHA-256: `a9bd2f3ff033c7e4f524e214b28096c14e7a5cdddf56a043c20069a2b3d6d94e`;
+- frozen July power implementation SHA-256: `8559424a4453ce4938654de37be7c164f3ca100ddd6c7d943c38df33cf3c2044`.
+
 ## Scientific question
 
 Does the coverage-normalized 10-degree Mondrian four-clique methodology that passed the four-panel retrospective matrix in PR #38 retain calibrated false-alarm control and weak established-shower power on a previously unused July 2026 GMN snapshot?
 
 This is a one-shot independent confirmation. Any failed feasibility or scientific gate kills the exact formulation. No July-derived threshold, bin boundary, shower subset, seed, endpoint, or score change is permitted.
 
-## Confirmation target
+## Confirmation target and blindness
 
 - GMN monthly trajectory file: `traj_summary_monthly_202607.txt`;
-- the official index listed the snapshot as 43 MB dated July 20, 2026 before this protocol was frozen;
-- the workflow will download the file once, record source metadata and cryptographic hashes, and preserve the selected event artifact;
-- the file is treated as a July snapshot, not assumed to contain the complete calendar month.
-
-July 2026 has not appeared in any prior GhostStream methodology score, calibration audit, power benchmark, threshold selection, or model comparison.
-
-## GhostStream blindness
-
-Remove every event with solar longitude from 20.0 degrees through 55.0 degrees before any stratum, calibration pool, negative window, positive window, score, fold, or endpoint is formed. No GhostStream radiant, speed, orbit, membership, event list, or score may be used.
+- the file is treated as the available July snapshot, not assumed to contain the complete calendar month;
+- the workflow records its URL, byte count, cryptographic hash, and extraction provenance;
+- July 2026 has not appeared in any prior methodology score, calibration audit, power benchmark, threshold selection, or model comparison;
+- remove every event with solar longitude from 20.0° through 55.0° before every retained reservoir used for support, calibration window, negative window, positive window, score, fold, and endpoint;
+- no GhostStream radiant, speed, orbit, membership, event list, or score is used.
 
 ## Frozen data extraction
 
-Use the exact PR #14 row parser and quality filters, and the exact current IAU MDC complex/parent mapping.
+Use the exact PR #14 row parser, quality filters, current IAU MDC complex/parent mapping, and deterministic reservoir helper.
 
-- year: 2026;
-- month: July only;
+- year/month: 2026/07 only;
 - labeled reservoir: at most 500 quality events per shower;
 - sporadic reservoir: at most 20,000 quality IAU `-1` events;
-- eligible shower: at least 20 quality events, matching the frozen EpisodeFactory threshold;
+- eligible shower: at least 20 quality events;
 - strong shower: at least 100 quality events;
-- 10-degree bins are globally anchored at integer multiples of 10 degrees;
-- a bin is supported only if at least one real center in that bin can form a 128-event empirical-background window within plus or minus 10 degrees.
+- 10-degree bins are globally anchored at integer multiples of 10°;
+- a bin is supported only if at least one retained real sporadic center in that bin can form a 128-event empirical-background window within ±10°.
 
-Exact data-extraction source SHA-256: `1349da2d94b6f300ec7982bee7f5c17df5318c425da8a7d1f15d8befa1f551ec`.
-
-### Frozen data gates
-
-Every gate must pass before the power workflow is authorized:
+Every data gate must pass:
 
 1. at least 30 eligible showers;
 2. at least 8 strong showers;
@@ -49,45 +47,32 @@ Every gate must pass before the power workflow is authorized:
 7. at least 2 supported 10-degree bins;
 8. retained feature completeness at least 0.95.
 
-The data gate may inspect counts, completeness, complex membership, source hashes, and local-window feasibility only. It may not compute the clique score, comparator scores, p-values, AUROC, recall, or any power endpoint.
+The data stage may inspect only source provenance, counts, completeness, complex membership, and local-window feasibility. It may not compute the clique score, comparator scores, p-values, AUROC, recall, or any power endpoint.
 
 ## Frozen windows and geometry
 
 - 128 events per window;
-- one year and one July snapshot per window;
-- plus or minus 10 degrees in solar longitude around the center event;
-- positive windows contain `k in {4, 6, 8, 12}` real members from one established shower and real local IAU `-1` meteors;
+- one July snapshot and one year per window;
+- ±10° solar-longitude neighborhood around the center;
+- positive windows contain `k in {4,6,8,12}` real members from one established shower plus local real IAU `-1` meteors;
 - four deterministic positive replicates per eligible shower and member count;
-- weak-power endpoints use `k in {4, 6, 8}`;
-- exact PR #14 physical distance and scales:
-  - relative solar longitude / 2 degrees;
-  - Sun-centered ecliptic longitude and latitude / 2 degrees;
-  - geocentric speed / 2 km/s.
+- positive centers are restricted to data-gate-supported 10-degree bins;
+- weak endpoints use `k in {4,6,8}`;
+- unchanged PR #14 physical coordinates and scales: relative solar longitude / 2°, Sun-centered ecliptic radiant longitude / 2°, Sun-centered ecliptic radiant latitude / 2°, and geocentric speed / 2 km/s.
 
-Positive centers are restricted to data-gate-supported 10-degree bins so every evaluated positive window has a prospectively valid local empirical calibration stratum. This restriction is frozen before July data is read and does not use a method score.
+## Frozen candidate score
 
-## Frozen partition-invariant score
-
-For each window:
-
-1. compute the complete 128-by-128 physical-distance matrix;
-2. for each meteor, identify its three nearest other meteors;
-3. form the four-event subset containing that meteor and those neighbors;
-4. compute the complete-link diameter of the subset;
-5. take the minimum diameter over all anchors;
-6. negate it so larger values indicate stronger coherence.
-
-No radius, cluster threshold, random partition, orbit element, shower identity, or absolute solar longitude enters the candidate score.
+For each window, compute the complete 128×128 physical-distance matrix. For every meteor, form the four-event subset consisting of that meteor and its three nearest other meteors, compute the subset's complete-link diameter, take the minimum diameter over all anchors, and negate it. No radius, cluster threshold, random partition, orbit element, shower identity, or absolute solar longitude enters the candidate score.
 
 ## Frozen Mondrian calibration
 
-- strata are `[0,10), [10,20), ..., [350,360)` degrees in solar longitude;
-- only prospectively supported July strata are evaluated;
-- each supported stratum receives 128 deterministic calibration windows and 64 independent negative windows from the same retained empirical sporadic corpus and generator;
-- candidate p-values are `p = (1 + number of calibration scores >= score) / 129`;
-- overlapping Monte Carlo windows are allowed, matching the same-corpus empirical mechanism validated in PRs #29 and #38.
+- strata: `[0,10), [10,20), …, [350,360)` degrees;
+- evaluate only prospectively supported July strata;
+- 128 deterministic calibration windows and 64 independent negative windows per supported stratum from the same retained empirical sporadic corpus;
+- candidate p-value: `(1 + number of calibration scores >= test score) / 129`;
+- overlapping Monte Carlo windows are allowed, matching the validated same-corpus empirical mechanism.
 
-Exact seed prefixes:
+Frozen seed prefixes:
 
 - support: `mondrian-july-confirmation-support`;
 - calibration: `mondrian-july-confirmation-calibration`;
@@ -99,7 +84,7 @@ No seed may be replaced after results are observed.
 
 ## Frozen comparators and folds
 
-Compute on the exact same positive and independent-negative windows:
+On the exact same positive and independent-negative windows compute:
 
 - the killed eight-split reference/query statistic;
 - radius-2.5 local density;
@@ -108,25 +93,23 @@ Compute on the exact same positive and independent-negative windows:
 
 No comparator parameter or fold assignment may be reselected.
 
-Exact power implementation SHA-256: `7a551f0fc7ce4b40642e83449f4ce37d5b0cd9a7abf900c46a1250e159e96fb0`.
-
 ## Frozen confirmation gates
 
 Every gate must pass:
 
-1. pooled candidate FPR at alpha 0.05 is at most 0.060;
-2. pooled candidate FPR at alpha 0.01 is at most 0.020;
-3. worst 60-degree reporting-sector FPR at alpha 0.05 is at most 0.120;
-4. weak-window AUROC is at least 0.75;
-5. candidate AUROC is no more than 0.03 below the strongest fixed comparator;
-6. at least four of five folds have candidate AUROC at least 0.70;
-7. no fold has candidate AUROC below 0.65;
-8. candidate recall at alpha 0.05 is at least 0.15, 0.30, and 0.45 for `k = 4, 6, 8`;
-9. candidate recall at alpha 0.01 is at least 0.05, 0.15, and 0.25 for `k = 4, 6, 8`;
-10. recall is nondecreasing from `k = 4` to 6 to 8 to 12 at both thresholds.
+1. pooled candidate FPR at alpha 0.05 ≤ 0.060;
+2. pooled candidate FPR at alpha 0.01 ≤ 0.020;
+3. worst 60-degree reporting-sector FPR at alpha 0.05 ≤ 0.120;
+4. weak-window AUROC ≥ 0.75;
+5. candidate AUROC no more than 0.03 below the strongest fixed comparator;
+6. at least four of five fold AUROCs ≥ 0.70;
+7. no fold AUROC < 0.65;
+8. candidate recall at alpha 0.05 ≥ 0.15, 0.30, and 0.45 for `k=4,6,8`;
+9. candidate recall at alpha 0.01 ≥ 0.05, 0.15, and 0.25 for `k=4,6,8`;
+10. recall nondecreasing from `k=4` to 6 to 8 to 12 at both thresholds.
 
 ## Kill and continuation rules
 
-Any failed data or confirmation gate kills this exact formulation. Do not change the file snapshot, eligibility thresholds, supported-bin requirement, bin width, boundaries, calibration count, negative count, score, seeds, folds, shower subset, blind interval, thresholds, comparators, or endpoints after results are observed.
+Any failed data or confirmation gate kills this exact formulation. Do not change the file snapshot, eligibility threshold, supported-bin rule, bin width, boundaries, calibration count, negative count, score, seeds, folds, shower subset, blind interval, thresholds, comparators, or endpoints after results are observed.
 
-A pass would establish independent method-level evidence that the partition-invariant clique plus 10-degree Mondrian empirical calibration generalizes beyond all development panels. It would authorize only separately frozen external-survey and catalog-level multiplicity studies. It would not by itself authorize a GhostStream discovery claim or application.
+A pass establishes independent method-level evidence that partition-invariant quartet coherence plus 10-degree Mondrian empirical calibration generalizes beyond all retrospective panels. It authorizes only separately frozen external-survey and catalog-level multiplicity studies; it does not by itself authorize a GhostStream application or discovery claim.
