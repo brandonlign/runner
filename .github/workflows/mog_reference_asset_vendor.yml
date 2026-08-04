@@ -7,13 +7,14 @@ on:
     paths:
       - mog_reference_face_validation/scripts/extract_gnm_head.py
       - mog_reference_face_validation/scripts/render_gnm_reference_assets.py
+      - cams_v2_tabular_feasibility/**
       - .github/workflows/mog_reference_asset_vendor.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: mog-reference-assets-${{ github.event.pull_request.number }}
+  group: runner-registered-gate-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -78,3 +79,61 @@ jobs:
             git pull --rebase origin "${{ github.head_ref }}"
             git push origin "HEAD:${{ github.head_ref }}"
           fi
+
+  cams-v2-tabular-structural:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/cams-v2-tabular-feasibility'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen dependency
+        run: python -m pip install 'requests==2.32.5'
+      - name: Compile frozen structural audit
+        run: python -m py_compile cams_v2_tabular_feasibility/run_structural_audit.py
+      - name: Run tabular structural gate
+        run: |
+          mkdir -p output
+          python cams_v2_tabular_feasibility/run_structural_audit.py --output output
+          cat output/RESULT.md
+      - name: Verify authoritative result
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('output/tabular_structural_feasibility.json').read_text())
+          assert result['verdict']=='PASS_HISTORICAL_CAMSV2_TABULAR_STRUCTURAL_FEASIBILITY'
+          assert all(result['gates'].values())
+          assert result['workbook_member_content_opened'] is False
+          assert result['single_line_text_decoded'] is False
+          assert result['single_line_records_read'] is False
+          assert result['documentation_pdf_parsed'] is False
+          assert result['meteor_values_read'] is False
+          assert result['label_values_read'] is False
+          assert result['later_california_records_read'] is False
+          assert result['benelux_meteor_values_read'] is False
+          assert result['sonotaco_2024_read'] is False
+          assert result['camsv3_2016_values_read'] is False
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            cams_v2_tabular_feasibility/PROTOCOL.md \
+            cams_v2_tabular_feasibility/run_structural_audit.py \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-cams-v2-tabular-structural
+          path: output
+          if-no-files-found: error
+          retention-days: 90
