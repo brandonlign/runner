@@ -1,18 +1,3 @@
-            <line x1={subnasale.x} y1={subnasale.y} x2={pogonion.x} y2={pogonion.y} />
-            <line x1={gonion.x} y1={gonion.y} x2={menton.x} y2={menton.y} />
-            <line x1={gonion.x} y1={gonion.y} x2={ramus.x} y2={ramus.y} />
-            <line x1={menton.x} y1={menton.y} x2={cervical.x} y2={cervical.y} />
-            <line x1={cervical.x} y1={cervical.y} x2={throat.x} y2={throat.y} />
-          </g>
-          {structureIds.map((id) => {
-            const point = q(id);
-            return <circle key={id} cx={point.x} cy={point.y} r="3.7" fill="white" stroke="var(--accent)" strokeWidth="1.7"><title>{id}</title></circle>;
-          })}
-          <g fill="var(--muted)" fontSize="11">
-            <text x={tragion.x - 4} y={tragion.y - 11}>Frankfort plane</text>
-            <text x={pronasale.x + 9} y={pronasale.y - 5}>tip</text>
-            <text x={pogonion.x + 9} y={pogonion.y}>pogonion</text>
-            <text x={gonion.x - 53} y={gonion.y - 9}>gonion</text>
           </g>
         </g>
       )}
@@ -48,7 +33,7 @@ export function IdealReferenceFace() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">Verified reference geometry</p>
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">One face that satisfies Mog’s own measurements</h2>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">Structure and realistic modes use the exact same solved landmarks. The portrait adds only smooth anatomical interpolation and neutral clay styling; none of those illustrative details enters the harmony score.</p>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">Structure and realistic modes use the exact same solved landmarks. Realistic mode warps a licensed canonical facial mesh to those anchors and adds neutral clay shading; none of those illustrative details enters the harmony score.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Toggle value={view} options={["front", "profile"] as const} onChange={setView} label="Face view" />
