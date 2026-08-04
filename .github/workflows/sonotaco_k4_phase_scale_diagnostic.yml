@@ -1,0 +1,116 @@
+name: SonotaCo k4 phase-scale diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-k4-revision-source-audit-v2
+    paths:
+      - .github/workflows/sonotaco_k4_phase_scale_diagnostic.yml
+      - sonotaco_k4_phase_scale_diagnostic/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-k4-phase-scale-diagnostic
+  cancel-in-progress: true
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-k4-phase-scale-diagnostic
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Decode and verify frozen diagnostic source
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          encoded = ''.join(Path('sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64').read_text().split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'e5cdb6eb8d07fdbcc5c29a4d02139fff86386e8aebde83717fdc7485acda265d'
+          if digest != expected:
+              raise RuntimeError(f'diagnostic source mismatch: {digest}')
+          Path('/tmp/run_sonotaco_k4_phase_scale_diagnostic.py').write_bytes(source)
+          print('diagnostic bytes:', len(source))
+          print('diagnostic SHA-256:', digest)
+          PY
+          python -m py_compile /tmp/run_sonotaco_k4_phase_scale_diagnostic.py
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+      - name: Download exact SonotaCo 2025 development archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+      - name: Run frozen activity-phase scale diagnostic
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_k4_phase_scale_diagnostic.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_K4_PHASE_SCALE_DIAGNOSTIC.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_k4_phase_scale_diagnostic/PROTOCOL.md \
+            sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            input/025a.zip input/audit.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-k4-phase-scale-diagnostic
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sonotaco_k4_phase_scale_diagnostic.json').read_text())
+          print(json.dumps({'selection': result['selection'], 'gates': result['gates'], 'verdict': result['verdict']}, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen SonotaCo k4 phase-scale diagnostic gate failed')
+          PY
