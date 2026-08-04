@@ -29,10 +29,12 @@ test("the canonical front has positive five-degree outward canthal tilt", () => 
   assert.match(source, />\+5° canthal tilt</);
 });
 
-test("the profile and front use the production solved coordinates", () => {
-  assert.match(geometry, /pronasale: \[0\.203497, 0\.570531\]/);
-  assert.match(geometry, /softTissuePogonion: \[0\.05687, 0\.923903\]/);
-  assert.match(geometry, /mentolabialSulcus: \[0\.015871, 0\.833935\]/);
+test("the profile is the GNM-regularized solved coordinate set", () => {
+  assert.match(geometry, /pronasale: \[0\.1488, 0\.56235\]/);
+  assert.match(geometry, /softTissuePogonion: \[0\.02255, 0\.94177\]/);
+  assert.match(geometry, /mentolabialSulcus: \[0\.00617, 0\.87921\]/);
+  assert.match(geometry, /gonion: \[-0\.35752, 0\.88602\]/);
+  assert.match(geometry, /Google GNM mean/);
   assert.match(geometry, /const faceWidth = 0\.78/);
   assert.match(geometry, /const jawWidth = faceWidth \/ 1\.25/);
 });
