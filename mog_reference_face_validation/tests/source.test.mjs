@@ -5,7 +5,9 @@ import test from "node:test";
 const source = readFileSync("src/components/methodology/ideal-reference-face-verified.tsx", "utf8");
 const geometry = readFileSync("src/lib/analysis/reference-face-geometry.ts", "utf8");
 const clay = readFileSync("src/components/methodology/canonical-clay-face.tsx", "utf8");
+const renders = readFileSync("src/components/methodology/gnm-clay-renders.ts", "utf8");
 const mesh = readFileSync("src/components/methodology/gnm-head-mesh.ts", "utf8");
+const generator = readFileSync("scripts/generate_gnm_clay_snapshots.py", "utf8");
 
 test("the renderer reads the canonical scoring landmarks", () => {
   assert.match(source, /referenceFrontLandmarks/);
@@ -39,27 +41,30 @@ test("the profile is the GNM-regularized solved coordinate set", () => {
   assert.match(geometry, /const jawWidth = faceWidth \/ 1\.25/);
 });
 
-test("the clay renderer uses the licensed full-head GNM surface", () => {
+test("the realistic renderer uses deterministic licensed GNM snapshots", () => {
+  assert.match(clay, /GNM_FRONT_WEBP/);
+  assert.match(clay, /GNM_PROFILE_WEBP/);
+  assert.match(clay, /<image href=\{href\}/);
+  assert.match(clay, /all scoring continues to use the separate canonical/);
+  assert.doesNotMatch(clay, /calculateAnalysisReport/);
+  assert.match(renders, /Google GNM v3\.0, Apache-2\.0/);
+  assert.match(renders, /data:image\/webp;base64/);
+  assert.match(generator, /z_buffer/);
+  assert.match(generator, /Image\.Resampling\.LANCZOS/);
+});
+
+test("the reduced GNM source remains vendored with explicit provenance", () => {
   assert.match(mesh, /Google GNM v3\.0 head template/);
   assert.match(mesh, /license: "Apache-2\.0"/);
   assert.match(mesh, /vertexCount: GNM_POSITION_DATA\.vertexCount/);
   assert.match(mesh, /triangleCount: 1775/);
-  assert.match(clay, /decodeGnmHeadMesh/);
-  assert.match(clay, /GNM surface vertices never enter the score/);
-  assert.doesNotMatch(clay, /calculateAnalysisReport/);
-});
-
-test("the reduced GNM triangle stream is reconstructed without Base64 boundary corruption", () => {
   assert.match(mesh, /triangleChunksBase64/);
   assert.match(mesh, /concatenateBytes/);
   assert.match(mesh, /encodedIndices\.subarray\(0, expectedIndexCount\)/);
   assert.match(mesh, /value >= GNM_HEAD_MESH\.vertexCount/);
-  assert.doesNotMatch(mesh, /GNM_TRIANGLES_1 \+ GNM_TRIANGLES_2/);
 });
 
-test("realistic mode culls hidden faces and removes legacy anatomy layers", () => {
-  assert.match(clay, /view === "front" \? value\.z < 0 : value\.x > 0/);
-  assert.match(clay, /<rect x="-100" y="-100" width="800" height="820" fill="var\(--paper\)" \/>/);
+test("realistic mode removes legacy anatomy layers", () => {
   assert.doesNotMatch(source, /<path d=\{shoulders\} fill=/);
   assert.doesNotMatch(source, /M 112 620 C 170 574/);
 });
