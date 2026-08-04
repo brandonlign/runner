@@ -1,0 +1,77 @@
+name: Local-contrast recurrence development
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/local_contrast_recurrence_dev.yml
+      - local_contrast_recurrence_dev/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-contrast-recurrence-development
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/local-contrast-recurrence-development
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: replicastream_stage0/requirements.txt
+      - run: python -m pip install --upgrade pip -r replicastream_stage0/requirements.txt
+      - name: Reconstruct verified worst-family source
+        run: |
+          mkdir -p /tmp/source_parts local_contrast_recurrence_dev/results
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts = sorted(Path('worst_family_recurrence_stage0/source_parts').glob('part*.b64'))
+          if [p.name for p in parts] != ['part00.b64','part01.b64','part02.b64','part03.b64']:
+              raise RuntimeError(f'Unexpected source parts: {[p.name for p in parts]}')
+          raw = gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts), validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          expected = '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac'
+          if digest != expected:
+              raise RuntimeError(f'Worst-family source mismatch: {digest}')
+          Path('/tmp/worst_family_source.py').write_bytes(raw)
+          print('base source sha256:', digest)
+          PY
+      - name: Derive and compile fixed local-contrast candidate
+        run: |
+          python local_contrast_recurrence_dev/derive_candidate.py /tmp/worst_family_source.py /tmp/run_local_contrast.py
+          python -m py_compile /tmp/run_local_contrast.py
+          sha256sum /tmp/run_local_contrast.py local_contrast_recurrence_dev/derive_candidate.py local_contrast_recurrence_dev/DEVELOPMENT_PROTOCOL.md
+      - name: Run exact-data development kill screen
+        run: |
+          python /tmp/run_local_contrast.py \
+            --calibration-trials 20 \
+            --null-trials 20 \
+            --injection-trials 30 \
+            --results local_contrast_recurrence_dev/results
+          cat local_contrast_recurrence_dev/results/STAGE0_REPORT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum /tmp/worst_family_source.py /tmp/run_local_contrast.py local_contrast_recurrence_dev/derive_candidate.py local_contrast_recurrence_dev/DEVELOPMENT_PROTOCOL.md > local_contrast_recurrence_dev/results/source_sha256.txt || true
+          python --version > local_contrast_recurrence_dev/results/python_version.txt
+          python -m pip freeze > local_contrast_recurrence_dev/results/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-contrast-recurrence-development
+          path: |
+            local_contrast_recurrence_dev/results
+            local_contrast_recurrence_dev/DEVELOPMENT_PROTOCOL.md
+          if-no-files-found: error
+          retention-days: 90
