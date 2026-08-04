@@ -1,0 +1,131 @@
+name: Local-contrast source mapping audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/local_contrast_source_mapping_audit.yml
+      - local_contrast_source_mapping_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-contrast-source-mapping-audit
+  cancel-in-progress: true
+
+jobs:
+  no-score-source-mapping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/local-contrast-source-mapping-audit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct exact candidate source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pinned/source_parts output
+          git fetch --depth=1 origin 372ed6aa1ec9da07edd1748ba0f6514bf03c5f81
+          for part in part00.b64 part01.b64 part02.b64 part03.b64; do
+            git show "FETCH_HEAD:worst_family_recurrence_stage0/source_parts/${part}" > "/tmp/pinned/source_parts/${part}"
+          done
+          git show FETCH_HEAD:local_contrast_recurrence_dev/derive_candidate.py > /tmp/pinned/derive_candidate.py
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts = sorted(Path('/tmp/pinned/source_parts').glob('part*.b64'))
+          raw = gzip.decompress(base64.b64decode(
+              ''.join(''.join(part.read_text().split()) for part in parts), validate=True
+          ))
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest != '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac':
+              raise RuntimeError(f'base source mismatch: {digest}')
+          Path('/tmp/pinned/worst_family_source.py').write_bytes(raw)
+          PY
+          python /tmp/pinned/derive_candidate.py /tmp/pinned/worst_family_source.py output/run_local_contrast.py
+          python -m py_compile output/run_local_contrast.py
+          echo 'b7589d8d140a37596f19d4993be1e2fdd99a18b8eaa087a02e3c4ce585000071  output/run_local_contrast.py' | sha256sum -c -
+      - name: Extract exact static mapping interfaces
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+          source_path = Path('output/run_local_contrast.py')
+          source = source_path.read_text(encoding='utf-8')
+          tree = ast.parse(source)
+          target_names = {
+              'read_year_histograms', 'kernel_specs', 'local_contrast_maps',
+              'local_contrast_statistic', 'recurrence_statistic', 'run_stage0', 'main'
+          }
+          functions = {}
+          constants = {}
+          argparse_calls = []
+          for node in tree.body:
+              if isinstance(node, ast.FunctionDef) and node.name in target_names:
+                  functions[node.name] = {
+                      'lineno': node.lineno,
+                      'end_lineno': node.end_lineno,
+                      'signature': ast.unparse(node.args),
+                      'source': ast.get_source_segment(source, node),
+                  }
+              elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'add_argument':
+                  try:
+                      argparse_calls.append(ast.unparse(node))
+                  except Exception:
+                      pass
+          audit = {
+              'source_sha256': 'b7589d8d140a37596f19d4993be1e2fdd99a18b8eaa087a02e3c4ce585000071',
+              'source_bytes': source_path.stat().st_size,
+              'constants': constants,
+              'argparse_calls': argparse_calls,
+              'functions': functions,
+              'scientific_scores_computed': 0,
+          }
+          Path('output/mapping_interface.json').write_text(json.dumps(audit, indent=2, sort_keys=True))
+          Path('output/MAPPING_AUDIT.md').write_text(
+              '# Local-contrast source mapping audit\n\n'
+              f'- source SHA-256: `{audit["source_sha256"]}`\n'
+              f'- source bytes: **{audit["source_bytes"]:,}**\n'
+              f'- mapped functions recovered: **{len(functions)}**\n'
+              '- meteor rows read: **0**\n'
+              '- scientific scores computed: **0**\n'
+          )
+          print(json.dumps({
+              'constants': constants,
+              'argparse_calls': argparse_calls,
+              'function_names': sorted(functions),
+          }, indent=2, sort_keys=True))
+          PY
+          cat output/MAPPING_AUDIT.md
+      - name: Record provenance
+        run: |
+          sha256sum \
+            local_contrast_source_mapping_audit/PROTOCOL.md \
+            /tmp/pinned/source_parts/*.b64 \
+            /tmp/pinned/derive_candidate.py \
+            /tmp/pinned/worst_family_source.py \
+            output/run_local_contrast.py \
+            output/mapping_interface.json \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload no-score mapping evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-contrast-source-mapping-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
