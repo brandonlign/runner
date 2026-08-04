@@ -1,0 +1,35 @@
+name: SonotaCo heliocentric transport capture v4
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-heliocentric-drift-development-v3
+    paths:
+      - .github/workflows/sonotaco_heliocentric_transport_capture_v4.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-heliocentric-source-recovery-v4
+      - name: Preserve exact transport payloads without decoding data
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cp sonotaco_heliocentric_drift_development/source_parts/part00.b64 output/verified_v1_payload.b64
+          cp sonotaco_heliocentric_drift_development/source_parts_v2/part00.b64 output/corrupted_v2_payload.b64
+          sha256sum output/*.b64 > output/payload_sha256.txt
+          printf '%s\n' 'No meteor archive, mapping artifact, episode, or score was accessed.' > output/BOUNDARY.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-heliocentric-transport-capture-v4
+          path: output
+          if-no-files-found: error
+          retention-days: 90
