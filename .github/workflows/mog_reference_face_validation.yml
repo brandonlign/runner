@@ -53,11 +53,13 @@ jobs:
       - name: Render all four views
         run: npm run test:e2e
 
-      - name: Upload visual evidence
+      - name: Upload visual evidence and canonical mesh
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mog-reference-face-verified-renderings
-          path: mog_reference_face_validation/artifacts
+          path: |
+            mog_reference_face_validation/artifacts
+            mog_reference_face_validation/generated/canonical_face_model.json
           if-no-files-found: warn
           retention-days: 30
