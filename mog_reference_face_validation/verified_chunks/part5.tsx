@@ -10,7 +10,7 @@ function Toggle<T extends string>({ value, options, onChange, label }: { value: 
     <div className="flex border border-[var(--line)] bg-white p-1" role="group" aria-label={label}>
       {options.map((option) => (
         <button key={option} type="button" onClick={() => onChange(option)} aria-pressed={value === option} className={`px-3 py-2 text-sm capitalize transition-colors ${value === option ? "bg-[var(--ink)] text-white" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}>
-          {option === "rendered" ? "Realistic" : option === "profile" ? "Side" : option}
+          {option === "rendered" ? "Clay" : option === "profile" ? "Side" : option}
         </button>
       ))}
     </div>
@@ -33,7 +33,7 @@ export function IdealReferenceFace() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--accent)]">Verified reference geometry</p>
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">One face that satisfies Mog’s own measurements</h2>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">Structure mode plots the exact solved scoring landmarks. Realistic mode aligns a licensed neutral Google GNM head surface to the same view; its surface vertices and clay shading are illustrative and never enter the harmony score.</p>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--muted)]">Structure mode plots the exact solved scoring landmarks. Clay mode shows a full-resolution neutral Google GNM render fitted to the same frozen geometry; it is illustrative and never enters the harmony score.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Toggle value={view} options={["front", "profile"] as const} onChange={setView} label="Face view" />
