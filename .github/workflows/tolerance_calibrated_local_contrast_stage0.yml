@@ -1,0 +1,187 @@
+name: Tolerance-calibrated local-contrast Stage-0
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/tolerance_calibrated_local_contrast_stage0.yml
+      - tolerance_calibrated_local_contrast_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tolerance-calibrated-local-contrast-stage0
+  cancel-in-progress: true
+
+jobs:
+  tolerance-stage0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PINNED_COMMIT: '372ed6aa1ec9da07edd1748ba0f6514bf03c5f81'
+      BASE_SOURCE_SHA256: '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac'
+      PRIOR_CANDIDATE_SHA256: 'b7589d8d140a37596f19d4993be1e2fdd99a18b8eaa087a02e3c4ce585000071'
+      TOLERANCE_CANDIDATE_SHA256: 'a97f207760234313b7949616fdbd506586da7b104a35a983104fdf7fb110cbfe'
+      DATA_MD5: 'f57a2ac71832ceca9227441c00b8cd58'
+      STAGE_SEED: '20260805'
+      CALIBRATION_TRIALS: '512'
+      NULL_TRIALS: '200'
+      INJECTION_TRIALS: '100'
+      ALPHA: '0.1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tolerance-calibrated-local-contrast-stage0
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Extract exact prior candidate and derive frozen tolerance source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pinned/source_parts /tmp/pinned input output
+          git fetch --depth=1 origin "${PINNED_COMMIT}"
+          for part in part00.b64 part01.b64 part02.b64 part03.b64; do
+            git show "FETCH_HEAD:worst_family_recurrence_stage0/source_parts/${part}" > "/tmp/pinned/source_parts/${part}"
+          done
+          git show FETCH_HEAD:local_contrast_recurrence_dev/derive_candidate.py > /tmp/pinned/derive_local_contrast.py
+          git show FETCH_HEAD:replicastream_stage0/requirements.txt > /tmp/pinned/requirements.txt
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('/tmp/pinned/source_parts').glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '${{ env.BASE_SOURCE_SHA256 }}':
+              raise RuntimeError(f'base source mismatch: {digest}')
+          Path('/tmp/pinned/worst_family_source.py').write_bytes(source)
+          print('base source SHA-256:', digest)
+          PY
+          python /tmp/pinned/derive_local_contrast.py \
+            /tmp/pinned/worst_family_source.py \
+            /tmp/pinned/prior_local_contrast.py
+          python -m py_compile /tmp/pinned/prior_local_contrast.py
+          echo "${PRIOR_CANDIDATE_SHA256}  /tmp/pinned/prior_local_contrast.py" | sha256sum -c -
+          python tolerance_calibrated_local_contrast_stage0/derive_tolerance_calibration.py \
+            /tmp/pinned/prior_local_contrast.py \
+            /tmp/pinned/tolerance_local_contrast.py
+          python -m py_compile /tmp/pinned/tolerance_local_contrast.py
+          echo "${TOLERANCE_CANDIDATE_SHA256}  /tmp/pinned/tolerance_local_contrast.py" | sha256sum -c -
+          cp /tmp/pinned/tolerance_local_contrast.py output/tolerance_local_contrast.py
+      - name: Install exact frozen dependencies
+        run: python -m pip install --upgrade pip -r /tmp/pinned/requirements.txt
+      - name: Verify frozen tolerance rank before data download
+        run: |
+          python - <<'PY'
+          import importlib.util
+          spec = importlib.util.spec_from_file_location('candidate', '/tmp/pinned/tolerance_local_contrast.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          rank = module.tolerance_rank(512, 0.10)
+          print('frozen tolerance rank:', rank)
+          if rank != 473:
+              raise RuntimeError(f'unexpected tolerance rank: {rank}')
+          if module.CALIBRATION_CONFIDENCE != 0.95:
+              raise RuntimeError('unexpected calibration confidence')
+          PY
+      - name: Download exact public observed subset
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/SonotaCo_shober_2026_subset.csv \
+            'https://zenodo.org/records/18664293/files/SonotaCo_shober_2026_subset.csv?download=1'
+          echo "${DATA_MD5}  input/SonotaCo_shober_2026_subset.csv" | md5sum -c -
+      - name: Run frozen tolerance-calibrated Stage-0
+        run: |
+          set -euo pipefail
+          python /tmp/pinned/tolerance_local_contrast.py \
+            --data input/SonotaCo_shober_2026_subset.csv \
+            --results output \
+            --seed "${STAGE_SEED}" \
+            --calibration-trials "${CALIBRATION_TRIALS}" \
+            --null-trials "${NULL_TRIALS}" \
+            --injection-trials "${INJECTION_TRIALS}" \
+            --alpha "${ALPHA}"
+          test -s output/stage0_result.json
+          test -s output/STAGE0_REPORT.md
+          cat output/STAGE0_REPORT.md
+      - name: Enforce every frozen continuation gate
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/stage0_result.json').read_text())
+          required_design = {
+              'seed': 20260805,
+              'calibration_trials': 512,
+              'null_trials': 200,
+              'injection_trials': 100,
+              'alpha': 0.1,
+              'calibration_confidence': 0.95,
+              'tolerance_rank': 473,
+          }
+          observed = {key: result[key] for key in required_design}
+          if observed != required_design:
+              raise RuntimeError(f'design mismatch: {observed}')
+          expected_gate_names = {
+              'ideal_null_fwer_at_most_0_15',
+              'shared_structure_null_fwer_at_most_0_15',
+              'weak_one_year_artifact_detection_at_most_0_20',
+              'weak_recurrent_power_loss_vs_best_baseline_at_most_0_05',
+              'recurrence_margin_gain_vs_best_baseline_at_least_0_05',
+              'strong_recurrent_power_no_material_collapse_vs_best_baseline',
+          }
+          if set(result['gates']) != expected_gate_names:
+              raise RuntimeError(f'unexpected gate set: {sorted(result["gates"])}')
+          summary = {
+              'design': observed,
+              'thresholds': result['thresholds'],
+              'ideal_null_local_contrast': result['ideal_null']['local_contrast'],
+              'shared_structure_local_contrast': result['shared_structure_null']['local_contrast'],
+              'metrics': result['metrics'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+              'runtime_seconds': result['runtime_seconds'],
+          }
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen tolerance-calibrated Stage-0 failed')
+          if result['verdict'] != 'CONTINUE_TOLERANCE_CALIBRATED_LOCAL_CONTRAST':
+              raise SystemExit(f"unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record exact provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            tolerance_calibrated_local_contrast_stage0/PROTOCOL.md \
+            tolerance_calibrated_local_contrast_stage0/derive_tolerance_calibration.py \
+            /tmp/pinned/source_parts/*.b64 \
+            /tmp/pinned/derive_local_contrast.py \
+            /tmp/pinned/worst_family_source.py \
+            /tmp/pinned/prior_local_contrast.py \
+            /tmp/pinned/tolerance_local_contrast.py \
+            /tmp/pinned/requirements.txt \
+            input/SonotaCo_shober_2026_subset.csv \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen tolerance-calibration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tolerance-calibrated-local-contrast-stage0
+          path: output
+          if-no-files-found: error
+          retention-days: 90
