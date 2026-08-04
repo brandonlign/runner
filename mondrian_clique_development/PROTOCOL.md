@@ -1,31 +1,35 @@
-# Mondrian partition-invariant clique: retrospective pressure-test protocol
+# Coverage-normalized Mondrian four-clique: retrospective development protocol
 
-Status: scientific method frozen before any 10-degree Mondrian score was computed. A panel-coverage feasibility rule was corrected after the initial 2026 H1 job stopped before scoring; no score, p-value, power endpoint, or comparator result existed for that panel when the correction was made.
+Status: new formulation frozen after PR #36 was killed and before any January–June 2026 score is computed under this formulation.
+
+## Separation from PR #36
+
+PR #36 prospectively required at least 20 supported 10-degree strata in every panel. Its January–June 2026 panel had 15 supported strata and stopped before scoring, so that exact four-panel formulation remains killed. The closed PR, its workflow `30874109169`, and `mondrian_clique_development/RESULT.md` remain the authoritative record of that no-go.
+
+This branch does not reinterpret PR #36 as a pass. It defines a separate development formulation whose feasibility requirement is allowed to depend on the predeclared calendar coverage of the panel:
+
+- complete-year panels require at least 20 supported 10-degree strata;
+- the fixed January–June panel requires at least 12 supported 10-degree strata;
+- every panel requires at least 30 eligible established showers.
+
+The H1 threshold was defined after the PR #36 feasibility result and therefore cannot be validated by the spent H1 panel. That panel is used only as retrospective development evidence. A pass across the retrospective matrix authorizes one separately frozen test on unused July 2026 data; only that future test can provide new confirmation evidence.
+
+No method score, seed, bin width, bin boundary, calibration count, p-value formula, comparator, scientific endpoint, or scientific gate differs from the PR #36 scientific procedure. The exact implementation SHA-256 is `f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8`.
 
 ## Purpose
 
-PR #32 showed that the partition-invariant four-clique score solved the exactly-four-member power problem but failed one fresh false-positive gate because a 60-degree calibration sector mixed a rapidly changing background. Both the clique and the killed split comparator were elevated in the same 2026 sector.
-
-This stage tests a new calibration formulation: fixed 10-degree solar-longitude Mondrian strata. It does not rescue or rerun PR #32, and it does not inspect GhostStream.
-
-## Why 10 degrees
-
-The search neighborhood is fixed at plus or minus 10 degrees in solar longitude. A 10-degree calibration stratum limits center-location heterogeneity to no more than half the total search-window width while retaining enough empirical windows for rank p-values at alpha 0.01. The strata are globally anchored at integer multiples of 10 degrees; no boundary is selected from a shower or result.
-
-A spent-data width screen on January–June 2026 showed that fixed 2.5, 5, 10, and 15 degree strata all removed the coarse-sector false-positive inflation. Ten degrees is frozen as the least granular tested width that preserved four-member power while directly matching the physical search scale. The width will not be reselected after the retrospective matrix runs.
+Test whether globally anchored 10-degree solar-longitude Mondrian calibration removes the local-background false-positive inflation seen in PR #32 while preserving the four-member sensitivity of the partition-invariant clique statistic.
 
 ## Retrospective panels
 
-The exact panels are fixed:
+The fixed development panels are:
 
-1. 2021 from the odd-year archive;
-2. 2024 from the untouched-even-year archive, now spent by PR #31;
-3. 2025 from the odd-year archive;
-4. January–June 2026 from the spent PR #32 holdout.
+1. complete-year 2021 from the odd-year archive;
+2. complete-year 2024 from the even-year archive;
+3. complete-year 2025 from the odd-year archive;
+4. fixed January–June 2026 from the spent PR #32 holdout.
 
-These panels span different network densities and activity seasons. They are retrospective development evidence only. A pass authorizes one separately frozen test on the unused July 2026 snapshot.
-
-Exact source artifacts:
+Exact artifacts:
 
 - odd archive workflow `30855193522`, artifact `real-shower-meta-data-audit`;
 - even archive workflow `30863692214`, artifact `empirical-window-null-evenyear-data`;
@@ -37,23 +41,9 @@ Exact selected-event SHA-256 values:
 - even archive: `518e12043ef838355d488c0fa675f1332961796168920c6c15e4b3db0583c812`;
 - 2026 H1: `59e48ee6a0b653a2b4530f8a2221e2e93e6af3e6a9f11281c6f17fc428a85ddf`.
 
-The corrected exact retrospective implementation SHA-256 is `f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8`.
-
-## Pre-score feasibility correction
-
-Initial workflow `30874109169` applied a minimum of 20 supported 10-degree bins to every panel. The three full-year panels completed and passed all scientific gates. The fixed January–June panel stopped before calibration or candidate scoring with exactly 15 supported bins because a full-year coverage requirement had been applied to a half-year corpus.
-
-The correction is limited to panel coverage:
-
-- full-year 2021, 2024, and 2025 require at least 20 supported 10-degree bins;
-- fixed January–June 2026 requires at least 12 supported 10-degree bins;
-- every panel still requires at least 30 eligible established showers.
-
-Twelve is fixed before H1 scoring and represents 80% of the 15 bins that its fixed calendar span can support after the blind interval. The observed count is 15, so the corrected rule is not set at the observed boundary. No method score, seed, bin width, bin boundary, calibration count, p-value formula, comparator, scientific endpoint, or scientific gate changed.
-
 ## GhostStream blindness
 
-Remove every event with solar longitude from 20.0 degrees through 55.0 degrees before any center stratum, calibration pool, negative window, positive window, score, fold, or endpoint is formed. No GhostStream radiant, speed, orbit, membership, event list, or score may be used.
+Remove every event with solar longitude from 20.0 degrees through 55.0 degrees before any stratum, calibration pool, negative window, positive window, score, fold, or endpoint is formed. No GhostStream radiant, speed, orbit, membership, event list, or score may be used.
 
 ## Frozen windows and geometry
 
@@ -83,13 +73,11 @@ No radius, cluster threshold, random split, orbit element, shower identity, or a
 
 ## Frozen Mondrian calibration
 
-- Strata are `[0,10), [10,20), ..., [350,360)` degrees in solar longitude.
-- Only strata that can construct a 128-event empirical background window are included.
-- For every supported year-stratum, draw 128 deterministic calibration windows and 64 independent negative windows from the same fixed sporadic corpus and generator.
-- Convert the candidate score to `p = (1 + number of calibration scores >= score) / 129`.
-- Overlap among Monte Carlo windows is allowed, matching the previously validated same-corpus empirical mechanism.
-- Full-year panels require at least 20 supported strata; the fixed January–June 2026 panel requires at least 12.
-- Every panel requires at least 30 eligible showers.
+- strata are `[0,10), [10,20), ..., [350,360)` degrees in solar longitude;
+- only strata that can construct a 128-event empirical background window are included;
+- each supported year-stratum receives 128 deterministic calibration windows and 64 independent negative windows from the same fixed sporadic corpus and generator;
+- candidate p-values are `p = (1 + number of calibration scores >= score) / 129`;
+- overlapping Monte Carlo windows are allowed, matching the previously validated same-corpus empirical mechanism.
 
 Exact seed prefixes:
 
@@ -110,7 +98,7 @@ Compute on the same positive and independent-negative windows:
 
 Comparators are evaluated by raw AUROC and cannot change the candidate p-value.
 
-## Frozen per-panel gates
+## Frozen per-panel scientific gates
 
 Every gate must pass independently in 2021, 2024, 2025, and 2026 H1:
 
@@ -126,6 +114,6 @@ Every gate must pass independently in 2021, 2024, 2025, and 2026 H1:
 
 ## Kill and continuation rules
 
-Any failed scientific gate in any panel kills this exact 10-degree formulation. Do not change the bin width, boundaries, calibration count, negative count, score, seeds, folds, shower subset, blind interval, thresholds, or scientific gates after results are observed.
+Any failed scientific gate in any panel kills this coverage-normalized development formulation. Do not change the feasibility thresholds, bin width, boundaries, calibration count, negative count, score, seeds, folds, shower subset, blind interval, thresholds, or scientific gates after results are observed.
 
-A four-panel pass authorizes only a separately frozen July 2026 snapshot gate. It does not authorize a GhostStream application, discovery claim, or catalog scan.
+A four-panel retrospective pass authorizes only a separately frozen July 2026 snapshot test. It does not authorize a GhostStream application, discovery claim, or catalog scan.
