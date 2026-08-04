@@ -36,7 +36,7 @@ jobs:
           git show \
             origin/agent/partition-invariant-clique-2026h1:partition_invariant_clique_2026h1/build_2026_h1_data.py.gz.b64 \
             > /tmp/build_2026_h1_data.py.gz.b64
-          python - <<'PY'
+          python - <<'PYCODE'
           import base64
           import gzip
           import hashlib
@@ -51,15 +51,23 @@ jobs:
               output.write_bytes(source)
               return len(source), actual
 
-          def decode_parts(root: Path, names: list[str], expected: str, output: Path) -> tuple[int, int, str]:
+          def decode_parts(
+              root: Path,
+              names: list[str],
+              expected_encoded: int,
+              expected_source: str,
+              output: Path,
+          ) -> tuple[int, int, str]:
               parts = sorted(root.glob('part*.b64'))
               actual_names = [part.name for part in parts]
               if actual_names != names:
                   raise RuntimeError(f'unexpected parts in {root}: {actual_names}')
               encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+              if len(encoded) != expected_encoded:
+                  raise RuntimeError(f'{root} encoded length mismatch: {len(encoded)}')
               source = gzip.decompress(base64.b64decode(encoded, validate=True))
               actual = hashlib.sha256(source).hexdigest()
-              if actual != expected:
+              if actual != expected_source:
                   raise RuntimeError(f'{root} source mismatch: {actual}')
               output.write_bytes(source)
               return len(encoded), len(source), actual
@@ -69,29 +77,27 @@ jobs:
               '93f400bc92eda40a42f0cc5684a374972c3c083320844bdb7c5004a6539cd26d',
               Path('extracted/build_2026_h1_data_authoritative.py'),
           )
-
           retrospective_encoded, retrospective_bytes, retrospective_hash = decode_parts(
               Path('mondrian_clique_development/source_parts_v2'),
               ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64'],
+              9000,
               'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8',
               Path('extracted/run_mondrian_clique_passed.py'),
           )
-          if retrospective_encoded != 9000:
-              raise RuntimeError(f'unexpected retrospective encoded length: {retrospective_encoded}')
-
           july_data_encoded, july_data_bytes, july_data_hash = decode_parts(
               Path('mondrian_clique_july2026/data_source_parts'),
               ['part00.b64', 'part01.b64', 'part02.b64'],
-              '1349da2d94b6f300ec7982bee7f5c17df5318c425da8a7d1f15d8befa1f551ec',
+              4728,
+              'a9bd2f3ff033c7e4f524e214b28096c14e7a5cdddf56a043c20069a2b3d6d94e',
               Path('extracted/build_july2026_data_frozen.py'),
           )
           july_power_encoded, july_power_bytes, july_power_hash = decode_parts(
               Path('mondrian_clique_july2026/power_source_parts'),
               ['part00.b64', 'part01.b64', 'part02.b64'],
-              '7a551f0fc7ce4b40642e83449f4ce37d5b0cd9a7abf900c46a1250e159e96fb0',
+              9200,
+              '8559424a4453ce4938654de37be7c164f3ca100ddd6c7d943c38df33cf3c2044',
               Path('extracted/run_july2026_confirmation_frozen.py'),
           )
-
           Path('extracted/SOURCE_HASHES.txt').write_text(
               f'{h1_hash}  build_2026_h1_data_authoritative.py\n'
               f'{retrospective_hash}  run_mondrian_clique_passed.py\n'
@@ -102,7 +108,7 @@ jobs:
           print('retrospective scorer:', retrospective_encoded, retrospective_bytes, retrospective_hash)
           print('July data source:', july_data_encoded, july_data_bytes, july_data_hash)
           print('July power source:', july_power_encoded, july_power_bytes, july_power_hash)
-          PY
+          PYCODE
           python -m py_compile \
             extracted/build_2026_h1_data_authoritative.py \
             extracted/run_mondrian_clique_passed.py \
