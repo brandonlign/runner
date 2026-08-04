@@ -1,0 +1,116 @@
+name: GhostStream publication figures
+
+on:
+  pull_request:
+    branches:
+      - agent/ghoststream-final-scientific-synthesis
+    paths:
+      - ghoststream_publication_figures/**
+      - .github/workflows/ghoststream_publication_figures.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ghoststream-publication-figures
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CANONICAL_ID: '8814798136'
+      CANONICAL_SHA: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+      FIXED4_ID: '8899766878'
+      FIXED4_SHA: '0288bd50c88c1dee8bf5b72bd52937116d81026f074667450c99cb8d8c56653c'
+      DEV_ID: '8896176320'
+      DEV_SHA: 'b3dd9c80759b749420407e95de0a5ed581e208bbd39c806d9472c00ae9a3529e'
+      REP_ID: '8897103051'
+      REP_SHA: '291a1e738b6e63cc36226b7bea1f69b253dcea18ebb97e620006f7ed2544fc3c'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-publication-figures-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ghoststream_publication_figures/requirements.txt
+
+      - name: Install pinned renderer
+        run: python -m pip install --upgrade pip -r ghoststream_publication_figures/requirements.txt
+
+      - name: Download and verify exact evidence artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/zips input/canonical/bundle input/fixed4 input/method/dev input/method/rep output
+          download_artifact() {
+            local artifact_id="$1"
+            local expected_sha="$2"
+            local destination="$3"
+            curl --fail-with-body -L \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              -o "${destination}"
+            echo "${expected_sha}  ${destination}" | sha256sum -c -
+          }
+          download_artifact "${CANONICAL_ID}" "${CANONICAL_SHA}" input/zips/canonical.zip
+          download_artifact "${FIXED4_ID}" "${FIXED4_SHA}" input/zips/fixed4.zip
+          download_artifact "${DEV_ID}" "${DEV_SHA}" input/zips/development.zip
+          download_artifact "${REP_ID}" "${REP_SHA}" input/zips/replication.zip
+
+      - name: Extract exact plotting inputs
+        run: |
+          set -euo pipefail
+          mkdir -p input/canonical_outer
+          unzip -q input/zips/canonical.zip -d input/canonical_outer
+          unzip -q input/canonical_outer/ghoststream_final_expert_bundle/GhostStream_Expert_Review_Bundle.zip -d input/canonical/bundle
+          unzip -q input/zips/fixed4.zip -d input/fixed4
+          unzip -q input/zips/development.zip -d input/method/dev
+          unzip -q input/zips/replication.zip -d input/method/rep
+          test -s input/canonical/bundle/april_stream/mdc/GhostStream_April_95_GMN_lookup.csv
+          test -s input/fixed4/ghoststream_fixed4_application.json
+          test -s input/method/dev/sonotaco_fixed4_final_development.json
+          test -s input/method/rep/sonotaco_2023_fixed4_confirmation.json
+
+      - name: Compile and render figures
+        run: |
+          set -euo pipefail
+          python -m py_compile ghoststream_publication_figures/render_figures.py
+          python ghoststream_publication_figures/render_figures.py --work-root input --output output
+          test "$(find output -maxdepth 1 -name '*.pdf' | wc -l)" -eq 3
+          test "$(find output -maxdepth 1 -name '*.svg' | wc -l)" -eq 3
+          test "$(find output -maxdepth 1 -name '*.png' | wc -l)" -eq 3
+          test -s output/FIGURE_CAPTIONS.md
+
+      - name: Record figure provenance
+        run: |
+          set -euo pipefail
+          sha256sum \
+            ghoststream_publication_figures/render_figures.py \
+            ghoststream_publication_figures/requirements.txt \
+            ghoststream_publication_figures/README.md \
+            input/zips/canonical.zip \
+            input/zips/fixed4.zip \
+            input/zips/development.zip \
+            input/zips/replication.zip \
+            output/* \
+            > output/FIGURE_PROVENANCE_SHA256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload publication figure set
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-publication-figures-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
