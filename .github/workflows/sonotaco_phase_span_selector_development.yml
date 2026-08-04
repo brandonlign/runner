@@ -1,0 +1,125 @@
+name: SonotaCo phase-span selector development
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-phase-span-selector-source-audit
+    paths:
+      - .github/workflows/sonotaco_phase_span_selector_development.yml
+      - sonotaco_phase_span_selector_development/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-phase-span-selector-development
+  cancel-in-progress: true
+
+jobs:
+  development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-phase-span-selector-development
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Decode and verify frozen selector candidate
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts = sorted(Path('sonotaco_phase_span_selector_source_audit/source_parts').glob('part*.b64'))
+          expected_parts = [f'part{i:02d}.b64' for i in range(8)]
+          if [part.name for part in parts] != expected_parts:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          if len(encoded) != 8024:
+              raise RuntimeError(f'encoded length mismatch: {len(encoded)}')
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'aab855db949bd520aa142a51a140c6e181918be0428bdee082b427fd1240a569'
+          if digest != expected:
+              raise RuntimeError(f'candidate source mismatch: {digest}')
+          Path('/tmp/run_sonotaco_phase_span_selector_development.py').write_bytes(source)
+          print('candidate bytes:', len(source))
+          print('candidate SHA-256:', digest)
+          PY
+          python -m py_compile /tmp/run_sonotaco_phase_span_selector_development.py
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+      - name: Download exact SonotaCo 2025 development archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+      - name: Run frozen phase-span selector development
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_phase_span_selector_development.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --phase-source-parts sonotaco_phase_gated_3d/source_parts \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_PHASE_SPAN_SELECTOR_DEVELOPMENT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_phase_span_selector_source_audit/PROTOCOL.md \
+            sonotaco_phase_span_selector_source_audit/source_parts/*.b64 \
+            sonotaco_phase_span_selector_development/PROTOCOL.md \
+            sonotaco_phase_gated_3d/source_parts/part00.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/*.b64 \
+            input/025a.zip input/audit.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen selector evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-phase-span-selector-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sonotaco_phase_span_selector_development.json').read_text())
+          print(json.dumps({
+              'selected_by_fold': result['selected_by_fold'],
+              'candidate': result['candidate'],
+              'family_metrics': result['family_metrics'],
+              'original': result['original'],
+              'phase3_control': result['phase3_control'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen phase-span selector development gate failed')
+          PY
