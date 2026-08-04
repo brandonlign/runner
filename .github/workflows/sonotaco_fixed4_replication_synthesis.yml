@@ -1,0 +1,88 @@
+name: SonotaCo fixed4 replication synthesis
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2024-fixed4-confirmation
+    paths:
+      - .github/workflows/sonotaco_fixed4_replication_synthesis.yml
+      - sonotaco_fixed4_replication_synthesis/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-fixed4-replication-synthesis
+  cancel-in-progress: true
+
+jobs:
+  synthesize-immutable-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-fixed4-replication-synthesis
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen analysis dependency
+        run: python -m pip install --upgrade pip scipy==1.16.1
+      - name: Verify synthesis source
+        run: |
+          set -euo pipefail
+          echo '14af5ad4765706c3905c9e199858c6d239e165ad1d2da2aba28fad3f0869c0b8  sonotaco_fixed4_replication_synthesis/synthesize.py' | sha256sum -c -
+          python -m py_compile sonotaco_fixed4_replication_synthesis/synthesize.py
+      - name: Download immutable 2025 development artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/development input/confirmation output
+          gh run download 30912903515 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-k4-phase-scale-diagnostic \
+            --dir input/development
+      - name: Download immutable 2024 confirmation artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30918254066 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2024-fixed4-confirmation \
+            --dir input/confirmation
+      - name: Compute descriptive replication synthesis
+        run: |
+          set -euo pipefail
+          python sonotaco_fixed4_replication_synthesis/synthesize.py \
+            --development input/development \
+            --confirmation input/confirmation \
+            --output output
+          cat output/FIXED4_REPLICATION_SYNTHESIS.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_fixed4_replication_synthesis/PROTOCOL.md \
+            sonotaco_fixed4_replication_synthesis/synthesize.py \
+            input/development/sonotaco_k4_phase_scale_diagnostic.json \
+            input/development/positive_phase_scale_records.jsonl.gz \
+            input/development/negative_phase_scale_records.jsonl.gz \
+            input/confirmation/sonotaco_2024_fixed4_confirmation.json \
+            input/confirmation/positive_records.jsonl.gz \
+            input/confirmation/negative_records.jsonl.gz \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload descriptive synthesis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-fixed4-replication-synthesis
+          path: output
+          if-no-files-found: error
+          retention-days: 90
