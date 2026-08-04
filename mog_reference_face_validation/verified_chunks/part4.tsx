@@ -1,12 +1,3 @@
-  };
-  const tipApproach: SvgPoint = { x: pronasale.x - 17, y: pronasale.y - 8 };
-  const lowerLipTransition: SvgPoint = { x: lowerLip.x - 3, y: lowerLip.y + 18 };
-
-  // The sulcus is a crease, not an outer-silhouette point. Keeping it inside
-  // the face removes the artificial chin spike while retaining the exact
-  // measured location for structure mode and the mentolabial guide.
-  const faceContour = `M ${trichion.x} ${trichion.y}
-    C ${trichion.x + 4} ${trichion.y + 24}, ${upperForehead.x - 8} ${upperForehead.y - 19}, ${upperForehead.x} ${upperForehead.y}
     C ${upperForehead.x + 8} ${upperForehead.y + 24}, ${glabella.x - 10} ${glabella.y - 18}, ${glabella.x} ${glabella.y}
     C ${glabella.x + 2} ${glabella.y + 10}, ${nasion.x + 4} ${nasion.y - 10}, ${nasion.x} ${nasion.y}
     C ${nasion.x + 20} ${nasion.y + 20}, ${bridgeMid.x - 13} ${bridgeMid.y - 17}, ${bridgeMid.x} ${bridgeMid.y}
@@ -62,26 +53,17 @@
           <stop offset="100%" stopColor="#67584f" stopOpacity="0.12" />
         </radialGradient>
         <filter id="verifiedProfileBlur" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="10" /></filter>
+        <filter id="verifiedProfileMeshShadow" x="-20%" y="-20%" width="150%" height="150%">
+          <feDropShadow dx="3" dy="10" stdDeviation="11" floodColor="#6e6259" floodOpacity="0.14" />
+        </filter>
       </defs>
 
       {mode === "rendered" ? (
         <g>
-          <path d={bustPath} fill="url(#verifiedProfileClay)" stroke="#9a8e85" strokeWidth="0.58" strokeLinejoin="round" />
-          <path d={bustPath} fill="url(#verifiedProfileLight)" />
-          <ellipse cx={tragion.x} cy={tragion.y + 29} rx="18" ry="32" fill="#d3c9c0" />
-          <path d={`M ${tragion.x - 3} ${tragion.y + 10} C ${tragion.x + 10} ${tragion.y + 20}, ${tragion.x + 9} ${tragion.y + 42}, ${tragion.x - 3} ${tragion.y + 52} C ${tragion.x + 2} ${tragion.y + 38}, ${tragion.x - 7} ${tragion.y + 28}, ${tragion.x - 3} ${tragion.y + 10}`} fill="none" stroke="#8b7d73" strokeWidth="0.8" opacity="0.72" />
-          <ellipse cx={cheek.x + 5} cy={cheek.y + 34} rx="54" ry="42" fill="#715f56" opacity="0.05" filter="url(#verifiedProfileBlur)" />
-
-          <path d={`M ${orbitale.x - 17} ${orbitale.y - 2} Q ${orbitale.x + 1} ${orbitale.y - 7} ${orbitale.x + 15} ${orbitale.y - 2}`} fill="none" stroke="#716a65" strokeWidth="0.9" />
-          <ellipse cx={orbitale.x} cy={orbitale.y - 0.4} rx="4.5" ry="5.2" fill="#6f6a65" opacity="0.3" />
-          <path d={`M ${orbitale.x - 19} ${orbitale.y - 21} Q ${orbitale.x} ${orbitale.y - 27} ${orbitale.x + 21} ${orbitale.y - 18}`} fill="none" stroke="#625c57" strokeWidth="2.15" strokeLinecap="round" opacity="0.72" />
-
-          <path d={smoothOpenPath([nasion, bridgeMid, tipApproach, pronasale], 0.11)} fill="none" stroke="#fff" strokeWidth="1.05" opacity="0.27" />
-          <ellipse cx={columella.x + 3} cy={columella.y + 1} rx="4.6" ry="2.2" fill="#504a46" opacity="0.34" />
-          <path d={smoothOpenPath([subnasale, upperLip, stomion], 0.13)} fill="none" stroke="#9b7f7d" strokeWidth="2.55" strokeLinecap="round" opacity="0.58" />
-          <path d={smoothOpenPath([stomion, lowerLip], 0.13)} fill="none" stroke="#a68a86" strokeWidth="2.9" strokeLinecap="round" opacity="0.58" />
-          <path d={`M ${upperLip.x - 2} ${stomion.y} Q ${lowerLip.x} ${stomion.y + 1} ${lowerLip.x + 1} ${stomion.y + 1}`} fill="none" stroke="#665355" strokeWidth="0.75" opacity="0.72" />
-          <path d={`M ${sulcus.x - 9} ${sulcus.y} Q ${sulcus.x} ${sulcus.y + 4} ${sulcus.x + 7} ${sulcus.y - 2}`} fill="none" stroke="#8f7f74" strokeWidth="0.8" opacity="0.3" />
+          <path d="M 112 620 C 170 574, 250 554, 303 548 C 363 552, 443 578, 510 620 Z" fill="#c6c0ba" />
+          <g filter="url(#verifiedProfileMeshShadow)">
+            <CanonicalClayFace view="profile" landmarks={landmarks} />
+          </g>
         </g>
       ) : (
         <g>
@@ -93,3 +75,18 @@
             <line x1={tragion.x - 22} y1={tragion.y} x2={orbitale.x + 155} y2={orbitale.y} />
             <line x1={nasion.x} y1={nasion.y} x2={pronasale.x} y2={pronasale.y} />
             <line x1={pronasale.x} y1={pronasale.y} x2={pogonion.x} y2={pogonion.y} />
+            <line x1={subnasale.x} y1={subnasale.y} x2={pogonion.x} y2={pogonion.y} />
+            <line x1={gonion.x} y1={gonion.y} x2={menton.x} y2={menton.y} />
+            <line x1={gonion.x} y1={gonion.y} x2={ramus.x} y2={ramus.y} />
+            <line x1={menton.x} y1={menton.y} x2={cervical.x} y2={cervical.y} />
+            <line x1={cervical.x} y1={cervical.y} x2={throat.x} y2={throat.y} />
+          </g>
+          {structureIds.map((id) => {
+            const point = q(id);
+            return <circle key={id} cx={point.x} cy={point.y} r="3.7" fill="white" stroke="var(--accent)" strokeWidth="1.7"><title>{id}</title></circle>;
+          })}
+          <g fill="var(--muted)" fontSize="11">
+            <text x={tragion.x - 4} y={tragion.y - 11}>Frankfort plane</text>
+            <text x={pronasale.x + 9} y={pronasale.y - 5}>tip</text>
+            <text x={pogonion.x + 9} y={pogonion.y}>pogonion</text>
+            <text x={gonion.x - 53} y={gonion.y - 9}>gonion</text>
