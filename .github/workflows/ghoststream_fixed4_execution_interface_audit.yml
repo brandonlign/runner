@@ -1,0 +1,63 @@
+name: GhostStream fixed4 execution interface audit
+
+on:
+  pull_request:
+    branches:
+      - agent/ghoststream-fixed4-application-source-audit
+    paths:
+      - ghoststream_fixed4_application/audit_execution_interface.py
+      - .github/workflows/ghoststream_fixed4_execution_interface_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghoststream-fixed4-execution-interface-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-fixed4-execution-interface-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile interface audit
+        run: python -m py_compile ghoststream_fixed4_application/audit_execution_interface.py
+      - name: Decode and audit exact frozen dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python ghoststream_fixed4_application/audit_execution_interface.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2 \
+            sonotaco_mondrian_development/source_parts \
+            output
+          cat output/EXECUTION_INTERFACE_AUDIT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            ghoststream_fixed4_application/audit_execution_interface.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload frozen interfaces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-fixed4-execution-interface-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
