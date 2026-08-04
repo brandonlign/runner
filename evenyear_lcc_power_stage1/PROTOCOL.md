@@ -14,6 +14,7 @@ This stage tests power only. It does not scan a catalog, inspect GhostStream, ch
 - Untouched confirmation years: 2020, 2022, and 2024.
 - The score, distance, window size, cross-fit construction, calibration mechanism, sectors, comparator parameters, endpoints, and gates were fixed before reading any established-shower power result from the confirmation years.
 - The Stage-0 null audit used no shower labels. This Stage-1 may now read the frozen labels only to construct positive windows and report power.
+- The exact frozen Stage-1 source SHA-256 is `8c69bddb7e8bd52694f32f62a5e105a0fda4ca330734d55704ee26e0d0faff1c`.
 
 ## GhostStream blindness
 
@@ -60,6 +61,8 @@ For each 128-event window:
 4. Average the two smallest query distances and negate the result.
 5. Use the median of the eight split scores.
 
+The cross-fit seed prefix is exactly `evenyear-crossfit`.
+
 ## Frozen same-corpus local calibration
 
 For each supported year and 60-degree solar-longitude sector:
@@ -69,7 +72,15 @@ For each supported year and 60-degree solar-longitude sector:
 - convert every candidate score to `p = (1 + number of calibration scores >= score) / 513`;
 - overlap among Monte Carlo windows is allowed, as in the passed Stage-0 mechanism.
 
-The power-stage seeds are fixed and distinct from all Stage-0 audit batches. No seed may be replaced after results are observed.
+The exact power-stage seed prefixes are:
+
+- support probe: `evenyear-power-support`;
+- calibration windows: `evenyear-power-calibration-window`;
+- independent negative windows: `evenyear-power-test-negative-window`;
+- positive windows: `evenyear-power-positive-window`;
+- cross-fit partitions: `evenyear-crossfit`.
+
+These seeds are distinct from every Stage-0 audit batch. No seed may be replaced after results are observed.
 
 ## Frozen comparators and folds
 
