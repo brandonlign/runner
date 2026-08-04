@@ -37,7 +37,14 @@ jobs:
           cache: pip
           cache-dependency-path: ghoststream_fixed4_application/requirements.txt
       - name: Install frozen dependencies
-        run: python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python - <<'PY'
+          from gmn_python_api import data_directory, meteor_trajectory_reader
+          print('GMN adapter import passed')
+          PY
       - name: Decode and verify frozen application
         run: |
           set -euo pipefail
