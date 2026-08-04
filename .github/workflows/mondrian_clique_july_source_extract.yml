@@ -1,0 +1,65 @@
+name: Mondrian clique July source extraction
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/mondrian_clique_july_source_extract.yml
+      - mondrian_clique_july2026/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mondrian-clique-july-source-extract
+  cancel-in-progress: true
+
+jobs:
+  extract-authoritative-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mondrian-clique-july2026-confirmation
+          fetch-depth: 0
+      - name: Fetch authoritative H1 branch
+        run: |
+          git fetch --no-tags origin \
+            agent/partition-invariant-clique-2026h1:refs/remotes/origin/agent/partition-invariant-clique-2026h1
+      - name: Decode and verify exact H1 data source
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          git show \
+            origin/agent/partition-invariant-clique-2026h1:partition_invariant_clique_2026h1/build_2026_h1_data.py.gz.b64 \
+            > /tmp/build_2026_h1_data.py.gz.b64
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          encoded = ''.join(Path('/tmp/build_2026_h1_data.py.gz.b64').read_text().split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          expected = '93f400bc92eda40a42f0cc5684a374972c3c083320844bdb7c5004a6539cd26d'
+          actual = hashlib.sha256(source).hexdigest()
+          if actual != expected:
+              raise RuntimeError(f'H1 data source mismatch: {actual}')
+          Path('extracted/build_2026_h1_data_authoritative.py').write_bytes(source)
+          Path('extracted/SOURCE_HASH.txt').write_text(
+              f'{actual}  build_2026_h1_data_authoritative.py\n'
+          )
+          print('source bytes:', len(source))
+          print('source sha256:', actual)
+          PY
+          python -m py_compile extracted/build_2026_h1_data_authoritative.py
+      - name: Upload authoritative source
+        uses: actions/upload-artifact@v4
+        with:
+          name: mondrian-clique-july-authoritative-source
+          path: extracted
+          if-no-files-found: error
+          retention-days: 14
