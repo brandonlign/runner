@@ -14,6 +14,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = ROOT / "generated" / "gnm_head_skin_template.npz"
 OUTPUT = ROOT / "generated"
+RENDER_VERSION = "gnm-orthographic-clay-v1"
 
 
 def _face_normals(positions: np.ndarray, triangles: np.ndarray) -> np.ndarray:
@@ -116,7 +117,7 @@ def main() -> None:
     report = {
         "source": "Google GNM v3 head template, skin component",
         "sourceLicense": "Apache-2.0",
-        "renderer": "orthographic painter projection v1",
+        "renderer": RENDER_VERSION,
         "vertexCount": int(positions.shape[0]),
         "triangleCount": int(triangles.shape[0]),
         "assets": {
