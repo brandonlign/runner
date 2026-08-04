@@ -93,8 +93,3 @@ function FrontReference({ mode, landmarks }: { mode: RenderMode; landmarks: Faci
   const leftTragion = q("leftTragion");
   const rightTragion = q("rightTragion");
 
-  const leftInner = q("leftEndocanthion");
-  const leftOuter = q("leftExocanthion");
-  const rightInner = q("rightEndocanthion");
-  const rightOuter = q("rightExocanthion");
-  const leftPupil = q("leftPupilCenter");
