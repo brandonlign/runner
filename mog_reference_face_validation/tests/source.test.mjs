@@ -49,6 +49,14 @@ test("the clay renderer uses the licensed full-head GNM surface", () => {
   assert.doesNotMatch(clay, /calculateAnalysisReport/);
 });
 
+test("the reduced GNM triangle stream is reconstructed without Base64 boundary corruption", () => {
+  assert.match(mesh, /triangleChunksBase64/);
+  assert.match(mesh, /concatenateBytes/);
+  assert.match(mesh, /encodedIndices\.subarray\(0, expectedIndexCount\)/);
+  assert.match(mesh, /value >= GNM_HEAD_MESH\.vertexCount/);
+  assert.doesNotMatch(mesh, /GNM_TRIANGLES_1 \+ GNM_TRIANGLES_2/);
+});
+
 test("unscored measurements remain distinguished from target bands", () => {
   assert.match(source, /Metrics without a defensible comparison convention remain raw measurements/);
 });
