@@ -28,6 +28,15 @@ jobs:
         with:
           ref: agent/mog-reference-face-validation
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Extract Apache-2.0 GNM head template
+        run: |
+          python -m pip install --disable-pip-version-check numpy
+          python scripts/extract_gnm_head.py
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -53,7 +62,7 @@ jobs:
       - name: Render all four views
         run: npm run test:e2e
 
-      - name: Upload visual evidence and canonical mesh
+      - name: Upload visual evidence and licensed mesh sources
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -61,5 +70,7 @@ jobs:
           path: |
             mog_reference_face_validation/artifacts
             mog_reference_face_validation/generated/canonical_face_model.json
+            mog_reference_face_validation/generated/gnm_head_skin_template.npz
+            mog_reference_face_validation/generated/gnm_head_skin_report.json
           if-no-files-found: warn
           retention-days: 30
