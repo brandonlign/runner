@@ -1,0 +1,56 @@
+name: SonotaCo Mondrian scorer harness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/mondrian-clique-coverage-normalized-development
+    paths:
+      - .github/workflows/sonotaco_mondrian_harness_audit.yml
+      - sonotaco_mondrian_harness_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-mondrian-harness-audit
+  cancel-in-progress: true
+
+jobs:
+  no-data-static-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-mondrian-harness-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile audit before source decode
+        run: python -m py_compile sonotaco_mondrian_harness_audit/introspect_pr38.py
+      - name: Decode and statically inspect exact PR38 scorer
+        run: |
+          python sonotaco_mondrian_harness_audit/introspect_pr38.py
+          python -m py_compile output/pr38_mondrian_scorer.py
+          cat output/PR38_HARNESS_AUDIT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum \
+            sonotaco_mondrian_harness_audit/PROTOCOL.md \
+            sonotaco_mondrian_harness_audit/introspect_pr38.py \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload exact scorer and interface audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-mondrian-harness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 30
