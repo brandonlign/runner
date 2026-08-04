@@ -1,0 +1,136 @@
+name: SonotaCo drift-aligned source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-hires-multiview-fusion-development
+    paths:
+      - .github/workflows/sonotaco_drift_aligned_source_audit.yml
+      - sonotaco_drift_aligned_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-drift-aligned-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-drift-aligned-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode and inspect exact frozen phase scorer
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          source_path = Path('sonotaco_phase_gated_3d/source_parts/part00.b64')
+          if not source_path.is_file():
+              raise RuntimeError('missing exact PR #109 phase source')
+          encoded = ''.join(source_path.read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'fb93ab74edf4c79b00bca6f5c1e6c1a4be33904204bbd2aed296cf2b01dd10b2'
+          if digest != expected:
+              raise RuntimeError(f'phase source mismatch: {digest}')
+          decoded = source.decode('utf-8')
+          compile(decoded, 'frozen_phase_gated_source.py', 'exec')
+          tree = ast.parse(decoded, filename='frozen_phase_gated_source.py')
+          lines = decoded.splitlines()
+
+          definitions = []
+          constants = {}
+          excerpts = {}
+          target_terms = ('score', 'quartet', 'diameter', 'metric', 'episode', 'phase', 'neighbor', 'distance')
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                  definitions.append({
+                      'kind': type(node).__name__,
+                      'name': node.name,
+                      'lineno': node.lineno,
+                      'end_lineno': node.end_lineno,
+                      'args': [arg.arg for arg in node.args.args] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else [],
+                  })
+                  if any(term in node.name.lower() for term in target_terms):
+                      excerpts[node.name] = '\n'.join(lines[node.lineno - 1:node.end_lineno])
+              elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  name = node.targets[0].id
+                  try:
+                      constants[name] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+
+          required = {'score_episode', 'metric_bundle'}
+          names = {item['name'] for item in definitions}
+          gates = {
+              'exact_phase_source_hash': digest == expected,
+              'source_compiles': True,
+              'source_ast_parses': True,
+              'score_episode_present': 'score_episode' in names,
+              'metric_bundle_present': 'metric_bundle' in names,
+              'no_data_or_score_execution': True,
+          }
+          verdict = 'PASS_SONOTACO_DRIFT_ALIGNED_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_DRIFT_ALIGNED_SOURCE_AUDIT'
+          result = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'definitions': definitions,
+              'constants': constants,
+              'excerpt_names': sorted(excerpts),
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/frozen_phase_gated_source.py').write_text(decoded, encoding='utf-8')
+          Path('output/source_excerpts.json').write_text(json.dumps(excerpts, indent=2), encoding='utf-8')
+          Path('output/source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          md = [
+              '# SonotaCo drift-aligned source audit',
+              '',
+              f'Verdict: **{verdict}**',
+              '',
+              f'- exact source SHA-256: `{digest}`',
+              f'- decoded source bytes: {len(source)}',
+              f'- top-level definitions: {len(definitions)}',
+              f'- preserved targeted excerpts: {len(excerpts)}',
+              '',
+              '## Gates',
+              '',
+          ]
+          md.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_DRIFT_ALIGNED_SOURCE_AUDIT.md').write_text('\n'.join(md) + '\n', encoding='utf-8')
+          print('\n'.join(md))
+          if not all(gates.values()):
+              raise SystemExit('frozen source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_drift_aligned_stage0/PROTOCOL.md \
+            sonotaco_phase_gated_3d/source_parts/part00.b64 \
+            > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload source-only audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-drift-aligned-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
