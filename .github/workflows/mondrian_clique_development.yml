@@ -1,12 +1,12 @@
-name: Mondrian clique retrospective pressure test
+name: Mondrian clique untouched 2018 confirmation
 
 on:
   pull_request:
     branches:
-      - agent/empirical-window-null-evenyear-stage0
+      - agent/mondrian-clique-coverage-normalized-development
     paths:
       - .github/workflows/mondrian_clique_development.yml
-      - mondrian_clique_development/**
+      - mondrian_clique_2018/**
   workflow_dispatch:
 
 permissions:
@@ -14,41 +14,156 @@ permissions:
   actions: read
 
 concurrency:
-  group: mondrian-clique-development
+  group: mondrian-clique-2018-confirmation
   cancel-in-progress: true
 
 jobs:
-  retrospective-panel:
+  fresh-2018-data-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mondrian-clique-2018-confirmation-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Derive exact one-year audit before download
+        run: |
+          set -euo pipefail
+          test "$(git hash-object real_shower_meta_stage0/audit_real_shower_data.py)" = "4a029051230f7c6e99b09e911f8a9e5228a58783"
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('real_shower_meta_stage0/audit_real_shower_data.py').read_text()
+          replacements = {
+              'OUT_DIR = ROOT / "results" / "data_audit"': 'OUT_DIR = Path("mondrian_clique_2018/results/data_audit")',
+              'YEARS = (2019, 2021, 2023, 2025)': 'YEARS = (2018,)',
+              '''        profile["eligible"] = bool(
+            profile["quality_events"] >= 200
+            and profile["represented_years"] >= 3
+            and profile["years_ge_20"] >= 3
+        )''': '''        profile["eligible"] = bool(
+            profile["quality_events"] >= 200
+            and profile["represented_years"] == 1
+            and profile["years_ge_20"] == 1
+        )''',
+              'profile["strong"] = bool(profile["quality_events"] >= 1000 and profile["represented_years"] == 4)': 'profile["strong"] = bool(profile["quality_events"] >= 300 and profile["represented_years"] == 1)',
+              '"strong_showers_at_least_12": len(strong) >= 12': '"strong_showers_at_least_8": len(strong) >= 8',
+              '"multi_shower_complex_units_at_least_6": len(multi_shower_complexes) >= 6': '"multi_shower_complex_units_at_least_2": len(multi_shower_complexes) >= 2',
+              '"quality_sporadics_at_least_200000": total_sporadic_quality >= 200_000': '"quality_sporadics_at_least_50000": total_sporadic_quality >= 50_000',
+              'GhostStream was excluded. Data came from 48 official GMN monthly trajectory summaries and the IAU MDC shower file.': 'Fresh confirmation data came from 12 official 2018 GMN monthly trajectory summaries and the IAU MDC shower file.',
+          }
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise RuntimeError(f'Expected exactly one source occurrence: {old!r}; got {count}')
+              source = source.replace(old, new)
+          destination = Path('/tmp/audit_2018_data.py')
+          destination.write_text(source)
+          print('derived bytes:', destination.stat().st_size)
+          PY
+          python -m py_compile /tmp/audit_2018_data.py
+      - name: Download and audit untouched 2018 data
+        run: python /tmp/audit_2018_data.py
+      - name: Enforce frozen extraction and coverage gates
+        run: |
+          python - <<'PY'
+          import bisect
+          import gzip
+          import json
+          from pathlib import Path
+
+          root = Path('mondrian_clique_2018/results/data_audit')
+          audit = json.loads((root / 'audit.json').read_text())
+          if tuple(audit['configuration']['years']) != (2018,):
+              raise RuntimeError(f"Unexpected years: {audit['configuration']['years']}")
+          if not all(audit['gates'].values()):
+              raise SystemExit(f"Frozen 2018 audit gates failed: {audit['gates']}")
+
+          sources = audit.get('sources', [])
+          source_gate = (
+              len(sources) == 12
+              and {int(item['month']) for item in sources} == set(range(1, 13))
+              and all(int(item.get('bytes', 0)) > 0 for item in sources)
+          )
+
+          events = []
+          with gzip.open(root / 'selected_events.jsonl.gz', 'rt', encoding='utf-8') as handle:
+              for line in handle:
+                  event = json.loads(line)
+                  if int(event['year']) != 2018:
+                      raise RuntimeError(f"Unexpected event year: {event['year']}")
+                  events.append(event)
+
+          sporadic_sols = sorted(
+              float(event['sol']) % 360.0
+              for event in events
+              if int(event['iau']) == -1 and not (20.0 <= float(event['sol']) <= 55.0)
+          )
+          extended = [value - 360.0 for value in sporadic_sols] + sporadic_sols + [value + 360.0 for value in sporadic_sols]
+          supported = []
+          maximum_local_count = {}
+          for phase_bin in range(36):
+              centers = [value for value in sporadic_sols if int(value // 10.0) == phase_bin]
+              best = 0
+              for center in centers:
+                  count = bisect.bisect_right(extended, center + 10.0) - bisect.bisect_left(extended, center - 10.0)
+                  best = max(best, count)
+              maximum_local_count[str(phase_bin)] = best
+              if best >= 128:
+                  supported.append(phase_bin)
+
+          coverage = {
+              'year': 2018,
+              'selected_events': len(events),
+              'sporadics_after_blind': len(sporadic_sols),
+              'supported_10deg_bins': supported,
+              'supported_bin_count': len(supported),
+              'maximum_local_count_by_bin': maximum_local_count,
+              'gates': {
+                  'twelve_nonempty_monthly_sources': source_gate,
+                  'supported_10deg_bins_at_least_30': len(supported) >= 30,
+              },
+          }
+          (root / 'coverage.json').write_text(json.dumps(coverage, indent=2, sort_keys=True))
+          print(json.dumps({
+              'eligible_count': audit['eligible_count'],
+              'strong_count': audit['strong_count'],
+              'eligible_complex_units': audit['eligible_complex_units'],
+              'total_quality_sporadics': audit['total_quality_sporadics'],
+              'audit_gates': audit['gates'],
+              'coverage': coverage,
+          }, indent=2))
+          if not all(coverage['gates'].values()):
+              raise SystemExit(f"Frozen 2018 coverage gates failed: {coverage['gates']}")
+          PY
+      - name: Record fresh-data provenance
+        if: always()
+        run: |
+          mkdir -p mondrian_clique_2018/results/data_audit
+          git hash-object real_shower_meta_stage0/audit_real_shower_data.py > mondrian_clique_2018/results/data_audit/base_source_blob_sha.txt
+          sha256sum \
+            mondrian_clique_2018/PROTOCOL.md \
+            real_shower_meta_stage0/audit_real_shower_data.py \
+            mondrian_clique_2018/results/data_audit/selected_events.jsonl.gz \
+            mondrian_clique_2018/results/data_audit/audit.json \
+            mondrian_clique_2018/results/data_audit/coverage.json \
+            > mondrian_clique_2018/results/data_audit/source_and_data_sha256.txt
+          python --version > mondrian_clique_2018/results/data_audit/python_version.txt
+      - name: Upload frozen 2018 data evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mondrian-clique-2018-data
+          path: mondrian_clique_2018/results/data_audit
+          if-no-files-found: error
+          retention-days: 90
+
+  fresh-2018-confirmation:
+    needs: fresh-2018-data-gate
     runs-on: ubuntu-latest
     timeout-minutes: 240
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - year: 2021
-            corpus: odd-archive
-            run_id: 30855193522
-            artifact: real-shower-meta-data-audit
-            events_sha256: 63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01
-            audit_sha256: f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778
-          - year: 2024
-            corpus: even-archive
-            run_id: 30863692214
-            artifact: empirical-window-null-evenyear-data
-            events_sha256: 518e12043ef838355d488c0fa675f1332961796168920c6c15e4b3db0583c812
-            audit_sha256: 64f1813f61ab5da0e311340c5ebb3208911aaefce3abe386f021c0240636e0b0
-          - year: 2025
-            corpus: odd-archive
-            run_id: 30855193522
-            artifact: real-shower-meta-data-audit
-            events_sha256: 63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01
-            audit_sha256: f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778
-          - year: 2026
-            corpus: fresh-2026h1-spent
-            run_id: 30873092919
-            artifact: partition-invariant-clique-2026h1-data
-            events_sha256: 59e48ee6a0b653a2b4530f8a2221e2e93e6af3e6a9f11281c6f17fc428a85ddf
-            audit_sha256: 45a367043ff91f4b44be4934d56d5b923ac4aea555ddf41fdd7cebfa7bc5d28e
     env:
       SOURCE_SHA256: f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8
       BASELINE_PAYLOAD_SHA256: 2cb82a8c12913a6176ddd7c6333b57a4d672334934c0d2ca4b572e878590cfa2
@@ -56,7 +171,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/mondrian-clique-coverage-normalized-development
+          ref: agent/mondrian-clique-2018-confirmation-v2
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -64,26 +179,25 @@ jobs:
           cache-dependency-path: real_shower_meta_stage0/requirements.txt
       - name: Install frozen dependencies
         run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
-      - name: Retrieve exact retrospective corpus
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p input output
-          gh run download "${{ matrix.run_id }}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "${{ matrix.artifact }}" \
-            --dir input
-          echo "${{ matrix.events_sha256 }}  input/selected_events.jsonl.gz" | sha256sum -c -
-          echo "${{ matrix.audit_sha256 }}  input/audit.json" | sha256sum -c -
-          echo "${BASELINE_PAYLOAD_SHA256}  real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64" | sha256sum -c -
-      - name: Decode and verify frozen implementation
+      - uses: actions/download-artifact@v4
+        with:
+          name: mondrian-clique-2018-data
+          path: input
+      - name: Verify fresh data gate and exact passed source
         run: |
           python - <<'PY'
           import base64
           import gzip
           import hashlib
+          import json
           from pathlib import Path
+
+          audit = json.loads(Path('input/audit.json').read_text())
+          coverage = json.loads(Path('input/coverage.json').read_text())
+          if tuple(audit['configuration']['years']) != (2018,):
+              raise RuntimeError('Unexpected confirmation year')
+          if not all(audit['gates'].values()) or not all(coverage['gates'].values()):
+              raise RuntimeError('Fresh 2018 data gate did not pass')
 
           parts = sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
           expected = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
@@ -95,74 +209,78 @@ jobs:
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           source_hash = hashlib.sha256(source).hexdigest()
           if source_hash != '${{ env.SOURCE_SHA256 }}':
-              raise RuntimeError(f'Mondrian source mismatch: {source_hash}')
-          Path('/tmp/run_mondrian_clique_development.py').write_bytes(source)
+              raise RuntimeError(f'confirmation source mismatch: {source_hash}')
+          Path('/tmp/run_mondrian_clique_2018.py').write_bytes(source)
 
-          baseline_encoded = ''.join(
-              Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_text().split()
-          )
+          payload_hash = hashlib.sha256(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_bytes()).hexdigest()
+          if payload_hash != '${{ env.BASELINE_PAYLOAD_SHA256 }}':
+              raise RuntimeError(f'baseline payload mismatch: {payload_hash}')
+          baseline_encoded = ''.join(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_text().split())
           baseline_source = gzip.decompress(base64.b64decode(baseline_encoded, validate=True))
           baseline_hash = hashlib.sha256(baseline_source).hexdigest()
           if baseline_hash != '${{ env.BASELINE_SOURCE_SHA256 }}':
               raise RuntimeError(f'baseline source mismatch: {baseline_hash}')
-          print('encoded source characters:', len(encoded))
-          print('source sha256:', source_hash)
-          print('baseline source sha256:', baseline_hash)
+
+          print('selected events SHA-256:', hashlib.sha256(Path('input/selected_events.jsonl.gz').read_bytes()).hexdigest())
+          print('audit SHA-256:', hashlib.sha256(Path('input/audit.json').read_bytes()).hexdigest())
+          print('coverage SHA-256:', hashlib.sha256(Path('input/coverage.json').read_bytes()).hexdigest())
+          print('confirmation source SHA-256:', source_hash)
           PY
-          python -m py_compile /tmp/run_mondrian_clique_development.py
-      - name: Run frozen panel
+          python -m py_compile /tmp/run_mondrian_clique_2018.py
+      - name: Run one-shot untouched 2018 confirmation
         run: |
-          python /tmp/run_mondrian_clique_development.py \
+          mkdir -p output
+          python /tmp/run_mondrian_clique_2018.py \
             --events input/selected_events.jsonl.gz \
-            --year "${{ matrix.year }}" \
-            --corpus "${{ matrix.corpus }}" \
+            --year 2018 \
+            --corpus complete-year-2018-confirmation \
             --workers 4 \
             --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             --output output
-          cat "output/MONDRIAN_CLIQUE_DEVELOPMENT_${{ matrix.year }}.md"
-      - name: Enforce frozen panel gates
+          cat output/MONDRIAN_CLIQUE_DEVELOPMENT_2018.md
+      - name: Enforce frozen confirmation gates
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          year = '${{ matrix.year }}'
-          result = json.loads(Path(f'output/mondrian_clique_development_{year}.json').read_text())
+          result = json.loads(Path('output/mondrian_clique_development_2018.json').read_text())
+          if int(result['counts']['minimum_supported_bins']) != 20:
+              raise SystemExit(f"Unexpected complete-year support rule: {result['counts']['minimum_supported_bins']}")
           print(json.dumps({
-              'year': result['configuration']['year'],
               'counts': result['counts'],
               'candidate_weak_auc': result['candidate_weak_auc'],
               'comparators': result['fixed_comparator_weak_auc'],
               'false_positive': result['false_positive'],
               'worst_reporting_sector_0.05': result['worst_reporting_sector_0.05'],
               'recall': result['recall'],
+              'fold_results': result['fold_results'],
               'gates': result['gates'],
               'verdict': result['verdict'],
           }, indent=2))
           if not all(result['gates'].values()):
-              raise SystemExit(f'Frozen Mondrian panel {year} failed')
-          if result['verdict'] != 'PASS_RETROSPECTIVE_MONDRIAN_PRESSURE_TEST':
-              raise SystemExit(f"Unexpected verdict: {result['verdict']}")
+              raise SystemExit('Frozen fresh-2018 confirmation gate failed')
           PY
-      - name: Record provenance
+      - name: Record confirmation provenance
         if: always()
         run: |
           sha256sum \
-            mondrian_clique_development/PROTOCOL.md \
+            mondrian_clique_2018/PROTOCOL.md \
             mondrian_clique_development/source_parts_v2/part00.b64 \
             mondrian_clique_development/source_parts_v2/part01.b64 \
             mondrian_clique_development/source_parts_v2/part02.b64 \
             mondrian_clique_development/source_parts_v2/part03.b64 \
             input/selected_events.jsonl.gz \
             input/audit.json \
+            input/coverage.json \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             > output/source_and_input_sha256.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
-      - name: Upload panel evidence
+      - name: Upload one-shot 2018 evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mondrian-clique-development-${{ matrix.year }}
+          name: mondrian-clique-2018-confirmation
           path: output
           if-no-files-found: error
           retention-days: 90
