@@ -1,6 +1,3 @@
-            <line x1={tragion.x - 22} y1={tragion.y} x2={orbitale.x + 155} y2={orbitale.y} />
-            <line x1={nasion.x} y1={nasion.y} x2={pronasale.x} y2={pronasale.y} />
-            <line x1={pronasale.x} y1={pronasale.y} x2={pogonion.x} y2={pogonion.y} />
             <line x1={subnasale.x} y1={subnasale.y} x2={pogonion.x} y2={pogonion.y} />
             <line x1={gonion.x} y1={gonion.y} x2={menton.x} y2={menton.y} />
             <line x1={gonion.x} y1={gonion.y} x2={ramus.x} y2={ramus.y} />
