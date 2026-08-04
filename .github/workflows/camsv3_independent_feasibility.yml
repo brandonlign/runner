@@ -1,0 +1,64 @@
+name: CAMSv3 independent-survey feasibility
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/camsv3_independent_feasibility.yml
+      - camsv3_independent_feasibility/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: camsv3-independent-feasibility
+  cancel-in-progress: true
+
+jobs:
+  structural-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/camsv3-independent-feasibility
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen dependency
+        run: python -m pip install 'requests==2.32.5'
+      - name: Compile frozen audit
+        run: python -m py_compile camsv3_independent_feasibility/run_feasibility.py
+      - name: Run structural feasibility gate
+        run: |
+          mkdir -p output
+          python camsv3_independent_feasibility/run_feasibility.py --output output
+          cat output/RESULT.md
+      - name: Verify authoritative result
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('output/camsv3_structural_feasibility.json').read_text())
+          assert result['verdict']=='PASS_CAMSV3_STRUCTURAL_FEASIBILITY'
+          assert all(result['gates'].values())
+          assert result['scientific_values_read'] is False
+          assert result['label_values_read'] is False
+          assert result['sonotaco_2024_read'] is False
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum camsv3_independent_feasibility/PROTOCOL.md camsv3_independent_feasibility/run_feasibility.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camsv3-independent-feasibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90
