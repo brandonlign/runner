@@ -1,0 +1,35 @@
+name: SonotaCo phase-normalized transport audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-phase-gated-3d-development
+    paths:
+      - .github/workflows/sonotaco_phase_normalized_transport_audit.yml
+      - sonotaco_phase_normalized/source_parts_v2/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-phase-normalized-development
+      - name: Print exact transport diagnostics
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root = Path('sonotaco_phase_normalized/source_parts_v2')
+          total = ''
+          for path in sorted(root.glob('part*.b64')):
+              text = ''.join(path.read_text().split())
+              print(path.name, 'length', len(text), 'sha256', hashlib.sha256(text.encode()).hexdigest(), 'head', text[:16], 'tail', text[-16:])
+              total += text
+          print('total length', len(total))
+          print('total sha256', hashlib.sha256(total.encode()).hexdigest())
+          PY
