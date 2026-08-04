@@ -1,0 +1,139 @@
+name: Even-year LCC Stage-1 power
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/evenyear_lcc_power_stage1.yml
+      - evenyear_lcc_power_stage1/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: evenyear-lcc-power-stage1
+  cancel-in-progress: true
+
+jobs:
+  untouched-evenyear-power:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      SOURCE_SHA256: '8c69bddb7e8bd52694f32f62a5e105a0fda4ca330734d55704ee26e0d0faff1c'
+      EVENTS_SHA256: '518e12043ef838355d488c0fa675f1332961796168920c6c15e4b3db0583c812'
+      AUDIT_SHA256: '64f1813f61ab5da0e311340c5ebb3208911aaefce3abe386f021c0240636e0b0'
+      STAGE0_SHA256: 'd08394f7f3af504d88a5b7b021b35b5a997ef67a45434e53a9751dd0973a19f1'
+      BASELINE_PAYLOAD_SHA256: '2cb82a8c12913a6176ddd7c6333b57a4d672334934c0d2ca4b572e878590cfa2'
+      BASELINE_SOURCE_SHA256: '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/evenyear-lcc-power-stage1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Retrieve exact untouched data and null artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input stage0 output
+          gh run download 30863692214 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name empirical-window-null-evenyear-data \
+            --dir input
+          gh run download 30863692214 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name empirical-window-null-evenyear-stage0 \
+            --dir stage0
+          echo "${EVENTS_SHA256}  input/selected_events.jsonl.gz" | sha256sum -c -
+          echo "${AUDIT_SHA256}  input/audit.json" | sha256sum -c -
+          echo "${STAGE0_SHA256}  stage0/empirical_window_null_audit.json" | sha256sum -c -
+          echo "${BASELINE_PAYLOAD_SHA256}  real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64" | sha256sum -c -
+      - name: Decode and verify frozen Stage-1 source
+        run: |
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('evenyear_lcc_power_stage1/source_parts').glob('part*.b64'))
+          expected_names = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected_names:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          source_hash = hashlib.sha256(source).hexdigest()
+          if source_hash != '${{ env.SOURCE_SHA256 }}':
+              raise RuntimeError(f'Stage-1 source mismatch: {source_hash}')
+          Path('/tmp/run_evenyear_lcc_power.py').write_bytes(source)
+
+          baseline_encoded = ''.join(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_text().split())
+          baseline_source = gzip.decompress(base64.b64decode(baseline_encoded, validate=True))
+          baseline_hash = hashlib.sha256(baseline_source).hexdigest()
+          if baseline_hash != '${{ env.BASELINE_SOURCE_SHA256 }}':
+              raise RuntimeError(f'baseline source mismatch: {baseline_hash}')
+          print('Stage-1 source bytes:', len(source))
+          print('Stage-1 source SHA-256:', source_hash)
+          print('baseline source SHA-256:', baseline_hash)
+          PY
+          python -m py_compile /tmp/run_evenyear_lcc_power.py
+      - name: Run frozen untouched even-year power benchmark
+        run: |
+          python /tmp/run_evenyear_lcc_power.py \
+            --events input/selected_events.jsonl.gz \
+            --audit input/audit.json \
+            --stage0-result stage0/empirical_window_null_audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --output output
+          cat output/EVENYEAR_LCC_POWER_REPORT.md
+      - name: Enforce frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/evenyear_lcc_power.json').read_text())
+          print(json.dumps({
+              'candidate_weak_auc': result['candidate_weak_auc'],
+              'comparators': result['fixed_comparator_weak_auc'],
+              'false_positive': result['false_positive'],
+              'worst_group': result['worst_group'],
+              'recall': result['recall'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen untouched even-year power gate failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum \
+            evenyear_lcc_power_stage1/PROTOCOL.md \
+            evenyear_lcc_power_stage1/source_parts/part00.b64 \
+            evenyear_lcc_power_stage1/source_parts/part01.b64 \
+            evenyear_lcc_power_stage1/source_parts/part02.b64 \
+            evenyear_lcc_power_stage1/source_parts/part03.b64 \
+            input/selected_events.jsonl.gz \
+            input/audit.json \
+            stage0/empirical_window_null_audit.json \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen power evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evenyear-lcc-power-stage1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
