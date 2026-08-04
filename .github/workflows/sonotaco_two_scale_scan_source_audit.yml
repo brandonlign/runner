@@ -1,0 +1,107 @@
+name: SonotaCo two-scale scan source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-k4-phase-scale-diagnostic
+    paths:
+      - .github/workflows/sonotaco_two_scale_scan_source_audit.yml
+      - sonotaco_two_scale_scan_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-two-scale-scan-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-two-scale-scan-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode and inspect exact phase-scale diagnostic
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast, base64, gzip, hashlib, json
+          from pathlib import Path
+
+          source_path = Path('sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64')
+          encoded = ''.join(source_path.read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'e5cdb6eb8d07fdbcc5c29a4d02139fff86386e8aebde83717fdc7485acda265d'
+          if digest != expected:
+              raise RuntimeError(f'phase-scale source mismatch: {digest}')
+          decoded = source.decode('utf-8')
+          compile(decoded, 'frozen_phase_scale_diagnostic.py', 'exec')
+          tree = ast.parse(decoded, filename='frozen_phase_scale_diagnostic.py')
+          definitions = []
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                  definitions.append({
+                      'kind': type(node).__name__,
+                      'name': node.name,
+                      'lineno': node.lineno,
+                      'end_lineno': node.end_lineno,
+                      'args': [arg.arg for arg in node.args.args] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else [],
+                  })
+          required = {'clique_score_scaled', 'evaluate_scale', 'main'}
+          names = {item['name'] for item in definitions}
+          gates = {
+              'exact_source_hash': digest == expected,
+              'source_compiles': True,
+              'source_ast_parses': True,
+              'required_interfaces_present': required.issubset(names),
+              'no_data_or_score_execution': True,
+          }
+          verdict = 'PASS_SONOTACO_TWO_SCALE_SCAN_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_TWO_SCALE_SCAN_SOURCE_AUDIT'
+          result = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'definitions': definitions,
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/frozen_phase_scale_diagnostic.py').write_text(decoded, encoding='utf-8')
+          Path('output/source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# SonotaCo fixed two-scale scan source audit', '',
+              f'Verdict: **{verdict}**', '',
+              f'- source SHA-256: `{digest}`',
+              f'- source bytes: {len(source)}',
+              f'- top-level definitions: {len(definitions)}', '',
+              '## Gates', '',
+          ]
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_TWO_SCALE_SCAN_SOURCE_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('frozen source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_two_scale_scan_stage0/PROTOCOL.md \
+            sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64 \
+            > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload source-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-two-scale-scan-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
