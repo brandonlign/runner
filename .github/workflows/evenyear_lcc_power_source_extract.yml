@@ -29,7 +29,7 @@ jobs:
         run: |
           git fetch --no-tags origin \
             agent/local-conformal-coherence-power-stage1:refs/remotes/origin/agent/local-conformal-coherence-power-stage1
-      - name: Decode exact prior power and current null sources
+      - name: Decode exact prior power, current null, and baseline sources
         run: |
           set -euo pipefail
           mkdir -p extracted /tmp/power_parts
@@ -59,14 +59,21 @@ jobs:
               raise RuntimeError(f'null source mismatch: {actual_null}')
           Path('extracted/run_empirical_window_null_evenyear_authoritative.py').write_bytes(null)
 
+          encoded_base = ''.join(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_text().split())
+          baseline = gzip.decompress(base64.b64decode(encoded_base, validate=True))
+          actual_base = hashlib.sha256(baseline).hexdigest()
+          Path('extracted/run_baseline_ceiling_authoritative.py').write_bytes(baseline)
+
           Path('extracted/SOURCE_HASHES.txt').write_text(
               f'{actual_power}  run_power_gate_oddyear_authoritative.py\n'
               f'{actual_null}  run_empirical_window_null_evenyear_authoritative.py\n'
+              f'{actual_base}  run_baseline_ceiling_authoritative.py\n'
           )
           print(Path('extracted/SOURCE_HASHES.txt').read_text())
           PY
           python -m py_compile extracted/run_power_gate_oddyear_authoritative.py
           python -m py_compile extracted/run_empirical_window_null_evenyear_authoritative.py
+          python -m py_compile extracted/run_baseline_ceiling_authoritative.py
       - name: Upload exact sources for adaptation audit
         uses: actions/upload-artifact@v4
         with:
