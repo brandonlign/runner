@@ -1,0 +1,119 @@
+name: Majority-conditioned recurrence source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/worst-family-recurrence-stage0
+    paths:
+      - .github/workflows/majority_conditioned_source_audit.yml
+      - majority_conditioned_recurrence_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: majority-conditioned-recurrence-source-audit
+  cancel-in-progress: true
+
+jobs:
+  no-score-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/majority-conditioned-recurrence-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct exact worst-family source
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('worst_family_recurrence_stage0/source_parts').glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac':
+              raise RuntimeError(f'base source mismatch: {digest}')
+          Path('/tmp/worst_family_source.py').write_bytes(source)
+          print('base source bytes:', len(source))
+          print('base source SHA-256:', digest)
+          PY
+      - name: Derive, compile, and statically audit candidate
+        run: |
+          set -euo pipefail
+          python -m py_compile majority_conditioned_recurrence_stage0/derive_candidate.py
+          python majority_conditioned_recurrence_stage0/derive_candidate.py \
+            /tmp/worst_family_source.py \
+            output/run_majority_conditioned.py
+          python -m py_compile output/run_majority_conditioned.py
+          python - <<'PY'
+          import ast
+          import hashlib
+          import json
+          from pathlib import Path
+
+          path = Path('output/run_majority_conditioned.py')
+          payload = path.read_bytes()
+          source = payload.decode('utf-8')
+          tree = ast.parse(source)
+          names = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+          text_checks = {
+              'median_common_mode_present': 'np.median(per_year_evidence, axis=0)' in source,
+              'conditioned_subtraction_present': 'per_year_evidence - common_annual_evidence[None, ...]' in source,
+              'new_method_key_present': '"majority_conditioned"' in source,
+              'new_verdict_present': 'CONTINUE_MAJORITY_CONDITIONED_FULL_STAGE0' in source,
+              'original_hard_recurrence_present': 'ordered_evidence[-self.r_required]' in source,
+              'soft_recurrence_present': 'soft_recurrence_score' in source,
+              'shared_structure_null_present': 'sample_shared_structure_histograms' in source,
+              'recurrent_injection_present': 'inject_recurrent' in names,
+              'transient_injection_present': 'inject_transient' in names,
+          }
+          if not all(text_checks.values()):
+              raise RuntimeError(f'static candidate check failed: {text_checks}')
+          audit = {
+              'candidate_sha256': hashlib.sha256(payload).hexdigest(),
+              'candidate_bytes': len(payload),
+              'candidate_lines': len(source.splitlines()),
+              'functions': sorted(names),
+              'checks': text_checks,
+          }
+          Path('output/source_audit.json').write_text(json.dumps(audit, indent=2, sort_keys=True))
+          Path('output/CANDIDATE_SOURCE_AUDIT.md').write_text(
+              '# Majority-conditioned candidate source audit\n\n'
+              f"- source SHA-256: `{audit['candidate_sha256']}`\n"
+              f"- source bytes: **{audit['candidate_bytes']:,}**\n"
+              f"- source lines: **{audit['candidate_lines']:,}**\n"
+              '- all frozen static checks: **PASS**\n'
+          )
+          print(json.dumps(audit, indent=2, sort_keys=True))
+          PY
+          cat output/CANDIDATE_SOURCE_AUDIT.md
+      - name: Record provenance
+        run: |
+          sha256sum \
+            majority_conditioned_recurrence_stage0/SOURCE_AUDIT_PROTOCOL.md \
+            majority_conditioned_recurrence_stage0/derive_candidate.py \
+            /tmp/worst_family_source.py \
+            output/run_majority_conditioned.py \
+            worst_family_recurrence_stage0/source_parts/*.b64 \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload exact candidate source audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: majority-conditioned-recurrence-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
