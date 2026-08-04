@@ -1,11 +1,13 @@
-name: Vendor Mog canonical face mesh
+name: Vendor Mog reference assets
 
 on:
   push:
     branches:
-      - agent/mog-reference-face-validation
+      - agent/mog-reference-face-finalize
     paths:
       - mog_reference_face_validation/fetch_canonical_mesh.py
+      - mog_reference_face_validation/scripts/extract_gnm_head.py
+      - mog_reference_face_validation/scripts/render_gnm_reference_assets.py
       - .github/workflows/mog_canonical_mesh_vendor.yml
   workflow_dispatch:
 
@@ -16,46 +18,67 @@ jobs:
   vendor:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/mog-reference-face-validation
+          ref: agent/mog-reference-face-finalize
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      - name: Install deterministic render dependencies
+        run: python -m pip install --disable-pip-version-check numpy matplotlib pillow
+
       - name: Fetch and convert official MediaPipe canonical mesh
         run: python mog_reference_face_validation/fetch_canonical_mesh.py
 
-      - name: Validate compact mesh
+      - name: Extract licensed Google GNM head mesh
+        run: python mog_reference_face_validation/scripts/extract_gnm_head.py
+
+      - name: Render neutral front and profile assets
+        run: python mog_reference_face_validation/scripts/render_gnm_reference_assets.py
+
+      - name: Validate generated assets
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          path = Path('mog_reference_face_validation/generated/canonical_face_model.json')
-          data = json.loads(path.read_text())
-          assert data['license'] == 'Apache-2.0'
-          assert data['vertexCount'] == 468
-          assert data['triangleCount'] > 800
-          assert len(data['positions']) == 468 * 3
-          assert len(data['triangles']) == data['triangleCount'] * 3
-          assert min(data['triangles']) >= 0
-          assert max(data['triangles']) < 468
-          print(path.stat().st_size, 'bytes', data['triangleCount'], 'triangles')
+
+          root = Path('mog_reference_face_validation/generated')
+          compact = json.loads((root / 'canonical_face_model.json').read_text())
+          assert compact['license'] == 'Apache-2.0'
+          assert compact['vertexCount'] == 468
+          assert compact['triangleCount'] > 800
+
+          gnm = json.loads((root / 'gnm_head_skin_report.json').read_text())
+          assert gnm['sourceLicense'] == 'Apache-2.0'
+          assert gnm['skinVertexCount'] == 12466
+          assert gnm['skinTriangleCount'] == 24820
+
+          rendered = json.loads((root / 'gnm_reference_assets.json').read_text())
+          assert rendered['sourceLicense'] == 'Apache-2.0'
+          for name in ('front', 'profile'):
+              asset = rendered['assets'][name]
+              path = root / asset['file']
+              assert path.exists()
+              assert path.stat().st_size == asset['bytes']
+              assert 40_000 <= asset['bytes'] <= 180_000
+              assert len(asset['sha256']) == 64
+          print(json.dumps(rendered, indent=2))
           PY
 
-      - name: Preserve vendored mesh on runner branch
+      - name: Preserve generated reference assets
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add mog_reference_face_validation/generated
           if git diff --cached --quiet; then
-            echo 'Canonical mesh already current.'
+            echo 'Reference assets already current.'
           else
-            git commit -m 'Vendor MediaPipe canonical face mesh for Mog'
-            git pull --rebase origin agent/mog-reference-face-validation
-            git push origin HEAD:agent/mog-reference-face-validation
+            git commit -m 'Vendor GNM reference face assets for Mog'
+            git pull --rebase origin agent/mog-reference-face-finalize
+            git push origin HEAD:agent/mog-reference-face-finalize
           fi
