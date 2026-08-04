@@ -1,9 +1,9 @@
-name: SonotaCo 2025 Mondrian feasibility gate
+name: SonotaCo 2025 label-token audit
 
 on:
   pull_request:
     branches:
-      - agent/mondrian-clique-coverage-normalized-development
+      - agent/sonotaco-2025-mondrian-feasibility
     paths:
       - .github/workflows/mondrian_clique_development.yml
       - sonotaco_mondrian_stage0/**
@@ -11,23 +11,26 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: sonotaco-2025-mondrian-feasibility
+  group: sonotaco-2025-label-audit
   cancel-in-progress: true
 
 jobs:
-  feasibility:
+  audit:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/sonotaco-2025-mondrian-feasibility
+          ref: agent/sonotaco-2025-label-audit
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Download exact official SonotaCo archive
+      - name: Download exact frozen inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p input output
@@ -38,30 +41,39 @@ jobs:
             --retry-all-errors \
             --output input/025a.zip \
             https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input/gmn_audit
           test -s input/025a.zip
-      - name: Run frozen data-only feasibility audit
+          test -s input/gmn_audit/audit.json
+      - name: Run frozen aggregate-only label audit
         run: |
-          python sonotaco_mondrian_stage0/audit_sonotaco_2025.py \
+          python sonotaco_mondrian_stage0/audit_sonotaco_labels.py \
             --archive input/025a.zip \
+            --audit input/gmn_audit/audit.json \
             --output output
-          cat output/SONOTACO_2025_FEASIBILITY.md
+          cat output/SONOTACO_2025_LABEL_AUDIT.md
       - name: Record provenance
         if: always()
         run: |
           mkdir -p output
           sha256sum \
-            sonotaco_mondrian_stage0/FEASIBILITY_PROTOCOL.md \
-            sonotaco_mondrian_stage0/audit_sonotaco_2025.py \
+            sonotaco_mondrian_stage0/LABEL_AUDIT_PROTOCOL.md \
+            sonotaco_mondrian_stage0/audit_sonotaco_labels.py \
             > output/source_sha256.txt
           if test -f input/025a.zip; then
             sha256sum input/025a.zip > output/archive_sha256.txt
           fi
+          if test -f input/gmn_audit/audit.json; then
+            sha256sum input/gmn_audit/audit.json > output/gmn_audit_sha256.txt
+          fi
           python --version > output/python_version.txt
-      - name: Upload frozen feasibility evidence
+      - name: Upload frozen label-audit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sonotaco-2025-mondrian-feasibility
+          name: sonotaco-2025-label-audit
           path: output
           if-no-files-found: error
           retention-days: 90
