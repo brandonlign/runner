@@ -1,0 +1,162 @@
+name: Mondrian clique retrospective pressure test
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/mondrian_clique_development.yml
+      - mondrian_clique_development/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mondrian-clique-development
+  cancel-in-progress: true
+
+jobs:
+  retrospective-panel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - year: 2021
+            corpus: odd-archive
+            run_id: 30855193522
+            artifact: real-shower-meta-data-audit
+            events_sha256: 63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01
+            audit_sha256: f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778
+          - year: 2024
+            corpus: even-archive
+            run_id: 30863692214
+            artifact: empirical-window-null-evenyear-data
+            events_sha256: 518e12043ef838355d488c0fa675f1332961796168920c6c15e4b3db0583c812
+            audit_sha256: 64f1813f61ab5da0e311340c5ebb3208911aaefce3abe386f021c0240636e0b0
+          - year: 2025
+            corpus: odd-archive
+            run_id: 30855193522
+            artifact: real-shower-meta-data-audit
+            events_sha256: 63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01
+            audit_sha256: f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778
+          - year: 2026
+            corpus: fresh-2026h1-spent
+            run_id: 30873092919
+            artifact: partition-invariant-clique-2026h1-data
+            events_sha256: 59e48ee6a0b653a2b4530f8a2221e2e93e6af3e6a9f11281c6f17fc428a85ddf
+            audit_sha256: 45a367043ff91f4b44be4934d56d5b923ac4aea555ddf41fdd7cebfa7bc5d28e
+    env:
+      SOURCE_SHA256: e3dc3dfcbfbfdc15bead220464213ee271f7411cbf550bbecf0536153b85344e
+      BASELINE_PAYLOAD_SHA256: 2cb82a8c12913a6176ddd7c6333b57a4d672334934c0d2ca4b572e878590cfa2
+      BASELINE_SOURCE_SHA256: 7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mondrian-clique-development
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Retrieve exact retrospective corpus
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download "${{ matrix.run_id }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "${{ matrix.artifact }}" \
+            --dir input
+          echo "${{ matrix.events_sha256 }}  input/selected_events.jsonl.gz" | sha256sum -c -
+          echo "${{ matrix.audit_sha256 }}  input/audit.json" | sha256sum -c -
+          echo "${BASELINE_PAYLOAD_SHA256}  real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64" | sha256sum -c -
+      - name: Decode and verify frozen implementation
+        run: |
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          encoded = ''.join(
+              Path('mondrian_clique_development/run_mondrian_clique_development.py.gz.b64')
+              .read_text()
+              .split()
+          )
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          source_hash = hashlib.sha256(source).hexdigest()
+          if source_hash != '${{ env.SOURCE_SHA256 }}':
+              raise RuntimeError(f'Mondrian source mismatch: {source_hash}')
+          Path('/tmp/run_mondrian_clique_development.py').write_bytes(source)
+
+          baseline_encoded = ''.join(
+              Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_text().split()
+          )
+          baseline_source = gzip.decompress(base64.b64decode(baseline_encoded, validate=True))
+          baseline_hash = hashlib.sha256(baseline_source).hexdigest()
+          if baseline_hash != '${{ env.BASELINE_SOURCE_SHA256 }}':
+              raise RuntimeError(f'baseline source mismatch: {baseline_hash}')
+          print('source sha256:', source_hash)
+          print('baseline source sha256:', baseline_hash)
+          PY
+          python -m py_compile /tmp/run_mondrian_clique_development.py
+      - name: Run frozen panel
+        run: |
+          python /tmp/run_mondrian_clique_development.py \
+            --events input/selected_events.jsonl.gz \
+            --year "${{ matrix.year }}" \
+            --corpus "${{ matrix.corpus }}" \
+            --workers 4 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --output output
+          cat "output/MONDRIAN_CLIQUE_DEVELOPMENT_${{ matrix.year }}.md"
+      - name: Enforce frozen panel gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          year = '${{ matrix.year }}'
+          result = json.loads(Path(f'output/mondrian_clique_development_{year}.json').read_text())
+          print(json.dumps({
+              'year': result['configuration']['year'],
+              'counts': result['counts'],
+              'candidate_weak_auc': result['candidate_weak_auc'],
+              'comparators': result['fixed_comparator_weak_auc'],
+              'false_positive': result['false_positive'],
+              'worst_reporting_sector_0.05': result['worst_reporting_sector_0.05'],
+              'recall': result['recall'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit(f'Frozen Mondrian panel {year} failed')
+          if result['verdict'] != 'PASS_RETROSPECTIVE_MONDRIAN_PRESSURE_TEST':
+              raise SystemExit(f"Unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum \
+            mondrian_clique_development/PROTOCOL.md \
+            mondrian_clique_development/run_mondrian_clique_development.py.gz.b64 \
+            input/selected_events.jsonl.gz \
+            input/audit.json \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload panel evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mondrian-clique-development-${{ matrix.year }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
