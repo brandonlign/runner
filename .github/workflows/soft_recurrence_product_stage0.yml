@@ -1,0 +1,89 @@
+name: Soft recurrence product Stage-0
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/soft_recurrence_product_stage0.yml
+      - soft_recurrence_product_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soft-recurrence-product-stage0
+  cancel-in-progress: true
+
+jobs:
+  robust-recurrence-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/soft-recurrence-product-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: replicastream_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r replicastream_stage0/requirements.txt
+      - name: Decode and verify frozen source
+        run: |
+          mkdir -p soft_recurrence_product_stage0/results
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('soft_recurrence_product_stage0/source_parts').glob('part*.b64'))
+          expected_names = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [path.name for path in parts] != expected_names:
+              raise RuntimeError(f'Unexpected source parts: {[path.name for path in parts]}')
+          encoded = ''.join(''.join(path.read_text().split()) for path in parts)
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          expected = '45f80c323cdab518d2aa7db15cef2222cd78442ff9b848a77e1d6730018069ce'
+          if digest != expected:
+              raise RuntimeError(f'Frozen source mismatch: {digest}')
+          Path('/tmp/run_soft_recurrence_product.py').write_bytes(raw)
+          print('source bytes:', len(raw))
+          print('source sha256:', digest)
+          PY
+          python -m py_compile /tmp/run_soft_recurrence_product.py
+      - name: Run robust full-search benchmark
+        run: |
+          python /tmp/run_soft_recurrence_product.py \
+            --calibration-trials 60 \
+            --null-trials 50 \
+            --injection-trials 50 \
+            --results soft_recurrence_product_stage0/results
+          cat soft_recurrence_product_stage0/results/STAGE0_REPORT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          sha256sum \
+            /tmp/run_soft_recurrence_product.py \
+            soft_recurrence_product_stage0/source_parts/part00.b64 \
+            soft_recurrence_product_stage0/source_parts/part01.b64 \
+            soft_recurrence_product_stage0/source_parts/part02.b64 \
+            soft_recurrence_product_stage0/source_parts/part03.b64 \
+            soft_recurrence_product_stage0/PROTOCOL.md \
+            soft_recurrence_product_stage0/PRIOR_ART_BOUNDARY.md \
+            > soft_recurrence_product_stage0/results/source_sha256.txt
+          python --version > soft_recurrence_product_stage0/results/python_version.txt
+          python -m pip freeze > soft_recurrence_product_stage0/results/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soft-recurrence-product-stage0
+          path: |
+            soft_recurrence_product_stage0/results
+            soft_recurrence_product_stage0/PROTOCOL.md
+            soft_recurrence_product_stage0/PRIOR_ART_BOUNDARY.md
+          if-no-files-found: error
+          retention-days: 90
