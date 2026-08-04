@@ -22,7 +22,9 @@ def main() -> None:
         raise RuntimeError(f"renderer source byte mismatch: {len(source)}")
     if digest != EXPECTED_SOURCE_SHA256:
         raise RuntimeError(f"renderer source SHA-256 mismatch: {digest}")
-    filename = str(root / "decoded_render_figures.py")
+    decoded_path = root / "decoded_render_figures.py"
+    decoded_path.write_bytes(source)
+    filename = str(decoded_path)
     namespace = {"__name__": "__main__", "__file__": filename}
     exec(compile(source, filename, "exec"), namespace)
 
