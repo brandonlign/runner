@@ -1,0 +1,139 @@
+name: SonotaCo drift inherited interface audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-hires-multiview-fusion-development
+    paths:
+      - .github/workflows/sonotaco_drift_interface_audit.yml
+      - sonotaco_drift_aligned_stage0/INTERFACE_AUDIT_PROTOCOL.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-drift-interface-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-drift-aligned-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode exact inherited sources
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          specs = {
+              'baseline': (
+                  [Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64')],
+                  '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50',
+              ),
+              'scorer': (
+                  [Path(f'mondrian_clique_development/source_parts_v2/part{i:02d}.b64') for i in range(4)],
+                  'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8',
+              ),
+              'adapter': (
+                  [Path('sonotaco_mondrian_development/source_parts/part00.b64')],
+                  '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518',
+              ),
+          }
+          summaries = {}
+          gates = {}
+          for name, (paths, expected) in specs.items():
+              if not all(path.is_file() for path in paths):
+                  raise RuntimeError(f'missing {name} source part')
+              encoded = ''.join(''.join(path.read_text(encoding='ascii').split()) for path in paths)
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              digest = hashlib.sha256(source).hexdigest()
+              gates[f'exact_{name}_hash'] = digest == expected
+              if digest != expected:
+                  raise RuntimeError(f'{name} source mismatch: {digest}')
+              decoded = source.decode('utf-8')
+              compile(decoded, f'frozen_{name}.py', 'exec')
+              tree = ast.parse(decoded, filename=f'frozen_{name}.py')
+              definitions = []
+              constants = {}
+              dataclasses = {}
+              for node in tree.body:
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                      definitions.append({
+                          'kind': type(node).__name__,
+                          'name': node.name,
+                          'lineno': node.lineno,
+                          'end_lineno': node.end_lineno,
+                          'args': [arg.arg for arg in node.args.args] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else [],
+                      })
+                      if isinstance(node, ast.ClassDef):
+                          fields = []
+                          for child in node.body:
+                              if isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
+                                  fields.append(child.target.id)
+                          if fields:
+                              dataclasses[node.name] = fields
+                  elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                      try:
+                          constants[node.targets[0].id] = ast.literal_eval(node.value)
+                      except Exception:
+                          pass
+              Path(f'output/frozen_{name}.py').write_text(decoded, encoding='utf-8')
+              summaries[name] = {
+                  'sha256': digest,
+                  'bytes': len(source),
+                  'definitions': definitions,
+                  'constants': constants,
+                  'annotated_class_fields': dataclasses,
+              }
+              gates[f'{name}_compiles_and_parses'] = True
+
+          gates['no_data_or_score_execution'] = True
+          verdict = 'PASS_SONOTACO_DRIFT_INTERFACE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_DRIFT_INTERFACE_AUDIT'
+          result = {'sources': summaries, 'gates': gates, 'verdict': verdict}
+          Path('output/interface_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = ['# SonotaCo drift inherited interface audit', '', f'Verdict: **{verdict}**', '']
+          for name, summary in summaries.items():
+              lines.append(f"- {name}: {summary['bytes']} bytes, `{summary['sha256']}`")
+          lines.extend(['', '## Gates', ''])
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_DRIFT_INTERFACE_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('frozen interface audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_drift_aligned_stage0/INTERFACE_AUDIT_PROTOCOL.md \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload inherited interface audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-drift-interface-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
