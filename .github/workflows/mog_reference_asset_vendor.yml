@@ -80,8 +80,8 @@ jobs:
             git push origin "HEAD:${{ github.head_ref }}"
           fi
 
-  cams-v2-development-label-audit:
-    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/cams-v2-development-label-audit'
+  cams-v2-development-label-audit-v2:
+    if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/cams-v2-development-label-audit-v2'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -93,12 +93,15 @@ jobs:
           python-version: '3.12'
       - name: Install frozen dependency
         run: python -m pip install 'requests==2.32.5'
-      - name: Compile frozen label audit
-        run: python -m py_compile cams_v2_development_label_audit/run_label_audit.py
-      - name: Run aggregate-only development-label gate
+      - name: Compile frozen label parser v2
+        run: |
+          python -m py_compile \
+            cams_v2_development_label_audit/run_label_audit.py \
+            cams_v2_development_label_audit/run_label_audit_v2.py
+      - name: Run aggregate-only development-label parser v2
         run: |
           mkdir -p output
-          python cams_v2_development_label_audit/run_label_audit.py --output output
+          python cams_v2_development_label_audit/run_label_audit_v2.py --output output
           cat output/RESULT.md
       - name: Verify authoritative result
         run: |
@@ -106,6 +109,7 @@ jobs:
           import json
           from pathlib import Path
           result=json.loads(Path('output/historical_camsv2_development_label_audit.json').read_text())
+          assert result['parser_version']=='v2'
           assert result['verdict']=='PASS_HISTORICAL_CAMSV2_DEVELOPMENT_LABEL_INTERFACE'
           assert all(result['gates'].values())
           assert result['partition']['reserved_later_california_records_parsed'] is False
@@ -122,14 +126,19 @@ jobs:
         if: always()
         run: |
           mkdir -p output
-          sha256sum cams_v2_development_label_audit/PROTOCOL.md cams_v2_development_label_audit/run_label_audit.py > output/source_sha256.txt
+          sha256sum \
+            cams_v2_development_label_audit/PROTOCOL.md \
+            cams_v2_development_label_audit/PROTOCOL_V2.md \
+            cams_v2_development_label_audit/run_label_audit.py \
+            cams_v2_development_label_audit/run_label_audit_v2.py \
+            > output/source_sha256.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
       - name: Upload frozen evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: historical-cams-v2-development-label-audit
+          name: historical-cams-v2-development-label-audit-v2
           path: output
           if-no-files-found: error
           retention-days: 90
