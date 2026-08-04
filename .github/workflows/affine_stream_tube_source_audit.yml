@@ -19,15 +19,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/affine-stream-tube-preflight
+          fetch-depth: 1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Decode exact frozen candidate source
+      - name: Decode exact frozen candidate and prior adapter sources
         run: |
+          set -euo pipefail
           mkdir -p output
+          git fetch --depth=1 origin agent/sonotaco-2025-mondrian-development
+          git show FETCH_HEAD:sonotaco_mondrian_development/source_parts/part00.b64 > /tmp/sonotaco_adapter.b64
+          echo '6432ff4e016dd7521a5e9bb048406c6a2fd67a3d65ad3a06a4c284c6c427a5c9  /tmp/sonotaco_adapter.b64' | sha256sum -c -
           python - <<'PY'
           import base64, gzip, hashlib
           from pathlib import Path
+
           parts=sorted(Path('affine_stream_tube_preflight/source_parts').glob('part*.b64'))
           source=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
           digest=hashlib.sha256(source).hexdigest()
@@ -35,9 +41,18 @@ jobs:
               raise RuntimeError(digest)
           Path('output/run_affine_tube_preflight.py').write_bytes(source)
           Path('output/source_sha256.txt').write_text(digest+'\n')
+
+          encoded=''.join(Path('/tmp/sonotaco_adapter.b64').read_text().split())
+          adapter=gzip.decompress(base64.b64decode(encoded,validate=True))
+          adapter_digest=hashlib.sha256(adapter).hexdigest()
+          if adapter_digest != '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518':
+              raise RuntimeError(adapter_digest)
+          Path('output/run_sonotaco_mondrian_development.py').write_bytes(adapter)
+          Path('output/adapter_source_sha256.txt').write_text(adapter_digest+'\n')
           print(digest,len(source))
+          print(adapter_digest,len(adapter))
           PY
-          python -m py_compile output/run_affine_tube_preflight.py
+          python -m py_compile output/run_affine_tube_preflight.py output/run_sonotaco_mondrian_development.py
       - uses: actions/upload-artifact@v4
         with:
           name: affine-stream-tube-source-audit
