@@ -85,11 +85,13 @@ jobs:
           import hashlib
           from pathlib import Path
 
-          encoded = ''.join(
-              Path('mondrian_clique_development/run_mondrian_clique_development.py.gz.b64')
-              .read_text()
-              .split()
-          )
+          parts = sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          if len(encoded) != 9000:
+              raise RuntimeError(f'unexpected encoded source length: {len(encoded)}')
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           source_hash = hashlib.sha256(source).hexdigest()
           if source_hash != '${{ env.SOURCE_SHA256 }}':
@@ -103,6 +105,7 @@ jobs:
           baseline_hash = hashlib.sha256(baseline_source).hexdigest()
           if baseline_hash != '${{ env.BASELINE_SOURCE_SHA256 }}':
               raise RuntimeError(f'baseline source mismatch: {baseline_hash}')
+          print('encoded source characters:', len(encoded))
           print('source sha256:', source_hash)
           print('baseline source sha256:', baseline_hash)
           PY
@@ -145,7 +148,10 @@ jobs:
         run: |
           sha256sum \
             mondrian_clique_development/PROTOCOL.md \
-            mondrian_clique_development/run_mondrian_clique_development.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
             input/selected_events.jsonl.gz \
             input/audit.json \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
