@@ -5,7 +5,7 @@ import test from "node:test";
 const source = readFileSync("src/components/methodology/ideal-reference-face-verified.tsx", "utf8");
 const geometry = readFileSync("src/lib/analysis/reference-face-geometry.ts", "utf8");
 const clay = readFileSync("src/components/methodology/canonical-clay-face.tsx", "utf8");
-const mesh = readFileSync("src/components/methodology/gnm-head-mesh.ts", "utf8");
+const renders = readFileSync("src/components/methodology/gnm-clay-renders.ts", "utf8");
 
 test("the renderer reads the canonical scoring landmarks", () => {
   assert.match(source, /referenceFrontLandmarks/);
@@ -39,29 +39,24 @@ test("the profile is the GNM-regularized solved coordinate set", () => {
   assert.match(geometry, /const jawWidth = faceWidth \/ 1\.25/);
 });
 
-test("the clay renderer uses the licensed full-head GNM surface", () => {
-  assert.match(mesh, /Google GNM v3\.0 head template/);
-  assert.match(mesh, /license: "Apache-2\.0"/);
-  assert.match(mesh, /vertexCount: GNM_POSITION_DATA\.vertexCount/);
-  assert.match(mesh, /triangleCount: 1775/);
-  assert.match(clay, /decodeGnmHeadMesh/);
-  assert.match(clay, /GNM surface vertices never enter the score/);
+test("the clay renderer uses deterministic licensed GNM snapshots", () => {
+  assert.match(renders, /Google GNM v3\.0, Apache-2\.0/);
+  assert.match(renders, /export const GNM_FRONT_WEBP = "data:image\/webp;base64,/);
+  assert.match(renders, /export const GNM_PROFILE_WEBP = "data:image\/webp;base64,/);
+  assert.match(clay, /GNM_FRONT_WEBP/);
+  assert.match(clay, /GNM_PROFILE_WEBP/);
+  assert.match(clay, /illustrative only/);
+  assert.match(clay, /scoring continues to use the separate canonical/);
   assert.doesNotMatch(clay, /calculateAnalysisReport/);
 });
 
-test("the reduced GNM triangle stream is reconstructed without Base64 boundary corruption", () => {
-  assert.match(mesh, /triangleChunksBase64/);
-  assert.match(mesh, /concatenateBytes/);
-  assert.match(mesh, /encodedIndices\.subarray\(0, expectedIndexCount\)/);
-  assert.match(mesh, /value >= GNM_HEAD_MESH\.vertexCount/);
-  assert.doesNotMatch(mesh, /GNM_TRIANGLES_1 \+ GNM_TRIANGLES_2/);
-});
-
-test("realistic mode culls hidden faces and removes legacy anatomy layers", () => {
-  assert.match(clay, /view === "front" \? value\.z < 0 : value\.x > 0/);
-  assert.match(clay, /<rect x="-100" y="-100" width="800" height="820" fill="var\(--paper\)" \/>/);
+test("realistic mode uses neutral snapshots and removes legacy anatomy layers", () => {
+  assert.match(clay, /<image href=\{href\}/);
+  assert.match(clay, /preserveAspectRatio="xMidYMid meet"/);
   assert.doesNotMatch(source, /<path d=\{shoulders\} fill=/);
   assert.doesNotMatch(source, /M 112 620 C 170 574/);
+  assert.doesNotMatch(source, /verifiedFrontHair/);
+  assert.doesNotMatch(source, /verifiedProfileClay/);
 });
 
 test("unscored measurements remain distinguished from target bands", () => {
