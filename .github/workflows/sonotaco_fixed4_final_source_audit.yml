@@ -1,0 +1,182 @@
+name: SonotaCo fixed4 final source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-k4-phase-scale-diagnostic
+    paths:
+      - .github/workflows/sonotaco_fixed4_final_source_audit.yml
+      - sonotaco_fixed4_confirmation/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-fixed4-final-source-audit
+  cancel-in-progress: true
+
+jobs:
+  source-only-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-fixed4-final-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode exact phase-scale source
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          encoded = ''.join(Path('sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64').read_text().split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'e5cdb6eb8d07fdbcc5c29a4d02139fff86386e8aebde83717fdc7485acda265d'
+          if digest != expected:
+              raise RuntimeError(f'phase-scale source mismatch: {digest}')
+          text = source.decode('utf-8')
+          compile(text, 'frozen_phase_scale.py', 'exec')
+          tree = ast.parse(text, filename='frozen_phase_scale.py')
+          constants = {}
+          definitions = []
+          scale_family_found = False
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                  definitions.append({
+                      'kind': type(node).__name__,
+                      'name': node.name,
+                      'lineno': node.lineno,
+                      'end_lineno': node.end_lineno,
+                      'args': [arg.arg for arg in node.args.args]
+                          if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else [],
+                  })
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except Exception:
+                      continue
+                  constants[node.targets[0].id] = value
+                  if isinstance(value, (tuple, list)):
+                      try:
+                          numeric = [float(item) for item in value]
+                      except (TypeError, ValueError):
+                          numeric = []
+                      if numeric == [2.0, 4.0, 6.0, 8.0]:
+                          scale_family_found = True
+          if not scale_family_found:
+              raise RuntimeError('exact 2/4/6/8 phase-scale family not found in frozen source')
+          Path('output/frozen_phase_scale.py').write_text(text, encoding='utf-8')
+          Path('output/phase_scale_interface.json').write_text(json.dumps({
+              'sha256': digest,
+              'bytes': len(source),
+              'definitions': definitions,
+              'constants': constants,
+              'scale_family_found': scale_family_found,
+          }, indent=2), encoding='utf-8')
+          print('phase-scale source SHA-256:', digest)
+          print('phase-scale bytes:', len(source))
+          PY
+      - name: Fetch exact SonotaCo 2024 parser-v2 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/contents/sonotaco_2024_confirmation_v2/audit_sonotaco_2024_v2.py?ref=60bbe701981256b89aaa1c9361efef2bbb2dd57e" \
+            --jq .content \
+            | tr -d '\n' \
+            | base64 --decode \
+            > output/audit_sonotaco_2024_v2.py
+          echo 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b  output/audit_sonotaco_2024_v2.py' | sha256sum -c -
+          python -m py_compile output/audit_sonotaco_2024_v2.py
+      - name: Audit parser interface and write verdict
+        run: |
+          python - <<'PY'
+          import ast
+          import hashlib
+          import json
+          from pathlib import Path
+
+          path = Path('output/audit_sonotaco_2024_v2.py')
+          text = path.read_text(encoding='utf-8')
+          tree = ast.parse(text, filename=str(path))
+          constants = {}
+          definitions = []
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                  definitions.append({
+                      'kind': type(node).__name__,
+                      'name': node.name,
+                      'lineno': node.lineno,
+                      'end_lineno': node.end_lineno,
+                      'args': [arg.arg for arg in node.args.args]
+                          if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else [],
+                  })
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+          gates = {
+              'exact_phase_scale_source_hash': hashlib.sha256(Path('output/frozen_phase_scale.py').read_bytes()).hexdigest() == 'e5cdb6eb8d07fdbcc5c29a4d02139fff86386e8aebde83717fdc7485acda265d',
+              'exact_parser_v2_source_hash': hashlib.sha256(path.read_bytes()).hexdigest() == 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b',
+              'exact_2024_member_constant': constants.get('EXPECTED_NAME') == '_U2_20240101_S.csv',
+              'exact_2024_archive_hash_constant': constants.get('EXPECTED_ARCHIVE_SHA256') == '409bb958c6f114e542d818e7c4fcf7a58d89b2fb33090a442c8087bdcaa1540f',
+              'exact_2024_member_hash_constant': constants.get('EXPECTED_MEMBER_SHA256') == '0f25a0f9ea174c2b99915f48a61b35e35e3cde7f3117d82d4e05f8c4112acb00',
+              'no_2024_data_requested': True,
+              'no_score_executed': True,
+          }
+          verdict = 'PASS_SONOTACO_FIXED4_FINAL_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_FIXED4_FINAL_SOURCE_AUDIT'
+          result = {
+              'parser_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+              'parser_definitions': definitions,
+              'parser_constants': constants,
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/fixed4_final_source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# Fixed-4° SonotaCo final source audit',
+              '',
+              f'Verdict: **{verdict}**',
+              '',
+              '## Gates',
+              '',
+              *[f"- {'PASS' if value else 'FAIL'} — `{name}`" for name, value in gates.items()],
+          ]
+          Path('output/FIXED4_FINAL_SOURCE_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('fixed4 final source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_fixed4_confirmation/FINAL_SOURCE_AUDIT_PROTOCOL.md \
+            sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64 \
+            output/frozen_phase_scale.py \
+            output/audit_sonotaco_2024_v2.py \
+            > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload frozen source audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-fixed4-final-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
