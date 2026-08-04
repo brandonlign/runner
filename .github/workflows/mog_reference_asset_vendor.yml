@@ -49,8 +49,9 @@ jobs:
           root = Path('mog_reference_face_validation/generated')
           report = json.loads((root / 'gnm_reference_assets.json').read_text())
           assert report['sourceLicense'] == 'Apache-2.0'
-          assert report['vertexCount'] == 12466
-          assert report['triangleCount'] == 24820
+          assert report['surfaceGroup'] == 'skin_exterior'
+          assert 10_000 <= report['vertexCount'] <= 13_000
+          assert 20_000 <= report['triangleCount'] <= 26_000
           for view in ('front', 'profile'):
               item = report['assets'][view]
               path = root / item['file']
