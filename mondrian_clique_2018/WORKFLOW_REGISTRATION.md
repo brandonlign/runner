@@ -1,3 +1,5 @@
 # Workflow registration
 
-The passed PR #38 base workflow was extended only to recognize child confirmation pull requests. This file triggers the synchronized child event after that infrastructure change. It changes no 2018 data gate, score, calibration rule, seed, endpoint, or continuation decision.
+The passed PR #38 base workflow was extended at commit `25616077220f65a14b68e6f9bc68d58c4c520a7b` to recognize child confirmation pull requests and `mondrian_clique_2018/**` paths.
+
+This infrastructure-only synchronization triggers the child workflow after that base registration. It changes no 2018 data gate, source, score, calibration rule, seed, endpoint, scientific threshold, or continuation decision.
