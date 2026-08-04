@@ -1,0 +1,170 @@
+name: SonotaCo 2024 fixed4 confirmation
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-fixed4-final-source-audit
+    paths:
+      - .github/workflows/sonotaco_2024_fixed4_confirmation.yml
+      - sonotaco_fixed4_confirmation/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-2024-fixed4-confirmation
+  cancel-in-progress: true
+
+jobs:
+  one-shot-confirmation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2024-fixed4-confirmation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Decode and verify complete frozen confirmation source
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          echo 'c558141ce984f3b9d5ee5eecf7e80d3df54ce7ac0e0ac1e46ca5d84a7b7017d2  sonotaco_fixed4_confirmation/source_parts/part00.b64' | sha256sum -c -
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          encoded = ''.join(Path('sonotaco_fixed4_confirmation/source_parts/part00.b64').read_text().split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '94081bcc564170b7273704f94d098fd8bb2d5b0e63e53d95117b48415f1031e7'
+          if digest != expected:
+              raise RuntimeError(f'confirmation source mismatch: {digest}')
+          Path('/tmp/run_sonotaco_2024_fixed4_confirmation.py').write_bytes(source)
+          print('confirmation source bytes:', len(source))
+          print('confirmation source SHA-256:', digest)
+          PY
+          python -m py_compile /tmp/run_sonotaco_2024_fixed4_confirmation.py
+      - name: Fetch and verify exact structural parser source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/contents/sonotaco_2024_confirmation_v2/audit_sonotaco_2024_v2.py?ref=60bbe701981256b89aaa1c9361efef2bbb2dd57e" \
+            --jq .content \
+            | tr -d '\n' \
+            | base64 --decode \
+            > input/audit_sonotaco_2024_v2.py
+          echo 'd3f9c99bb64b6458a8637bc308bc84ba9d00d83258fa1383a1d73a0865dd072b  input/audit_sonotaco_2024_v2.py' | sha256sum -c -
+          python -m py_compile input/audit_sonotaco_2024_v2.py
+      - name: Verify inherited frozen sources before archive access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          checks = []
+          baseline_encoded = ''.join(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64').read_text().split())
+          checks.append(('baseline', gzip.decompress(base64.b64decode(baseline_encoded, validate=True)), '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50'))
+          scorer_parts = [Path(f'mondrian_clique_development/source_parts_v2/part{i:02d}.b64') for i in range(4)]
+          scorer_encoded = ''.join(''.join(path.read_text().split()) for path in scorer_parts)
+          checks.append(('scorer', gzip.decompress(base64.b64decode(scorer_encoded, validate=True)), 'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8'))
+          phase_encoded = ''.join(Path('sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64').read_text().split())
+          checks.append(('phase-scale', gzip.decompress(base64.b64decode(phase_encoded, validate=True)), 'e5cdb6eb8d07fdbcc5c29a4d02139fff86386e8aebde83717fdc7485acda265d'))
+          for name, source, expected in checks:
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != expected:
+                  raise RuntimeError(f'{name} source mismatch: {digest}')
+              compile(source, f'frozen_{name}.py', 'exec')
+              print(name, len(source), digest)
+          PY
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+      - name: Download exact untouched SonotaCo 2024 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/024a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/024a.zip
+          echo '409bb958c6f114e542d818e7c4fcf7a58d89b2fb33090a442c8087bdcaa1540f  input/024a.zip' | sha256sum -c -
+      - name: Execute frozen one-shot confirmation
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2024_fixed4_confirmation.py \
+            --archive input/024a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --phase-source-parts sonotaco_k4_phase_scale_diagnostic/source_parts \
+            --parser-v2-source input/audit_sonotaco_2024_v2.py \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2024_FIXED4_CONFIRMATION.md
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_fixed4_confirmation/PROTOCOL.md \
+            sonotaco_fixed4_confirmation/source_parts/part00.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64 \
+            input/audit_sonotaco_2024_v2.py \
+            input/audit.json input/024a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload one-shot confirmation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2024-fixed4-confirmation
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce every frozen confirmation gate
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/sonotaco_2024_fixed4_confirmation.json').read_text())
+          print(json.dumps({
+              'counts': result['counts'],
+              'candidate_weak_auc': result['candidate_weak_auc'],
+              'fixed_comparator_weak_auc': result['fixed_comparator_weak_auc'],
+              'false_positive': result['false_positive'],
+              'worst_reporting_sector_0.05': result['worst_reporting_sector_0.05'],
+              'recall': result['recall'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen SonotaCo 2024 fixed4 confirmation gate failed')
+          PY
