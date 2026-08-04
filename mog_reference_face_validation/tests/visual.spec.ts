@@ -7,7 +7,7 @@ test.beforeAll(async () => {
   await mkdir(output, { recursive: true });
 });
 
-test("front and side structure and realistic views render naturally", async ({ page }) => {
+test("front and side structure and clay views render naturally", async ({ page }) => {
   await page.goto("/");
   const section = page.locator("#ideal-reference");
   await expect(section).toBeVisible();
@@ -15,7 +15,7 @@ test("front and side structure and realistic views render naturally", async ({ p
   await expect(section.locator("svg")).toHaveAttribute("aria-label", "Front target face in structure mode");
   await section.screenshot({ path: `${output}/front-structure.png` });
 
-  await page.getByRole("button", { name: "Realistic" }).click();
+  await page.getByRole("button", { name: "Clay" }).click();
   await expect(section.locator("svg")).toHaveAttribute("aria-label", "Front target face in rendered mode");
   await section.screenshot({ path: `${output}/front-realistic.png` });
 
