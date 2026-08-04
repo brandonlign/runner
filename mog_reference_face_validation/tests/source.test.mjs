@@ -57,6 +57,13 @@ test("the reduced GNM triangle stream is reconstructed without Base64 boundary c
   assert.doesNotMatch(mesh, /GNM_TRIANGLES_1 \+ GNM_TRIANGLES_2/);
 });
 
+test("realistic mode culls hidden faces and removes legacy anatomy layers", () => {
+  assert.match(clay, /view === "front" \? value\.z < 0 : value\.x > 0/);
+  assert.match(clay, /<rect x="-100" y="-100" width="800" height="820" fill="var\(--paper\)" \/>/);
+  assert.doesNotMatch(source, /<path d=\{shoulders\} fill=/);
+  assert.doesNotMatch(source, /M 112 620 C 170 574/);
+});
+
 test("unscored measurements remain distinguished from target bands", () => {
   assert.match(source, /Metrics without a defensible comparison convention remain raw measurements/);
 });
