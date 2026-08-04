@@ -29,11 +29,10 @@ Required hashes:
 
 - decoded worst-family source SHA-256: `4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac`;
 - exact prior local-contrast candidate SHA-256: `b7589d8d140a37596f19d4993be1e2fdd99a18b8eaa087a02e3c4ce585000071`;
-- calibration derivation script SHA-256: `cd4a0286a0dafc5bc9616fdb35d8e31d492a5b04fe5e25ae1008e301670b0f52`;
 - derived tolerance-calibrated source SHA-256: `a97f207760234313b7949616fdbd506586da7b104a35a983104fdf7fb110cbfe`;
 - exact public observed-subset MD5: `f57a2ac71832ceca9227441c00b8cd58`.
 
-The derivation preserves every histogram, kernel, Poisson evidence calculation, spatial high-pass, recurrence order, null generator, injection, comparator, evaluation function, and scientific gate. It also fixes only the already documented stale Markdown reporter keys; that reporting repair occurs after authoritative JSON construction and cannot affect any score or verdict.
+The complete derived source hash is the authoritative freeze. The derivation preserves every histogram, kernel, Poisson evidence calculation, spatial high-pass, recurrence order, null generator, injection, comparator, evaluation function, and scientific gate. It also fixes only the already documented stale Markdown reporter keys; that reporting repair occurs after authoritative JSON construction and cannot affect any score or verdict.
 
 ## Frozen tolerance calibration
 
