@@ -1,0 +1,244 @@
+name: Phase-adaptive conformal July 2026
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/phase_adaptive_conformal_july2026.yml
+      - phase_adaptive_conformal_july2026/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-adaptive-conformal-july2026
+  cancel-in-progress: true
+
+jobs:
+  frozen-july-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase-adaptive-conformal-july2026
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Derive exact July parser from PR14
+        run: |
+          test "$(git hash-object real_shower_meta_stage0/audit_real_shower_data.py)" = "4a029051230f7c6e99b09e911f8a9e5228a58783"
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('real_shower_meta_stage0/audit_real_shower_data.py').read_text()
+          replacements = {
+              'OUT_DIR = ROOT / "results" / "data_audit"': 'OUT_DIR = Path("phase_adaptive_conformal_july2026/results/data")',
+              'YEARS = (2019, 2021, 2023, 2025)': 'YEARS = (2026,)',
+              'MONTHS = tuple(range(1, 13))': 'MONTHS = (7,)',
+              'profile["quality_events"] >= 200\n            and profile["represented_years"] >= 3\n            and profile["years_ge_20"] >= 3': 'profile["quality_events"] >= 12\n            and profile["represented_years"] == 1',
+              'profile["strong"] = bool(profile["quality_events"] >= 1000 and profile["represented_years"] == 4)': 'profile["strong"] = bool(profile["quality_events"] >= 50 and profile["represented_years"] == 1)',
+              '"eligible_showers_at_least_30": len(eligible) >= 30': '"eligible_showers_at_least_20": len(eligible) >= 20',
+              '"strong_showers_at_least_12": len(strong) >= 12': '"strong_showers_at_least_8": len(strong) >= 8',
+              '"eligible_complex_units_at_least_20": len(complex_members) >= 20': '"eligible_complex_units_at_least_15": len(complex_members) >= 15',
+              '"multi_shower_complex_units_at_least_6": len(multi_shower_complexes) >= 6': '"multi_shower_complex_units_at_least_2": len(multi_shower_complexes) >= 2',
+              '"quality_sporadics_at_least_200000": total_sporadic_quality >= 200_000': '"quality_sporadics_at_least_35000": total_sporadic_quality >= 35_000',
+              'GhostStream was excluded. Data came from 48 official GMN monthly trajectory summaries and the IAU MDC shower file.': 'Untouched confirmation data came only from the official July 2026 GMN monthly trajectory summary and the IAU MDC shower file.',
+          }
+          for old, new in replacements.items():
+              count = source.count(old)
+              if count != 1:
+                  raise RuntimeError(f'Expected one source occurrence, found {count}: {old!r}')
+              source = source.replace(old, new)
+          Path('/tmp/audit_july_2026.py').write_text(source)
+          PY
+          python -m py_compile /tmp/audit_july_2026.py
+      - name: Download and audit untouched July 2026
+        run: python /tmp/audit_july_2026.py
+      - name: Add frozen selected-block gate
+        if: always()
+        run: |
+          python - <<'PY'
+          import gzip, json
+          from collections import Counter
+          from pathlib import Path
+          out = Path('phase_adaptive_conformal_july2026/results/data')
+          audit_path = out / 'audit.json'
+          if not audit_path.exists():
+              raise SystemExit('audit.json was not produced')
+          audit = json.loads(audit_path.read_text())
+          counts = Counter()
+          with gzip.open(out / 'selected_events.jsonl.gz', 'rt') as handle:
+              for line in handle:
+                  event = json.loads(line)
+                  if int(event['iau']) != -1:
+                      continue
+                  sol = float(event['sol']) % 360.0
+                  if 20.0 <= sol <= 55.0:
+                      continue
+                  counts[int(sol // 10.0)] += 1
+          supported = sorted(block for block, count in counts.items() if count >= 128)
+          audit['supported_selected_blocks'] = supported
+          audit['gates']['supported_selected_blocks_at_least_3'] = len(supported) >= 3
+          audit['verdict'] = 'PROCEED_TO_PHASE_ADAPTIVE_JULY' if all(audit['gates'].values()) else 'KILL_PHASE_ADAPTIVE_JULY_DATA'
+          audit_path.write_text(json.dumps(audit, indent=2))
+          print(json.dumps({'eligible_count': audit['eligible_count'], 'strong_count': audit['strong_count'], 'total_quality_sporadics': audit['total_quality_sporadics'], 'supported_selected_blocks': supported, 'gates': audit['gates'], 'verdict': audit['verdict']}, indent=2))
+          PY
+      - name: Record data provenance
+        if: always()
+        run: |
+          mkdir -p phase_adaptive_conformal_july2026/results/data
+          git hash-object real_shower_meta_stage0/audit_real_shower_data.py > phase_adaptive_conformal_july2026/results/data/base_parser_blob_sha.txt
+          sha256sum phase_adaptive_conformal_july2026/PROTOCOL.md phase_adaptive_conformal_july2026/DEVELOPMENT_RECORD.md > phase_adaptive_conformal_july2026/results/data/protocol_sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-adaptive-july-data
+          path: phase_adaptive_conformal_july2026/results/data
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen July data gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('phase_adaptive_conformal_july2026/results/data/audit.json').read_text())
+          if audit['verdict'] != 'PROCEED_TO_PHASE_ADAPTIVE_JULY' or not all(audit['gates'].values()):
+              raise SystemExit('Frozen July data gate failed')
+          PY
+
+  label-blind-null:
+    needs: frozen-july-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase-adaptive-conformal-july2026
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase-adaptive-july-data
+          path: input
+      - name: Decode and verify frozen source
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts = sorted(Path('phase_adaptive_conformal_july2026/source_parts').glob('part*.b64'))
+          if [path.name for path in parts] != ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']:
+              raise RuntimeError('Unexpected source parts')
+          encoded = ''.join(''.join(path.read_text().split()) for path in parts)
+          raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          expected = '11f7590675cca5812566a39fa11e07de7a905c0a468c45ef184246cd65c9eec7'
+          if digest != expected:
+              raise RuntimeError(f'Source mismatch: {digest}')
+          Path('/tmp/run_phase_adaptive_july.py').write_bytes(raw)
+          print('source bytes:', len(raw))
+          print('source sha256:', digest)
+          PY
+          python -m py_compile /tmp/run_phase_adaptive_july.py
+      - name: Run label-blind July null audit
+        run: |
+          mkdir -p output
+          python /tmp/run_phase_adaptive_july.py null \
+            --events input/selected_events.jsonl.gz \
+            --audit input/audit.json \
+            --output output
+          cat output/PHASE_ADAPTIVE_NULL_REPORT.md
+      - name: Record null provenance
+        if: always()
+        run: |
+          sha256sum /tmp/run_phase_adaptive_july.py phase_adaptive_conformal_july2026/PROTOCOL.md input/selected_events.jsonl.gz input/audit.json > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-adaptive-july-null
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen null gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/phase_adaptive_null.json').read_text())
+          if result['verdict'] != 'PROCEED_TO_JULY_POWER' or not all(result['gates'].values()):
+              raise SystemExit('Frozen July null gate failed')
+          PY
+
+  untouched-power:
+    needs: label-blind-null
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/phase-adaptive-conformal-july2026
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase-adaptive-july-data
+          path: input/data
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase-adaptive-july-null
+          path: input/null
+      - name: Decode and verify frozen source
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts = sorted(Path('phase_adaptive_conformal_july2026/source_parts').glob('part*.b64'))
+          raw = gzip.decompress(base64.b64decode(''.join(''.join(path.read_text().split()) for path in parts), validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest != '11f7590675cca5812566a39fa11e07de7a905c0a468c45ef184246cd65c9eec7':
+              raise RuntimeError(f'Source mismatch: {digest}')
+          Path('/tmp/run_phase_adaptive_july.py').write_bytes(raw)
+          PY
+          python -m py_compile /tmp/run_phase_adaptive_july.py
+      - name: Run untouched July power audit
+        run: |
+          mkdir -p output
+          python /tmp/run_phase_adaptive_july.py power \
+            --events input/data/selected_events.jsonl.gz \
+            --audit input/data/audit.json \
+            --null-result input/null/phase_adaptive_null.json \
+            --output output
+          cat output/PHASE_ADAPTIVE_POWER_REPORT.md
+      - name: Record power provenance
+        if: always()
+        run: |
+          sha256sum /tmp/run_phase_adaptive_july.py phase_adaptive_conformal_july2026/PROTOCOL.md phase_adaptive_conformal_july2026/DEVELOPMENT_RECORD.md input/data/selected_events.jsonl.gz input/data/audit.json input/null/phase_adaptive_null.json > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-adaptive-july-power
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce frozen power gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/phase_adaptive_power.json').read_text())
+          if result['verdict'] != 'PROCEED_TO_EXTERNAL_CONTROL_AND_CATALOG_ERROR' or not all(result['gates'].values()):
+              raise SystemExit('Frozen July power gate failed')
+          PY
