@@ -1,0 +1,82 @@
+name: SonotaCo 2024 parser-v2 feasibility
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2024-confirmation-feasibility
+    paths:
+      - .github/workflows/sonotaco_2024_parser_v2_feasibility.yml
+      - sonotaco_2024_confirmation/PARSER_V2_PROTOCOL.md
+      - sonotaco_2024_confirmation/audit_sonotaco_2024_v2.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-2024-parser-v2-feasibility
+  cancel-in-progress: true
+
+jobs:
+  data-only-feasibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2024-parser-v2-feasibility
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile frozen parser before download
+        run: |
+          set -euo pipefail
+          python -m py_compile sonotaco_2024_confirmation/audit_sonotaco_2024_v2.py
+          sha256sum \
+            sonotaco_2024_confirmation/PARSER_V2_PROTOCOL.md \
+            sonotaco_2024_confirmation/audit_sonotaco_2024_v2.py
+      - name: Download exact official 2024 archive
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail --location --retry 3 \
+            --output input/024a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/024a.zip
+          test -s input/024a.zip
+      - name: Run frozen parser-v2 data-only audit
+        run: |
+          set -euo pipefail
+          python sonotaco_2024_confirmation/audit_sonotaco_2024_v2.py \
+            --archive input/024a.zip \
+            --output output
+          cat output/SONOTACO_2024_PARSER_V2.md
+      - name: Enforce frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path('output/sonotaco_2024_parser_v2.json').read_text())
+          print(json.dumps({'gates':result['gates'],'verdict':result['verdict']},indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen SonotaCo 2024 parser-v2 gate failed')
+          if result['verdict'] != 'PASS_SONOTACO_2024_CONFIRMATION_PARSER_V2':
+              raise SystemExit(f"Unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_2024_confirmation/PARSER_V2_PROTOCOL.md \
+            sonotaco_2024_confirmation/audit_sonotaco_2024_v2.py \
+            input/024a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload frozen feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2024-parser-v2-feasibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90
