@@ -1,0 +1,165 @@
+name: SonotaCo 2023 replacement source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2023-header-parser-audit
+    paths:
+      - .github/workflows/sonotaco_2023_replacement_source_audit.yml
+      - sonotaco_2023_replacement_source_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-2023-replacement-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2023-replacement-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode, verify, compile, and audit frozen source
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          parts = sorted(Path('sonotaco_2023_replacement_source_audit/source_parts').glob('part*.b64'))
+          expected_parts = [f'part{i:02d}.b64' for i in range(12)]
+          if [part.name for part in parts] != expected_parts:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          if len(encoded) != 11228:
+              raise RuntimeError(f'encoded length mismatch: {len(encoded)}')
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          source_digest = hashlib.sha256(source).hexdigest()
+          expected_source = '3030eb185d8d8fa6597eff20ada9a0194d4de00adc81077bb031b0c25400bff9'
+          if source_digest != expected_source:
+              raise RuntimeError(f'candidate source mismatch: {source_digest}')
+          source_text = source.decode('utf-8')
+          source_tree = ast.parse(source_text)
+
+          final_encoded = ''.join(Path('sonotaco_fixed4_final_development/candidate.py.gz.b64').read_text().split())
+          final_source = gzip.decompress(base64.b64decode(final_encoded, validate=True))
+          final_digest = hashlib.sha256(final_source).hexdigest()
+          expected_final = '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301'
+          if final_digest != expected_final:
+              raise RuntimeError(f'final source mismatch: {final_digest}')
+          final_tree = ast.parse(final_source.decode('utf-8'))
+
+          def top_functions(tree):
+              return {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+
+          def top_constants(tree):
+              result = {}
+              for node in tree.body:
+                  if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                      try:
+                          result[node.targets[0].id] = ast.literal_eval(node.value)
+                      except Exception:
+                          pass
+              return result
+
+          candidate_functions = top_functions(source_tree)
+          final_functions = top_functions(final_tree)
+          constants = top_constants(source_tree)
+          exact_helpers = all(
+              ast.dump(candidate_functions[name], include_attributes=False)
+              == ast.dump(final_functions[name], include_attributes=False)
+              for name in ('pairwise_scaled_distance', 'clique_score_and_indices')
+          )
+
+          blind_pos = source_text.index('if 20.0 <= sol <= 55.0:')
+          label_pos = source_text.index('token = effective_row[index["shower"]]')
+          required_gate_literals = (
+              'pooled_fpr_005_le_006',
+              'pooled_fpr_001_le_002',
+              'worst_reporting_sector_fpr_005_le_012',
+              'candidate_weak_auc_ge_075',
+              'candidate_auc_within_003_of_strongest_comparator',
+              'four_of_five_folds_auc_ge_070',
+              'no_fold_auc_below_065',
+              'recall_005_k4_ge_015',
+              'recall_001_k4_ge_005',
+              'recall_005_k6_ge_030',
+              'recall_001_k6_ge_015',
+              'recall_005_k8_ge_045',
+              'recall_001_k8_ge_025',
+              'recall_monotonic_005',
+              'recall_monotonic_001',
+          )
+          gates = {
+              'candidate_source_sha256_exact': source_digest == expected_source,
+              'final_model_source_sha256_exact': final_digest == expected_final,
+              'fixed4_helpers_ast_identical': exact_helpers,
+              'year_exact_2023': constants.get('YEAR') == 2023,
+              'corpus_exact': constants.get('CORPUS') == 'sonotaco-2023-native',
+              'archive_hash_exact': constants.get('ARCHIVE_SHA256') == '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430',
+              'member_exact': constants.get('MEMBER') == '023a/_U2_20230101_S.csv',
+              'fixed_scale_exactly_4': constants.get('FIXED_SCALE') == 4.0,
+              'blind_exclusion_before_label_access': blind_pos < label_pos,
+              'inherited_seed_prefixes_exact': all(prefix in source_text for prefix in (
+                  'mondrian-development-calibration',
+                  'mondrian-development-negative',
+                  'mondrian-development-support',
+                  'mondrian-development-positive',
+              )),
+              'complete_scientific_gate_literals_present': all(name in source_text for name in required_gate_literals),
+              'calibration_and_test_counts_inherited': 'scorer.CALIBRATION_NEGATIVES_PER_BIN' in source_text and 'scorer.TEST_NEGATIVES_PER_BIN' in source_text,
+              'no_scale_sweep_or_postfreeze_variant': all(term not in source_text for term in (
+                  'SOLAR_SCALES', 'phase_span', 'selector', 'fusion', 'radiant_drift',
+              )),
+              'reserved_panel_resource_absent': '024a' not in source_text and '2024' not in source_text,
+              'ghoststream_absent': 'GhostStream' not in source_text and 'ghoststream' not in source_text,
+          }
+          verdict = 'PASS_SONOTACO_2023_REPLACEMENT_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_2023_REPLACEMENT_SOURCE_AUDIT'
+          Path('output/candidate_source.py').write_bytes(source)
+          Path('output/source_audit.json').write_text(json.dumps({
+              'candidate_source_sha256': source_digest,
+              'candidate_source_bytes': len(source),
+              'encoded_length': len(encoded),
+              'final_model_source_sha256': final_digest,
+              'constants': {key: constants.get(key) for key in ('YEAR','CORPUS','ARCHIVE_SHA256','MEMBER','FIXED_SCALE')},
+              'gates': gates,
+              'verdict': verdict,
+          }, indent=2), encoding='utf-8')
+          lines = ['# SonotaCo 2023 replacement source audit', '', f'Verdict: **{verdict}**', '']
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SOURCE_AUDIT_RESULT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen replacement source audit failed')
+          PY
+          python -m py_compile output/candidate_source.py
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_2023_replacement_source_audit/PROTOCOL.md \
+            sonotaco_2023_replacement_source_audit/source_parts/*.b64 \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            > output/source_files_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload source-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2023-replacement-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
