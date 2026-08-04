@@ -1,0 +1,53 @@
+name: Generate Mog GNM snapshots
+
+on:
+  push:
+    branches:
+      - agent/mog-reference-face-validation
+    paths:
+      - .github/workflows/mog_generate_gnm_snapshots.yml
+      - mog_reference_face_validation/scripts/generate_gnm_clay_snapshots.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mog-generate-gnm-snapshots
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mog-reference-face-validation
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Generate deterministic full-resolution clay snapshots
+        working-directory: mog_reference_face_validation
+        run: |
+          python -m pip install --disable-pip-version-check numpy pillow
+          python scripts/extract_gnm_head.py
+          python scripts/generate_gnm_clay_snapshots.py
+
+      - name: Commit generated snapshots
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mog_reference_face_validation/src/components/methodology/canonical-clay-face.tsx \
+                  mog_reference_face_validation/src/components/methodology/gnm-clay-renders.ts
+          if git diff --cached --quiet; then
+            echo 'GNM snapshots already current.'
+          else
+            git commit -m 'Render full-resolution GNM clay snapshots'
+            git pull --rebase origin agent/mog-reference-face-validation
+            git push origin HEAD:agent/mog-reference-face-validation
+          fi
