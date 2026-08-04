@@ -1,16 +1,16 @@
 # Four-event affine stream-tube scan: frozen development preflight
 
-Status: frozen before authoritative execution. This stage reads only the retired GMN development years 2019 and 2025 from the exact PR #14 artifact. It reads no 2020/2022/2024/2026 event, label, score, or endpoint.
+Status: frozen before authoritative scoring. This stage reads only the retired GMN development years 2019 and 2025 from the exact PR #14 artifact. It reads no 2020/2022/2024/2026 event, label, score, or endpoint.
 
 ## Scientific question
 
 Can a sparse meteor stream be detected more effectively as a narrow local one-dimensional trajectory in solar-longitude/radiant/speed space than as a compact four-event blob?
 
-This is distinct from the killed PR #7 StreamTube bank. PR #7 scanned a coarse global bank of fixed drifting templates. This candidate searches observed four-event subsets without a template grid, fits each subset's best local affine line, and calibrates the complete selection against the real same-corpus background.
+This is distinct from killed PR #7. PR #7 scanned a coarse global bank of fixed drifting templates. This candidate searches observed four-event subsets without a template grid, fits each subset's best local affine line, and calibrates the complete selection against real same-corpus background.
 
 ## GhostStream blindness
 
-The exact PR #14 loader removes solar longitude 20 degrees through 55 degrees before all reservoirs, windows, scores, folds, and endpoints. No GhostStream radiant, speed, orbit, member, event list, or detection score is used.
+Remove solar longitude 20 degrees through 55 degrees before all reservoirs, windows, scores, folds, and endpoints. No GhostStream radiant, speed, orbit, member, event list, or detection score is used.
 
 ## Frozen physical statistic
 
@@ -35,29 +35,41 @@ The window score is the negative minimum residual among all 128 anchored subsets
 
 - years: 2019 and 2025 only;
 - 128-event plus-or-minus 10-degree local windows;
-- globally anchored 10-degree same-corpus Mondrian calibration;
-- 64 calibration and 32 independent negative windows per supported bin;
-- one positive replicate per eligible shower and `k in {4,6,8,12}`;
-- at least 20 supported bins, 25 eligible showers, and five nonempty complex/parent folds;
+- year-specific globally anchored 10-degree same-corpus Mondrian calibration;
+- 64 calibration and 32 independent negative windows per supported year-bin;
+- one positive replicate per eligible shower-year and `k in {4,6,8,12}`;
+- at least 20 supported bins, both years represented, 25 eligible showers, and five nonempty complex/parent folds;
 - exact PR #14 episode/geometry source SHA-256 `7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50`;
 - exact PR #38 scorer source SHA-256 `f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8`;
-- candidate source SHA-256 `e82eef021326cb5b570521064a6c78001cc5d0cac53fdb2e1e966362f3d4c1bb`.
+- repaired candidate source SHA-256 `b49e0609d6163a8d114aca80e7738e643d9daab82521eb0d8dcefbb9b45ff05e`.
+
+## Execution-integrity repair
+
+The first runner attempt failed before constructing any calibration window or score because the harness called nonexistent convenience interfaces on the hash-verified PR #38 module. No data result was observed. The repaired harness changes only module wiring:
+
+- complex keys are read from the already supplied PR #14 audit and attached to the same labeled events;
+- the exact baseline module supplies episode construction, geometry, and folds;
+- the exact PR #38 module supplies Mondrian windows, positive-window construction, quartet/split comparators, and conservative empirical p-values;
+- calibration is indexed by the required year and 10-degree bin;
+- fixed density and DBSCAN comparators are computed directly from the exact baseline distance matrix.
+
+The affine statistic, inputs, feature scales, seeds, counts, folds, comparators, thresholds, and gates are unchanged.
 
 ## Fixed comparators
 
-Compute on the identical windows:
+Compute on identical windows:
 
 - PR #38 anchored quartet diameter;
 - PR #31 reference/query split statistic;
 - radius-2.5 local density;
-- epsilon-2.5, minimum-samples-4 DBSCAN analogue.
+- epsilon-2.5, minimum-samples-4 DBSCAN.
 
 ## Frozen continuation gates
 
 Every source-encoded gate must pass, including:
 
 1. pooled FPR at 0.05 <=0.07 and at 0.01 <=0.025;
-2. worst supported 10-degree-bin FPR at 0.05 <=0.1875;
+2. worst supported year-bin FPR at 0.05 <=0.1875;
 3. weak AUROC >=0.76 and within 0.03 of the strongest comparator;
 4. at least four of five complex folds AUROC >=0.68 and none below 0.62;
 5. k=4 recall >=0.16 / 0.04 at p <=0.05 / 0.01;
