@@ -1,0 +1,200 @@
+name: SonotaCo fixed4 final development source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-fixed4-final-source-audit
+    paths:
+      - .github/workflows/sonotaco_fixed4_final_development_source_audit.yml
+      - sonotaco_fixed4_final_development/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-fixed4-final-development-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-fixed4-final-development-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove standalone fixed4 equivalence
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          def decode_single(path: Path) -> bytes:
+              encoded = ''.join(path.read_text(encoding='ascii').split())
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          def decode_parts(path: Path) -> bytes:
+              parts = sorted(path.glob('part*.b64'))
+              if [part.name for part in parts] != ['part00.b64']:
+                  raise RuntimeError(f'unexpected exact-source parts: {[part.name for part in parts]}')
+              encoded = ''.join(''.join(part.read_text(encoding='ascii').split()) for part in parts)
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          exact_source = decode_parts(Path('sonotaco_k4_phase_scale_diagnostic/source_parts'))
+          final_payload = Path('sonotaco_fixed4_final_development/candidate.py.gz.b64')
+          final_encoded = ''.join(final_payload.read_text(encoding='ascii').split())
+          if len(final_encoded) != 7616:
+              raise RuntimeError(f'final encoded length mismatch: {len(final_encoded)}')
+          final_source = gzip.decompress(base64.b64decode(final_encoded, validate=True))
+
+          exact_hash = hashlib.sha256(exact_source).hexdigest()
+          final_hash = hashlib.sha256(final_source).hexdigest()
+          expected_exact = 'e5cdb6eb8d07fdbcc5c29a4d02139fff86386e8aebde83717fdc7485acda265d'
+          expected_final = '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301'
+          if exact_hash != expected_exact:
+              raise RuntimeError(f'exact PR113 source mismatch: {exact_hash}')
+          if final_hash != expected_final:
+              raise RuntimeError(f'final source mismatch: {final_hash}')
+          if len(final_source) != 19652:
+              raise RuntimeError(f'final source byte mismatch: {len(final_source)}')
+
+          exact_text = exact_source.decode('utf-8')
+          final_text = final_source.decode('utf-8')
+          compile(exact_text, 'exact_pr113.py', 'exec')
+          compile(final_text, 'fixed4_final.py', 'exec')
+          exact_tree = ast.parse(exact_text, filename='exact_pr113.py')
+          final_tree = ast.parse(final_text, filename='fixed4_final.py')
+
+          def top_constants(tree):
+              result = {}
+              for node in tree.body:
+                  if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                      try:
+                          result[node.targets[0].id] = ast.literal_eval(node.value)
+                      except Exception:
+                          pass
+              return result
+
+          def functions(tree):
+              return {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+          exact_constants = top_constants(exact_tree)
+          final_constants = top_constants(final_tree)
+          exact_functions = functions(exact_tree)
+          final_functions = functions(final_tree)
+          helper_names = [
+              'parse_args', 'sha256_bytes', 'decode_parts', 'load_module', 'load_sources',
+              'pairwise_scaled_distance', 'clique_score_and_indices', 'scores_for_episode',
+              '_score_background', 'rate', 'auc', 'close',
+          ]
+          helper_ast_exact = all(
+              name in exact_functions and name in final_functions and
+              ast.dump(exact_functions[name], include_attributes=False) == ast.dump(final_functions[name], include_attributes=False)
+              for name in helper_names
+          )
+
+          exact_main_prefix = exact_text[exact_text.index('def main() -> None:'):exact_text.index('    selections: dict[str, dict[str, Any]] = {}')]
+          final_main_prefix = final_text[final_text.index('def main() -> None:'):final_text.index('    original_key = f"{ORIGINAL_SCALE:g}"')]
+
+          def mondrian_literals(tree):
+              return Counter(
+                  node.value for node in ast.walk(tree)
+                  if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith('mondrian-')
+              )
+
+          exact_mondrian = mondrian_literals(exact_tree)
+          final_mondrian = mondrian_literals(final_tree)
+          final_names = {node.id for node in ast.walk(final_tree) if isinstance(node, ast.Name)}
+          required_gate_literals = {
+              'recall_005_k4_ge_015', 'recall_001_k4_ge_005',
+              'recall_005_k6_ge_030', 'recall_001_k6_ge_015',
+              'recall_005_k8_ge_045', 'recall_001_k8_ge_025',
+              'candidate_fpr_005_le_006', 'candidate_fpr_001_le_002',
+              'candidate_weak_auc_ge_075', 'no_fold_auc_below_065',
+              'recall_monotonic_005', 'recall_monotonic_001',
+          }
+          final_string_literals = {
+              node.value for node in ast.walk(final_tree)
+              if isinstance(node, ast.Constant) and isinstance(node.value, str)
+          }
+
+          gates = {
+              'exact_pr113_source_hash': exact_hash == expected_exact,
+              'standalone_final_source_hash': final_hash == expected_final,
+              'both_sources_compile_and_parse': True,
+              'scales_exactly_2_and_4': final_constants.get('SOLAR_SCALES') == (2.0, 4.0),
+              'original_scale_exact_2': final_constants.get('ORIGINAL_SCALE') == 2.0,
+              'candidate_scale_exact_4': final_constants.get('CANDIDATE_SCALE') == 4.0,
+              'pre_main_helpers_ast_identical': helper_ast_exact,
+              'main_data_and_scoring_prefix_byte_identical': exact_main_prefix == final_main_prefix,
+              'mondrian_seed_literals_identical': exact_mondrian == final_mondrian,
+              'baseline_hash_unchanged': final_constants.get('BASELINE_SOURCE_SHA256') == exact_constants.get('BASELINE_SOURCE_SHA256'),
+              'scorer_hash_unchanged': final_constants.get('SCORER_SOURCE_SHA256') == exact_constants.get('SCORER_SOURCE_SHA256'),
+              'adapter_hash_unchanged': final_constants.get('ADAPTER_SOURCE_SHA256') == exact_constants.get('ADAPTER_SOURCE_SHA256'),
+              'selection_state_absent': not ({'selections', 'selected_scales', 'consensus_key', 'selection_counts'} & final_names),
+              'all_final_development_gates_present': required_gate_literals <= final_string_literals,
+              'final_verdict_literal_present': 'PASS_SONOTACO_FIXED4_FINAL_DEVELOPMENT' in final_string_literals,
+              'sonotaco_2024_absent': '024a.zip' not in final_text and 'SonotaCo 2024' not in final_text,
+              'ghoststream_values_absent': 'GhostStream' not in final_text and 'ghoststream' not in final_text,
+              'no_data_or_score_execution': True,
+          }
+          verdict = 'PASS_SONOTACO_FIXED4_FINAL_DEVELOPMENT_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_FIXED4_FINAL_DEVELOPMENT_SOURCE_AUDIT'
+          result = {
+              'exact_pr113_source_sha256': exact_hash,
+              'standalone_source_sha256': final_hash,
+              'standalone_source_bytes': len(final_source),
+              'final_constants': {
+                  'SOLAR_SCALES': final_constants.get('SOLAR_SCALES'),
+                  'ORIGINAL_SCALE': final_constants.get('ORIGINAL_SCALE'),
+                  'CANDIDATE_SCALE': final_constants.get('CANDIDATE_SCALE'),
+              },
+              'mondrian_seed_literals': dict(final_mondrian),
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/exact_pr113_source.py').write_bytes(exact_source)
+          Path('output/fixed4_final_development.py').write_bytes(final_source)
+          Path('output/source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# SonotaCo fixed4 final development source audit', '',
+              f'Verdict: **{verdict}**', '',
+              f'- exact PR #113 source: `{exact_hash}`',
+              f'- standalone fixed4 source: `{final_hash}`',
+              f'- standalone bytes: {len(final_source)}', '',
+              '## Gates', '',
+          ]
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_FIXED4_FINAL_DEVELOPMENT_SOURCE_AUDIT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen fixed4 source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_fixed4_final_development/PROTOCOL.md \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            sonotaco_k4_phase_scale_diagnostic/source_parts/part00.b64 \
+            > output/source_files_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload source-only audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-fixed4-final-development-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
