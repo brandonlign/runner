@@ -1,0 +1,105 @@
+name: Partition-invariant clique 2026 H1 data gate
+
+on:
+  pull_request:
+    branches:
+      - agent/empirical-window-null-evenyear-stage0
+    paths:
+      - .github/workflows/partition_invariant_clique_2026h1_data.yml
+      - partition_invariant_clique_2026h1/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: partition-invariant-clique-2026h1-data
+  cancel-in-progress: true
+
+jobs:
+  data-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA256: '93f400bc92eda40a42f0cc5684a374972c3c083320844bdb7c5004a6539cd26d'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/partition-invariant-clique-2026h1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode and verify frozen data source
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          payload = Path('partition_invariant_clique_2026h1/build_2026_h1_data.py.gz.b64')
+          encoded = ''.join(payload.read_text().split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '${{ env.SOURCE_SHA256 }}':
+              raise RuntimeError(f'data source hash mismatch: {digest}')
+          Path('/tmp/build_2026_h1_data.py').write_bytes(source)
+          print('source bytes:', len(source))
+          print('source sha256:', digest)
+          PY
+          python -m py_compile /tmp/build_2026_h1_data.py
+      - name: Download and audit fresh 2026 H1 data
+        run: |
+          python /tmp/build_2026_h1_data.py \
+            --audit-source real_shower_meta_stage0/audit_real_shower_data.py \
+            --output output
+          cat output/DATA_GATE_REPORT.md
+      - name: Enforce frozen data gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/audit.json').read_text())
+          summary = {
+              'configuration': result.get('configuration'),
+              'eligible_count': result.get('eligible_count'),
+              'strong_count': result.get('strong_count'),
+              'eligible_complex_units': result.get('eligible_complex_units'),
+              'multi_shower_complex_units': result.get('multi_shower_complex_units'),
+              'total_quality_sporadics': result.get('total_quality_sporadics'),
+              'retained_sporadics_outside_blind': result.get('retained_sporadics_outside_blind'),
+              'supported_sector_count': result.get('supported_sector_count'),
+              'selected_complete_fraction': result.get('selected_complete_fraction'),
+              'gates': result.get('gates'),
+              'verdict': result.get('verdict'),
+          }
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          gates = result.get('gates') or {}
+          if not gates or not all(gates.values()):
+              raise SystemExit('Frozen 2026 H1 data gate failed')
+          if not str(result.get('verdict', '')).startswith('PROCEED'):
+              raise SystemExit(f"Unexpected verdict: {result.get('verdict')}")
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            partition_invariant_clique_2026h1/PROTOCOL.md \
+            partition_invariant_clique_2026h1/build_2026_h1_data.py.gz.b64 \
+            real_shower_meta_stage0/audit_real_shower_data.py \
+            > output/source_sha256.txt
+          git hash-object real_shower_meta_stage0/audit_real_shower_data.py \
+            > output/base_parser_blob_sha.txt
+          python --version > output/python_version.txt
+      - name: Upload frozen 2026 H1 data evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: partition-invariant-clique-2026h1-data
+          path: output
+          if-no-files-found: error
+          retention-days: 90
