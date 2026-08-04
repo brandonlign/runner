@@ -1,0 +1,217 @@
+name: SonotaCo 2023 replacement feasibility
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-fixed4-final-development
+    paths:
+      - .github/workflows/sonotaco_2023_replacement_feasibility.yml
+      - sonotaco_2023_replacement_feasibility/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-2023-replacement-feasibility
+  cancel-in-progress: true
+
+jobs:
+  feasibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2023-replacement-feasibility
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch all runner branches for prior-exposure audit
+        run: |
+          set -euo pipefail
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*' --prune
+      - name: Audit prior runner references
+        run: |
+          set -euo pipefail
+          mkdir -p output input
+          python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          current_remote = 'refs/remotes/origin/agent/sonotaco-2023-replacement-feasibility'
+          terms = ('023a.zip', 'SonotaCo 2023', 'SNMv3/023a')
+
+          refs = subprocess.check_output(
+              ['git', 'for-each-ref', '--format=%(refname)', 'refs/remotes/origin'],
+              text=True,
+          ).splitlines()
+          tree_hits = []
+          for ref in refs:
+              if ref == current_remote or ref.endswith('/HEAD'):
+                  continue
+              proc = subprocess.run(
+                  ['git', 'grep', '-I', '-n', '-E', r'023a\.zip|SonotaCo 2023|SNMv3/023a', ref, '--', '.'],
+                  text=True,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+              )
+              if proc.returncode not in (0, 1):
+                  raise RuntimeError(f'git grep failed for {ref}: {proc.stderr}')
+              for line in proc.stdout.splitlines():
+                  tree_hits.append({'ref': ref, 'match': line})
+
+          base = 'b9acee750b57ad93e820847597d4050e96041c77'
+          introduced = set(subprocess.check_output(['git', 'rev-list', f'{base}..HEAD'], text=True).splitlines())
+          raw_log = subprocess.check_output(
+              ['git', 'log', '--all', '--format=%H%x09%s%x09%b%x00'],
+          ).decode('utf-8', errors='replace')
+          message_hits = []
+          for record in raw_log.split('\x00'):
+              record = record.strip()
+              if not record:
+                  continue
+              parts = record.split('\t', 2)
+              commit = parts[0]
+              message = '\t'.join(parts[1:])
+              if commit in introduced:
+                  continue
+              found = [term for term in terms if term.lower() in message.lower()]
+              if found:
+                  message_hits.append({'commit': commit, 'terms': found, 'message': message[:1000]})
+
+          result = {
+              'current_branch_excluded': current_remote,
+              'base_commit': base,
+              'introduced_current_branch_commits': sorted(introduced),
+              'remote_refs_scanned': len([ref for ref in refs if ref != current_remote and not ref.endswith('/HEAD')]),
+              'tree_hits': tree_hits,
+              'commit_message_hits': message_hits,
+              'no_prior_runner_reference': not tree_hits and not message_hits,
+          }
+          Path('output/prior_reference_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          if tree_hits or message_hits:
+              raise SystemExit('Prior SonotaCo 2023 reference found; replacement panel is not untouched')
+          print(json.dumps(result, indent=2))
+          PY
+      - name: Verify exact frozen final model source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          payload = Path('sonotaco_fixed4_final_development/candidate.py.gz.b64')
+          encoded = ''.join(payload.read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301'
+          if digest != expected:
+              raise RuntimeError(f'frozen final source mismatch: {digest}')
+          Path('output/final_model_source_sha256.txt').write_text(digest + '\n', encoding='utf-8')
+          print('frozen final model SHA-256:', digest)
+          PY
+      - name: Download official SonotaCo 2023 archive without opening members
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --dump-header output/023a_http_headers.txt \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          test -s input/023a.zip
+          sha256sum input/023a.zip | tee output/023a_sha256.txt
+          wc -c input/023a.zip | tee output/023a_size.txt
+      - name: Inspect ZIP central directory only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('input/023a.zip')
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          members = []
+          with zipfile.ZipFile(archive, 'r') as zf:
+              for info in zf.infolist():
+                  members.append({
+                      'filename': info.filename,
+                      'compress_size': info.compress_size,
+                      'file_size': info.file_size,
+                      'crc': f'{info.CRC:08x}',
+                      'date_time': list(info.date_time),
+                      'is_dir': info.is_dir(),
+                  })
+          plausible = [
+              item['filename'] for item in members
+              if not item['is_dir'] and Path(item['filename']).suffix.lower() in {'.csv', '.txt', '.dat'}
+          ]
+          prior = json.loads(Path('output/prior_reference_audit.json').read_text(encoding='utf-8'))
+          gates = {
+              'no_prior_runner_reference': prior['no_prior_runner_reference'],
+              'official_archive_downloaded': archive.is_file() and archive.stat().st_size > 0,
+              'archive_sha256_recorded': len(digest) == 64,
+              'zip_central_directory_readable': bool(members),
+              'plausible_tabular_member_present': bool(plausible),
+              'no_member_opened_or_extracted': True,
+              'frozen_final_model_hash_verified': Path('output/final_model_source_sha256.txt').read_text().strip() == '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301',
+              'sonotaco_2024_archive_absent': not Path('input/024a.zip').exists(),
+              'no_detector_execution': True,
+              'no_scientific_endpoint_computed': True,
+          }
+          verdict = 'PASS_SONOTACO_2023_REPLACEMENT_FEASIBILITY' if all(gates.values()) else 'KILL_SONOTACO_2023_REPLACEMENT_FEASIBILITY'
+          result = {
+              'archive_url': 'https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip',
+              'archive_sha256': digest,
+              'archive_bytes': archive.stat().st_size,
+              'members': members,
+              'plausible_tabular_members': plausible,
+              'gates': gates,
+              'verdict': verdict,
+          }
+          Path('output/sonotaco_2023_replacement_feasibility.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = [
+              '# SonotaCo 2023 replacement feasibility', '',
+              f'Verdict: **{verdict}**', '',
+              f'- archive SHA-256: `{digest}`',
+              f'- archive bytes: {archive.stat().st_size}',
+              f'- ZIP members: {len(members)}',
+              f'- plausible tabular members: {len(plausible)}', '',
+              '## Member metadata', '',
+          ]
+          lines.extend(
+              f"- `{item['filename']}` — {item['file_size']} bytes uncompressed, CRC `{item['crc']}`"
+              for item in members
+          )
+          lines.extend(['', '## Gates', ''])
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          Path('output/SONOTACO_2023_REPLACEMENT_FEASIBILITY.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen replacement feasibility gate failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_2023_replacement_feasibility/PROTOCOL.md \
+            .github/workflows/sonotaco_2023_replacement_feasibility.yml \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            > output/source_files_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/head_commit.txt
+          git remote -v > output/git_remotes.txt
+          python --version > output/python_version.txt
+      - name: Upload replacement feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2023-replacement-feasibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90
