@@ -1,0 +1,70 @@
+name: SonotaCo fixed4 final evidence synthesis v3
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2023-fixed4-replacement-confirmation
+    paths:
+      - .github/workflows/sonotaco_fixed4_final_evidence_synthesis_v3.yml
+      - sonotaco_fixed4_final_evidence_synthesis_v2/synthesize_v3.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-fixed4-final-evidence-synthesis-v3
+  cancel-in-progress: true
+
+jobs:
+  synthesize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-fixed4-final-evidence-synthesis-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Retrieve exact frozen evidence artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/development input/robustness input/replication output
+          gh run download 30918739353 --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-fixed4-final-development --dir input/development
+          gh run download 30919265521 --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-fixed4-seed-robustness-development --dir input/robustness
+          gh run download 30921046797 --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-fixed4-replacement-confirmation --dir input/replication
+          echo 'b985efacf1cb7edc070e17b2a304b6a08059dff94b32a2c83731b2ec8700e8cc  input/development/sonotaco_fixed4_final_development.json' | sha256sum -c -
+          echo '4a1815f529893056cffd21011771889b956387074e6bc238dbe3a6cc99eb94a6  input/robustness/sonotaco_fixed4_seed_robustness.json' | sha256sum -c -
+          echo 'ac7b06ba68672688cfcce46bb46150adf3de87622e5de05c6f74ef945d28a075  input/replication/sonotaco_2023_fixed4_confirmation.json' | sha256sum -c -
+      - name: Build corrected immutable final methodology status
+        run: |
+          set -euo pipefail
+          python sonotaco_fixed4_final_evidence_synthesis_v2/synthesize_v3.py
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_fixed4_final_evidence_synthesis_v2/PROTOCOL.md \
+            sonotaco_fixed4_final_evidence_synthesis_v2/synthesize_v3.py \
+            input/development/sonotaco_fixed4_final_development.json \
+            input/robustness/sonotaco_fixed4_seed_robustness.json \
+            input/replication/sonotaco_2023_fixed4_confirmation.json \
+            > output/evidence_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          git rev-parse HEAD > output/head_commit.txt
+      - name: Upload corrected final synthesis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-fixed4-final-evidence-synthesis-v3
+          path: output
+          if-no-files-found: error
+          retention-days: 90
