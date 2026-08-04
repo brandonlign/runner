@@ -31,7 +31,10 @@ def main() -> None:
     # calibration, seeds, folds, comparators, and scientific gates are unchanged.
     module.ALLOWED_YEARS = tuple(module.ALLOWED_YEARS) + (2018,)
     module.ALLOWED_CORPORA = tuple(module.ALLOWED_CORPORA) + ('complete-year-2018-confirmation',)
-    sys.argv = [str(args.source), *args.source_args]
+    source_args = list(args.source_args)
+    if source_args and source_args[0] == '--':
+        source_args = source_args[1:]
+    sys.argv = [str(args.source), *source_args]
     module.main()
 
 
