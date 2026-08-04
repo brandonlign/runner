@@ -115,39 +115,39 @@ export function referenceFrontLandmarks(): FacialLandmarks {
 }
 
 /**
- * One jointly solved neutral profile configuration for all scored v2 bands.
- * The solution is additionally regularized for a coherent photographic
- * silhouette; the mentolabial sulcus remains an internal crease rather than
- * an outer-contour point.
+ * Neutral profile geometry initialized from the Apache-2.0 Google GNM mean
+ * head and minimally regularized into every scored Mog v2 comparison band.
+ * This keeps the solved profile close to a coherent anatomical surface instead
+ * of optimizing an unconstrained chain of independent 2D points.
  */
 export function referenceProfileLandmarks(): FacialLandmarks {
   return landmarks("profile", {
-    trichion: [-0.02, 0],
-    upperForehead: [0.015, 0.16],
-    glabella: [0.055, 0.24],
-    browRidge: [0.05, 0.285],
-    nasion: [0.035, 0.32],
-    orbitale: [0.08, 0.4],
-    tragion: [-0.25, 0.4],
+    trichion: [0, 0],
+    upperForehead: [0.03, 0.16],
+    glabella: [0.00186, 0.26527],
+    browRidge: [0.061, 0.285],
+    nasion: [-0.01059, 0.32685],
+    orbitale: [-0.05, 0.4],
+    tragion: [-0.5, 0.4],
 
-    pronasale: [0.203497, 0.570531],
-    columella: [0.151, 0.575],
-    subnasale: [0.09, 0.59],
-    alare: [0.032732, 0.599787],
-    labialeSuperius: [0.085, 0.68],
-    stomion: [0.078, 0.705],
-    labialeInferius: [0.08, 0.75],
-    mentolabialSulcus: [0.015871, 0.833935],
+    pronasale: [0.1488, 0.56235],
+    columella: [0.1045, 0.59683],
+    subnasale: [0.04588, 0.60613],
+    alare: [-0.00137, 0.62048],
+    labialeSuperius: [0.06528, 0.713],
+    stomion: [0.05639, 0.75662],
+    labialeInferius: [0.05013, 0.80709],
+    mentolabialSulcus: [0.00617, 0.87921],
 
-    softTissuePogonion: [0.05687, 0.923903],
-    pogonion: [0.05687, 0.923903],
-    gnathion: [0.025, 0.98],
+    softTissuePogonion: [0.02255, 0.94177],
+    pogonion: [0.02255, 0.94177],
+    gnathion: [0.01, 0.98],
     menton: [0, 1],
-    gonion: [-0.289544, 0.871823],
-    ramusPoint: [-0.316955, 0.669685],
+    gonion: [-0.35752, 0.88602],
+    ramusPoint: [-0.45641, 0.68827],
     cervicalPoint: [-0.097438, 0.975302],
     throatPoint: [-0.185793, 1.105199],
-    cheekProjection: [0.1, 0.48],
+    cheekProjection: [0, 0.48],
   });
 }
 
