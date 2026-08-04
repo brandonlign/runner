@@ -51,10 +51,11 @@ Twelve of fifteen is fixed before scoring as a majority-persistent stress regime
 ## Allowed source-audit operations
 
 - reconstruct the exact worst-family source and exact majority-conditioned derivation from pinned commit `b8748f3e641e52dfe3b1500d6c7356bd9732f54a`;
-- hash-verify the exact majority-conditioned source;
-- apply the committed deterministic consensus-lowpass derivation;
-- compile and statically inspect the derived source;
-- record its exact SHA-256, bytes, lines, constants, functions, method keys, injection conditions, gates, and exact source.
+- hash-verify exact majority-conditioned source SHA-256 `3d60e3622d7ec406bb03cd4ab43faec84be1eff4d0dd70afa6ed79b8fd777281`;
+- decode the pre-frozen consensus-lowpass source payload described line by line in `TRANSFORMATION.md`;
+- require exact candidate source SHA-256 `9f630c8eca2ffb1a5bdbc0598b744dffccb6026d2476467b99c6caa3d410a9fa`;
+- compile and statically inspect the candidate;
+- record its exact bytes, lines, constants, functions, method keys, injection conditions, gates, transformation manifest, and exact source.
 
 ## Forbidden operations
 
