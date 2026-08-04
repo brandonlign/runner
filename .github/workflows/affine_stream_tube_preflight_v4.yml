@@ -1,9 +1,9 @@
-name: Affine stream-tube quartet preflight v4
+name: Affine stream-tube quartet preflight v4 manifest repair
 
 on:
   pull_request:
     branches:
-      - agent/mondrian-clique-coverage-normalized-development
+      - agent/affine-stream-tube-preflight-v4
     paths:
       - .github/workflows/affine_stream_tube_preflight_v4.yml
       - affine_stream_tube_preflight_v4/**
@@ -14,7 +14,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: affine-stream-tube-preflight-v4
+  group: affine-stream-tube-preflight-v4-manifest-repair
   cancel-in-progress: true
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
     env:
       SOURCE_SHA256: '7ec195a34fa286129f01d181b7a8365623a0266d76c153a155d98d220cc833f3'
       PART00_SHA256: '066b53a58d6b211132ce12e6856415f278d3b068aa0463e5616b217b30130d45'
-      PART01_SHA256: 'a088c115ab3dae39dfae2e66688e58d30efcfacd57285b9067383b8d06a88166'
+      PART01_SHA256: '47eada13f294fccdb7c6b8e0a7381534f6292dad51f1b5e2cb30600bc479918b'
       EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
       AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
       BASELINE_PAYLOAD_SHA256: '2cb82a8c12913a6176ddd7c6333b57a4d672334934c0d2ca4b572e878590cfa2'
@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/affine-stream-tube-preflight-v4
+          ref: agent/affine-stream-tube-preflight-v4-manifest-repair
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -136,6 +136,7 @@ jobs:
           mkdir -p output
           sha256sum \
             affine_stream_tube_preflight_v4/PROTOCOL.md \
+            affine_stream_tube_preflight_v4/MANIFEST_REPAIR.md \
             affine_stream_tube_preflight_v4/source_parts/*.b64 \
             input/selected_events.jsonl.gz \
             input/audit.json \
@@ -148,7 +149,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: affine-stream-tube-preflight-v4
+          name: affine-stream-tube-preflight-v4-manifest-repair
           path: output
           if-no-files-found: error
           retention-days: 90
