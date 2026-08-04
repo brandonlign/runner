@@ -1,0 +1,78 @@
+name: CAMSv3 independent-survey feasibility v2
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/camsv3_independent_feasibility_v2.yml
+      - camsv3_independent_feasibility_v2/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: camsv3-independent-feasibility-v2
+  cancel-in-progress: true
+
+jobs:
+  structural-gate-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/camsv3-independent-feasibility-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen dependency
+        run: python -m pip install requests
+      - name: Compile and hash frozen parser v2
+        run: |
+          set -euo pipefail
+          python -m py_compile camsv3_independent_feasibility_v2/run_feasibility_v2.py
+          echo '86abef5e3d70972f47e90f78516b303e64c448cb553cf37919db7a0abc5f74b7  camsv3_independent_feasibility_v2/run_feasibility_v2.py' | sha256sum -c -
+          sha256sum camsv3_independent_feasibility_v2/PROTOCOL.md
+      - name: Run frozen structural feasibility v2
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python camsv3_independent_feasibility_v2/run_feasibility_v2.py --output output
+          cat output/RESULT.md
+      - name: Verify authoritative structural result
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/camsv3_structural_feasibility_v2.json').read_text())
+          print(json.dumps({
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+              'member_paths': [item['member_path'] for item in result['years']],
+              'row_counts': [item['row_count'] for item in result['years']],
+          }, indent=2))
+          if result['verdict'] != 'PASS_CAMSV3_STRUCTURAL_FEASIBILITY_V2':
+              raise SystemExit('CAMSv3 parser-v2 structural gate failed')
+          if result['scientific_values_read'] or result['label_values_read'] or result['sonotaco_2024_read']:
+              raise RuntimeError('no-value boundary violated')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            camsv3_independent_feasibility_v2/PROTOCOL.md \
+            camsv3_independent_feasibility_v2/run_feasibility_v2.py \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camsv3-independent-feasibility-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
