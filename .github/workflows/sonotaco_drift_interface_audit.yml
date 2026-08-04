@@ -39,6 +39,15 @@ jobs:
           import json
           from pathlib import Path
 
+          def json_safe(value):
+              if isinstance(value, dict):
+                  return {str(key): json_safe(item) for key, item in value.items()}
+              if isinstance(value, (set, frozenset, tuple, list)):
+                  return [json_safe(item) for item in sorted(value, key=repr) if isinstance(value, (set, frozenset))] if isinstance(value, (set, frozenset)) else [json_safe(item) for item in value]
+              if isinstance(value, (str, int, float, bool)) or value is None:
+                  return value
+              return repr(value)
+
           specs = {
               'baseline': (
                   [Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64')],
@@ -88,7 +97,7 @@ jobs:
                               dataclasses[node.name] = fields
                   elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
                       try:
-                          constants[node.targets[0].id] = ast.literal_eval(node.value)
+                          constants[node.targets[0].id] = json_safe(ast.literal_eval(node.value))
                       except Exception:
                           pass
               Path(f'output/frozen_{name}.py').write_text(decoded, encoding='utf-8')
