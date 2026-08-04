@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/mog_finalize_gnm_renderer.yml
       - mog_reference_face_validation/scripts/finalize_gnm_renderer.py
+      - mog_reference_face_validation/scripts/generate_gnm_clay_snapshots.py
   workflow_dispatch:
 
 permissions:
@@ -20,6 +21,7 @@ jobs:
   finalize:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,21 +32,26 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Apply exact final renderer edits
+      - name: Build final full-resolution GNM snapshots
         working-directory: mog_reference_face_validation
-        run: python scripts/finalize_gnm_renderer.py
+        run: |
+          python -m pip install --disable-pip-version-check numpy pillow
+          python scripts/extract_gnm_head.py
+          python scripts/finalize_gnm_renderer.py
+          python scripts/generate_gnm_clay_snapshots.py
 
       - name: Commit finalized renderer
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add mog_reference_face_validation/src/components/methodology/canonical-clay-face.tsx \
+                  mog_reference_face_validation/src/components/methodology/gnm-clay-renders.ts \
                   mog_reference_face_validation/verified_chunks/part3.tsx \
                   mog_reference_face_validation/verified_chunks/part4.tsx
           if git diff --cached --quiet; then
             echo 'Renderer already finalized.'
           else
-            git commit -m 'Finalize GNM reference rendering'
+            git commit -m 'Render final full-resolution GNM snapshots'
             git pull --rebase origin agent/mog-reference-face-validation
             git push origin HEAD:agent/mog-reference-face-validation
           fi
