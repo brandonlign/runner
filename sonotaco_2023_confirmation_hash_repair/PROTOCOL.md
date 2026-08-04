@@ -12,6 +12,8 @@ PR #144 passed the 2023 archive/member/header/parser audit, but post-artifact so
 
 The wrapper was never executed. The only authorized repair is to replace those three one-occurrence constants with values already frozen by PR #144. No method code or scientific configuration may change.
 
+The first source-only repair run verified the exact repaired source but failed because its gzip/base64 payload hash had been preregistered under Python 3.13, while GitHub Actions is pinned to Python 3.12 and serializes the same source to different compressed bytes. This is a non-scientific serialization mismatch. The source hash remains unchanged. The repaired audit therefore pins the observed Python-3.12 payload hash and additionally requires that decoding and decompressing the payload reproduce the exact repaired source.
+
 ## Exact immutable input
 
 Download artifact `sonotaco-2023-schema-source-audit` from workflow run `30920089789`.
@@ -42,7 +44,8 @@ The repaired confirmation source must be exactly:
 
 - bytes: `30395`;
 - SHA-256: `32d199a652a9469c10ac3b2d9496177c11bb12901ccf2c3c9b24bbfd86ff4cb7`;
-- deterministic gzip/base64 payload SHA-256: `c6fc5283a55e6b496748dd327607fd9a0cfed0d303fbf96b1f6e4b368feaeee4`.
+- Python-3.12 gzip/base64 payload SHA-256: `51e6d94d81e4154c1812b1f0d3b3ccdb158162a33f452cabbebe9f4526df2bdd`;
+- decoded/decompressed payload bytes identical to the repaired source.
 
 ## Audit gates
 
