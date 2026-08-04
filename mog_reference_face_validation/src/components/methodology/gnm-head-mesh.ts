@@ -33,12 +33,17 @@ export type GnmTriangle = readonly [number, number, number];
 
 export function decodeGnmHeadMesh(): { vertices: GnmVertex[]; triangles: GnmTriangle[] } {
   const quantized = decodeUint16(GNM_HEAD_MESH.positionsBase64);
-  const indices = decodeUint16(GNM_HEAD_MESH.trianglesBase64);
+  const encodedIndices = decodeUint16(GNM_HEAD_MESH.trianglesBase64);
   if (quantized.length !== GNM_HEAD_MESH.vertexCount * 3) {
     throw new Error(`GNM position payload has ${quantized.length} values; expected ${GNM_HEAD_MESH.vertexCount * 3}.`);
   }
-  if (indices.length !== GNM_HEAD_MESH.triangleCount * 3) {
-    throw new Error(`GNM triangle payload has ${indices.length} values; expected ${GNM_HEAD_MESH.triangleCount * 3}.`);
+  const expectedIndexCount = GNM_HEAD_MESH.triangleCount * 3;
+  if (encodedIndices.length < expectedIndexCount) {
+    throw new Error(`GNM triangle payload has ${encodedIndices.length} values; expected at least ${expectedIndexCount}.`);
+  }
+  const indices = encodedIndices.subarray(0, expectedIndexCount);
+  if (indices.some((value) => value >= GNM_HEAD_MESH.vertexCount)) {
+    throw new Error("GNM triangle payload contains an out-of-range vertex index.");
   }
   const span = GNM_HEAD_MESH.maximum.map((value, axis) => value - GNM_HEAD_MESH.minimum[axis]);
   const vertices = Array.from({ length: GNM_HEAD_MESH.vertexCount }, (_, index) => ({
