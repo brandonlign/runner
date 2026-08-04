@@ -1,0 +1,161 @@
+name: SonotaCo radiant-drift source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-hires-multiview-fusion-development
+    paths:
+      - .github/workflows/sonotaco_radiant_drift_source_audit.yml
+      - sonotaco_radiant_drift_source_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-radiant-drift-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-radiant-drift-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode, verify, compile, and inventory exact sources
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          specs = [
+              {
+                  'name': 'phase_gated_3d',
+                  'parts': Path('sonotaco_phase_gated_3d/source_parts'),
+                  'expected_names': ['part00.b64'],
+                  'expected_sha256': 'fb93ab74edf4c79b00bca6f5c1e6c1a4be33904204bbd2aed296cf2b01dd10b2',
+                  'output': Path('output/phase_gated_3d_source.py'),
+              },
+              {
+                  'name': 'hires_multiview_fusion',
+                  'parts': Path('sonotaco_hires_multiview_fusion/source_parts_v2'),
+                  'expected_names': [f'part{i:02d}.b64' for i in range(8)],
+                  'expected_sha256': '7ab556184e0965ce066d24a75f2067b9256465d1899c805afa0061f717d34382',
+                  'output': Path('output/hires_multiview_fusion_source.py'),
+              },
+          ]
+
+          def dotted(node):
+              pieces = []
+              while isinstance(node, ast.Attribute):
+                  pieces.append(node.attr)
+                  node = node.value
+              if isinstance(node, ast.Name):
+                  pieces.append(node.id)
+                  return '.'.join(reversed(pieces))
+              return None
+
+          inventory = {}
+          for spec in specs:
+              parts = sorted(spec['parts'].glob('part*.b64'))
+              names = [part.name for part in parts]
+              if names != spec['expected_names']:
+                  raise RuntimeError(f"{spec['name']}: unexpected source parts {names}")
+              encoded = ''.join(''.join(part.read_text(encoding='ascii').split()) for part in parts)
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != spec['expected_sha256']:
+                  raise RuntimeError(f"{spec['name']}: source mismatch {digest}")
+              compile(source, str(spec['output']), 'exec')
+              spec['output'].write_bytes(source)
+              tree = ast.parse(source)
+              functions = []
+              constants = {}
+              imports = []
+              attributes = set()
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                      functions.append({
+                          'name': node.name,
+                          'args': [arg.arg for arg in node.args.args],
+                          'lineno': node.lineno,
+                          'end_lineno': node.end_lineno,
+                      })
+                  elif isinstance(node, ast.Assign):
+                      if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                          try:
+                              constants[node.targets[0].id] = ast.literal_eval(node.value)
+                          except Exception:
+                              pass
+                  elif isinstance(node, ast.Import):
+                      imports.extend(alias.name for alias in node.names)
+                  elif isinstance(node, ast.ImportFrom):
+                      imports.append(f"{node.module}:{','.join(alias.name for alias in node.names)}")
+                  elif isinstance(node, ast.Attribute):
+                      name = dotted(node)
+                      if name and name.split('.', 1)[0] in {'episode', 'event', 'base', 'scorer', 'factory'}:
+                          attributes.add(name)
+              inventory[spec['name']] = {
+                  'sha256': digest,
+                  'bytes': len(source),
+                  'functions': sorted(functions, key=lambda item: item['lineno']),
+                  'constants': constants,
+                  'imports': imports,
+                  'rooted_attributes': sorted(attributes),
+              }
+
+          gates = {
+              'phase_hash_exact': inventory['phase_gated_3d']['sha256'] == specs[0]['expected_sha256'],
+              'fusion_hash_exact': inventory['hires_multiview_fusion']['sha256'] == specs[1]['expected_sha256'],
+              'phase_compiles': True,
+              'fusion_compiles': True,
+              'score_episode_present': any(item['name'] == 'score_episode' for item in inventory['phase_gated_3d']['functions']),
+              'episode_interface_exposed': any(name.startswith('episode.') for name in inventory['phase_gated_3d']['rooted_attributes']),
+          }
+          verdict = 'PASS_SONOTACO_RADIANT_DRIFT_SOURCE_AUDIT' if all(gates.values()) else 'KILL_SONOTACO_RADIANT_DRIFT_SOURCE_AUDIT'
+          result = {'inventory': inventory, 'gates': gates, 'verdict': verdict, 'data_opened': False, 'score_executed': False}
+          Path('output/source_audit.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          lines = ['# SonotaCo radiant-drift source-interface audit', '', f'Verdict: **{verdict}**', '', '## Gates', '']
+          lines.extend(f"- {'PASS' if passed else 'FAIL'} — `{name}`" for name, passed in gates.items())
+          lines += ['', '- meteor archive opened: no', '- detector score executed: no']
+          Path('output/SOURCE_AUDIT_RESULT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          if not all(gates.values()):
+              raise SystemExit('Frozen source audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          sha256sum \
+            sonotaco_radiant_drift_source_audit/PROTOCOL.md \
+            sonotaco_phase_gated_3d/source_parts/part00.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part00.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part01.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part02.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part03.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part04.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part05.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part06.b64 \
+            sonotaco_hires_multiview_fusion/source_parts_v2/part07.b64 \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload exact source audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-radiant-drift-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
