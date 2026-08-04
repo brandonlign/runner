@@ -29,7 +29,7 @@ jobs:
         run: |
           git fetch --no-tags origin \
             agent/partition-invariant-clique-2026h1:refs/remotes/origin/agent/partition-invariant-clique-2026h1
-      - name: Decode and verify exact H1 data source and passed scorer
+      - name: Decode and verify authoritative and frozen sources
         run: |
           set -euo pipefail
           mkdir -p extracted
@@ -42,38 +42,73 @@ jobs:
           import hashlib
           from pathlib import Path
 
-          encoded = ''.join(Path('/tmp/build_2026_h1_data.py.gz.b64').read_text().split())
-          source = gzip.decompress(base64.b64decode(encoded, validate=True))
-          expected = '93f400bc92eda40a42f0cc5684a374972c3c083320844bdb7c5004a6539cd26d'
-          actual = hashlib.sha256(source).hexdigest()
-          if actual != expected:
-              raise RuntimeError(f'H1 data source mismatch: {actual}')
-          Path('extracted/build_2026_h1_data_authoritative.py').write_bytes(source)
+          def decode_single(path: Path, expected: str, output: Path) -> tuple[int, str]:
+              encoded = ''.join(path.read_text().split())
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              actual = hashlib.sha256(source).hexdigest()
+              if actual != expected:
+                  raise RuntimeError(f'{path} source mismatch: {actual}')
+              output.write_bytes(source)
+              return len(source), actual
 
-          parts = sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
-          if [part.name for part in parts] != ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']:
-              raise RuntimeError(f'unexpected scorer parts: {[part.name for part in parts]}')
-          scorer_encoded = ''.join(''.join(part.read_text().split()) for part in parts)
-          if len(scorer_encoded) != 9000:
-              raise RuntimeError(f'unexpected scorer payload length: {len(scorer_encoded)}')
-          scorer = gzip.decompress(base64.b64decode(scorer_encoded, validate=True))
-          scorer_expected = 'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8'
-          scorer_actual = hashlib.sha256(scorer).hexdigest()
-          if scorer_actual != scorer_expected:
-              raise RuntimeError(f'Mondrian scorer mismatch: {scorer_actual}')
-          Path('extracted/run_mondrian_clique_passed.py').write_bytes(scorer)
+          def decode_parts(root: Path, names: list[str], expected: str, output: Path) -> tuple[int, int, str]:
+              parts = sorted(root.glob('part*.b64'))
+              actual_names = [part.name for part in parts]
+              if actual_names != names:
+                  raise RuntimeError(f'unexpected parts in {root}: {actual_names}')
+              encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              actual = hashlib.sha256(source).hexdigest()
+              if actual != expected:
+                  raise RuntimeError(f'{root} source mismatch: {actual}')
+              output.write_bytes(source)
+              return len(encoded), len(source), actual
+
+          h1_bytes, h1_hash = decode_single(
+              Path('/tmp/build_2026_h1_data.py.gz.b64'),
+              '93f400bc92eda40a42f0cc5684a374972c3c083320844bdb7c5004a6539cd26d',
+              Path('extracted/build_2026_h1_data_authoritative.py'),
+          )
+
+          retrospective_encoded, retrospective_bytes, retrospective_hash = decode_parts(
+              Path('mondrian_clique_development/source_parts_v2'),
+              ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64'],
+              'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8',
+              Path('extracted/run_mondrian_clique_passed.py'),
+          )
+          if retrospective_encoded != 9000:
+              raise RuntimeError(f'unexpected retrospective encoded length: {retrospective_encoded}')
+
+          july_data_encoded, july_data_bytes, july_data_hash = decode_parts(
+              Path('mondrian_clique_july2026/data_source_parts'),
+              ['part00.b64', 'part01.b64', 'part02.b64'],
+              '1349da2d94b6f300ec7982bee7f5c17df5318c425da8a7d1f15d8befa1f551ec',
+              Path('extracted/build_july2026_data_frozen.py'),
+          )
+          july_power_encoded, july_power_bytes, july_power_hash = decode_parts(
+              Path('mondrian_clique_july2026/power_source_parts'),
+              ['part00.b64', 'part01.b64', 'part02.b64'],
+              '7a551f0fc7ce4b40642e83449f4ce37d5b0cd9a7abf900c46a1250e159e96fb0',
+              Path('extracted/run_july2026_confirmation_frozen.py'),
+          )
 
           Path('extracted/SOURCE_HASHES.txt').write_text(
-              f'{actual}  build_2026_h1_data_authoritative.py\n'
-              f'{scorer_actual}  run_mondrian_clique_passed.py\n'
+              f'{h1_hash}  build_2026_h1_data_authoritative.py\n'
+              f'{retrospective_hash}  run_mondrian_clique_passed.py\n'
+              f'{july_data_hash}  build_july2026_data_frozen.py\n'
+              f'{july_power_hash}  run_july2026_confirmation_frozen.py\n'
           )
-          print('data source bytes / sha256:', len(source), actual)
-          print('scorer bytes / sha256:', len(scorer), scorer_actual)
+          print('H1 authoritative:', h1_bytes, h1_hash)
+          print('retrospective scorer:', retrospective_encoded, retrospective_bytes, retrospective_hash)
+          print('July data source:', july_data_encoded, july_data_bytes, july_data_hash)
+          print('July power source:', july_power_encoded, july_power_bytes, july_power_hash)
           PY
           python -m py_compile \
             extracted/build_2026_h1_data_authoritative.py \
-            extracted/run_mondrian_clique_passed.py
-      - name: Upload authoritative sources
+            extracted/run_mondrian_clique_passed.py \
+            extracted/build_july2026_data_frozen.py \
+            extracted/run_july2026_confirmation_frozen.py
+      - name: Upload authoritative and frozen sources
         uses: actions/upload-artifact@v4
         with:
           name: mondrian-clique-july-authoritative-source
