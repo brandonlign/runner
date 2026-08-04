@@ -1,0 +1,73 @@
+name: CAMSv3 shower-label interface audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/camsv3_shower_label_audit.yml
+      - camsv3_shower_label_audit/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: camsv3-shower-label-interface-audit
+  cancel-in-progress: true
+
+jobs:
+  aggregate-label-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/camsv3-shower-label-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile audit before downloads
+        run: python -m py_compile camsv3_shower_label_audit/run_audit.py
+      - name: Install structural dependency
+        run: python -m pip install --upgrade pip requests
+      - name: Run frozen aggregate-only label audit
+        run: |
+          python camsv3_shower_label_audit/run_audit.py --output output
+          cat output/RESULT.md
+      - name: Enforce no-identity and continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/camsv3_shower_label_audit.json').read_text())
+          if result['development_years_requested'] != [2011, 2012, 2013, 2014, 2015]:
+              raise RuntimeError('unexpected development years')
+          if result['reserved_2016_requested']:
+              raise RuntimeError('reserved 2016 archive was requested')
+          if result['shower_identities_emitted'] or result['geometry_values_emitted'] or result['detector_score_computed'] or result['ghoststream_values_read']:
+              raise RuntimeError('forbidden output boundary violated')
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen CAMSv3 label-interface gate failed')
+          if result['verdict'] != 'PASS_CAMSV3_SHOWER_LABEL_AUDIT':
+              raise SystemExit(f"unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            camsv3_shower_label_audit/PROTOCOL.md \
+            camsv3_shower_label_audit/run_audit.py \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen aggregate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camsv3-shower-label-interface-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
