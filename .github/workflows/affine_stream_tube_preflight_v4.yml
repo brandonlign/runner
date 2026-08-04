@@ -1,9 +1,9 @@
-name: Affine stream-tube quartet preflight v4
+name: Affine stream-tube quartet preflight v4 manifest repair
 
 on:
   pull_request:
     branches:
-      - agent/mondrian-clique-coverage-normalized-development
+      - agent/affine-stream-tube-preflight-v4
     paths:
       - .github/workflows/affine_stream_tube_preflight_v4.yml
       - affine_stream_tube_preflight_v4/**
@@ -14,7 +14,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: affine-stream-tube-preflight-v4
+  group: affine-stream-tube-preflight-v4-manifest-repair
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/affine-stream-tube-preflight-v4
+          ref: agent/affine-stream-tube-preflight-v4-manifest-repair-v2
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -132,6 +132,7 @@ jobs:
           mkdir -p output
           sha256sum \
             affine_stream_tube_preflight_v4/PROTOCOL.md \
+            affine_stream_tube_preflight_v4/MANIFEST_REPAIR.md \
             affine_stream_tube_preflight_v4/source_parts/*.b64 \
             input/selected_events.jsonl.gz \
             input/audit.json \
@@ -144,7 +145,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: affine-stream-tube-preflight-v4
+          name: affine-stream-tube-preflight-v4-manifest-repair
           path: output
           if-no-files-found: error
           retention-days: 90
