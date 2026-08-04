@@ -1,0 +1,158 @@
+name: Majority-conditioned recurrence reduced screen
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/majority_conditioned_recurrence_screen.yml
+      - majority_conditioned_recurrence_screen/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: majority-conditioned-recurrence-reduced-screen
+  cancel-in-progress: true
+
+jobs:
+  reduced-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PINNED_COMMIT: 'b8748f3e641e52dfe3b1500d6c7356bd9732f54a'
+      BASE_SOURCE_SHA256: '4384dd0352174e57ca1f93a2c3bd070002f026cef8acace035ba4ec05e577dac'
+      CANDIDATE_SOURCE_SHA256: '3d60e3622d7ec406bb03cd4ab43faec84be1eff4d0dd70afa6ed79b8fd777281'
+      DATA_MD5: 'f57a2ac71832ceca9227441c00b8cd58'
+      SCREEN_SEED: '20260805'
+      CALIBRATION_TRIALS: '30'
+      NULL_TRIALS: '30'
+      INJECTION_TRIALS: '40'
+      ALPHA: '0.1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/majority-conditioned-recurrence-screen
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Extract and verify exact audited candidate
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pinned/source_parts /tmp/pinned output input
+          git fetch --depth=1 origin "${PINNED_COMMIT}"
+          for part in part00.b64 part01.b64 part02.b64 part03.b64; do
+            git show "FETCH_HEAD:worst_family_recurrence_stage0/source_parts/${part}" > "/tmp/pinned/source_parts/${part}"
+          done
+          git show FETCH_HEAD:majority_conditioned_recurrence_stage0/derive_candidate.py > /tmp/pinned/derive_candidate.py
+          git show FETCH_HEAD:replicastream_stage0/requirements.txt > /tmp/pinned/requirements.txt
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          parts = sorted(Path('/tmp/pinned/source_parts').glob('part*.b64'))
+          expected = ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']
+          if [part.name for part in parts] != expected:
+              raise RuntimeError(f'unexpected source parts: {[part.name for part in parts]}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '${{ env.BASE_SOURCE_SHA256 }}':
+              raise RuntimeError(f'base source mismatch: {digest}')
+          Path('/tmp/pinned/worst_family_source.py').write_bytes(source)
+          print('base source SHA-256:', digest)
+          print('base source bytes:', len(source))
+          PY
+          python /tmp/pinned/derive_candidate.py \
+            /tmp/pinned/worst_family_source.py \
+            /tmp/pinned/run_majority_conditioned.py
+          python -m py_compile /tmp/pinned/run_majority_conditioned.py
+          echo "${CANDIDATE_SOURCE_SHA256}  /tmp/pinned/run_majority_conditioned.py" | sha256sum -c -
+      - name: Install exact frozen dependencies
+        run: python -m pip install --upgrade pip -r /tmp/pinned/requirements.txt
+      - name: Download exact public observed subset
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/SonotaCo_shober_2026_subset.csv \
+            'https://zenodo.org/records/18664293/files/SonotaCo_shober_2026_subset.csv?download=1'
+          echo "${DATA_MD5}  input/SonotaCo_shober_2026_subset.csv" | md5sum -c -
+      - name: Run frozen reduced kill screen
+        run: |
+          set -euo pipefail
+          python /tmp/pinned/run_majority_conditioned.py \
+            --data input/SonotaCo_shober_2026_subset.csv \
+            --results output \
+            --seed "${SCREEN_SEED}" \
+            --calibration-trials "${CALIBRATION_TRIALS}" \
+            --null-trials "${NULL_TRIALS}" \
+            --injection-trials "${INJECTION_TRIALS}" \
+            --alpha "${ALPHA}"
+          test -s output/stage0_result.json
+      - name: Enforce exact frozen design and gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/stage0_result.json').read_text())
+          expected_design = {
+              'seed': 20260805,
+              'calibration_trials': 30,
+              'null_trials': 30,
+              'injection_trials': 40,
+              'alpha': 0.1,
+          }
+          observed = {key: result[key] for key in expected_design}
+          if observed != expected_design:
+              raise RuntimeError(f'design mismatch: {observed}')
+          expected_gates = {
+              'ideal_null_fwer_at_most_0_20',
+              'shared_structure_null_fwer_at_most_0_20',
+              'weak_recurrent_power_loss_vs_best_baseline_at_most_0_05',
+              'weak_one_year_artifact_detection_at_most_0_20',
+              'recurrence_margin_gain_vs_best_baseline_at_least_0_05',
+              'strong_recurrent_power_no_material_collapse_vs_best_baseline',
+          }
+          if set(result['gates']) != expected_gates:
+              raise RuntimeError(f'unexpected gates: {sorted(result["gates"])}')
+          print(json.dumps({
+              'ideal_null': result['ideal_null']['majority_conditioned'],
+              'shared_structure_null': result['shared_structure_null']['majority_conditioned'],
+              'metrics': result['metrics'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+              'runtime_seconds': result['runtime_seconds'],
+          }, indent=2, sort_keys=True))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen majority-conditioned reduced gate failed')
+          if result['verdict'] != 'CONTINUE_MAJORITY_CONDITIONED_FULL_STAGE0':
+              raise SystemExit(f"unexpected verdict: {result['verdict']}")
+          PY
+      - name: Record exact provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            majority_conditioned_recurrence_screen/PROTOCOL.md \
+            /tmp/pinned/source_parts/*.b64 \
+            /tmp/pinned/derive_candidate.py \
+            /tmp/pinned/worst_family_source.py \
+            /tmp/pinned/run_majority_conditioned.py \
+            /tmp/pinned/requirements.txt \
+            input/SonotaCo_shober_2026_subset.csv \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen screen evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: majority-conditioned-recurrence-reduced-screen
+          path: output
+          if-no-files-found: error
+          retention-days: 90
