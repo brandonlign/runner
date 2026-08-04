@@ -1,9 +1,9 @@
-"""Extract the neutral skin surface from Google's Apache-2.0 GNM Head model.
+"""Extract the neutral exterior skin from Google's Apache-2.0 GNM Head.
 
 The upstream model archive is intentionally not committed to the runner. This
 script downloads the pinned v3.0 archive during validation and writes a compact
-skin-only template that can be inspected and rendered without the identity or
-expression bases.
+exterior-only template without the identity/expression bases or internal mouth
+surface.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ LANDMARKS_URL = (
     "https://raw.githubusercontent.com/google/GNM/main/"
     "gnm/shape/data/landmarks/head_sparse_68.txt"
 )
+SURFACE_GROUP = "skin_exterior"
 OUTPUT_DIR = Path(__file__).resolve().parents[1] / "generated"
 OUTPUT_MODEL = OUTPUT_DIR / "gnm_head_skin_template.npz"
 OUTPUT_REPORT = OUTPUT_DIR / "gnm_head_skin_report.json"
@@ -41,7 +42,10 @@ def _download(url: str, destination: Path) -> None:
         destination.write_bytes(response.read())
 
 
-def _load_landmarks(path: Path, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _load_landmarks(
+    path: Path,
+    vertices: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     definition = np.loadtxt(path, dtype=np.float64)
     indices = definition[:, ::2].astype(np.int32)
     weights = definition[:, 1::2].astype(np.float32)
@@ -88,27 +92,29 @@ def main() -> None:
             "GNM vertex groups do not align with template vertices: "
             f"{group_weights.shape} vs {vertices.shape}"
         )
-    if "skin" not in group_names:
-        raise ValueError(f"GNM model has no skin vertex group: {group_names}")
+    if SURFACE_GROUP not in group_names:
+        raise ValueError(
+            f"GNM model has no {SURFACE_GROUP} vertex group: {group_names}"
+        )
 
-    skin_weights = group_weights[group_names.index("skin")]
-    skin_vertex_mask = skin_weights >= 0.5
-    skin_triangle_mask = np.all(skin_vertex_mask[triangles], axis=1)
-    skin_triangles_global = triangles[skin_triangle_mask]
-    used_vertices = np.unique(skin_triangles_global.reshape(-1))
+    surface_weights = group_weights[group_names.index(SURFACE_GROUP)]
+    surface_vertex_mask = surface_weights >= 0.5
+    surface_triangle_mask = np.all(surface_vertex_mask[triangles], axis=1)
+    surface_triangles_global = triangles[surface_triangle_mask]
+    used_vertices = np.unique(surface_triangles_global.reshape(-1))
 
     remap = np.full(vertices.shape[0], -1, dtype=np.int32)
     remap[used_vertices] = np.arange(used_vertices.size, dtype=np.int32)
     compact_vertices = vertices[used_vertices]
-    compact_triangles = remap[skin_triangles_global]
-    compact_weights = skin_weights[used_vertices]
+    compact_triangles = remap[surface_triangles_global]
+    compact_weights = surface_weights[used_vertices]
 
     np.savez_compressed(
         OUTPUT_MODEL,
         positions=compact_vertices,
         triangles=compact_triangles,
         source_vertex_indices=used_vertices,
-        skin_weights=compact_weights,
+        surface_weights=compact_weights,
         landmarks68=landmark_positions,
         landmark_source_indices=landmark_indices,
         landmark_barycentric_weights=landmark_weights,
@@ -122,10 +128,11 @@ def main() -> None:
         "sourceLicense": "Apache-2.0",
         "version": version,
         "variant": variant,
+        "surfaceGroup": SURFACE_GROUP,
         "sourceVertexCount": int(vertices.shape[0]),
         "sourceTriangleCount": int(triangles.shape[0]),
-        "skinVertexCount": int(compact_vertices.shape[0]),
-        "skinTriangleCount": int(compact_triangles.shape[0]),
+        "surfaceVertexCount": int(compact_vertices.shape[0]),
+        "surfaceTriangleCount": int(compact_triangles.shape[0]),
         "landmarkCount": int(landmark_positions.shape[0]),
         "bounds": {
             "minimum": minimum.tolist(),
