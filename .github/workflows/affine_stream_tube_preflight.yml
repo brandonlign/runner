@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
-      SOURCE_SHA256: 'b49e0609d6163a8d114aca80e7738e643d9daab82521eb0d8dcefbb9b45ff05e'
+      SOURCE_SHA256: 'ff1b024c28f240b2efa114c9e93c54a3d62d187bb2d1be0d75db891185950fb6'
       EVENTS_SHA256: '63e1389e2666d10b05138044f428609266b367cabab2542295c154a510e40f01'
       AUDIT_SHA256: 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
       BASELINE_PAYLOAD_SHA256: '2cb82a8c12913a6176ddd7c6333b57a4d672334934c0d2ca4b572e878590cfa2'
@@ -58,11 +58,14 @@ jobs:
           import base64, gzip, hashlib
           from pathlib import Path
 
-          parts=sorted(Path('affine_stream_tube_preflight/source_parts').glob('part*.b64'))
-          expected=['part00.b64','part01.b64']
+          parts=sorted(Path('affine_stream_tube_preflight/source_parts_v2').glob('part*.b64'))
+          expected=['part00.b64','part01.b64','part02.b64']
           if [p.name for p in parts] != expected:
               raise RuntimeError(f'unexpected candidate parts: {[p.name for p in parts]}')
-          source=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          if len(encoded) != 7000:
+              raise RuntimeError(f'unexpected encoded source length: {len(encoded)}')
+          source=gzip.decompress(base64.b64decode(encoded,validate=True))
           digest=hashlib.sha256(source).hexdigest()
           if digest != '${{ env.SOURCE_SHA256 }}':
               raise RuntimeError(f'candidate source mismatch: {digest}')
@@ -102,6 +105,7 @@ jobs:
           from pathlib import Path
           result=json.loads(Path('output/affine_tube_preflight.json').read_text())
           print(json.dumps({
+            'counts':result['counts'],
             'weak_auc':result['weak_auc'],
             'false_positive':result['false_positive'],
             'worst_bin_fpr_005':result['worst_bin_fpr_005'],
@@ -121,7 +125,7 @@ jobs:
           mkdir -p output
           sha256sum \
             affine_stream_tube_preflight/PROTOCOL.md \
-            affine_stream_tube_preflight/source_parts/*.b64 \
+            affine_stream_tube_preflight/source_parts_v2/*.b64 \
             input/selected_events.jsonl.gz \
             input/audit.json \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
