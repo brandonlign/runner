@@ -14,7 +14,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = ROOT / "generated" / "gnm_head_skin_template.npz"
 OUTPUT = ROOT / "generated"
-RENDER_VERSION = "gnm-orthographic-clay-v1.0"
+RENDER_VERSION = "gnm-orthographic-clay-v1.0.1"
 
 
 def _face_normals(positions: np.ndarray, triangles: np.ndarray) -> np.ndarray:
