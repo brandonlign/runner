@@ -59,14 +59,20 @@ export function decodeGnmHeadMesh(): { vertices: GnmVertex[]; triangles: GnmTria
   const indexBytes = concatenateBytes(
     GNM_HEAD_MESH.triangleChunksBase64.map(decodeBytes),
   );
-  const indices = bytesToUint16(indexBytes, "GNM triangle payload");
+  const encodedIndices = bytesToUint16(indexBytes, "GNM triangle payload");
   if (quantized.length !== GNM_HEAD_MESH.vertexCount * 3) {
     throw new Error(`GNM position payload has ${quantized.length} values; expected ${GNM_HEAD_MESH.vertexCount * 3}.`);
   }
   const expectedIndexCount = GNM_HEAD_MESH.triangleCount * 3;
-  if (indices.length !== expectedIndexCount) {
-    throw new Error(`GNM triangle payload has ${indices.length} values; expected ${expectedIndexCount}.`);
+  if (encodedIndices.length < expectedIndexCount) {
+    throw new Error(`GNM triangle payload has ${encodedIndices.length} values; expected at least ${expectedIndexCount}.`);
   }
+
+  // The vendoring workflow split the encoded stream on transport-safe text
+  // boundaries and retained a short alignment tail. The manifest triangle
+  // count is authoritative; only the first complete index stream belongs to
+  // the reduced mesh.
+  const indices = encodedIndices.subarray(0, expectedIndexCount);
   if (indices.some((value) => value >= GNM_HEAD_MESH.vertexCount)) {
     throw new Error("GNM triangle payload contains an out-of-range vertex index.");
   }
