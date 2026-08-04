@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mog-reference-face-validation
+  group: mog-reference-face-finalize
   cancel-in-progress: true
 
 jobs:
@@ -26,16 +26,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/mog-reference-face-validation
+          ref: agent/mog-reference-face-finalize
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Extract Apache-2.0 GNM head template
+      - name: Extract and render Apache-2.0 GNM reference assets
         run: |
-          python -m pip install --disable-pip-version-check numpy
+          python -m pip install --disable-pip-version-check numpy matplotlib pillow
           python scripts/extract_gnm_head.py
+          python scripts/render_gnm_reference_assets.py
 
       - uses: actions/setup-node@v4
         with:
@@ -62,15 +63,16 @@ jobs:
       - name: Render all four views
         run: npm run test:e2e
 
-      - name: Upload visual evidence and licensed mesh sources
+      - name: Upload visual evidence and licensed assets
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mog-reference-face-verified-renderings
+          name: mog-reference-face-final-evidence
           path: |
             mog_reference_face_validation/artifacts
-            mog_reference_face_validation/generated/canonical_face_model.json
-            mog_reference_face_validation/generated/gnm_head_skin_template.npz
+            mog_reference_face_validation/generated/gnm_reference_front.webp
+            mog_reference_face_validation/generated/gnm_reference_profile.webp
+            mog_reference_face_validation/generated/gnm_reference_assets.json
             mog_reference_face_validation/generated/gnm_head_skin_report.json
           if-no-files-found: warn
           retention-days: 30
