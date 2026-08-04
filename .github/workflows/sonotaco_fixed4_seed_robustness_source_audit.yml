@@ -60,7 +60,7 @@ jobs:
               'source_sha256_exact': digest == expected,
               'fixed_scale_exactly_4': constants.get('FIXED_SCALE') == 4.0,
               'panels_exact': constants.get('PANELS') == ('original','robust_a','robust_b','robust_c'),
-              'fresh_panels_exact': constants.get('FRESH_PANELS') == ('robust_a','robust_b','robust_c'),
+              'fresh_panels_exact': 'FRESH_PANELS = PANELS[1:]' in text and constants.get('PANELS', ())[1:] == ('robust_a','robust_b','robust_c'),
               'required_functions_present': {
                   'pairwise_scaled_distance','clique_score_and_indices','score_for_episode',
                   '_score_background','metric_pass','main'
