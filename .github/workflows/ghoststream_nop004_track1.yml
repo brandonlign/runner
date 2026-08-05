@@ -69,11 +69,14 @@ jobs:
           test -s input/ghost/april_stream/mdc/GhostStream_April_95_GMN_lookup.csv
           test -s input/nop_provenance/results/0149NOP_004.csv
           test -s input/nop_orbits/combined_source_matched_orbits.csv
-      - name: Compile frozen analysis
-        run: python -m py_compile ghoststream_nop004_track1/analyze_track1.py
+      - name: Compile frozen analysis and exact interface repair
+        run: |
+          python -m py_compile \
+            ghoststream_nop004_track1/analyze_track1.py \
+            ghoststream_nop004_track1/run_track1.py
       - name: Run Track-1 analysis
         run: |
-          python ghoststream_nop004_track1/analyze_track1.py \
+          python ghoststream_nop004_track1/run_track1.py \
             --ghost-members input/ghost/reconstruction/exact_downstream/primary/april_candidate_members.csv \
             --ghost-lookup input/ghost/april_stream/mdc/GhostStream_April_95_GMN_lookup.csv \
             --nop-lookup input/nop_provenance/results/0149NOP_004.csv \
@@ -87,6 +90,7 @@ jobs:
           sha256sum \
             ghoststream_nop004_track1/PROTOCOL.md \
             ghoststream_nop004_track1/analyze_track1.py \
+            ghoststream_nop004_track1/run_track1.py \
             ghoststream_nop004_track1/requirements.txt \
             .github/workflows/ghoststream_nop004_track1.yml \
             > output/source_sha256.txt
