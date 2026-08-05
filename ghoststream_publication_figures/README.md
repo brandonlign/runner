@@ -16,7 +16,7 @@ All scientific panels read preserved tables or records from exact GitHub Actions
 - Canonical GhostStream package: artifact `8814798136`, ZIP SHA-256 `716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5`.
 - Frozen GhostStream fixed4 application: artifact `8899766878`, ZIP SHA-256 `0288bd50c88c1dee8bf5b72bd52937116d81026f074667450c99cb8d8c56653c`.
 - SonotaCo 2025 fixed4 final development: artifact `8896176320`, ZIP SHA-256 `b3dd9c80759b749420407e95de0a5ed581e208bbd39c806d9472c00ae9a3529e`.
-- SonotaCo 2023 replacement independent replication: artifact `8897103051`, ZIP SHA-256 `291a1e738b6e63cc36226b7d2d09c888f3476d4dc7abf0175ea9c8103b62ee4`.
+- SonotaCo 2023 replacement independent replication: artifact `8897103051`, ZIP SHA-256 `291a1e738b6e63cc36226b7d2d09c888f3476d4dc7abf0175ea9c8103b62fc3c`.
 
 ## Outputs
 
