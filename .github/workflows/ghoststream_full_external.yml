@@ -1,0 +1,57 @@
+# The default-branch PR workflow performs the authoritative run.
+name: GhostStream full external replication
+
+on:
+  push:
+    branches:
+      - agent/ghoststream-full-external-replication
+    paths:
+      - ghoststream_external/run_full_external_replication.py
+      - .github/workflows/ghoststream_full_external.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ghoststream_external/run_full_external_replication.py
+      - .github/workflows/ghoststream_full_external.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  replicate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-full-external-replication
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install scientific dependencies
+        run: python -m pip install --upgrade pip numpy pandas scipy requests
+      - name: Compile
+        run: python -m py_compile ghoststream_external/run_full_external_replication.py
+      - name: Run frozen complete-catalog replication
+        run: python ghoststream_external/run_full_external_replication.py
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-full-external-replication
+          path: ghoststream_external/results
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve results on branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add ghoststream_external/results
+          if git diff --cached --quiet; then
+            echo 'No result changes to commit.'
+          else
+            git commit -m 'Preserve complete GhostStream external replication results'
+            git push origin HEAD:agent/ghoststream-full-external-replication
+          fi
