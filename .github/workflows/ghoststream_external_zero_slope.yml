@@ -7,6 +7,12 @@ on:
     paths:
       - ghoststream_external/run_full_external_replication.py
       - .github/workflows/ghoststream_external_zero_slope.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ghoststream_external/run_full_external_replication.py
+      - .github/workflows/ghoststream_external_zero_slope.yml
   workflow_dispatch:
 
 permissions:
@@ -78,6 +84,7 @@ jobs:
           retention-days: 90
 
       - name: Preserve results on branch
+        if: github.event_name != 'pull_request'
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
