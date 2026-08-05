@@ -1,0 +1,103 @@
+name: GhostStream NOP004 Track-1 resolution
+
+on:
+  pull_request:
+    branches:
+      - agent/ghoststream-final-scientific-synthesis
+    paths:
+      - ghoststream_nop004_track1/**
+      - .github/workflows/ghoststream_nop004_track1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ghoststream-nop004-track1
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GHOST_ARTIFACT_ID: '8814798136'
+      GHOST_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+      NOP_PROVENANCE_ARTIFACT_ID: '8874517049'
+      NOP_PROVENANCE_ARTIFACT_SHA256: '2707a7be1152967960703245e62049e74f4eb778c84098f27c2486385acd512c'
+      NOP_ORBIT_ARTIFACT_ID: '8875235491'
+      NOP_ORBIT_ARTIFACT_SHA256: '978e59f2e6b9c63644b0640d21662ab56307633da25d298bbb4d870dfb897ab7'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-nop004-track1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: ghoststream_nop004_track1/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r ghoststream_nop004_track1/requirements.txt
+      - name: Download and verify exact preserved inputs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/ghost input/nop_provenance input/nop_orbits output
+          for specification in \
+            "${GHOST_ARTIFACT_ID}:${GHOST_ARTIFACT_SHA256}:input/ghost.zip" \
+            "${NOP_PROVENANCE_ARTIFACT_ID}:${NOP_PROVENANCE_ARTIFACT_SHA256}:input/nop_provenance.zip" \
+            "${NOP_ORBIT_ARTIFACT_ID}:${NOP_ORBIT_ARTIFACT_SHA256}:input/nop_orbits.zip"
+          do
+            IFS=: read -r artifact_id digest destination <<< "${specification}"
+            curl --fail-with-body --location \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              --output "${destination}"
+            echo "${digest}  ${destination}" | sha256sum -c -
+          done
+          unzip -q input/ghost.zip -d input/ghost_artifact
+          bundle="$(find input/ghost_artifact -name 'GhostStream_Expert_Review_Bundle.zip' -print -quit)"
+          test -n "${bundle}"
+          unzip -q "${bundle}" -d input/ghost
+          unzip -q input/nop_provenance.zip -d input/nop_provenance
+          unzip -q input/nop_orbits.zip -d input/nop_orbits
+          test -s input/ghost/reconstruction/exact_downstream/primary/april_candidate_members.csv
+          test -s input/ghost/april_stream/mdc/GhostStream_April_95_GMN_lookup.csv
+          test -s input/nop_provenance/results/0149NOP_004.csv
+          test -s input/nop_orbits/combined_source_matched_orbits.csv
+      - name: Compile frozen analysis
+        run: python -m py_compile ghoststream_nop004_track1/analyze_track1.py
+      - name: Run Track-1 analysis
+        run: |
+          python ghoststream_nop004_track1/analyze_track1.py \
+            --ghost-members input/ghost/reconstruction/exact_downstream/primary/april_candidate_members.csv \
+            --ghost-lookup input/ghost/april_stream/mdc/GhostStream_April_95_GMN_lookup.csv \
+            --nop-lookup input/nop_provenance/results/0149NOP_004.csv \
+            --nop-orbits input/nop_orbits/combined_source_matched_orbits.csv \
+            --output output
+          cat output/TRACK1_REPORT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            ghoststream_nop004_track1/PROTOCOL.md \
+            ghoststream_nop004_track1/analyze_track1.py \
+            ghoststream_nop004_track1/requirements.txt \
+            .github/workflows/ghoststream_nop004_track1.yml \
+            > output/source_sha256.txt
+          sha256sum input/*.zip > output/artifact_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload Track-1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-nop004-track1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
