@@ -11,7 +11,7 @@ The complete IAU MDC 2026 CAMS v3, SonotaCo, and EDMOND yearly catalogs were eva
 - Frozen-template members: **9**
 - Counts by year: `{'2011': 2, '2012': 4, '2014': 1, '2015': 1, '2016': 1}`
 - Active years: `[2011, 2012]`
-- Activity p: **0.0152584**
+- Activity p: **0.0100121**
 - Shifted-window p: **0.0204082**
 - Orbit median D: **0.05630196189174284**
 - Orbit q90 D: **0.1164213849035731**
@@ -25,7 +25,7 @@ The complete IAU MDC 2026 CAMS v3, SonotaCo, and EDMOND yearly catalogs were eva
 - Frozen-template members: **11**
 - Counts by year: `{'2007': 1, '2009': 3, '2010': 1, '2013': 1, '2018': 1, '2020': 1, '2022': 2, '2023': 1}`
 - Active years: `[2009, 2022]`
-- Activity p: **5.4838e-05**
+- Activity p: **0.000630978**
 - Shifted-window p: **0.0204082**
 - Orbit median D: **0.02997685132088911**
 - Orbit q90 D: **0.05632443032431853**
@@ -34,17 +34,7 @@ The complete IAU MDC 2026 CAMS v3, SonotaCo, and EDMOND yearly catalogs were eva
 
 ## EDMOND
 
-- Role: supplementary catalog
-- Valid seasonal rows: **16,005**
-- Frozen-template members: **4**
-- Counts by year: `{'2013': 1, '2014': 1, '2016': 2}`
-- Active years: `[2016]`
-- Activity p: **0.00938538**
-- Shifted-window p: **0.0204082**
-- Orbit median D: **0.06053780938890371**
-- Orbit q90 D: **0.09618439083659128**
-- Orbit-null p: **0.0006**
-- Preserved gate passed: **False**
+- Error: `no usable archive`
 
 ## Interpretation boundary
 
