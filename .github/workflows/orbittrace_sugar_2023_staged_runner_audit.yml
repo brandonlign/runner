@@ -1,0 +1,110 @@
+name: OrbitTrace Sugar 2023 staged runner audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sugar-uncertainty-catalogue-development
+    paths:
+      - .github/workflows/orbittrace_sugar_2023_staged_runner_audit.yml
+      - orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sugar-uncertainty-2023-transfer
+
+      - name: Decode and audit staged runner without catalogue access
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          def decode(directory, count):
+              root = Path(directory)
+              names = [f'part{i:02d}.b64' for i in range(count)]
+              actual = [path.name for path in sorted(root.glob('part*.b64'))]
+              if actual != names:
+                  raise RuntimeError(f'unexpected parts: {actual}')
+              encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          core = decode('orbittrace_literature_comparison/sugar_uncertainty_core_parts', 3)
+          runner = decode('orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts', 4)
+          core_sha = hashlib.sha256(core).hexdigest()
+          runner_sha = hashlib.sha256(runner).hexdigest()
+          assert core_sha == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb'
+          compile(core, 'sugar_uncertainty_catalogue.py', 'exec')
+          compile(runner, 'run_sonotaco_2023_sugar_uncertainty_transfer.py', 'exec')
+          Path('output/sugar_uncertainty_catalogue.py').write_bytes(core)
+          Path('output/run_sonotaco_2023_sugar_uncertainty_transfer.py').write_bytes(runner)
+
+          tree = ast.parse(runner)
+          literal_globals = {}
+          functions = []
+          for node in tree.body:
+              if isinstance(node, ast.FunctionDef):
+                  functions.append(node.name)
+              elif isinstance(node, ast.Assign):
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except Exception:
+                      continue
+                  for target in node.targets:
+                      if isinstance(target, ast.Name):
+                          literal_globals[target.id] = value
+
+          text = runner.decode('utf-8')
+          required_literals = {
+              'YEAR': 2023,
+              'ARCHIVE_SHA256': '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430',
+              'MEMBER_SHA256': '3f1cfedf59553568d6471e022ad032ec5ba71ce5287a24071d30bcc1e8bac685',
+              'EXPECTED_SKLEARN_VERSION': '1.5.2',
+          }
+          gates = {
+              'exact_successful_core': core_sha == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb',
+              'runner_compiles': True,
+              'year_and_archive_literals_exact': all(literal_globals.get(key) == value for key, value in required_literals.items()),
+              'freeze_argument_present': '--freeze' in text,
+              'confirmation_parser_argument_present': '--confirmation-source' in text,
+              'frozen_epsilon_literal_present': '0.028705145052265017' in text,
+              'one_thousand_clone_rule_present': 'CLONE_ITERATIONS' in text and '1000' in text,
+              'no_orbittrace_access_literal': 'GhostStream' not in text and 'OrbitTrace' not in text and '247.17' not in text,
+              'expected_transfer_functions_present': all(name in functions for name in ('load_sidecars', 'prepare_records', 'score_iteration', 'evaluate', 'main')),
+              'no_data_access': True,
+          }
+          result = {
+              'verdict': 'PASS_SUGAR_2023_STAGED_RUNNER_AUDIT' if all(gates.values()) else 'FAIL_SUGAR_2023_STAGED_RUNNER_AUDIT',
+              'core_sha256': core_sha,
+              'runner_sha256': runner_sha,
+              'runner_bytes': len(runner),
+              'literal_globals': literal_globals,
+              'functions': functions,
+              'gates': gates,
+              'data_accessed': False,
+          }
+          Path('output/sugar_2023_staged_runner_audit.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(json.dumps(result, indent=2))
+          if not all(gates.values()):
+              raise SystemExit(result['verdict'])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sugar-2023-staged-runner-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
