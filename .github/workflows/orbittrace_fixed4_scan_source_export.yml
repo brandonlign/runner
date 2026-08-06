@@ -1,0 +1,47 @@
+name: OrbitTrace fixed4 scan source export
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-blind-catalogue-synthesis
+    paths:
+      - .github/workflows/orbittrace_fixed4_scan_source_export.yml
+      - orbittrace_fixed4_blind_catalogue/source_parts/**
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-wrapper-saturation-audit
+      - name: Decode and verify exact scanner
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          parts = sorted(Path('orbittrace_fixed4_blind_catalogue/source_parts').glob('part*.b64'))
+          expected = [f'part{i:02d}.b64' for i in range(4)]
+          if [p.name for p in parts] != expected:
+              raise RuntimeError([p.name for p in parts])
+          encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5':
+              raise RuntimeError(digest)
+          Path('output/run_orbittrace_fixed4_blind_scan.py').write_bytes(source)
+          Path('output/source_sha256.txt').write_text(digest + '\n', encoding='ascii')
+          print(len(source), digest)
+          PY
+          python -m py_compile output/run_orbittrace_fixed4_blind_scan.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-catalogue-scanner-source
+          path: output
+          if-no-files-found: error
+          retention-days: 90
