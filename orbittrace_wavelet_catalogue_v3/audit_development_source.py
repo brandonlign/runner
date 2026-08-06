@@ -9,9 +9,9 @@ import hashlib
 import json
 from pathlib import Path
 
-DEVELOPMENT_SOURCE_SHA256 = "b3dd3ab96ac18113eff32e3403e0080d9f7b287708e61dde0dbf2bebdb664c4b"
-DEVELOPMENT_SOURCE_BYTES = 33069
-DEVELOPMENT_ENCODED_LENGTH = 11132
+DEVELOPMENT_SOURCE_SHA256 = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+DEVELOPMENT_SOURCE_BYTES = 40987
+DEVELOPMENT_ENCODED_LENGTH = 13484
 SUPPORT_SOURCE_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
 PROMOTION_ARTIFACT_SHA256 = "bbf62eca844fbf22430d096fe7b6ad8cae9cc49b3a30a0c83d5bd6f457d10cd8"
 
@@ -147,8 +147,11 @@ def main() -> None:
     required_functions = {
         "load_support_module",
         "calibrate_year",
-        "scan_year",
+        "stable_smallest_indices",
         "exact_rescore",
+        "exact_rescore_window",
+        "exact_rescore_implementation_self_test",
+        "scan_year",
         "component_records",
         "build_families",
         "evaluate_families",
@@ -156,7 +159,7 @@ def main() -> None:
     }
     if not required_functions.issubset(arguments):
         raise RuntimeError(f"missing functions: {sorted(required_functions - arguments.keys())}")
-    for name in ("scan_year", "component_records", "build_families"):
+    for name in ("scan_year", "exact_rescore_window", "component_records", "build_families"):
         if "hidden_labels" in arguments[name]:
             raise RuntimeError(f"labels enter candidate generation through {name}")
     if arguments["evaluate_families"][0] != "hidden_labels":
@@ -166,7 +169,10 @@ def main() -> None:
         "MONTH_KEYS = tuple(f\"{year}-{month:02d}\" for year in YEARS",
         "p_wavelet <= BASE_ALPHA",
         "p_fixed4 <= RESCUE_ALPHA + 1e-15",
-        "exact = exact_rescore(",
+        "records_by_center",
+        "exact_records = exact_rescore_window(",
+        "support.exact_anchor_distances(anchor, window_events, base)",
+        "scalar_grouped_scores_equal",
         "wavelet_fisher_evidence",
         '"rescue_queue": "fixed4 p <= 1/129; never inserted into wavelet ranking"',
         "PASS_WAVELET_CATALOGUE_V3_DEVELOPMENT",
@@ -211,6 +217,7 @@ def main() -> None:
         "target_information_present": False,
         "labels_enter_candidate_generation": False,
         "promoted_episode_architecture_verified": True,
+        "implementation_only_exact_rescore_acceleration": True,
     }
     (output / "wavelet_catalogue_v3_source_audit.json").write_text(
         json.dumps(result, indent=2) + "\n"
