@@ -1,0 +1,117 @@
+name: OrbitTrace SonotaCo 2021 archive structure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sparse-tail-augmentation-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2021_archive_structure_audit.yml
+      - orbittrace_sparse_tail_augmentation/audit_sonotaco_2021_archive_structure.py
+      - orbittrace_sparse_tail_augmentation/PROTOCOL.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-sonotaco-2021-archive-structure-audit
+  cancel-in-progress: false
+
+jobs:
+  structure-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sparse-tail-2021-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen sparse-tail decision and structure-only source
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_sparse_tail_augmentation/PROTOCOL.md)" = "0b7a6cb05f0d93c9d272d164d396627aa470c0a3"
+          test "$(git hash-object orbittrace_sparse_tail_augmentation/audit_sonotaco_2021_archive_structure.py)" = "ddeabbc7e027b2b66ebcd8ed234d9a7a6a9b402b"
+          python -m py_compile orbittrace_sparse_tail_augmentation/audit_sonotaco_2021_archive_structure.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          protocol = Path('orbittrace_sparse_tail_augmentation/PROTOCOL.md').read_text(encoding='utf-8')
+          assert 'm in {0.00, 0.25, 0.50, 0.75, 1.00}' in protocol
+          assert 'SonotaCo 2021 is reserved as the sole prospective validation corpus' in protocol
+
+          source = Path('orbittrace_sparse_tail_augmentation/audit_sonotaco_2021_archive_structure.py').read_text(encoding='utf-8')
+          tree = ast.parse(source)
+          imports = set()
+          indexed_string_keys = set()
+          function_names = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split('.')[0])
+              elif isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                  indexed_string_keys.add(node.slice.value.lower())
+              elif isinstance(node, ast.FunctionDef):
+                  function_names.add(node.name)
+          assert imports.issubset({'__future__','argparse','csv','hashlib','io','json','re','zipfile','collections','pathlib'})
+          assert 'shower' not in indexed_string_keys
+          assert 'sklearn' not in source and 'numpy' not in source
+          assert not any(name in function_names for name in (
+              'score_episode','wavelet','wavelet_coefficient','fixed4_score','sparse_tail_score'
+          ))
+          assert {'parse_args','sha256_bytes','normalize','safe_member','main'}.issubset(function_names)
+          assert 'EXPECTED_MEMBER_SUFFIX = "/_U2_20210101_S.csv"' in source
+          print('PASS_2021_STRUCTURE_ONLY_SOURCE_GUARD')
+          PY
+
+      - name: Download preregistered SonotaCo 2021 archive
+        run: |
+          curl --fail --location --retry 3 \
+            --output input/021a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/021a.zip
+
+      - name: Execute structure-only audit
+        run: |
+          python orbittrace_sparse_tail_augmentation/audit_sonotaco_2021_archive_structure.py \
+            --archive input/021a.zip \
+            --output output
+
+      - name: Enforce prohibited-access record
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sonotaco_2021_archive_structure_audit.json').read_text())
+          if result.get('verdict') != 'PASS_SONOTACO_2021_ARCHIVE_STRUCTURE_AUDIT':
+              raise SystemExit(f"unexpected verdict: {result.get('verdict')}")
+          if any(result['prohibited_access'].values()):
+              raise SystemExit('prohibited scientific access occurred')
+          if result.get('year') != 2021:
+              raise SystemExit('wrong audit year')
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_sparse_tail_augmentation/PROTOCOL.md \
+            orbittrace_sparse_tail_augmentation/audit_sonotaco_2021_archive_structure.py \
+            input/021a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sonotaco-2021-archive-structure-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
