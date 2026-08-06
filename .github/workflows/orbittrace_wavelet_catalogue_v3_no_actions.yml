@@ -1,9 +1,9 @@
 name: OrbitTrace wavelet catalogue v3 action-free recovery
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/orbittrace-wavelet-catalogue-v3-development
+      - agent/orbittrace-fixed4-support-normalized-wrapper-development
     paths:
       - .github/workflows/orbittrace_wavelet_catalogue_v3_no_actions.yml
   workflow_dispatch:
@@ -22,11 +22,11 @@ jobs:
     timeout-minutes: 360
     env:
       PYTHONPATH: orbittrace_wavelet_catalogue_v3
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Clone exact workflow commit without checkout action
+      - name: Clone exact source commit without checkout action
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           git clone --filter=blob:none --no-checkout \
@@ -34,7 +34,6 @@ jobs:
           cd repo
           git checkout --detach "${SOURCE_SHA}"
           test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
-          git status --short
 
       - name: Select built-in Python 3.11 toolcache
         run: |
@@ -66,9 +65,9 @@ jobs:
           import sys
           sys.path.insert(0, 'orbittrace_wavelet_catalogue_v3')
           import wavelet_episode_comparator as wavelet
-          wavelet_checks = wavelet.self_test()
-          print({'wavelet': wavelet_checks})
-          if not all(wavelet_checks.values()):
+          checks = wavelet.self_test()
+          print({'wavelet': checks})
+          if not all(checks.values()):
               raise SystemExit('wavelet self-test failed')
           spec = importlib.util.spec_from_file_location(
               'wavelet_catalogue_v3_development',
@@ -77,9 +76,9 @@ jobs:
           module = importlib.util.module_from_spec(spec)
           assert spec.loader is not None
           spec.loader.exec_module(module)
-          exact_checks = module.exact_rescore_implementation_self_test()
-          print({'exact_rescore_implementation': exact_checks})
-          if not all(exact_checks.values()):
+          exact = module.exact_rescore_implementation_self_test()
+          print({'exact_rescore_implementation': exact})
+          if not all(exact.values()):
               raise SystemExit('exact-rescore implementation equivalence failed')
           PY
 
@@ -127,11 +126,10 @@ jobs:
           import json
           from pathlib import Path
           result = json.loads(Path('output/wavelet_catalogue_v3_development.json').read_text())
-          allowed = {
+          if result.get('verdict') not in {
               'PASS_WAVELET_CATALOGUE_V3_DEVELOPMENT',
               'FAIL_WAVELET_CATALOGUE_V3_DEVELOPMENT',
-          }
-          if result.get('verdict') not in allowed:
+          }:
               raise SystemExit(f"invalid verdict: {result.get('verdict')}")
           config = result['configuration']
           assert config['years'] == [2022, 2023]
@@ -140,7 +138,7 @@ jobs:
           assert config['rescue_queue'] == 'fixed4 p <= 1/129; never inserted into wavelet ranking'
           print(json.dumps({
               'verdict': result['verdict'],
-              'evaluation': {key: value for key, value in result['evaluation'].items() if key != 'per_label'},
+              'evaluation': {k: v for k, v in result['evaluation'].items() if k != 'per_label'},
               'fixed4_baseline': result['fixed4_development_baseline'],
               'gates': result['gates'],
           }, indent=2))
@@ -149,7 +147,6 @@ jobs:
       - name: Publish immutable result branch without artifact action
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           cd repo
