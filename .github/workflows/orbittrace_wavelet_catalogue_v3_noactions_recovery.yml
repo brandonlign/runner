@@ -11,6 +11,8 @@ on:
 permissions:
   contents: read
   actions: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: orbittrace-wavelet-catalogue-v3-noactions-recovery
@@ -33,6 +35,34 @@ jobs:
       - name: Prepare exact frozen repository without marketplace actions
         run: |
           set -euo pipefail
+          cat > /tmp/post_pr_status.py <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          body = sys.stdin.read().strip()
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/207/comments",
+              data=json.dumps({'body': body}).encode(),
+              method='POST',
+              headers={
+                  'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'Content-Type': 'application/json',
+              },
+          )
+          with urllib.request.urlopen(request, timeout=60) as response:
+              print(response.status)
+          PY
+          printf '%s\n' \
+            "ORBITTRACE_NOACTIONS_STAGE: start" \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            "frozen_source=${FROZEN_SOURCE_SHA}" \
+            "No marketplace actions are used." \
+            | python /tmp/post_pr_status.py || true
+
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates
           rm -rf source
@@ -79,6 +109,13 @@ jobs:
           if not all(exact_checks.values()):
               raise SystemExit('exact-rescore implementation equivalence failed')
           PY
+          printf '%s\n' \
+            "ORBITTRACE_NOACTIONS_STAGE: audits_passed" \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            "source_sha=ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51" \
+            "target_information_present=false" \
+            "held_out_catalogues_loaded=false" \
+            | python /tmp/post_pr_status.py || true
 
       - name: Retrieve exact frozen fixed4 baseline without marketplace actions
         working-directory: source
@@ -133,6 +170,12 @@ jobs:
           assert abs(baseline['top100_dominant_precision'] - 0.6809376504699393) < 1e-15
           print('PASS_FIXED4_DEVELOPMENT_BASELINE_GUARD')
           PY
+          printf '%s\n' \
+            "ORBITTRACE_NOACTIONS_STAGE: baseline_passed" \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            "fixed4_baseline_run=31106001133" \
+            "recovered_at_100=61 qualified_matches=90" \
+            | python /tmp/post_pr_status.py || true
 
       - name: Run target-excluded wavelet catalogue development
         working-directory: source
@@ -191,7 +234,13 @@ jobs:
           print('ORBITTRACE_RESULT_JSON_BEGIN')
           print(result_path.read_text())
           print('ORBITTRACE_RESULT_JSON_END')
+          Path('/tmp/orbittrace_result_comment.md').write_text(
+              'ORBITTRACE_NOACTIONS_STAGE: result_complete\n'
+              f"run={__import__('os').environ['GITHUB_RUN_ID']} attempt={__import__('os').environ['GITHUB_RUN_ATTEMPT']}\n"
+              '```json\n' + json.dumps(summary, indent=2) + '\n```\n'
+          )
           PY
+          python /tmp/post_pr_status.py < /tmp/orbittrace_result_comment.md || true
 
       - name: Record failure provenance
         if: ${{ failure() }}
@@ -206,3 +255,9 @@ jobs:
             orbittrace_wavelet_catalogue_v3/source_parts/part02.b64 \
             orbittrace_wavelet_catalogue_v3/source_parts/part03.b64
           find output -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          printf '%s\n' \
+            "ORBITTRACE_NOACTIONS_STAGE: failed" \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            "frozen_source=${FROZEN_SOURCE_SHA}" \
+            "The failure occurred before a valid result_complete checkpoint." \
+            | python /tmp/post_pr_status.py || true
