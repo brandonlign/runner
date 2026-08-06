@@ -48,7 +48,7 @@ def load_scanner(source: bytes) -> types.ModuleType:
     sys.modules[module.__name__] = module
     exec(compile(source, module.__file__, "exec"), module.__dict__)
     module.YEARS = YEARS
-    module.MONTH_KEYS = tuple(f"{year}{month:02d}" for year in YEARS for month in range(1, 13))
+    module.MONTH_KEYS = tuple(f"{year}-{month:02d}" for year in YEARS for month in range(1, 13))
     module.CORPUS = CORPUS
     if float(module.BLIND_LOW) != BLIND_INTERVAL[0] or float(module.BLIND_HIGH) != BLIND_INTERVAL[1]:
         raise RuntimeError("blind interval changed")
