@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_any_wavelet_coefficient_or detection endpoint",
+  "purpose": "Determine whether the Brown et al. (2010) CMOR 3D wavelet survey can be transferred faithfully to the available SonotaCo catalogue scale without weakening its published support and temporal-linking requirements.",
+  "reference": {
+    "title": "A meteoroid stream survey using the Canadian Meteor Orbit Radar II: Identification of minor showers using a 3D wavelet transform",
+    "authors": "Brown, Wong, Weryk, and Wiegert",
+    "year": 2010,
+    "doi": "10.1016/j.icarus.2009.11.015"
+  },
+  "classification": "source-grounded feasibility audit; not a scientific comparator result",
+  "published_design": {
+    "catalogue_scale": "approximately three million CMOR orbits stacked across seven years into one virtual year",
+    "time_partition": "one-degree solar-longitude bins",
+    "coordinates": "Sun-centered ecliptic radiant longitude and latitude plus geocentric speed",
+    "mother_wavelet": "three-dimensional Mexican-hat wavelet",
+    "angular_probe_deg": 4.0,
+    "speed_probe_fraction": 0.10,
+    "truncate_contributions_beyond_probe_multiples": 4.0,
+    "coarse_spatial_step_deg": 0.5,
+    "coarse_speed_step_fraction": 0.02,
+    "annual_background": "recursive annual median after removing values more than three standard deviations above the median",
+    "local_maximum_threshold_sigma": 3.0,
+    "minimum_radiants_contributing_to_coefficient": 300,
+    "temporal_linking": {
+      "maximum_spatial_separation_deg": 3.0,
+      "maximum_speed_difference_fraction": 0.10,
+      "maximum_solar_longitude_separation_deg": 2.0,
+      "minimum_linked_points": 3,
+      "radiant_drift_consistency_required": true
+    },
+    "local_background_strength_check_sigma": 3.0,
+    "refinement": "repeat near linked maxima using steps five times smaller while retaining the same probes"
+  },
+  "sonotaco_2025_feasibility_audit": {
+    "archive": "exact checksum-pinned SonotaCo 2025 archive already used for comparator development",
+    "blind_interval_removed_before_label_access_deg": [20.0, 55.0],
+    "quality_filter": "reuse the frozen Sugar-paper catalogue quality filter only to define a conservative complete-vector universe: Qc > 15 deg, Vg <= 75 km/s, Vg uncertainty <= 0.1 Vg + 1 km/s",
+    "computed_quantities": [
+      "quality-retained event count",
+      "counts in each one-degree solar-longitude bin",
+      "median, p90, p95, p99, and maximum one-degree-bin count",
+      "number and fraction of bins with at least 300 total radiants",
+      "maximum possible number of three-bin temporal chains in which every bin reaches 300 total radiants"
+    ],
+    "prohibited_quantities": [
+      "wavelet coefficients",
+      "local maxima",
+      "shower recoveries",
+      "candidate coordinates or members",
+      "any comparison endpoint"
+    ]
+  },
+  "decision_rule": {
+    "faithful_single_year_supported": "Only if the annual catalogue provides broad three-bin temporal support at the published 300-radiant floor; this audit still cannot reproduce the paper's seven-year virtual-year stacking or CMOR exposure model.",
+    "otherwise": "DEFER_FULL_CMOR_WAVELET_COMPARATOR_UNTIL_A_PREREGISTERED_MULTIYEAR_STACK_AND_EXPOSURE_MODEL_EXIST",
+    "no_relaxation": "Do not lower the 300-radiant floor, shorten the three-point chain, enlarge time bins, evaluate only known shower coordinates, or call a reduced wavelet core a faithful Brown et al. reproduction after seeing this audit."
+  },
+  "claim_boundary": "A negative feasibility result means the published CMOR survey is not fairly executable on one SonotaCo year. It is not evidence that the wavelet method performs poorly, and it is not a win for OrbitTrace."
+}
