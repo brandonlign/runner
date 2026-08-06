@@ -9,3 +9,5 @@ Final cancellation-protected trigger: 2026-08-06.
 Synchronized PR event trigger.
 
 Windows Python 3.11 path-repair trigger.
+
+Repaired-base synchronize event.
