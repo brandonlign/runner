@@ -1,5 +1,7 @@
 # OrbitTrace fixed-4° blind catalogue synthesis
 
+Status: frozen artifact-only synthesis; no detector or catalogue rerun is authorized.
+
 ## Purpose
 
 Synthesize the two independently frozen catalogue wrappers applied to the same immutable fixed-4° coverage-normalized Mondrian anchored four-clique core.
