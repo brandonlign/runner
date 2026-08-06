@@ -1,0 +1,118 @@
+name: OrbitTrace SonotaCo 2020 archive structure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-dual-channel-minimum-rescue-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2020_archive_structure_audit.yml
+      - orbittrace_dual_channel_rescue/audit_sonotaco_2020_archive_structure.py
+      - orbittrace_literature_freeze/DUAL_CHANNEL_MINIMUM_RESCUE_DEVELOPMENT_RESULT.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structure-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-dual-channel-2020-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen development and structure-only source
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_literature_freeze/DUAL_CHANNEL_MINIMUM_RESCUE_DEVELOPMENT_RESULT.json)" = "d90e3a9fe5b0dbcf3aaf475b1096529408750448"
+          test "$(git hash-object orbittrace_dual_channel_rescue/audit_sonotaco_2020_archive_structure.py)" = "9d965a76a6acc258719720c4e49a47dd896306f6"
+          python -m py_compile orbittrace_dual_channel_rescue/audit_sonotaco_2020_archive_structure.py
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+
+          freeze = json.loads(Path('orbittrace_literature_freeze/DUAL_CHANNEL_MINIMUM_RESCUE_DEVELOPMENT_RESULT.json').read_text())
+          assert freeze['verdict'] == 'PASS_DUAL_CHANNEL_MINIMUM_RESCUE_DEVELOPMENT'
+          assert freeze['method_id'] == 'wavelet_rank_plus_minimum_fixed4_rescue'
+          assert freeze['architecture']['rescue_alpha'] == 1.0 / 129.0
+          assert freeze['architecture']['prospective_corpus_reserved'] == 2020
+          assert freeze['pre_2020_gates']['sonotaco_2020_unopened'] is True
+
+          source = Path('orbittrace_dual_channel_rescue/audit_sonotaco_2020_archive_structure.py').read_text()
+          tree = ast.parse(source)
+          imports = set()
+          indexed_string_keys = set()
+          function_names = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split('.')[0])
+              elif isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                  indexed_string_keys.add(node.slice.value.lower())
+              elif isinstance(node, ast.FunctionDef):
+                  function_names.add(node.name)
+          assert imports.issubset({'__future__','argparse','csv','hashlib','io','json','re','zipfile','collections','pathlib','typing'})
+          assert 'shower' not in indexed_string_keys
+          assert 'numpy' not in source and 'sklearn' not in source
+          assert not any(name in function_names for name in (
+              'score_episode','wavelet','wavelet_episode_score','fixed4_score','dual_detected','auc','rate'
+          ))
+          assert {'parse_args','sha256_bytes','normalize','safe_member','main'}.issubset(function_names)
+          assert 'YEAR = 2020' in source
+          assert 'EXPECTED_MEMBER_SUFFIX = "/_U2_20200101_S.csv"' in source
+          print('PASS_2020_STRUCTURE_ONLY_SOURCE_GUARD')
+          PY
+
+      - name: Download preregistered SonotaCo 2020 archive
+        run: |
+          curl --fail --location --retry 3 \
+            --output input/020a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/020a.zip
+
+      - name: Execute structure-only audit
+        run: |
+          python orbittrace_dual_channel_rescue/audit_sonotaco_2020_archive_structure.py \
+            --archive input/020a.zip \
+            --output output
+
+      - name: Enforce prohibited-access record
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sonotaco_2020_archive_structure_audit.json').read_text())
+          if result.get('verdict') != 'PASS_SONOTACO_2020_ARCHIVE_STRUCTURE_AUDIT':
+              raise SystemExit(f"unexpected verdict: {result.get('verdict')}")
+          if result.get('year') != 2020:
+              raise SystemExit('wrong audit year')
+          if any(result['prohibited_access'].values()):
+              raise SystemExit('prohibited scientific access occurred')
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_freeze/DUAL_CHANNEL_MINIMUM_RESCUE_DEVELOPMENT_RESULT.json \
+            orbittrace_dual_channel_rescue/audit_sonotaco_2020_archive_structure.py \
+            input/020a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sonotaco-2020-archive-structure-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
