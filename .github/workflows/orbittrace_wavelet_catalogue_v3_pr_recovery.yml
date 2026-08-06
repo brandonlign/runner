@@ -1,46 +1,50 @@
-name: OrbitTrace wavelet catalogue v3 runtime recovery
+name: OrbitTrace wavelet catalogue v3 PR recovery
 
 on:
   pull_request:
     branches:
-      - agent/orbittrace-fixed4-support-normalized-wrapper-development
-    paths:
-      - orbittrace_wavelet_catalogue_v3/**
-      - .github/workflows/orbittrace_wavelet_catalogue_v3_runtime_recovery.yml
-  workflow_dispatch:
+      - agent/orbittrace-wavelet-catalogue-v3-development
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: orbittrace-wavelet-catalogue-v3-runtime-recovery
-  cancel-in-progress: true
+  group: orbittrace-wavelet-catalogue-v3-pr-recovery-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
 
 jobs:
   develop:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 360
+    container:
+      image: python:3.11-bookworm
     env:
+      GH_TOKEN: ${{ github.token }}
       PYTHONPATH: orbittrace_wavelet_catalogue_v3
+      FROZEN_SOURCE_SHA: f930664025250c9861683bef5bdeb0c6d19a4231
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
-
-      - name: Install frozen dependencies
+      - name: Prepare exact frozen source without marketplace actions
         run: |
           set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates
+          rm -rf source
+          mkdir source
+          cd source
+          git init
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${FROZEN_SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${FROZEN_SOURCE_SHA}"
           python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
 
       - name: Run target-free source and implementation audits
+        working-directory: source
         run: |
           set -euo pipefail
           mkdir -p input/fixed4 output
@@ -51,12 +55,15 @@ jobs:
           python - <<'PY'
           import importlib.util
           import sys
+
           sys.path.insert(0, 'orbittrace_wavelet_catalogue_v3')
           import wavelet_episode_comparator as wavelet
+
           wavelet_checks = wavelet.self_test()
           print({'wavelet': wavelet_checks})
           if not all(wavelet_checks.values()):
               raise SystemExit('wavelet self-test failed')
+
           spec = importlib.util.spec_from_file_location(
               'wavelet_catalogue_v3_development',
               '/tmp/run_wavelet_catalogue_v3_development.py',
@@ -70,20 +77,52 @@ jobs:
               raise SystemExit('exact-rescore implementation equivalence failed')
           PY
 
-      - name: Retrieve exact frozen fixed4 development baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Retrieve and guard exact frozen fixed4 baseline
+        working-directory: source
         run: |
           set -euo pipefail
-          gh run download 31106001133 \
-            --repo "$GITHUB_REPOSITORY" \
-            --name orbittrace-fixed4-support-normalized-wrapper-development \
-            --dir input/fixed4
-          test -f input/fixed4/orbittrace_fixed4_support_wrapper_development.json
           python - <<'PY'
+          import io
           import json
+          import os
+          import zipfile
           from pathlib import Path
-          result = json.loads(Path('input/fixed4/orbittrace_fixed4_support_wrapper_development.json').read_text())
+
+          import requests
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          response = requests.get(
+              f'https://api.github.com/repos/{repo}/actions/runs/31106001133/artifacts',
+              headers=headers,
+              timeout=60,
+          )
+          response.raise_for_status()
+          matches = [
+              artifact for artifact in response.json()['artifacts']
+              if artifact['name'] == 'orbittrace-fixed4-support-normalized-wrapper-development'
+          ]
+          if len(matches) != 1:
+              raise SystemExit(f'expected one frozen baseline artifact, found {len(matches)}')
+          archive = requests.get(
+              matches[0]['archive_download_url'],
+              headers=headers,
+              timeout=120,
+          )
+          archive.raise_for_status()
+          output = Path('input/fixed4')
+          output.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(archive.content)) as bundle:
+              bundle.extractall(output)
+
+          result = json.loads(
+              (output / 'orbittrace_fixed4_support_wrapper_development.json').read_text()
+          )
           assert result['verdict'] == 'FAIL_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT'
           baseline = result['development']['panel_evaluations']['development']['metrics']['persistence']
           assert baseline['recovered_at_100'] == 61
@@ -93,6 +132,7 @@ jobs:
           PY
 
       - name: Run target-excluded wavelet catalogue development
+        working-directory: source
         run: |
           set -euo pipefail
           python /tmp/run_wavelet_catalogue_v3_development.py \
@@ -104,12 +144,17 @@ jobs:
             --output output
           cat output/WAVELET_CATALOGUE_V3_DEVELOPMENT.md
 
-      - name: Enforce development result integrity
+      - name: Enforce and expose complete development result
+        working-directory: source
         run: |
+          set -euo pipefail
           python - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
-          result = json.loads(Path('output/wavelet_catalogue_v3_development.json').read_text())
+
+          result_path = Path('output/wavelet_catalogue_v3_development.json')
+          result = json.loads(result_path.read_text())
           allowed = {
               'PASS_WAVELET_CATALOGUE_V3_DEVELOPMENT',
               'FAIL_WAVELET_CATALOGUE_V3_DEVELOPMENT',
@@ -121,43 +166,40 @@ jobs:
           assert config['blind_exclusion'] == [20.0, 55.0]
           assert config['rescue_alpha'] == 1.0 / 129.0
           assert config['rescue_queue'] == 'fixed4 p <= 1/129; never inserted into wavelet ranking'
-          print(json.dumps({
+
+          summary = {
               'verdict': result['verdict'],
               'evaluation': {key: value for key, value in result['evaluation'].items() if key != 'per_label'},
               'fixed4_baseline': result['fixed4_development_baseline'],
               'gates': result['gates'],
-          }, indent=2))
+              'counts': {
+                  'anchor_count': result['anchor_count'],
+                  'component_count': result['component_count'],
+                  'family_count': result['family_count'],
+              },
+          }
+          print('ORBITTRACE_RESULT_SUMMARY_BEGIN')
+          print(json.dumps(summary, indent=2))
+          print('ORBITTRACE_RESULT_SUMMARY_END')
+          for path in sorted(Path('output').glob('*')):
+              if path.is_file():
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  print(f'OUTPUT_SHA256 {digest} {path.name} {path.stat().st_size}')
+          print('ORBITTRACE_RESULT_JSON_BEGIN')
+          print(result_path.read_text())
+          print('ORBITTRACE_RESULT_JSON_END')
           PY
 
-      - name: Record immutable provenance
-        if: always()
+      - name: Record failure provenance
+        if: ${{ failure() }}
+        working-directory: source
         run: |
-          mkdir -p output
+          set +e
+          echo "FROZEN_SOURCE_SHA=${FROZEN_SOURCE_SHA}"
           sha256sum \
-            .github/workflows/orbittrace_wavelet_catalogue_v3_runtime_recovery.yml \
-            orbittrace_wavelet_catalogue_v3/PROTOCOL.md \
-            orbittrace_wavelet_catalogue_v3/DUAL_CHANNEL_EPISODE_PROMOTION_RESULT.json \
             orbittrace_wavelet_catalogue_v3/audit_development_source.py \
-            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
             orbittrace_wavelet_catalogue_v3/source_parts/part00.b64 \
             orbittrace_wavelet_catalogue_v3/source_parts/part01.b64 \
             orbittrace_wavelet_catalogue_v3/source_parts/part02.b64 \
-            orbittrace_wavelet_catalogue_v3/source_parts/part03.b64 \
-            orbittrace_fixed4_support_wrapper_development/source_parts/part00.b64 \
-            orbittrace_fixed4_support_wrapper_development/source_parts/part01.b64 \
-            orbittrace_fixed4_support_wrapper_development/source_parts/part02.b64 \
-            orbittrace_fixed4_support_wrapper_development/source_parts/part03.b64 \
-            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
-            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
-            input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
-            > output/source_and_input_sha256.txt 2>/dev/null || true
-          python --version > output/python_version.txt
-          python -m pip freeze > output/environment.txt
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: orbittrace-wavelet-catalogue-v3-runtime-recovery
-          path: output
-          if-no-files-found: error
-          retention-days: 90
+            orbittrace_wavelet_catalogue_v3/source_parts/part03.b64
+          find output -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
