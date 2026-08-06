@@ -22,9 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     env:
+      BLIND_PAYLOAD_SHA256: '859eaf85bbaefe5fc670146a6c1735abbff0f1949b5ae628651bd0524536f310'
+      BLIND_PAYLOAD_BYTES: '30667'
+      BLIND_ENCODED_LENGTH: '11672'
       BLIND_SOURCE_SHA256: '78dc5e40c508ffbfd30f637137d1af82ca3d85a899eec03cdbb887ad04c5fe75'
       BLIND_SOURCE_BYTES: '30962'
-      BLIND_ENCODED_LENGTH: '11764'
       REVEAL_SOURCE_SHA256: '3fa601ed15d523c01c669a1814b2c16d9091791b71f26c59ff4f0caba3f69411'
       REVEAL_SOURCE_BYTES: '11070'
       REVEAL_ENCODED_LENGTH: '4788'
@@ -48,7 +50,7 @@ jobs:
           from gmn_python_api import data_directory, meteor_trajectory_reader
           print('GMN adapter import passed')
           PY
-      - name: Decode and verify blind and reveal programs
+      - name: Decode, patch, and verify blind and reveal programs
         run: |
           set -euo pipefail
           mkdir -p /tmp/orbittrace-blind blind_output reveal_output input
@@ -59,24 +61,64 @@ jobs:
           import os
           from pathlib import Path
 
-          specs = [
-              ('blind', Path('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64'), Path('/tmp/orbittrace-blind/run_blind_scan.py')),
-              ('reveal', Path('orbittrace_blind_catalogue/reveal_orbittrace.py.gz.b64'), Path('/tmp/orbittrace-blind/reveal_orbittrace.py')),
-          ]
-          for prefix, payload, destination in specs:
-              encoded = ''.join(payload.read_text(encoding='ascii').split())
-              expected_length = int(os.environ[f'{prefix.upper()}_ENCODED_LENGTH'])
-              if len(encoded) != expected_length:
-                  raise RuntimeError(f'{prefix} encoded length mismatch: {len(encoded)}')
-              source = gzip.decompress(base64.b64decode(encoded, validate=True))
-              expected_bytes = int(os.environ[f'{prefix.upper()}_SOURCE_BYTES'])
-              if len(source) != expected_bytes:
-                  raise RuntimeError(f'{prefix} source byte mismatch: {len(source)}')
-              digest = hashlib.sha256(source).hexdigest()
-              if digest != os.environ[f'{prefix.upper()}_SOURCE_SHA256']:
-                  raise RuntimeError(f'{prefix} source mismatch: {digest}')
-              destination.write_bytes(source)
-              print(prefix, len(source), digest)
+          blind_payload = Path('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64')
+          blind_encoded = ''.join(blind_payload.read_text(encoding='ascii').split())
+          if len(blind_encoded) != int(os.environ['BLIND_ENCODED_LENGTH']):
+              raise RuntimeError(f"blind encoded length mismatch: {len(blind_encoded)}")
+          blind_source = gzip.decompress(base64.b64decode(blind_encoded, validate=True))
+          if len(blind_source) != int(os.environ['BLIND_PAYLOAD_BYTES']):
+              raise RuntimeError(f"blind payload byte mismatch: {len(blind_source)}")
+          blind_payload_digest = hashlib.sha256(blind_source).hexdigest()
+          if blind_payload_digest != os.environ['BLIND_PAYLOAD_SHA256']:
+              raise RuntimeError(f"blind payload mismatch: {blind_payload_digest}")
+
+          old = (
+              b'def mixed_iso_to_datetime(arg: Any, *args: Any, **kwargs: Any) -> Any:\n'
+              b'            try:\n'
+              b'                return original_to_datetime(arg, *args, **kwargs)\n'
+              b'            except ValueError:\n'
+              b'                if args or "format" in kwargs:\n'
+              b'                    raise\n'
+              b'                return original_to_datetime(arg, *args, format="mixed", **kwargs)\n'
+          )
+          new = (
+              b'def mixed_iso_to_datetime(arg: Any, *args: Any, **kwargs: Any) -> Any:\n'
+              b'            try:\n'
+              b'                return original_to_datetime(arg, *args, **kwargs)\n'
+              b'            except ValueError:\n'
+              b'                fallback_args = list(args)\n'
+              b'                fallback_kwargs = dict(kwargs)\n'
+              b'                if len(fallback_args) >= 5:\n'
+              b'                    fallback_args[4] = "mixed"\n'
+              b'                    fallback_kwargs.pop("format", None)\n'
+              b'                else:\n'
+              b'                    fallback_kwargs["format"] = "mixed"\n'
+              b'                fallback_kwargs.pop("exact", None)\n'
+              b'                return original_to_datetime(arg, *fallback_args, **fallback_kwargs)\n'
+          )
+          if blind_source.count(old) != 1:
+              raise RuntimeError('timestamp compatibility patch anchor mismatch')
+          blind_source = blind_source.replace(old, new)
+          if len(blind_source) != int(os.environ['BLIND_SOURCE_BYTES']):
+              raise RuntimeError(f"patched blind source byte mismatch: {len(blind_source)}")
+          blind_digest = hashlib.sha256(blind_source).hexdigest()
+          if blind_digest != os.environ['BLIND_SOURCE_SHA256']:
+              raise RuntimeError(f"patched blind source mismatch: {blind_digest}")
+          Path('/tmp/orbittrace-blind/run_blind_scan.py').write_bytes(blind_source)
+          print('blind payload', len(blind_encoded), len(blind_source), blind_payload_digest, blind_digest)
+
+          reveal_payload = Path('orbittrace_blind_catalogue/reveal_orbittrace.py.gz.b64')
+          reveal_encoded = ''.join(reveal_payload.read_text(encoding='ascii').split())
+          if len(reveal_encoded) != int(os.environ['REVEAL_ENCODED_LENGTH']):
+              raise RuntimeError(f"reveal encoded length mismatch: {len(reveal_encoded)}")
+          reveal_source = gzip.decompress(base64.b64decode(reveal_encoded, validate=True))
+          if len(reveal_source) != int(os.environ['REVEAL_SOURCE_BYTES']):
+              raise RuntimeError(f"reveal source byte mismatch: {len(reveal_source)}")
+          reveal_digest = hashlib.sha256(reveal_source).hexdigest()
+          if reveal_digest != os.environ['REVEAL_SOURCE_SHA256']:
+              raise RuntimeError(f"reveal source mismatch: {reveal_digest}")
+          Path('/tmp/orbittrace-blind/reveal_orbittrace.py').write_bytes(reveal_source)
+          print('reveal', len(reveal_source), reveal_digest)
           PY
           python -m py_compile /tmp/orbittrace-blind/*.py
       - name: Enforce target-free blind source
