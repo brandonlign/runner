@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_sonotaco_2025_execution",
+  "purpose": "Reproduce the primary catalogue-scale HDBSCAN configuration from Pena-Asensio and Ferrari (2025) on the full SonotaCo 2025 catalogue without changing the frozen OrbitTrace detector or episode benchmark.",
+  "reference": {
+    "title": "Meteoroid Stream Identification with HDBSCAN Unsupervised Clustering Algorithm",
+    "authors": "Eloy Pena-Asensio and Fabio Ferrari",
+    "year": 2025,
+    "doi": "10.3847/1538-3881/adec8c"
+  },
+  "development_corpus": "SonotaCo 2025 only",
+  "independent_transfer": "SonotaCo 2023 only after source, package version, and all rules below are frozen",
+  "orbittrace_access": "prohibited",
+  "primary_faithful_transfer": {
+    "quality_filters": {
+      "minimum_convergence_angle_deg": 15.0,
+      "maximum_velocity_uncertainty_fraction": 0.10,
+      "maximum_eccentricity": 1.0,
+      "maximum_perihelion_distance_au": 1.0
+    },
+    "reference_label_filter": "Remove labeled shower events whose quality-filtered annual shower count is below 100; retain quality-filtered sporadic events.",
+    "feature_vector": "Published unstandardized six-component GEO vector: cos(sol), sin(sol), sin(sun-centered ecliptic longitude)*cos(ecliptic latitude), cos(sun-centered ecliptic longitude)*cos(ecliptic latitude), sin(ecliptic latitude), Vg/72.",
+    "algorithm": "hdbscan.HDBSCAN",
+    "metric": "euclidean",
+    "minimum_cluster_size": 100,
+    "minimum_samples": null,
+    "minimum_samples_interpretation": "Package default; equal to minimum_cluster_size in hdbscan.",
+    "cluster_selection_method": "eom",
+    "allow_single_cluster": false,
+    "prediction_data": false
+  },
+  "secondary_full_catalogue_coverage_audit": {
+    "classification": "predeclared survey-transfer diagnostic, not the paper's reference-label-filtered analysis",
+    "data": "All quality-filtered labeled and sporadic SonotaCo events, including showers with fewer than 100 labeled members.",
+    "algorithm_and_features": "Identical to the primary configuration; no parameter changes.",
+    "purpose": "Measure recovery by frozen reference shower-size strata without tuning toward weak showers."
+  },
+  "evaluation": {
+    "primary_metrics": [
+      "normalized mutual information against frozen SonotaCo labels",
+      "Hungarian-matched per-shower F1",
+      "number of HDBSCAN clusters",
+      "noise fraction",
+      "number of reference showers with F1 above 0.5 and above 0.8"
+    ],
+    "secondary_metrics": [
+      "adjusted Rand index",
+      "fixed-seed silhouette score excluding noise",
+      "full-catalogue recovery by reference size stratum"
+    ],
+    "hungarian_objective": "Maximize meteor-count overlap between non-noise HDBSCAN clusters and non-sporadic reference shower labels.",
+    "silhouette_seed": 20250806,
+    "silhouette_maximum_sample": 50000
+  },
+  "prohibitions": [
+    "Do not alter the OrbitTrace detector, its gates, or its frozen outcomes.",
+    "Do not choose a minimum cluster size from SonotaCo results.",
+    "Do not relabel the full-catalogue coverage audit as a faithful reproduction.",
+    "Do not access OrbitTrace coordinates, members, scores, or recovery results during this comparison.",
+    "Do not claim episode-scale superiority from catalogue-scale HDBSCAN results.",
+    "Do not suppress weak or negative HDBSCAN results.",
+    "Do not tune on SonotaCo 2023."
+  ]
+}
