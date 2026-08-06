@@ -1,0 +1,112 @@
+name: OrbitTrace fixed4 persistence rank-fusion development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-support-normalized-wrapper-development
+    paths:
+      - orbittrace_fixed4_rank_fusion/**
+      - .github/workflows/orbittrace_fixed4_persistence_rank_fusion_development.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-persistence-rank-fusion-development
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-persistence-rank-fusion-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen artifact-only development source
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_fixed4_rank_fusion/PROTOCOL.md)" = "9f594c147bc0fce9842b283244c6f00628777f4f"
+          test "$(git hash-object orbittrace_fixed4_rank_fusion/develop_rank_fusion.py)" = "64784e3d98f5e5bb4ab6d46f3c62ccf7f7dea168"
+          python -m py_compile orbittrace_fixed4_rank_fusion/develop_rank_fusion.py
+          grep -Fq 'WEIGHTS = (0.0, 0.01, 0.015, 0.02, 0.025)' orbittrace_fixed4_rank_fusion/develop_rank_fusion.py
+          grep -Fq 'prospective_years_reserved": [2019, 2020, 2021]' orbittrace_fixed4_rank_fusion/develop_rank_fusion.py
+
+      - name: Install frozen development dependency
+        run: python -m pip install numpy==2.1.3
+
+      - name: Retrieve exact exposed support-wrapper artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8971289223/zip" \
+            -o input/source.zip
+          echo '01a7158ee5cf79e212689b3eb24438bbf98f959dc3588141f073412b1a9c5999  input/source.zip' | sha256sum -c -
+          unzip -q input/source.zip -d input/source
+          test -f input/source/orbittrace_fixed4_support_wrapper_development.json
+
+      - name: Select the frozen conservative fusion
+        run: |
+          set -euo pipefail
+          python orbittrace_fixed4_rank_fusion/develop_rank_fusion.py \
+            --input input/source/orbittrace_fixed4_support_wrapper_development.json \
+            --output output
+          cat output/FIXED4_PERSISTENCE_RANK_FUSION_DEVELOPMENT.md
+
+      - name: Enforce development result and boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/fixed4_persistence_rank_fusion_development.json').read_text())
+          allowed = {
+              'PASS_PERSISTENCE_ANCHORED_RANK_FUSION_DEVELOPMENT',
+              'FAIL_PERSISTENCE_ANCHORED_RANK_FUSION_DEVELOPMENT',
+          }
+          if result.get('verdict') not in allowed:
+              raise SystemExit(f"invalid verdict: {result.get('verdict')}")
+          if result.get('candidate_weights') != [0.0, 0.01, 0.015, 0.02, 0.025]:
+              raise SystemExit('candidate grid changed')
+          if result.get('prospective_years_reserved') != [2019, 2020, 2021]:
+              raise SystemExit('prospective years changed')
+          print(json.dumps({
+              'verdict': result['verdict'],
+              'selected_weight': result['selected_weight'],
+              'selection_summary': result['selection_summary'],
+              'gates': result['gates'],
+          }, indent=2))
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_fixed4_rank_fusion/PROTOCOL.md \
+            orbittrace_fixed4_rank_fusion/develop_rank_fusion.py \
+            input/source.zip \
+            input/source/orbittrace_fixed4_support_wrapper_development.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-fixed4-persistence-rank-fusion-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
