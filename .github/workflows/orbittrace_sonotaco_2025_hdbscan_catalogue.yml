@@ -7,7 +7,7 @@ on:
     paths:
       - .github/workflows/orbittrace_sonotaco_2025_hdbscan_catalogue.yml
       - orbittrace_literature_comparison/HDBSCAN_CATALOGUE_PROTOCOL.json
-      - orbittrace_literature_comparison/run_sonotaco_2025_hdbscan_catalogue.py.gz.b64
+      - orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/**
   workflow_dispatch:
 
 permissions:
@@ -42,6 +42,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input output
+          echo 'caf0677a2841f7b376d0d99cdbc7792d3ce40b108f868eb278b89e3ad3f35b78  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part00.b64' | sha256sum -c -
+          echo '19b35fff3b254dc8065c76d425edacb32f9e1754aa7c4b4f0a9b85d27895c444  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part01.b64' | sha256sum -c -
+          echo 'efcb273912dc59de00961e55c22a7b55c39f3e3797d77bdf164e6c4d54b55a19  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part02.b64' | sha256sum -c -
+          echo '0b604814cf9d78c74f422b3e957d50e049c7e81bf7fa428f1aff03bf8b89dfb6  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part03.b64' | sha256sum -c -
+          echo '9bef0c8c2039f8846433ab0961e8f8c9fa401535793218697cdebf2e2737078f  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part04.b64' | sha256sum -c -
           python - <<'PY'
           import base64
           import gzip
@@ -60,7 +65,9 @@ jobs:
           assert primary['cluster_selection_method'] == 'eom'
           assert primary['metric'] == 'euclidean'
 
-          encoded = ''.join(Path('orbittrace_literature_comparison/run_sonotaco_2025_hdbscan_catalogue.py.gz.b64').read_text().split())
+          root = Path('orbittrace_literature_comparison/hdbscan_catalogue_runner_parts')
+          names = [f'part{index:02d}.b64' for index in range(5)]
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
           expected = 'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'
@@ -112,7 +119,11 @@ jobs:
           mkdir -p output
           sha256sum \
             orbittrace_literature_comparison/HDBSCAN_CATALOGUE_PROTOCOL.json \
-            orbittrace_literature_comparison/run_sonotaco_2025_hdbscan_catalogue.py.gz.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part00.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part01.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part02.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part03.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part04.b64 \
             orbittrace_literature_comparison/literature_comparators.py \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             sonotaco_mondrian_development/source_parts/part00.b64 \
