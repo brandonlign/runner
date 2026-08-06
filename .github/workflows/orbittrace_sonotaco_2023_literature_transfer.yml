@@ -39,7 +39,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input/repaired output
-          echo 'b765b521fd612877f2de4e6d6583dcd94901f5eb2ad773acda415636ff92a877  orbittrace_literature_freeze/run_sonotaco_2023_literature_comparison.py.gz.b64' | sha256sum -c -
+          echo '0e3af3c5f2b8f2265f5f67cbbd3e43616e3ccc7ca7cd3b5ebfe01f920fbb18ca  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part00.b64' | sha256sum -c -
+          echo '4d53203788a0db3439681c2b4c0a46967592de9ea7b89ed0c19408aaadfaf82d  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01.b64' | sha256sum -c -
+          echo 'a1c0da4f5a52ff9495b578e6becd4e58bb902b3b38251ffd04cb1fbc31f463e0  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part02.b64' | sha256sum -c -
           echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  orbittrace_literature_comparison/literature_comparators.py' | sha256sum -c -
           python - <<'PY'
           import base64
@@ -54,7 +56,8 @@ jobs:
           assert freeze['workflow_run'] == 31068866741
           assert freeze['artifact_id'] == 8954882633
           assert freeze['frozen_before_sonotaco_2023_comparator_execution'] is True
-          encoded = ''.join(Path('orbittrace_literature_freeze/run_sonotaco_2023_literature_comparison.py.gz.b64').read_text().split())
+          root = Path('orbittrace_literature_freeze/sonotaco_2023_runner_parts')
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in ('part00.b64', 'part01.b64', 'part02.b64'))
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
           expected = '582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747'
@@ -129,7 +132,9 @@ jobs:
           mkdir -p output
           sha256sum \
             orbittrace_literature_freeze/SONOTACO_2025_EPISODE_COMPARATOR_FREEZE.json \
-            orbittrace_literature_freeze/run_sonotaco_2023_literature_comparison.py.gz.b64 \
+            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part00.b64 \
+            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01.b64 \
+            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part02.b64 \
             orbittrace_literature_comparison/literature_comparators.py \
             input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
