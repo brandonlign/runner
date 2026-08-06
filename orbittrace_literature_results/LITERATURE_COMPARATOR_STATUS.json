@@ -1,10 +1,10 @@
 {
-  "schema_version": 2,
-  "status": "episode_execution_complete_paired_inference_pending",
+  "schema_version": 3,
+  "status": "complete_for_current_public_inputs",
   "frozen_detector": {
     "id": "orbittrace_fixed4",
     "source_sha256": "747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301",
-    "claim": "complementary extreme-sparse stream recognition with strongest four-member recall and tighter alpha-0.05 false-positive control",
+    "claim": "complementary extreme-sparse stream recognition with strongest four-member recall and generally tighter false-positive control",
     "general_conclusion": "Promising strong transfer, but not fully robustly replicated under the complete preregistered standard."
   },
   "episode_track": [
@@ -14,7 +14,7 @@
       "status": "complete_2025_and_one_shot_2023",
       "weak_auc_2025": 0.8285055722,
       "weak_auc_2023": 0.8319715832,
-      "boundary": "highest overall weak-stream AUROC in both years; weaker than fixed4 at k=4 and slightly looser alpha-0.05 false-positive control"
+      "boundary": "highest overall weak-stream AUROC point estimate in both years; paired cluster-bootstrap advantage is consistent but not decisive; weaker than fixed4 at k=4 and generally looser false-positive control"
     },
     {
       "id": "orbittrace_fixed4",
@@ -22,7 +22,7 @@
       "status": "complete_2025_and_one_shot_2023",
       "weak_auc_2025": 0.8132503734,
       "weak_auc_2023": 0.8116305009,
-      "boundary": "strongest k=4 recall among the two leading episode methods and tighter alpha-0.05 false-positive control; not the highest overall AUROC"
+      "boundary": "strongest k=4 recall among the two leading episode methods and generally tighter false-positive control; not the highest overall AUROC point estimate"
     },
     {
       "id": "internal_split",
@@ -81,6 +81,21 @@
       "weak_auc_2023": 0.746209
     }
   ],
+  "paired_inference": {
+    "id": "wavelet_fixed4_cluster_bootstrap",
+    "status": "complete",
+    "workflow_run": 31106813236,
+    "artifact_id": 8969900492,
+    "artifact_digest": "sha256:2e2b3f0238904c4d7a970cb93fbd0cd80b477435036eb4131e96d16b9d905b7f",
+    "result_sha256": "0881b5c449a80867b46341a4c681440b911ee6033dd857cc49b74f3561ff08e2",
+    "classification": "CONSISTENT_BUT_UNCERTAIN_WAVELET_AUC_ADVANTAGE",
+    "wavelet_minus_fixed4_auc": {
+      "2025": {"point": 0.0152551988, "ci95": [-0.0198952544, 0.0510299365], "probability_positive": 0.8061},
+      "2023": {"point": 0.0203410823, "ci95": [-0.0070061725, 0.0480105745], "probability_positive": 0.9269},
+      "equal_weight_combined": {"point": 0.0177981405, "ci95": [-0.004336614, 0.0406464729], "probability_positive": 0.93985}
+    },
+    "interpretation": "wavelet has the reproducibly higher overall point estimate, but the paired cluster-bootstrap intervals include zero; fixed4 retains the extreme-sparse k=4 advantage and generally tighter false-positive control"
+  },
   "catalogue_track": [
     {
       "id": "pena_asensio2025_hdbscan_geo",
@@ -141,5 +156,5 @@
     }
   ],
   "completion_rule": "Add another method only if it is a genuinely different family, is sufficiently specified in a primary source, has the required public inputs, can be frozen before independent access, and is comparable without conflating episode and catalogue tasks.",
-  "next_scientific_requirement": "paired cluster-bootstrap inference on the already frozen wavelet and fixed4 records, followed by a new external survey for any further independent method development"
+  "next_scientific_requirement": "a new external survey or exposure-controlled catalogue; no additional post-result tuning or correlated comparator variants"
 }
