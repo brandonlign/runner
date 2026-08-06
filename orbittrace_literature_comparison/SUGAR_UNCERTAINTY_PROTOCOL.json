@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_sonotaco_2025_execution",
+  "purpose": "Implement the uncertainty-aware catalogue stage of Sugar et al. (2017) on SonotaCo while preserving the already frozen episode and HDBSCAN results.",
+  "reference": {
+    "title": "Meteor shower detection with density-based clustering",
+    "authors": "Sugar, Moorhead, Brown, and Cooke",
+    "year": 2017,
+    "doi": "10.1111/maps.12856",
+    "arxiv": "1702.02656"
+  },
+  "classification": "published-rule uncertainty-aware survey transfer with explicitly predeclared SonotaCo uncertainty and deterministic merger realizations",
+  "development_corpus": "SonotaCo 2025 only",
+  "independent_corpus": "SonotaCo 2023 one-shot only after the 2025 result, epsilon, source, seed rule, and merger realization are frozen",
+  "orbittrace_access": "prohibited",
+  "published_rules": {
+    "quality_filters": {
+      "camera_meteor_camera_angle": "Qc > 15 degrees",
+      "maximum_geocentric_speed_km_s": 75.0,
+      "maximum_speed_uncertainty_km_s": "0.1 * Vg + 1"
+    },
+    "feature_vector": "six-component Sun-centered GEO vector: cos(sol), sin(sol), sin(lambda_g-sol)cos(beta_g), cos(lambda_g-sol)cos(beta_g), sin(beta_g), Vg/72",
+    "minimum_samples": 5,
+    "epsilon_rule": "23rd percentile of each quality-filtered nominal event's fourth non-self nearest-neighbor distance",
+    "clone_catalogues": 1000,
+    "solar_longitude_error": 0.0,
+    "cluster_overlap_merge_rule": "merge cluster occurrences when at least 50 percent of either occurrence's members are shared",
+    "minimum_recurrence_runs": 100,
+    "weak_recurrence_range": "100 through 499 of 1000 runs",
+    "strong_recurrence_minimum": 500
+  },
+  "sonotaco_uncertainty_realization": {
+    "radiant_sampling": "independent Gaussian perturbations in observed equatorial RA and Dec using SonotaCo ra sd(deg) and de sd(deg), followed by deterministic conversion to Sun-centered ecliptic radiant",
+    "velocity_sampling": "Gaussian perturbation of Vg using SonotaCo vg sd(km/s)",
+    "physical_bounds": "reflect Dec into [-90,90], wrap RA to [0,360), and resample nonpositive or above-75-km/s cloned speeds from the same event distribution up to eight attempts before clipping to machine-safe bounds",
+    "correlation_limit": "SonotaCo does not publish event-level RA-Dec-velocity covariance; independence is an explicit survey-transfer approximation",
+    "master_seed_rule": "17020256 + catalogue year",
+    "random_generator": "numpy.random.Generator(PCG64)"
+  },
+  "deterministic_merger_realization": {
+    "run_order": "0 through 999",
+    "within_run_cluster_order": "descending member count, then smallest event index",
+    "master_matching_set": "events present in at least half of a master's detected runs; fall back to the union if empty",
+    "match_condition": "intersection is at least half the smaller of occurrence and matching-set sizes",
+    "multiple_master_match": "merge every matching master into the smallest master identifier before adding the occurrence",
+    "same_run_collision": "union occurrence members and count the run once",
+    "master_recurrence": "number of distinct clone runs represented",
+    "event_membership_probability": "number of detected master runs containing the event divided by master recurrence"
+  },
+  "evaluation": {
+    "primary_hard_assignment": "assign each event to the retained master with highest membership probability if that probability is at least 0.5; ties use recurrence then smallest master id; otherwise noise",
+    "secondary_binary_assignment": "also report paper-style any-occurrence membership without using it to select parameters",
+    "metrics": [
+      "retained master count",
+      "strong and weak master counts",
+      "recurrence distribution",
+      "noise fraction under primary hard assignment",
+      "normalized mutual information",
+      "adjusted Rand index",
+      "Hungarian-matched per-shower F1",
+      "recovery by frozen reference-size stratum",
+      "membership-probability summaries"
+    ],
+    "reference_labels": "native SonotaCo shower labels, with spo and nonalphabetic/background tokens mapped to SPORADIC",
+    "minimum_reference_shower_size": 4
+  },
+  "compute_and_audit": {
+    "progress_checkpoint_every_runs": 25,
+    "nominal_epsilon_and_fourth_neighbor_distribution_are_saved": true,
+    "per-run_cluster_counts_are_saved": true,
+    "master_cluster_membership_probabilities_are_saved": true,
+    "no_endpoint_may_select_or_change_a_rule": true
+  },
+  "prohibitions": [
+    "Do not alter OrbitTrace, HDBSCAN, deterministic Sugar-core, D_SH, episode, calibration, or targeted-recovery results.",
+    "Do not call this an exact reproduction of ASGARD's ecliptic covariance model.",
+    "Do not reduce the 1000 clone catalogues after seeing runtime or results.",
+    "Do not change epsilon percentile, minimum samples, overlap fraction, recurrence thresholds, seed rule, or assignment threshold after data access.",
+    "Do not claim episode-scale superiority from this catalogue track.",
+    "Do not tune on SonotaCo 2023."
+  ]
+}
