@@ -1,0 +1,88 @@
+name: OrbitTrace fixed4 catalogue source export
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-support-normalized-wrapper-development
+    paths:
+      - .github/workflows/orbittrace_fixed4_catalogue_source_export.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-catalogue-source-export
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reconstruct and verify preserved catalogue sources
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          def decode(root: str, expected_hash: str, output_name: str) -> None:
+              parts = sorted(Path(root).glob('part*.b64'))
+              expected_names = [f'part{i:02d}.b64' for i in range(4)]
+              if [part.name for part in parts] != expected_names:
+                  raise RuntimeError(f'unexpected parts under {root}: {[part.name for part in parts]}')
+              encoded = ''.join(
+                  ''.join(part.read_text(encoding='ascii').split())
+                  for part in parts
+              )
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != expected_hash:
+                  raise RuntimeError(f'{output_name} hash mismatch: {digest}')
+              Path('output', output_name).write_bytes(source)
+              print(output_name, len(source), digest)
+
+          decode(
+              'orbittrace_fixed4_blind_catalogue/source_parts',
+              '48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5',
+              'run_fixed4_blind_catalogue.py',
+          )
+          decode(
+              'orbittrace_fixed4_support_wrapper_development/source_parts',
+              'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62',
+              'run_fixed4_support_wrapper_development.py',
+          )
+          PY
+          python -m py_compile \
+            output/run_fixed4_blind_catalogue.py \
+            output/run_fixed4_support_wrapper_development.py
+
+      - name: Record source-only provenance
+        run: |
+          sha256sum output/*.py > output/decoded_source_sha256.txt
+          sha256sum \
+            orbittrace_fixed4_blind_catalogue/source_parts/part00.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part01.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part02.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part03.b64 \
+            orbittrace_fixed4_support_wrapper_development/source_parts/part00.b64 \
+            orbittrace_fixed4_support_wrapper_development/source_parts/part01.b64 \
+            orbittrace_fixed4_support_wrapper_development/source_parts/part02.b64 \
+            orbittrace_fixed4_support_wrapper_development/source_parts/part03.b64 \
+            > output/encoded_parts_sha256.txt
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-catalogue-decoded-source
+          path: output
+          if-no-files-found: error
+          retention-days: 90
