@@ -68,8 +68,24 @@ jobs:
           assert rules['post_result_parameter_changes'] == 'prohibited'
 
           root = Path('orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts')
-          names = [f'part00_sub{index:02d}.b64' for index in range(6)]
-          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+          expected_parts = {
+              'part00_sub00.b64': (1600, '37ef1ca13c856bb043eed74b0f6c335278c444d624cbf26fb646a43e319b28c8'),
+              'part00_sub01.b64': (1600, '981b9ff321fa3805d709212917f4885c47b5a9e7657cdd99f785c33cb8089af8'),
+              'part00_sub02.b64': (1600, '32f8f82ad2a4b93d3b26dfd153d5856e13612de4ee75b0538bd026dd99d255f5'),
+              'part00_sub03.b64': (1600, '0434ee1682d26a7853be340cfddb88ad9e0ac0dcfd724e5ce69c9fe2bb96c01f'),
+              'part00_sub04.b64': (1600, 'c4ff160cbdb79379acdc593d4e5fa7513e5a90e986014a77330d9ba6c84c8416'),
+              'part00_sub05.b64': (320, '7564d8bafd5e2809a34287da90397ab732c1c570d4e6e4da1956bb8cf7da38f4'),
+          }
+          pieces = []
+          for name, (expected_length, expected_hash) in expected_parts.items():
+              piece = ''.join((root / name).read_text().split())
+              digest = hashlib.sha256(piece.encode()).hexdigest()
+              if len(piece) != expected_length or digest != expected_hash:
+                  raise RuntimeError(
+                      f'runner transport mismatch {name}: length={len(piece)} sha256={digest}'
+                  )
+              pieces.append(piece)
+          encoded = ''.join(pieces)
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
           expected = '2e770252f68f40c7ebab8f072aef18b88246091e40a98673db69d09f7bb1d41b'
