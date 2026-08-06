@@ -1,0 +1,143 @@
+name: OrbitTrace literature comparison source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-fixed4-final-development
+    paths:
+      - .github/workflows/orbittrace_literature_comparison_source_audit.yml
+      - orbittrace_literature_comparison/PROTOCOL.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-literature-comparison-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-literature-comparison-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Decode and verify immutable benchmark sources
+        run: |
+          set -euo pipefail
+          mkdir -p audit_output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          def decode_file(path: str) -> bytes:
+              encoded = ''.join(Path(path).read_text(encoding='ascii').split())
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          def decode_parts(path: str, names: tuple[str, ...]) -> bytes:
+              root = Path(path)
+              encoded = ''.join(
+                  ''.join((root / name).read_text(encoding='ascii').split())
+                  for name in names
+              )
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          sources = {
+              'candidate': (
+                  decode_file('sonotaco_fixed4_final_development/candidate.py.gz.b64'),
+                  '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301',
+              ),
+              'baseline': (
+                  decode_file('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64'),
+                  '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50',
+              ),
+              'scorer': (
+                  decode_parts(
+                      'mondrian_clique_development/source_parts_v2',
+                      ('part00.b64', 'part01.b64', 'part02.b64', 'part03.b64'),
+                  ),
+                  'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8',
+              ),
+              'adapter': (
+                  decode_parts('sonotaco_mondrian_development/source_parts', ('part00.b64',)),
+                  '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518',
+              ),
+          }
+
+          inventory = {}
+          digest_lines = []
+          for name, (source, expected) in sources.items():
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != expected:
+                  raise RuntimeError(f'{name} source mismatch: {digest}')
+              text = source.decode('utf-8')
+              tree = ast.parse(text)
+              output = Path(f'audit_output/decoded_{name}.py')
+              output.write_text(text, encoding='utf-8')
+              digest_lines.append(f'{digest}  {output.name}')
+              inventory[name] = {
+                  'source_sha256': digest,
+                  'source_bytes': len(source),
+                  'classes': [
+                      {
+                          'name': node.name,
+                          'line': node.lineno,
+                          'methods': [
+                              child.name for child in node.body
+                              if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                          ],
+                      }
+                      for node in tree.body if isinstance(node, ast.ClassDef)
+                  ],
+                  'functions': [
+                      {
+                          'name': node.name,
+                          'line': node.lineno,
+                          'args': [arg.arg for arg in node.args.args],
+                      }
+                      for node in tree.body
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  ],
+              }
+
+          Path('audit_output/ast_inventory.json').write_text(
+              json.dumps(inventory, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          Path('audit_output/source_sha256.txt').write_text(
+              '\n'.join(digest_lines) + '\n', encoding='utf-8'
+          )
+
+          expected_files = {
+              'decoded_candidate.py', 'decoded_baseline.py',
+              'decoded_scorer.py', 'decoded_adapter.py',
+              'ast_inventory.json', 'source_sha256.txt',
+          }
+          actual_files = {path.name for path in Path('audit_output').iterdir()}
+          if expected_files != actual_files:
+              raise RuntimeError(f'audit file mismatch: {sorted(actual_files)}')
+          for path in Path('audit_output').iterdir():
+              if path.stat().st_size == 0:
+                  raise RuntimeError(f'empty audit file: {path}')
+
+          print(json.dumps(inventory, indent=2))
+          print('PASS_SOURCE_ONLY_LITERATURE_COMPARISON_AUDIT')
+          PY
+
+      - name: Upload source audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-literature-comparison-source-audit
+          path: audit_output
+          if-no-files-found: error
+          retention-days: 90
