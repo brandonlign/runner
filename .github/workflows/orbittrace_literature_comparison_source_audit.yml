@@ -108,8 +108,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           workflow = Path('.github/workflows/orbittrace_literature_comparison_source_audit.yml').read_text()
+          audited_section = workflow.split('      - name: Enforce source-only boundary', 1)[0]
           forbidden = ['025a.zip', '023a.zip', 'curl ', 'wget ', 'gh run download', 'run_baseline_ceiling.py --']
-          found = [token for token in forbidden if token in workflow]
+          found = [token for token in forbidden if token in audited_section]
           if found:
               raise SystemExit(f'forbidden data-access token(s): {found}')
           required = [
@@ -117,7 +118,7 @@ jobs:
               'decoded_candidate.py',
               'ast_inventory.json',
           ]
-          missing = [token for token in required if token not in workflow]
+          missing = [token for token in required if token not in audited_section]
           if missing:
               raise SystemExit(f'missing audit invariant(s): {missing}')
           print('PASS_SOURCE_ONLY_LITERATURE_COMPARISON_AUDIT')
