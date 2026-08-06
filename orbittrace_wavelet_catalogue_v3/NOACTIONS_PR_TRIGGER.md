@@ -7,3 +7,5 @@ Runner pools requested: Ubuntu and Windows.
 Final cancellation-protected trigger: 2026-08-06.
 
 Synchronized PR event trigger.
+
+Windows Python 3.11 path-repair trigger.
