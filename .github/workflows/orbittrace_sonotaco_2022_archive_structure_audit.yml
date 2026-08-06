@@ -1,0 +1,84 @@
+name: OrbitTrace SonotaCo 2022 archive structure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-wavelet-hybrid-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2022_archive_structure_audit.yml
+      - orbittrace_literature_comparison/audit_sonotaco_2022_archive_structure.py
+      - orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structure-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hybrid-2022-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen hybrid and structure-only source before archive access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json)" = "2a8d154ccda12ac4c5612cfc13448b6609c389f8"
+          test "$(git hash-object orbittrace_literature_comparison/audit_sonotaco_2022_archive_structure.py)" = "66a392ead80b43e89c41ff66f2bf3be31e0fb77d"
+          python -m py_compile orbittrace_literature_comparison/audit_sonotaco_2022_archive_structure.py
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+          protocol = json.loads(Path('orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json').read_text())
+          assert protocol['status'] == 'frozen_before_any_hybrid_score_on_2025_2023_or_2022'
+          source = Path('orbittrace_literature_comparison/audit_sonotaco_2022_archive_structure.py').read_text()
+          tree = ast.parse(source)
+          strings = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+          imports = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split('.')[0])
+          assert imports.issubset({'__future__','argparse','csv','hashlib','io','json','re','zipfile','collections','pathlib'})
+          assert 'shower' not in {value.lower() for value in strings}
+          assert 'sklearn' not in source and 'numpy' not in source
+          assert 'wavelet_episode_comparator' not in source and 'fixed4' not in source.lower().replace('"fixed4_scores_computed": False','')
+          print('PASS_2022_STRUCTURE_ONLY_SOURCE_GUARD')
+          PY
+
+      - name: Download preregistered SonotaCo 2022 archive
+        run: |
+          curl --fail --location --retry 3 --output input/022a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/022a.zip
+
+      - name: Execute structure-only audit
+        run: |
+          python orbittrace_literature_comparison/audit_sonotaco_2022_archive_structure.py \
+            --archive input/022a.zip \
+            --output output
+
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json \
+            orbittrace_literature_comparison/audit_sonotaco_2022_archive_structure.py \
+            input/022a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sonotaco-2022-archive-structure-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
