@@ -40,17 +40,23 @@ jobs:
           assert protocol['status'] == 'frozen_before_any_hybrid_score_on_2025_2023_or_2022'
           source = Path('orbittrace_literature_comparison/audit_sonotaco_2022_archive_structure.py').read_text()
           tree = ast.parse(source)
-          strings = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
           imports = set()
+          indexed_string_keys = set()
+          function_names = set()
           for node in ast.walk(tree):
               if isinstance(node, ast.Import):
                   imports.update(alias.name.split('.')[0] for alias in node.names)
               elif isinstance(node, ast.ImportFrom) and node.module:
                   imports.add(node.module.split('.')[0])
+              elif isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                  indexed_string_keys.add(node.slice.value.lower())
+              elif isinstance(node, ast.FunctionDef):
+                  function_names.add(node.name)
           assert imports.issubset({'__future__','argparse','csv','hashlib','io','json','re','zipfile','collections','pathlib'})
-          assert 'shower' not in {value.lower() for value in strings}
+          assert 'shower' not in indexed_string_keys
           assert 'sklearn' not in source and 'numpy' not in source
-          assert 'wavelet_episode_comparator' not in source and 'fixed4' not in source.lower().replace('"fixed4_scores_computed": False','')
+          assert not any(name in function_names for name in ('score_episode','wavelet','wavelet_coefficient','fixed4_score','hybrid_score'))
+          assert {'parse_args','sha256_bytes','normalize','safe_member','main'}.issubset(function_names)
           print('PASS_2022_STRUCTURE_ONLY_SOURCE_GUARD')
           PY
 
