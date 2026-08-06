@@ -2,6 +2,8 @@
 
 Status: frozen artifact-only synthesis; no detector or catalogue rerun is authorized.
 
+Execution authorization: verify the two exact final artifacts and apply only the fixed synthesis rule below.
+
 ## Purpose
 
 Synthesize the two independently frozen catalogue wrappers applied to the same immutable fixed-4° coverage-normalized Mondrian anchored four-clique core.
