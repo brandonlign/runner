@@ -1,0 +1,188 @@
+name: OrbitTrace SonotaCo 2020 serialization repair source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-dual-channel-2020-runner-source-audit
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2020_serialization_repair_source_audit.yml
+      - orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: orbittrace_dual_channel_rescue:orbittrace_literature_comparison
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-dual-channel-2020-serialization-repair-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install source-audit dependency
+        run: python -m pip install numpy==2.1.3
+
+      - name: Verify unchanged scientific source and exact repair shim
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/source-audit output
+          test "$(git hash-object orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py)" = "4688b7234941d13112cec5269ee0030a37458c0e"
+          test "$(git hash-object orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json)" = "f93c75f80326b50de474173789c4989d6378e33f"
+          test "$(git hash-object orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64)" = "d9ee70466829fef4dd3b55fe455b51e33647a5b9"
+          test "$(git hash-object orbittrace_literature_freeze/SONOTACO_2020_LABEL_ELIGIBILITY_RESULT.json)" = "66b1038a5e7d5fc8ae40ac59f9668586a7fa80c4"
+          test "$(git hash-object orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py)" = "7060e28af642d18513cfa1acb4e452840f30daf9"
+          python -m py_compile orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py
+
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8972146681/zip" \
+            -o input/source-audit.zip
+          echo 'd9088e6804c271e7e33cd6dc54f3d784cc9fe3a0453aa858d13a71da2a68dc5f  input/source-audit.zip' | sha256sum -c -
+          unzip -q input/source-audit.zip -d input/source-audit
+          cmp orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py input/source-audit/dual_channel_minimum_rescue.py
+          cmp orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json input/source-audit/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json
+          cmp orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64 input/source-audit/run_sonotaco_2020_dual_channel_validation.py.gz.b64
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          encoded = ''.join(
+              Path('orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64')
+              .read_text(encoding='ascii')
+              .split()
+          )
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          assert digest == 'db310cbe83a4653e3cf4479e60e5d0554ae9b5474e47c55d5bbfcb714970f0c7'
+          Path('output/run_sonotaco_2020_dual_channel_validation.py').write_bytes(source)
+          PY
+          cmp output/run_sonotaco_2020_dual_channel_validation.py input/source-audit/run_sonotaco_2020_dual_channel_validation.py
+          python -m py_compile output/run_sonotaco_2020_dual_channel_validation.py
+
+      - name: Audit serializer scope and behavior
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+
+          import numpy as np
+          from orbittrace_dual_channel_rescue.run_with_numpy_json_serializer import (
+              numpy_scalar_default,
+              patched_dumps,
+          )
+
+          payload = json.loads(patched_dumps({
+              'boolean': np.bool_(True),
+              'integer': np.int64(7),
+              'floating': np.float64(1.25),
+              'native': False,
+          }, sort_keys=True))
+          assert payload == {
+              'boolean': True,
+              'floating': 1.25,
+              'integer': 7,
+              'native': False,
+          }
+          assert numpy_scalar_default(np.bool_(False)) is False
+          assert numpy_scalar_default(np.int64(9)) == 9
+          assert numpy_scalar_default(np.float64(2.5)) == 2.5
+          try:
+              patched_dumps({'unsupported': object()})
+          except TypeError:
+              pass
+          else:
+              raise AssertionError('arbitrary unsupported objects were accepted')
+
+          shim_source = Path('orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py').read_text()
+          runner_source = Path('output/run_sonotaco_2020_dual_channel_validation.py').read_text()
+          workflow_source = Path('.github/workflows/orbittrace_sonotaco_2020_serialization_repair_source_audit.yml').read_text()
+          tree = ast.parse(shim_source)
+          imports = set()
+          functions = set()
+          assignments = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split('.')[0])
+              elif isinstance(node, ast.FunctionDef):
+                  functions.add(node.name)
+              elif isinstance(node, ast.Assign):
+                  assignments.append(ast.unparse(node))
+          assert imports.issubset({'__future__', 'json', 'runpy', 'sys', 'pathlib', 'typing', 'numpy'})
+          assert functions == {'numpy_scalar_default', 'patched_dumps', 'main'}
+          assert 'json.dumps = patched_dumps' in assignments
+          assert 'runpy.run_path(str(runner), run_name="__main__")' in shim_source
+          assert 'kwargs.setdefault("default", numpy_scalar_default)' in shim_source
+
+          prohibited = [
+              'fixed4_score', 'wavelet_episode_score', 'target_survival_pvalue',
+              'dual_detected', 'roc_auc_score', 'promotion_gates', 'rescue_alpha',
+              '247.17', '-14.34', '37.62', 'F0059', 'april_candidate_members.csv',
+          ]
+          for fragment in prohibited:
+              assert fragment not in shim_source
+          assert hashlib_not_needed := ('db310cbe83a4653e3cf4479e60e5d0554ae9b5474e47c55d5bbfcb714970f0c7' not in shim_source)
+          assert 'json.dumps(result, indent=2)' in runner_source
+          assert ''.join(('020a', '.zip')) not in workflow_source
+          assert ''.join(('astro', '.sk')) not in workflow_source
+          print('PASS_NUMPY_JSON_SERIALIZATION_REPAIR_SOURCE_AUDIT')
+          PY
+
+      - name: Preserve repair source and provenance
+        run: |
+          set -euo pipefail
+          cp orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py output/
+          cp input/source-audit/sonotaco_2020_dual_channel_runner_source_audit.json output/
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          result = {
+              'verdict': 'PASS_NUMPY_JSON_SERIALIZATION_REPAIR_SOURCE_AUDIT',
+              'repair_scope': 'JSON serialization of numpy.generic scalars only',
+              'shim_sha256': hashlib.sha256(Path('orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py').read_bytes()).hexdigest(),
+              'runner_sha256': hashlib.sha256(Path('output/run_sonotaco_2020_dual_channel_validation.py').read_bytes()).hexdigest(),
+              'scientific_runner_changed': False,
+              'method_changed': False,
+              'threshold_changed': False,
+              'gates_changed': False,
+              'archive_accessed': False,
+              'scores_computed': False,
+          }
+          Path('output/serialization_repair_source_audit.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(json.dumps(result, indent=2))
+          PY
+          sha256sum \
+            orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py \
+            orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py \
+            orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json \
+            orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64 \
+            output/run_sonotaco_2020_dual_channel_validation.py \
+            input/source-audit.zip \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2020-serialization-repair-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
