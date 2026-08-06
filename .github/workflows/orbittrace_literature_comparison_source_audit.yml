@@ -1,0 +1,132 @@
+name: OrbitTrace literature comparison source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-fixed4-final-development
+    paths:
+      - .github/workflows/orbittrace_literature_comparison_source_audit.yml
+      - orbittrace_literature_comparison/PROTOCOL.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-literature-comparison-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-literature-comparison-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Decode immutable final-development source
+        run: |
+          set -euo pipefail
+          mkdir -p audit_output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          payload = Path('sonotaco_fixed4_final_development/candidate.py.gz.b64')
+          encoded = ''.join(payload.read_text(encoding='ascii').split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301'
+          if digest != expected:
+              raise RuntimeError(f'candidate source mismatch: {digest}')
+
+          text = source.decode('utf-8')
+          tree = ast.parse(text)
+          Path('audit_output/decoded_candidate.py').write_text(text, encoding='utf-8')
+
+          inventory = {
+              'source_sha256': digest,
+              'source_bytes': len(source),
+              'imports': [],
+              'classes': [],
+              'functions': [],
+              'assignments': [],
+          }
+          excerpts = []
+          keywords = (
+              'episode', 'window', 'negative', 'positive', 'calib', 'score',
+              'dbscan', 'density', 'split', 'auc', 'fold', 'parse', 'load',
+              'adapter', 'baseline', 'mondrian', 'shower', 'feature', 'distance'
+          )
+
+          for node in tree.body:
+              if isinstance(node, (ast.Import, ast.ImportFrom)):
+                  inventory['imports'].append(ast.get_source_segment(text, node))
+              elif isinstance(node, ast.ClassDef):
+                  inventory['classes'].append({
+                      'name': node.name,
+                      'line': node.lineno,
+                      'methods': [n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))],
+                  })
+                  if any(k in node.name.lower() for k in keywords):
+                      excerpts.append(ast.get_source_segment(text, node))
+              elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                  inventory['functions'].append({
+                      'name': node.name,
+                      'line': node.lineno,
+                      'args': [a.arg for a in node.args.args],
+                  })
+                  if any(k in node.name.lower() for k in keywords):
+                      excerpts.append(ast.get_source_segment(text, node))
+              elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                  segment = ast.get_source_segment(text, node)
+                  if segment and len(segment) <= 1000:
+                      inventory['assignments'].append({'line': node.lineno, 'source': segment})
+
+          Path('audit_output/ast_inventory.json').write_text(
+              json.dumps(inventory, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          Path('audit_output/relevant_excerpts.py').write_text(
+              '\n\n# ' + ('-' * 76) + '\n\n'.join([''] + excerpts) + '\n', encoding='utf-8'
+          )
+          Path('audit_output/source_sha256.txt').write_text(digest + '  decoded_candidate.py\n', encoding='utf-8')
+          print(json.dumps(inventory, indent=2))
+          PY
+
+      - name: Enforce source-only boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/orbittrace_literature_comparison_source_audit.yml').read_text()
+          forbidden = ['025a.zip', '023a.zip', 'curl ', 'wget ', 'gh run download', 'run_baseline_ceiling.py --']
+          found = [token for token in forbidden if token in workflow]
+          if found:
+              raise SystemExit(f'forbidden data-access token(s): {found}')
+          required = [
+              '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301',
+              'decoded_candidate.py',
+              'ast_inventory.json',
+          ]
+          missing = [token for token in required if token not in workflow]
+          if missing:
+              raise SystemExit(f'missing audit invariant(s): {missing}')
+          print('PASS_SOURCE_ONLY_LITERATURE_COMPARISON_AUDIT')
+          PY
+
+      - name: Upload source audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-literature-comparison-source-audit
+          path: audit_output
+          if-no-files-found: error
+          retention-days: 90
