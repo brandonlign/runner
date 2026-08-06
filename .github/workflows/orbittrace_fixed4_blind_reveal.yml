@@ -1,0 +1,159 @@
+name: OrbitTrace fixed4 blind catalogue reveal
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-blind-catalogue-scan
+    paths:
+      - orbittrace_fixed4_blind_reveal/**
+      - .github/workflows/orbittrace_fixed4_blind_reveal.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-blind-catalogue-reveal
+  cancel-in-progress: false
+
+jobs:
+  reveal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      REVEAL_SOURCE_SHA256: '72c95d783c311a4b1911e6fb63a89f772b3b30eb5acba6500ed111ace029f150'
+      REVEAL_SOURCE_BYTES: '12498'
+      REVEAL_ENCODED_LENGTH: '5236'
+      SCAN_ARTIFACT_ID: '8958042095'
+      SCAN_ARTIFACT_SHA256: '3ce72dde553cf58c6d4b9e734c29558a0f2bbefee664ba98189f4e90e821c596'
+      SCAN_PAYLOAD_SHA256: '9c8c5f2d3bf1a94b7b01eabbbae670007fe1d23f0e933035eb5b4667d13fb02e'
+      CANONICAL_ARTIFACT_ID: '8814798136'
+      CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-blind-catalogue-reveal
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen reveal dependency
+        run: python -m pip install scipy==1.14.1
+      - name: Reconstruct and verify frozen reveal
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import os
+          from pathlib import Path
+
+          parts = sorted(Path('orbittrace_fixed4_blind_reveal/source_parts').glob('part*.b64'))
+          expected_parts = [f'part{i:02d}.b64' for i in range(3)]
+          if [p.name for p in parts] != expected_parts:
+              raise RuntimeError(f'wrong reveal source parts: {[p.name for p in parts]}')
+          encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+          if len(encoded) != int(os.environ['REVEAL_ENCODED_LENGTH']):
+              raise RuntimeError(f'encoded length mismatch: {len(encoded)}')
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          if len(source) != int(os.environ['REVEAL_SOURCE_BYTES']):
+              raise RuntimeError(f'source byte mismatch: {len(source)}')
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != os.environ['REVEAL_SOURCE_SHA256']:
+              raise RuntimeError(f'reveal source hash mismatch: {digest}')
+          text = source.decode('utf-8')
+          required_literals = [
+              os.environ['CANONICAL_ARTIFACT_SHA256'],
+              'FULL_BLIND_ORBITTRACE_REDISCOVERY',
+              'PARTIAL_BLIND_ORBITTRACE_RECOVERY',
+              'NO_BLIND_ORBITTRACE_RECOVERY',
+          ]
+          missing = [value for value in required_literals if value not in text]
+          if missing:
+              raise RuntimeError(f'missing frozen reveal literals: {missing}')
+          tree = ast.parse(text)
+          names = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+          required_names = {'extract_scan', 'extract_canonical', 'classify_family'}
+          if not required_names.issubset(names):
+              raise RuntimeError(f'missing reveal interfaces: {sorted(required_names - names)}')
+          Path('/tmp/run_orbittrace_fixed4_blind_reveal.py').write_bytes(source)
+          print('reveal source bytes:', len(source))
+          print('reveal source SHA-256:', digest)
+          PY
+          python -m py_compile /tmp/run_orbittrace_fixed4_blind_reveal.py
+      - name: Retrieve exact frozen blind scan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SCAN_ARTIFACT_ID}/zip" \
+            -o input/blind-scan.zip
+          echo "${SCAN_ARTIFACT_SHA256}  input/blind-scan.zip" | sha256sum -c -
+          frozen_inner="$(unzip -p input/blind-scan.zip blind_scan_sha256.txt | awk '{print $1}')"
+          test "${frozen_inner}" = "${SCAN_PAYLOAD_SHA256}"
+          echo "blind scan payload SHA-256: ${frozen_inner}"
+      - name: Retrieve exact canonical OrbitTrace evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" \
+            -o input/canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/canonical.zip" | sha256sum -c -
+      - name: Run one-shot frozen reveal
+        run: |
+          set -euo pipefail
+          python /tmp/run_orbittrace_fixed4_blind_reveal.py \
+            --scan-artifact input/blind-scan.zip \
+            --canonical-artifact input/canonical.zip \
+            --output output
+          cat output/ORBITTRACE_FIXED4_BLIND_REVEAL.md
+      - name: Enforce reveal integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('output/orbittrace_fixed4_blind_reveal.json')
+          result = json.loads(path.read_text(encoding='utf-8'))
+          allowed = {
+              'FULL_BLIND_ORBITTRACE_REDISCOVERY',
+              'PARTIAL_BLIND_ORBITTRACE_RECOVERY',
+              'NO_BLIND_ORBITTRACE_RECOVERY',
+          }
+          if result.get('verdict') not in allowed:
+              raise SystemExit(f"invalid reveal verdict: {result.get('verdict')}")
+          print(json.dumps(result, indent=2))
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_fixed4_blind_reveal/PROTOCOL.md \
+            orbittrace_fixed4_blind_reveal/source_parts/part00.b64 \
+            orbittrace_fixed4_blind_reveal/source_parts/part01.b64 \
+            orbittrace_fixed4_blind_reveal/source_parts/part02.b64 \
+            input/blind-scan.zip \
+            input/canonical.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen reveal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-blind-catalogue-reveal
+          path: output
+          if-no-files-found: error
+          retention-days: 90
