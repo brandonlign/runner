@@ -1,0 +1,49 @@
+name: OrbitTrace fixed4 rank-fusion call-source extraction
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
+    paths:
+      - orbittrace_fixed4_rank_fusion/CALL_SOURCE_TRIGGER.txt
+      - .github/workflows/orbittrace_fixed4_rank_fusion_call_sources.yml
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
+      - name: Extract verified call-path function bodies
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path('orbittrace_fixed4_rank_fusion/PROSPECTIVE_INTERFACE_AUDIT.json').read_text())
+          names = ['parse_catalogue','scan_year','rank_families','family_scores','main']
+          result = {
+              'scanner_source_sha256': source['scanner_source_sha256'],
+              'functions': {
+                  name: {
+                      'ast_sha256': source['interfaces'][name]['ast_sha256'],
+                      'normalized_source': source['interfaces'][name]['normalized_source'],
+                  }
+                  for name in names
+              },
+          }
+          Path('orbittrace_fixed4_rank_fusion/PROSPECTIVE_CALL_SOURCES.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+      - name: Commit extracted call sources
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add orbittrace_fixed4_rank_fusion/PROSPECTIVE_CALL_SOURCES.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Freeze fixed4 prospective call-path sources'
+          git push origin HEAD:agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
