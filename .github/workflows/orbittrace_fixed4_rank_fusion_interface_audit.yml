@@ -1,0 +1,125 @@
+name: OrbitTrace fixed4 rank-fusion prospective interface audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
+    paths:
+      - .github/workflows/orbittrace_fixed4_rank_fusion_interface_audit.yml
+      - orbittrace_fixed4_rank_fusion/SOURCE_AUDIT_TRIGGER.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: orbittrace-fixed4-rank-fusion-interface-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Decode and inspect exact scanner interfaces
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          parts = sorted(Path('orbittrace_fixed4_support_wrapper_development/source_parts').glob('part*.b64'))
+          expected = [f'part{i:02d}.b64' for i in range(4)]
+          if [p.name for p in parts] != expected:
+              raise RuntimeError(f'wrong source parts: {[p.name for p in parts]}')
+          encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != 'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62':
+              raise RuntimeError(f'source mismatch: {digest}')
+          text = source.decode('utf-8')
+          tree = ast.parse(text)
+
+          required = {
+              'parse_catalogue','scan_year','component_records','build_families',
+              'family_scores','rank_families','evaluate_panel','develop_wrapper','main',
+              'load_sources','read_gmn_frame','exact_anchor_distances','quartet_score',
+          }
+          interfaces = {}
+          for node in tree.body:
+              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in required:
+                  interfaces[node.name] = {
+                      'positional_args': [a.arg for a in node.args.posonlyargs + node.args.args],
+                      'keyword_only_args': [a.arg for a in node.args.kwonlyargs],
+                      'defaults': [ast.unparse(value) for value in node.args.defaults],
+                      'line': node.lineno,
+                      'end_line': node.end_lineno,
+                      'normalized_source': ast.unparse(node),
+                      'ast_sha256': hashlib.sha256(ast.unparse(node).encode()).hexdigest(),
+                  }
+          missing = sorted(required - interfaces.keys())
+          if missing:
+              raise RuntimeError(f'missing interfaces: {missing}')
+
+          constants = {}
+          requested_constants = {
+              'YEARS','BLIND_LOW','BLIND_HIGH','CALIBRATION_PER_BIN','SHORTLIST_K',
+              'AUDIT_SHORTLIST_K','FAMILY_LINK_RADIUS','MAX_QUARTETS_PER_BIN',
+              'MINIMUM_ANCHOR_COUNT','MINIMUM_COMPONENT_EVENTS','MINIMUM_COMPONENT_QUARTETS',
+              'MINIMUM_FAMILY_YEARS','RANKING_VARIANTS',
+          }
+          for node in tree.body:
+              if isinstance(node, ast.Assign):
+                  for target in node.targets:
+                      if isinstance(target, ast.Name) and target.id in requested_constants:
+                          constants[target.id] = ast.literal_eval(node.value)
+          result = {
+              'verdict': 'PASS_FIXED4_RANK_FUSION_PROSPECTIVE_INTERFACE_AUDIT',
+              'data_accessed': False,
+              'labels_accessed': False,
+              'orbittrace_accessed': False,
+              'scanner_source_sha256': digest,
+              'scanner_source_bytes': len(source),
+              'interfaces': interfaces,
+              'constants': constants,
+              'frozen_rank_fusion': {
+                  'weight': 0.02,
+                  'formula': '(1-w)*normalized_persistence_rank + w*normalized_mean_year_strength_rank',
+                  'development_result_path': 'orbittrace_fixed4_rank_fusion/FROZEN_DEVELOPMENT_RESULT.json',
+              },
+              'prospective_years': [2019, 2020, 2021],
+          }
+          out = Path('orbittrace_fixed4_rank_fusion/PROSPECTIVE_INTERFACE_AUDIT.json')
+          out.write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'verdict': result['verdict'],
+              'scanner_source_sha256': digest,
+              'interfaces': {name: value['positional_args'] for name, value in interfaces.items()},
+              'constants': constants,
+          }, indent=2))
+          PY
+
+      - name: Commit frozen interface audit
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add orbittrace_fixed4_rank_fusion/PROSPECTIVE_INTERFACE_AUDIT.json
+          if git diff --cached --quiet; then
+            echo 'No interface-audit change.'
+            exit 0
+          fi
+          git commit -m 'Freeze fixed4 prospective scanner interfaces'
+          git push origin HEAD:agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
