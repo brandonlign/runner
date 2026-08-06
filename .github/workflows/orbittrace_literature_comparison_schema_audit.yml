@@ -1,0 +1,120 @@
+name: OrbitTrace literature comparison schema audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-literature-comparison-source-audit
+    paths:
+      - .github/workflows/orbittrace_literature_comparison_schema_audit.yml
+      - orbittrace_literature_comparison/METHOD_REGISTRY.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-literature-comparison-schema-audit
+  cancel-in-progress: true
+
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-literature-comparison-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download exact frozen development archive
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Audit exact CSV schema without computing endpoints
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          import hashlib
+          import io
+          import json
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('input/025a.zip')
+          member = '025a/_U2_20250101_S.csv'
+          with zipfile.ZipFile(archive) as zf:
+              payload = zf.read(member)
+          digest = hashlib.sha256(payload).hexdigest()
+          expected = '30d8cbdf414b2e9d6e587374fec7a4b6fa94c86e76a35e9b335cd4d0cbc917f7'
+          if digest != expected:
+              raise RuntimeError(f'member hash mismatch: {digest}')
+
+          reader = csv.reader(io.StringIO(payload.decode('utf-8-sig'), newline=''))
+          header = [field.strip() for field in next(reader)]
+          if len(header) != len(set(header)):
+              raise RuntimeError('duplicate fields in SonotaCo schema')
+
+          required_geometry = {
+              'sol(deg)', 'ra(deg)', 'de(deg)', 'vg(km/s)',
+              'ra sd(deg)', 'de sd(deg)', 'vg sd(km/s)',
+          }
+          required_orbit = {'q(AU)', 'e', 'peri(deg)', 'node(deg)', 'incl(deg)'}
+          aliases = {
+              'q': [name for name in header if name.lower() in {'q(au)', 'q'}],
+              'e': [name for name in header if name.lower() == 'e'],
+              'peri': [name for name in header if name.lower() in {'peri(deg)', 'peri', 'omega(deg)', 'omega'}],
+              'node': [name for name in header if name.lower() in {'node(deg)', 'node', 'omega_node(deg)'}],
+              'incl': [name for name in header if name.lower() in {'incl(deg)', 'incl', 'i(deg)', 'i'}],
+          }
+          record = {
+              'archive_sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+              'member': member,
+              'member_sha256': digest,
+              'field_count': len(header),
+              'header': header,
+              'required_geometry_present': sorted(required_geometry.intersection(header)),
+              'required_geometry_missing': sorted(required_geometry.difference(header)),
+              'required_orbit_present': sorted(required_orbit.intersection(header)),
+              'required_orbit_missing': sorted(required_orbit.difference(header)),
+              'resolved_aliases': aliases,
+              'uncertainty_fields': [name for name in header if 'sd' in name.lower() or 'err' in name.lower()],
+          }
+          gates = {
+              'exact_archive': record['archive_sha256'] == 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52',
+              'exact_member': digest == expected,
+              'geometry_complete': not record['required_geometry_missing'],
+              'orbit_aliases_unique': all(len(values) == 1 for values in aliases.values()),
+              'method_registry_valid_json': isinstance(json.loads(Path('orbittrace_literature_comparison/METHOD_REGISTRY.json').read_text()), dict),
+          }
+          record['gates'] = gates
+          record['verdict'] = 'PASS_LITERATURE_COMPARISON_SCHEMA_AUDIT' if all(gates.values()) else 'FAIL_LITERATURE_COMPARISON_SCHEMA_AUDIT'
+          Path('output/sonotaco_2025_schema_audit.json').write_text(json.dumps(record, indent=2) + '\n')
+          Path('output/SONOTACO_2025_SCHEMA_AUDIT.md').write_text(
+              '# SonotaCo 2025 literature-comparison schema audit\n\n'
+              f"Verdict: **`{record['verdict']}`**\n\n"
+              f"- fields: {len(header)}\n"
+              f"- orbit aliases: `{json.dumps(aliases, sort_keys=True)}`\n"
+              f"- uncertainty fields: `{json.dumps(record['uncertainty_fields'])}`\n"
+          )
+          print(json.dumps(record, indent=2))
+          if not all(gates.values()):
+              raise SystemExit(record['verdict'])
+          PY
+
+      - name: Upload schema audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-literature-comparison-schema-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
