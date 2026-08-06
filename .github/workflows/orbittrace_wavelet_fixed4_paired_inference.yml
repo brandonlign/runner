@@ -35,8 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input/2025 input/2023 output
-          echo 'b25c844e2dcfd9802d7dee7135d2bd1271b0087bea10c53cf51270ccfda9c56d  orbittrace_literature_comparison/WAVELET_FIXED4_PAIRED_INFERENCE_PROTOCOL.json' | sha256sum -c -
-          echo '628f4e82271e31938418e0e45e4c93180211cee4ab60279fd90723bd4f566242  orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py' | sha256sum -c -
+          test "$(git hash-object orbittrace_literature_comparison/WAVELET_FIXED4_PAIRED_INFERENCE_PROTOCOL.json)" = "050cd50298a2e6e6724c6b311d75c926119a41ab"
+          test "$(git hash-object orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py)" = "98f5f25a998be40a2a94cec3d3b5b8836aeff995"
           python -m py_compile orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py
           python - <<'PY'
           import json
