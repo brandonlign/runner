@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input/repaired output
-          echo '22c368f93775aa47dc032ad2be5d9a03bfd4d69437fd7220570eb9ce4bee5286  orbittrace_literature_freeze/run_sonotaco_2023_literature_comparison.py.gz.b64' | sha256sum -c -
+          echo 'b765b521fd612877f2de4e6d6583dcd94901f5eb2ad773acda415636ff92a877  orbittrace_literature_freeze/run_sonotaco_2023_literature_comparison.py.gz.b64' | sha256sum -c -
           echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  orbittrace_literature_comparison/literature_comparators.py' | sha256sum -c -
           python - <<'PY'
           import base64
@@ -57,7 +57,7 @@ jobs:
           encoded = ''.join(Path('orbittrace_literature_freeze/run_sonotaco_2023_literature_comparison.py.gz.b64').read_text().split())
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
-          expected = 'fedbfe29c2330b133b67c48ee4238476522e40846669c8117eafa45594b04850'
+          expected = '582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747'
           if digest != expected:
               raise RuntimeError(f'2023 runner source mismatch: {digest}')
           Path('/tmp/run_sonotaco_2023_literature_comparison.py').write_bytes(source)
