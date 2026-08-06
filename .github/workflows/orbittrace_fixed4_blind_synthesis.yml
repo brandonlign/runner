@@ -1,0 +1,181 @@
+name: OrbitTrace fixed4 blind catalogue synthesis
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-fixed4-blind-catalogue-synthesis
+    paths:
+      - orbittrace_fixed4_blind_synthesis/**
+      - .github/workflows/orbittrace_fixed4_blind_synthesis.yml
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-blind-catalogue-reveal
+    paths:
+      - orbittrace_fixed4_blind_synthesis/**
+      - .github/workflows/orbittrace_fixed4_blind_synthesis.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-blind-catalogue-synthesis
+  cancel-in-progress: false
+
+jobs:
+  synthesis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEGATIVE_ARTIFACT_ID: '8957230278'
+      NEGATIVE_ARTIFACT_SHA256: '2ee3d5c9edf299c0f9ea69b2d6254d7918e0aa659f8cc2c659bb99ff2dfc0d17'
+      POSITIVE_ARTIFACT_ID: '8958194010'
+      POSITIVE_ARTIFACT_SHA256: '74c95a3fd59650126a2a298fc1bab5cc055caa91bff2feae6c9256521fdc00aa'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-blind-catalogue-synthesis
+      - name: Retrieve both exact frozen result artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/negative input/positive output
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${NEGATIVE_ARTIFACT_ID}/zip" \
+            -o input/negative.zip
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${POSITIVE_ARTIFACT_ID}/zip" \
+            -o input/positive.zip
+          echo "${NEGATIVE_ARTIFACT_SHA256}  input/negative.zip" | sha256sum -c -
+          echo "${POSITIVE_ARTIFACT_SHA256}  input/positive.zip" | sha256sum -c -
+          unzip -q input/negative.zip -d input/negative
+          unzip -q input/positive.zip -d input/positive
+      - name: Synthesize immutable wrapper outcomes
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def unique(root: str, name: str) -> Path:
+              paths = list(Path(root).rglob(name))
+              if len(paths) != 1:
+                  raise RuntimeError(f'expected one {name} under {root}, found {paths}')
+              return paths[0]
+
+          negative_path = unique('input/negative', 'orbittrace_blind_reveal.json')
+          positive_path = unique('input/positive', 'orbittrace_fixed4_blind_reveal.json')
+          negative = json.loads(negative_path.read_text(encoding='utf-8'))
+          positive = json.loads(positive_path.read_text(encoding='utf-8'))
+
+          if negative.get('verdict') != 'NO_BLIND_ORBITTRACE_RECOVERY':
+              raise RuntimeError(f"unexpected broad-wrapper verdict: {negative.get('verdict')}")
+          if positive.get('verdict') != 'PARTIAL_BLIND_ORBITTRACE_RECOVERY':
+              raise RuntimeError(f"unexpected calibrated-wrapper verdict: {positive.get('verdict')}")
+
+          selected = positive.get('selected_family') or {}
+          required = {
+              'rank': 59,
+              'canonical_overlap': 29,
+              'event_count': 39,
+              'year_count': 4,
+          }
+          for key, expected in required.items():
+              if selected.get(key) != expected:
+                  raise RuntimeError(f'positive metric mismatch for {key}: {selected.get(key)}')
+
+          availability = negative.get('canonical_availability') or {}
+          if sum(int(v.get('present_in_blind_catalogue', 0)) for v in availability.values()) != 101:
+              raise RuntimeError('broad-wrapper canonical availability mismatch')
+
+          result = {
+              'classification': 'BLIND_RECOVERY_WRAPPER_SENSITIVE',
+              'immutable_detector': 'fixed-4-degree coverage-normalized Mondrian anchored four-clique',
+              'broad_ranked_quartet_wrapper': {
+                  'artifact_id': 8957230278,
+                  'artifact_sha256': '2ee3d5c9edf299c0f9ea69b2d6254d7918e0aa659f8cc2c659bb99ff2dfc0d17',
+                  'corpus': 'GMN sporadic 2019-2025 plus January-July 2026',
+                  'canonical_members_available': 101,
+                  'verdict': negative['verdict'],
+                  'best_exact_overlap': 0,
+              },
+              'calibrated_component_wrapper': {
+                  'artifact_id': 8958194010,
+                  'artifact_sha256': '74c95a3fd59650126a2a298fc1bab5cc055caa91bff2feae6c9256521fdc00aa',
+                  'corpus': 'GMN sporadic 2022-2025 plus January-July 2026',
+                  'canonical_members_evaluated': positive['canonical_audit']['canonical_members'],
+                  'verdict': positive['verdict'],
+                  'selected_family': selected,
+              },
+              'final_claim': (
+                  'The frozen detector has targeted independent-recognition evidence and one partial blind '
+                  'catalogue recovery, but blind recovery is not robust to the generic catalogue wrapper. '
+                  'It cannot be presented as the primary blind discovery method.'
+              ),
+              'paper_structure': (
+                  'exploratory HDBSCAN candidate discovery; separately developed frozen detector recognition '
+                  'with mixed blind-deployment evidence; observational validation'
+              ),
+          }
+          Path('output/orbittrace_fixed4_blind_synthesis.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+
+          md = '''# OrbitTrace fixed-4° blind catalogue synthesis
+
+Classification: `BLIND_RECOVERY_WRAPPER_SENSITIVE`
+
+Both catalogue wrappers used the immutable fixed-4° anchored four-clique core and were frozen before target reveal.
+
+## Broad ranked-quartet recurrence wrapper
+
+- corpus: complete GMN sporadic years 2019–2025 plus January–July 2026
+- canonical members available: **101 / 101**
+- exact overlap in every preserved top-5,000 family list: **0**
+- verdict: `NO_BLIND_ORBITTRACE_RECOVERY`
+
+## Calibrated component-family wrapper
+
+- corpus: GMN sporadic 2022–2025 plus January–July 2026
+- selected family: **F0059**, blind rank **59 / 780**
+- exact overlap: **29 / 95** canonical members
+- family size / precision: **39 / 0.7436**
+- supported years: **4**
+- verdict: `PARTIAL_BLIND_ORBITTRACE_RECOVERY`
+
+## Frozen interpretation
+
+Blind catalogue recovery depends materially on the generic wrapper. The detector therefore cannot be represented as the primary blind OrbitTrace discovery method. The defensible project structure is:
+
+`exploratory HDBSCAN candidate discovery -> separately developed frozen detector recognition with mixed blind-deployment evidence -> observational validation`
+
+The partial result remains real evidence and must not be erased; the broader negative result is equally binding and prevents promotion to a clean blind-rediscovery claim.
+'''
+          Path('output/ORBITTRACE_FIXED4_BLIND_SYNTHESIS.md').write_text(md, encoding='utf-8')
+          print(md)
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_fixed4_blind_synthesis/PROTOCOL.md \
+            input/negative.zip \
+            input/positive.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+      - name: Upload synthesis evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-blind-catalogue-synthesis
+          path: output
+          if-no-files-found: error
+          retention-days: 90
