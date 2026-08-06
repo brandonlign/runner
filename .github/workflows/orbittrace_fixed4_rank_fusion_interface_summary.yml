@@ -1,0 +1,60 @@
+name: OrbitTrace fixed4 rank-fusion interface summary
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
+    paths:
+      - orbittrace_fixed4_rank_fusion/INTERFACE_SUMMARY_TRIGGER.txt
+      - .github/workflows/orbittrace_fixed4_rank_fusion_interface_summary.yml
+
+permissions:
+  contents: write
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
+      - name: Create compact verified interface summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path('orbittrace_fixed4_rank_fusion/PROSPECTIVE_INTERFACE_AUDIT.json').read_text())
+          names = [
+              'load_sources','parse_catalogue','scan_year','component_records','build_families',
+              'family_scores','rank_families','evaluate_panel','read_gmn_frame',
+              'exact_anchor_distances','quartet_score'
+          ]
+          summary = {
+              'verdict': source['verdict'],
+              'scanner_source_sha256': source['scanner_source_sha256'],
+              'constants': source['constants'],
+              'interfaces': {
+                  name: {
+                      'positional_args': source['interfaces'][name]['positional_args'],
+                      'keyword_only_args': source['interfaces'][name]['keyword_only_args'],
+                      'defaults': source['interfaces'][name]['defaults'],
+                      'ast_sha256': source['interfaces'][name]['ast_sha256'],
+                  }
+                  for name in names
+              },
+              'frozen_rank_fusion': source['frozen_rank_fusion'],
+              'prospective_years': source['prospective_years'],
+          }
+          Path('orbittrace_fixed4_rank_fusion/PROSPECTIVE_INTERFACE_SUMMARY.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Commit compact summary
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add orbittrace_fixed4_rank_fusion/PROSPECTIVE_INTERFACE_SUMMARY.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Freeze compact fixed4 prospective interface summary'
+          git push origin HEAD:agent/orbittrace-fixed4-rank-fusion-prospective-source-audit
