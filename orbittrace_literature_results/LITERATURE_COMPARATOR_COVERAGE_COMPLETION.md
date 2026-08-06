@@ -2,39 +2,37 @@
 
 ## Final coverage judgment
 
-The comparison program now covers the major method families that can be evaluated fairly with the available public SonotaCo data. No major comparable family is silently omitted.
+The comparison program covers the major method families that can be evaluated fairly with the available public SonotaCo data. No major comparable family is silently omitted.
 
-The implemented system intentionally separates two different scientific tasks:
+Two scientific tasks remain explicitly separate:
 
 1. **Sparse-episode recognition:** identical 128-event windows, identical negatives, empirical false-positive calibration, and k=4/6/8/12 positive episodes.
-2. **Catalogue-scale discovery or classification:** complete annual catalogues or preregistered multiyear survey inputs, using the published method's natural unit of analysis.
+2. **Catalogue-scale discovery or classification:** complete annual catalogues or preregistered multiyear survey inputs, using each published method's natural unit of analysis.
 
-Results from one track are not substituted for the other. A catalogue method is not declared inferior because it cannot operate as a four-member episode detector, and fixed4 is not declared superior on a catalogue task it was not tested on.
+Results from one track are not substituted for the other.
 
 ## Implemented episode-track methods
 
 | Method | Scientific role | 2025 weak AUROC | 2023 weak AUROC | Status |
 |---|---|---:|---:|---|
+| Brown-family 3D wavelet episode core | literature-inspired episode adaptation | **0.828506** | **0.831972** | complete |
 | fixed-4° coverage-normalized anchored four-clique | frozen candidate | 0.813250 | 0.811631 | complete |
+| D_N, M=4 sparse benchmark transfer | predeclared sparse transfer | 0.759251 | 0.746209 | complete |
 | internal split statistic | internal baseline | 0.756654 | 0.772837 | complete |
 | internal local-density statistic | internal baseline | 0.753978 | 0.758780 | complete |
 | internal four-dimensional DBSCAN | internal baseline; not Sugar et al. | 0.749487 | 0.748877 | complete |
-| Sugar et al. deterministic published core | literature DBSCAN core | 0.508578 | 0.524927 | complete |
-| Southworth–Hawkins D_SH, six-member single linkage | classical orbital-element comparator | 0.604533 | 0.579954 | complete |
-| D_SH four-member sparse adaptation | predeclared adaptation | 0.640364 | 0.637606 | complete |
 | Valsecchi–Jopek–Froeschlé D_N, M=6 | geocentric-observable classical comparator | 0.731316 | 0.714395 | complete |
-| D_N, M=4 sparse benchmark transfer | predeclared sparse transfer | 0.759251 | 0.746209 | complete |
+| D_SH four-member sparse adaptation | predeclared adaptation | 0.640364 | 0.637606 | complete |
+| Southworth–Hawkins D_SH, six-member single linkage | classical orbital-element comparator | 0.604533 | 0.579954 | complete |
+| Sugar et al. deterministic published core | literature DBSCAN core | 0.508578 | 0.524927 | complete |
 
-D_N M=4 is the strongest implemented classical sparse comparator, but fixed4 retains the higher overall weak-stream AUROC in both years. No uniformly-best claim is allowed: D_N M=6 slightly exceeds fixed4 at k=12 and alpha .05 in both years.
+The wavelet episode core now has the highest overall weak-stream AUROC in both years. Fixed4 is not the overall benchmark leader, but it retains the stronger four-member recall and generally tighter false-positive control. The two methods are complementary rather than one uniformly dominating the other.
 
-The episode system therefore includes:
+A paired cluster bootstrap used 20,000 replicates, resampling positive episodes by shower-complex unit and negatives by Mondrian bin. Wavelet-minus-fixed4 AUROC was +0.0153 in 2025 and +0.0203 in 2023. The equal-weight combined estimate was +0.0178 with 95% interval [−0.0043, +0.0406] and P(difference > 0)=0.9399. The direction replicated, but the interval crossed zero, so the advantage is consistent rather than statistically decisive.
 
-- internal noncluster and density baselines;
-- a conventional DBSCAN baseline;
-- the deterministic core of a published uncertainty-aware DBSCAN method;
-- an orbital-element D-criterion;
-- a directly observed geocentric-variable D-criterion;
-- published minimum-member formulations and separately labelled sparse adaptations.
+At α=.05, fixed4 versus wavelet k=4 recall was 0.154 versus 0.081 in 2025 and 0.189 versus 0.134 in 2023. For k=6–12, the wavelet core was generally stronger, especially at α=.01.
+
+The wavelet episode result is separately labelled. It uses the published Brown-family three-dimensional Mexican-hat kernel, a 4° angular probe, a 10% speed probe, leave-one-out coefficients at observed events, and the maximum coefficient as the episode score. It is not the full CMOR catalogue survey.
 
 ## Implemented catalogue-track methods
 
@@ -60,72 +58,42 @@ The complete published-stage Sugar pipeline was reconstructed with the six-dimen
 | 2023 | deterministic observed DBSCAN | 0.741348 | 0.789165 | 20 | 0.274484 |
 | 2023 | retained uncertainty masters | 0.784491 | 0.840575 | 26 | 0.335589 |
 
-The uncertainty stages materially improved the catalogue result in both years. Their stable size boundary remained important: mean retained-master F1 for annual 4–9-member showers was approximately 0.03 in both catalogues, while large-shower performance was strong.
+The uncertainty stages materially improved the catalogue result in both years. Mean retained-master F1 for annual 4–9-member showers remained approximately 0.03, while large-shower performance was strong.
 
-This is a faithful published-stage survey transfer using SonotaCo marginal errors and a preregistered deterministic interpretation of an unpublished merge order. It is not represented as an exact reproduction of unpublished ASGARD software or covariance.
+## Full CMOR wavelet survey status
 
-## Wavelet survey status
+The full Brown et al. CMOR-style catalogue survey remains formally deferred rather than beaten.
 
-The Brown et al. CMOR-style 3D wavelet family was not quietly omitted and was not scored with weakened rules.
+A seven-year SonotaCo virtual-year input audit used 178,188 retained events from 2019–2025 and passed multiyear continuity, single-year-dominance, and temporal-chain gates. Only **199/324 = 61.4%** of usable one-degree bins met the published 300-radiant necessary floor, below the frozen 80% breadth requirement.
 
-A frozen one-year support audit found only five one-degree bins with at least 300 total retained radiants and only one eligible three-point temporal chain. A subsequent seven-year SonotaCo virtual-year input audit used 178,188 retained events from 2019–2025 and passed multiyear continuity, single-year-dominance, and temporal-chain gates. It failed the preregistered global support-breadth gate:
+Running only supported seasons, enlarging bins, lowering the floor, shortening chains, or using known coordinates would change the published survey task after seeing the data. The full optical survey transfer therefore remains deferred for incompatible input. This does not conflict with the successful sparse-episode wavelet adaptation because the two evaluations use different natural units and claims.
 
-- bins with at least 300 total events: **199/324 = 61.4%**;
-- frozen requirement: **at least 80%**.
+## Other D-criteria and noncomparators
 
-Because 300 total events in a time bin is only a necessary condition for 300 events to contribute near a particular radiant-speed test point, the unsupported bins cannot satisfy the published coefficient floor anywhere. A selective-season run, larger bins, lower floor, shorter chain, or known-coordinate search would change the survey task after seeing the data.
+Additional Drummond-, Jopek-, and related D-functions were not individually added after results. D_SH and D_N already represent the principal orbital-element versus geocentric-observable distinction, while further correlated variants require database-specific thresholds and would risk method shopping.
 
-The wavelet comparator is therefore **formally deferred for incompatible optical input**, not failed and not beaten. A full implementation would require a denser, exposure-controlled multiyear survey comparable to the radar catalogue used by the original method.
+KDE false-positive estimation remains an ancillary significance framework rather than a blind detector. Known-shower lookup, parent-body association, pure dynamical integration, and supervised classifiers without a comparable fixed training protocol are also excluded from the discovery leaderboard.
 
-## Other D-criteria and classical variants
+## Current completion state
 
-The literature contains additional orbit dissimilarity functions, including Drummond- and Jopek-family variants, as well as different linkage, iterative, index, and density-map operators. They are not individually added to the leaderboard for three reasons:
+All comparator executions and the paired uncertainty analysis are complete for the current public inputs.
 
-1. D_SH and D_N already span the principal scientific distinction between orbital-element similarity and geocentric quantities directly tied to observations.
-2. Additional D-functions often require database- and membership-specific chance thresholds; the modern comparative literature reports uneven validation and cautions that orbital similarity alone is insufficient to establish a shower.
-3. Adding a large set of closely related variants after seeing the results would create method shopping rather than test a new method family.
+Further independent method development requires a new survey or exposure-controlled external catalogue, not additional post-result variants.
 
-This is not a claim that every D-function is equivalent. It is a decision that further variants would provide diminishing, highly correlated evidence on this benchmark. A future preregistered D-criterion study could compare the complete family as its own project, with sample-specific null thresholds frozen before evaluation.
+## Revised independent judgment
 
-## KDE false-positive estimation
+Fixed4 should remain a major OrbitTrace methodological contribution, but its role must be stated more narrowly than before:
 
-Recent KDE work estimates the false-positive rate of known shower or parent-body associations across several D-criteria. It is a statistical significance and contamination framework, not a blind stream-discovery algorithm. It is therefore not an omitted detector comparator.
+- it is an independently developed extreme-sparse recognition method;
+- it has the best four-member recall of the two leading methods;
+- it generally provides tighter false-positive control;
+- it performed a frozen targeted OrbitTrace recovery;
+- it is **not** the strongest overall sparse-episode benchmark method.
 
-Its scientific function is already represented in the OrbitTrace study by empirical negative calibration, pooled and sector-level false-positive reporting, shifted/null tests, and independent-year transfer. A direct KDE replication could be a useful ancillary calibration paper, but it would not answer whether fixed4 detects sparse streams better than another discovery algorithm.
+The Brown-family wavelet adaptation has the strongest overall episode point estimates currently implemented, but paired uncertainty does not establish a decisive difference from fixed4. This does not change the historical structure of the project:
 
-## Methods intentionally excluded from the leaderboard
+`exploratory HDBSCAN candidate discovery → independent methodological recognition tests → observational validation`.
 
-- **Known-shower lookup or direct-template matching:** association/classification against predefined means, not blind discovery.
-- **Parent-body association tests:** test a proposed relationship after a candidate exists.
-- **Pure dynamical integrations:** physical validation and provenance analysis, not an observational clustering baseline.
-- **Supervised neural classifiers:** require a labelled training task and architecture not supplied by a comparable published stream-discovery benchmark.
-- **Radar-specific wavelet execution on unsupported optical seasons:** changes the data regime and published support conditions.
-
-## Completion decision
-
-The literature-comparator development phase is complete for the current data.
-
-A new baseline should be added only if it satisfies all of the following before result access:
-
-1. it represents a genuinely different method family or task-relevant capability;
-2. a primary source specifies enough detail for a fixed implementation;
-3. the required public inputs exist in SonotaCo or another preregistered survey;
-4. its natural evaluation unit can be compared without relabelling episode and catalogue tasks;
-5. parameters and reporting rules can be frozen before the independent corpus is opened.
-
-No presently identified method meets those conditions while adding substantial evidence beyond D_SH, D_N, full Sugar, HDBSCAN, and the formally audited wavelet family. Further progress now requires a new external survey or exposure-controlled radar-scale input, not more post-result variants.
-
-## Final independent judgment
-
-**Retain fixed4 as a major second OrbitTrace contribution, narrowly framed as sparse weak-stream recognition under controlled false-positive evaluation.**
-
-The conclusion is stronger than it was before the literature program because:
-
-- fixed4 transferred almost unchanged from 2025 to 2023;
-- it exceeded both orbital and geocentric classical sparse comparators in overall weak-stream AUROC;
-- complete HDBSCAN and Sugar catalogue implementations showed reproducible strength for larger populations and a stable weakness in the smallest annual strata;
-- the wavelet family was handled through frozen feasibility gates rather than an unfair reduced imitation.
-
-The conclusion is not unlimited. Fixed4 is not uniformly best at every k and operating point, did not historically discover OrbitTrace, did not blindly rediscover it from a full catalogue, and did not fully pass every preregistered robustness gate. The frozen general-method conclusion remains:
+Fixed4 did not historically discover OrbitTrace, did not robustly rediscover it under every blind catalogue wrapper, and did not fully pass every preregistered robustness gate. Its general conclusion remains:
 
 > **Promising strong transfer, but not fully robustly replicated under the complete preregistered standard.**

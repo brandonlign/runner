@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_paired_record_analysis",
+  "classification": "post-result paired uncertainty analysis; no method development or parameter selection",
+  "inputs": {
+    "sonotaco_2025": {
+      "workflow_run": 31104654956,
+      "artifact_id": 8969020016,
+      "artifact_digest": "sha256:c8d72fa8b051da05c0e4701a48302f97bf53232bd623df30a6953e05b8522232",
+      "result_sha256": "526544fc39fd441fd73472c36e8d563b245728b3d33e858f0b1da11aa024070a",
+      "positive_records_sha256": "0dfe2d312818318768ebbf2fc2ded4275b734339849392187878eb142726462c",
+      "negative_records_sha256": "e6757788f44f6881e059e7b167555b0cd497cae31b2abb366cd6c22df7684996"
+    },
+    "sonotaco_2023": {
+      "workflow_run": 31105278114,
+      "artifact_id": 8969274303,
+      "artifact_digest": "sha256:d00faaf9d781b988bbab0af09e1e27ddf0a824be63f96778bf295b4bf56c404b",
+      "result_sha256": "450c8db66dd2644a617573c5aadcf4d554c6d4c642e2a0654652dcec3391f964",
+      "positive_records_sha256": "ba3c0dc382a66afdec6616bb39724f22705d7ba87d703d21ce65c695f4e85d2f",
+      "negative_records_sha256": "2a2c2e521402bba8beefaef98582f9fee86715cbb7e587d6e6d66a435cdeb1b7"
+    }
+  },
+  "methods": [
+    "orbittrace_fixed4",
+    "brown2010_wavelet_episode_core"
+  ],
+  "primary_endpoint": {
+    "name": "wavelet_minus_fixed4_weak_auc",
+    "weak_k": [4, 6, 8],
+    "positive_resampling_unit": "complex_key",
+    "negative_resampling_unit": "Mondrian bin",
+    "pairing": "the same bootstrap multiplicities are applied to both methods",
+    "auc_definition": "pairwise concordance with half credit for ties"
+  },
+  "secondary_endpoints": {
+    "recall_difference": {
+      "alphas": [0.05, 0.01],
+      "k": [4, 6, 8, 12],
+      "positive_resampling_unit": "complex_key"
+    },
+    "false_positive_rate_difference": {
+      "alphas": [0.05, 0.01],
+      "negative_resampling_unit": "Mondrian bin"
+    }
+  },
+  "bootstrap": {
+    "replicates": 20000,
+    "seed_2025": 20262831,
+    "seed_2023": 20262829,
+    "confidence_interval": "2.5th and 97.5th percentile",
+    "combined_effect": "equal-weight mean of the independently resampled 2025 and 2023 differences"
+  },
+  "interpretation_rules": {
+    "decisive_wavelet_advantage": "both per-year 95 percent intervals exclude zero above and the combined interval excludes zero above",
+    "consistent_but_uncertain_wavelet_advantage": "point estimate is positive in both years, combined bootstrap probability of a positive difference exceeds 0.90, and at least one required interval includes zero",
+    "no_replicated_advantage": "the point-estimate ordering does not remain positive in both years or the combined positive probability is at most 0.90",
+    "uniform_dominance": "prohibited unless wavelet recall differences are nonnegative at every k and alpha and false-positive differences are nonpositive at every alpha in both years"
+  },
+  "prohibited_changes": [
+    "method scores",
+    "episode membership",
+    "weak-k definition",
+    "calibration p-values",
+    "bootstrap units",
+    "bootstrap replicate count",
+    "confidence level",
+    "interpretation thresholds"
+  ]
+}

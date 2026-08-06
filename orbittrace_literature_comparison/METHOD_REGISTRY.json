@@ -1,11 +1,12 @@
 {
-  "schema_version": 2,
-  "registry_status": "updated_after_completed_literature_comparison_program",
+  "schema_version": 3,
+  "registry_status": "updated_after_wavelet_episode_transfer_and_paired_inference",
   "frozen_detector": {
     "name": "fixed-4deg coverage-normalized Mondrian anchored four-clique detector",
     "source_sha256": "747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301",
     "status": "frozen",
     "allowed_changes": [],
+    "current_role": "extreme-sparse four-member recognition and targeted recovery with generally tighter false-positive control",
     "general_conclusion": "Promising strong transfer, but not fully robustly replicated under the complete preregistered standard."
   },
   "benchmark_tracks": {
@@ -31,13 +32,49 @@
   },
   "methods": [
     {
+      "id": "brown2010_wavelet_episode_core",
+      "label": "Brown-family 3D Mexican-hat wavelet episode core",
+      "track": "episode",
+      "classification": "literature-inspired sparse-episode adaptation; not the full CMOR catalogue survey",
+      "status": "complete_2025_and_one_shot_2023",
+      "reference": {
+        "title": "A meteoroid stream survey using the Canadian Meteor Orbit Radar II: Identification of minor showers using a 3D wavelet transform",
+        "authors": "Brown, Wong, Weryk, and Wiegert",
+        "year": 2010,
+        "doi": "10.1016/j.icarus.2009.11.015"
+      },
+      "fixed_rules": {
+        "coordinates": "Sun-centered geocentric ecliptic radiant longitude and latitude plus geocentric speed",
+        "angular_probe_deg": 4.0,
+        "speed_probe_fraction": 0.1,
+        "kernel": "(3-r^2)*exp(-r^2/2)",
+        "truncation_radius": 4.0,
+        "test_locations": "observed events",
+        "self_contribution": "excluded",
+        "episode_score": "maximum leave-one-out coefficient",
+        "parameter_tuning": false
+      },
+      "weak_auc": {"2025": 0.8285055722, "2023": 0.8319715832},
+      "evidence": {
+        "development_run": 31104654956,
+        "development_artifact": 8969020016,
+        "transfer_run": 31105278114,
+        "transfer_artifact": 8969274303,
+        "paired_inference_run": 31106813236,
+        "paired_inference_artifact": 8969900492
+      },
+      "boundary": "highest overall AUROC point estimate in both years; paired cluster-bootstrap advantage over fixed4 is consistent but not decisive; weaker k=4 recall and generally looser false-positive control",
+      "tunable": false
+    },
+    {
       "id": "orbittrace_fixed4",
       "label": "OrbitTrace fixed-4deg detector",
       "track": "episode",
       "classification": "frozen candidate",
       "status": "complete_2025_and_one_shot_2023",
       "parameter_source": "frozen SonotaCo 2025 development",
-      "weak_auc": {"2025": 0.81325, "2023": 0.8116305009},
+      "weak_auc": {"2025": 0.8132503734, "2023": 0.8116305009},
+      "boundary": "strongest four-member recall among the two leading episode methods and generally tighter false-positive control; not the highest overall AUROC point estimate",
       "tunable": false
     },
     {
@@ -82,11 +119,11 @@
       "fixed_rules": {
         "feature_vector": "published six-dimensional Sun-centered geocentric vector",
         "min_samples": 5,
-        "epsilon_transfer": "23rd percentile of each filtered SonotaCo-2025 event's fourth-nearest-neighbor distance, computed without labels and frozen before SonotaCo 2023",
+        "epsilon_transfer": "SonotaCo-2025 fourth-nearest-neighbour 23rd percentile frozen before 2023",
         "episode_score": "largest DBSCAN cluster size"
       },
       "weak_auc": {"2025": 0.5085784314, "2023": 0.524927245},
-      "excluded_from_core_claim": "the uncertainty-clone recurrence and cluster-merging stages are evaluated separately on the catalogue track",
+      "excluded_from_core_claim": "uncertainty-clone recurrence and merging stages are evaluated separately on the catalogue track",
       "tunable": false
     },
     {
@@ -218,7 +255,7 @@
     },
     {
       "id": "brown2010_wavelet",
-      "label": "CMOR-style 3D wavelet survey",
+      "label": "Full CMOR-style 3D wavelet survey",
       "track": "catalogue",
       "classification": "radar survey method audited for optical-input compatibility",
       "status": "formally_deferred_input_incompatible",
@@ -246,11 +283,25 @@
         "supported_fraction": 0.6141975309,
         "frozen_required_fraction": 0.8
       },
-      "decision": "defer coefficient execution because the available optical stack fails the frozen global-support breadth gate",
-      "prohibited_interpretation": "not evidence of poor CMOR-wavelet performance and not evidence that fixed4 wins",
+      "decision": "defer full-survey coefficient execution because the available optical stack fails the frozen global-support breadth gate",
+      "prohibited_interpretation": "not evidence of poor CMOR-wavelet performance and not evidence that fixed4 or the episode adaptation beat the full survey",
       "tunable": false
     }
   ],
+  "paired_inference": {
+    "id": "wavelet_fixed4_cluster_bootstrap",
+    "status": "complete",
+    "workflow_run": 31106813236,
+    "artifact_id": 8969900492,
+    "result_sha256": "0881b5c449a80867b46341a4c681440b911ee6033dd857cc49b74f3561ff08e2",
+    "classification": "CONSISTENT_BUT_UNCERTAIN_WAVELET_AUC_ADVANTAGE",
+    "combined_wavelet_minus_fixed4_auc": {
+      "point": 0.0177981405,
+      "ci95": [-0.004336614, 0.0406464729],
+      "probability_positive": 0.93985
+    },
+    "claim_boundary": "the wavelet overall point-estimate lead replicated but is not statistically decisive under paired cluster resampling; neither method uniformly dominates"
+  },
   "classified_noncomparators": [
     {
       "family": "additional Drummond, Jopek, and related D-function variants",
@@ -283,8 +334,9 @@
   },
   "completion": {
     "status": "complete_for_current_public_inputs",
-    "next_requirement": "a new denser or exposure-controlled independent survey catalogue rather than additional post-result variants",
+    "next_requirement": "a new external survey or exposure-controlled catalogue rather than additional post-result variants",
     "coverage_document": "orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md",
+    "wavelet_evaluation": "orbittrace_literature_results/WAVELET_EPISODE_EVALUATION.md",
     "machine_status": "orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json"
   }
 }

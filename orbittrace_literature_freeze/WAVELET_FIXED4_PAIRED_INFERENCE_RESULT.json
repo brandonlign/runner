@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "verdict": "PASS_WAVELET_FIXED4_PAIRED_INFERENCE",
+  "classification": "CONSISTENT_BUT_UNCERTAIN_WAVELET_AUC_ADVANTAGE",
+  "workflow_run": 31106813236,
+  "source_commit": "1c7f64b0955264a645a74479bf5f4fb25c3609ac",
+  "artifact_id": 8969900492,
+  "artifact_digest": "sha256:2e2b3f0238904c4d7a970cb93fbd0cd80b477435036eb4131e96d16b9d905b7f",
+  "result_sha256": "0881b5c449a80867b46341a4c681440b911ee6033dd857cc49b74f3561ff08e2",
+  "protocol_sha256": "fcaf7c56e022ae55b4191738a1f285fb78f22eb31f162471cbe67e2e6ee63e8a",
+  "configuration": {
+    "bootstrap_replicates": 20000,
+    "positive_resampling_unit": "complex_key",
+    "negative_resampling_unit": "Mondrian bin",
+    "pairing": "identical resampling multiplicities for wavelet and fixed4",
+    "weak_k": [4, 6, 8],
+    "confidence_interval": "percentile 95 percent",
+    "combined_effect": "equal-weight mean of independently resampled yearly differences"
+  },
+  "auc_difference_wavelet_minus_fixed4": {
+    "2025": {
+      "point": 0.015255198759191124,
+      "bootstrap_median": 0.015398915608723918,
+      "ci95": [-0.01989525439692479, 0.05102993647257481],
+      "probability_positive": 0.8061
+    },
+    "2023": {
+      "point": 0.02034108231707321,
+      "bootstrap_median": 0.019994831414685776,
+      "ci95": [-0.0070061725053508295, 0.04801057449494952],
+      "probability_positive": 0.9269
+    },
+    "equal_weight_combined": {
+      "point": 0.017798140538132168,
+      "bootstrap_median": 0.01771614012753142,
+      "ci95": [-0.004336613952022547, 0.04064647287402717],
+      "probability_positive": 0.93985
+    }
+  },
+  "recall_difference_wavelet_minus_fixed4_alpha_005": {
+    "2025": {
+      "k4": -0.07352941176470588,
+      "k6": 0.07352941176470584,
+      "k8": 0.13970588235294124,
+      "k12": 0.014705882352941124
+    },
+    "2023": {
+      "k4": -0.0548780487804878,
+      "k6": 0.10975609756097565,
+      "k8": 0.08536585365853666,
+      "k12": 0.024390243902439046
+    }
+  },
+  "false_positive_rate_difference_wavelet_minus_fixed4": {
+    "2025": {
+      "alpha_005": {
+        "point": 0.01171875,
+        "ci95": [-0.0009765625, 0.0244140625]
+      },
+      "alpha_001": {
+        "point": -0.00048828125,
+        "ci95": [-0.005859375, 0.0048828125]
+      }
+    },
+    "2023": {
+      "alpha_005": {
+        "point": 0.004734848484848488,
+        "ci95": [-0.008049242424242424, 0.01799242424242424]
+      },
+      "alpha_001": {
+        "point": 0.004734848484848485,
+        "ci95": [-0.000946969696969697, 0.011363636363636362]
+      }
+    }
+  },
+  "integrity_gates": {
+    "protocol_frozen": true,
+    "exact_methods": true,
+    "exact_weak_k": true,
+    "exact_bootstrap_replicates": true,
+    "all_hashes_verified": true,
+    "all_point_aucs_reproduced": true,
+    "finite_bootstrap_outputs": true,
+    "uniform_dominance_rejected": true
+  },
+  "interpretation": {
+    "overall": "The wavelet core has the higher overall AUROC point estimate in both years, but the paired cluster-bootstrap confidence intervals include zero, so the advantage is consistent rather than statistically decisive.",
+    "wavelet_strength": "higher overall AUROC and stronger k=6 to k=12 recall, especially at alpha 0.01",
+    "fixed4_strength": "higher k=4 recall and generally tighter false-positive control",
+    "uniformly_best_method": false,
+    "allowed_claim": "The frozen Brown-family wavelet episode adaptation produced a reproducibly higher overall AUROC point estimate than fixed4, while fixed4 retained the extreme-sparse four-member advantage; paired uncertainty does not establish a decisive overall difference.",
+    "prohibited_claims": [
+      "statistically decisive wavelet superiority",
+      "uniform wavelet dominance",
+      "fixed4 is invalid or useless",
+      "fixed4 is the strongest overall episode method",
+      "the full CMOR catalogue survey was reproduced or beaten"
+    ]
+  }
+}

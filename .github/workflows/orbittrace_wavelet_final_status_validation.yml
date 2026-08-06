@@ -1,0 +1,122 @@
+name: OrbitTrace wavelet final status validation
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-wavelet-episode-development
+    paths:
+      - .github/workflows/orbittrace_wavelet_final_status_validation.yml
+      - orbittrace_literature_comparison/METHOD_REGISTRY.json
+      - orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json
+      - orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md
+      - orbittrace_literature_results/WAVELET_EPISODE_EVALUATION.md
+      - orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json
+      - orbittrace_literature_freeze/SONOTACO_2023_WAVELET_EPISODE_TRANSFER_RESULT.json
+      - orbittrace_literature_freeze/WAVELET_FIXED4_PAIRED_INFERENCE_RESULT.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-wavelet-episode-2023-transfer
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate final method status and claims
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          registry = json.loads(Path('orbittrace_literature_comparison/METHOD_REGISTRY.json').read_text())
+          status = json.loads(Path('orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json').read_text())
+          development = json.loads(Path('orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json').read_text())
+          transfer = json.loads(Path('orbittrace_literature_freeze/SONOTACO_2023_WAVELET_EPISODE_TRANSFER_RESULT.json').read_text())
+          paired = json.loads(Path('orbittrace_literature_freeze/WAVELET_FIXED4_PAIRED_INFERENCE_RESULT.json').read_text())
+          coverage = Path('orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md').read_text()
+          evaluation = Path('orbittrace_literature_results/WAVELET_EPISODE_EVALUATION.md').read_text()
+
+          methods = {method['id']: method for method in registry['methods']}
+          expected_ids = {
+              'brown2010_wavelet_episode_core', 'orbittrace_fixed4',
+              'internal_split', 'internal_density', 'internal_dbscan',
+              'sugar2017_core_transfer', 'rudawska2014_dsh6',
+              'dsh4_sparse_adaptation', 'valsecchi1999_dn6',
+              'dn4_sparse_transfer', 'pena_asensio2025_hdbscan',
+              'sugar2017_uncertainty_catalogue', 'brown2010_wavelet',
+          }
+          assert registry['schema_version'] == 3
+          assert registry['completion']['status'] == 'complete_for_current_public_inputs'
+          assert set(methods) == expected_ids and len(methods) == 13
+          assert sum(method['track'] == 'episode' for method in methods.values()) == 10
+          assert sum(method['track'] == 'catalogue' for method in methods.values()) == 3
+
+          wavelet = methods['brown2010_wavelet_episode_core']
+          fixed4 = methods['orbittrace_fixed4']
+          full_wavelet = methods['brown2010_wavelet']
+          assert wavelet['classification'].startswith('literature-inspired sparse-episode adaptation')
+          assert wavelet['weak_auc']['2025'] > fixed4['weak_auc']['2025']
+          assert wavelet['weak_auc']['2023'] > fixed4['weak_auc']['2023']
+          assert full_wavelet['status'] == 'formally_deferred_input_incompatible'
+          assert full_wavelet['track'] == 'catalogue'
+
+          assert status['schema_version'] == 3
+          assert status['status'] == 'complete_for_current_public_inputs'
+          episode = {method['id']: method for method in status['episode_track']}
+          assert len(episode) == 10
+          assert episode['brown2010_wavelet_episode_core']['weak_auc_2025'] > episode['orbittrace_fixed4']['weak_auc_2025']
+          assert episode['brown2010_wavelet_episode_core']['weak_auc_2023'] > episode['orbittrace_fixed4']['weak_auc_2023']
+          assert status['paired_inference']['classification'] == 'CONSISTENT_BUT_UNCERTAIN_WAVELET_AUC_ADVANTAGE'
+
+          assert development['verdict'] == 'PASS_SONOTACO_2025_WAVELET_EPISODE_COMPARISON'
+          assert transfer['verdict'] == 'PASS_SONOTACO_2023_WAVELET_EPISODE_TRANSFER'
+          assert paired['verdict'] == 'PASS_WAVELET_FIXED4_PAIRED_INFERENCE'
+          assert paired['classification'] == 'CONSISTENT_BUT_UNCERTAIN_WAVELET_AUC_ADVANTAGE'
+          assert paired['workflow_run'] == 31106813236
+          assert paired['artifact_id'] == 8969900492
+          assert paired['result_sha256'] == '0881b5c449a80867b46341a4c681440b911ee6033dd857cc49b74f3561ff08e2'
+          assert paired['auc_difference_wavelet_minus_fixed4']['2025']['point'] > 0
+          assert paired['auc_difference_wavelet_minus_fixed4']['2023']['point'] > 0
+          assert paired['auc_difference_wavelet_minus_fixed4']['2025']['ci95'][0] < 0
+          assert paired['auc_difference_wavelet_minus_fixed4']['2023']['ci95'][0] < 0
+          assert paired['auc_difference_wavelet_minus_fixed4']['equal_weight_combined']['ci95'][0] < 0
+          assert paired['interpretation']['uniformly_best_method'] is False
+
+          required_coverage = (
+              'The wavelet episode core now has the highest overall weak-stream AUROC in both years.',
+              'Fixed4 is not the overall benchmark leader',
+              'The full Brown et al. CMOR-style catalogue survey remains formally deferred rather than beaten.',
+              'All comparator executions and the paired uncertainty analysis are complete for the current public inputs.',
+          )
+          assert all(text in coverage for text in required_coverage)
+          required_evaluation = (
+              'CONSISTENT_BUT_UNCERTAIN_WAVELET_AUC_ADVANTAGE',
+              'It does not support calling the difference statistically decisive.',
+              'neither method is uniformly best',
+              'the claim that fixed4 is the strongest overall episode method',
+          )
+          assert all(text in evaluation for text in required_evaluation)
+
+          print('PASS_ORBITTRACE_WAVELET_FINAL_STATUS_VALIDATION')
+          print('methods', len(methods), 'episode', len(episode), 'paired', status['paired_inference']['classification'])
+          PY
+
+      - name: Record final status hashes
+        run: |
+          sha256sum \
+            orbittrace_literature_comparison/METHOD_REGISTRY.json \
+            orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json \
+            orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md \
+            orbittrace_literature_results/WAVELET_EPISODE_EVALUATION.md \
+            orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json \
+            orbittrace_literature_freeze/SONOTACO_2023_WAVELET_EPISODE_TRANSFER_RESULT.json \
+            orbittrace_literature_freeze/WAVELET_FIXED4_PAIRED_INFERENCE_RESULT.json
