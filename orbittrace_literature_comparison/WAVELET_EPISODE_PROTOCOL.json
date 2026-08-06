@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_any_sonotaco_2025_wavelet_coefficient_or_score",
+  "classification": "literature-inspired sparse-episode transfer; not a faithful CMOR catalogue-survey reproduction",
+  "purpose": "Test whether the published three-dimensional meteor-shower wavelet core provides competitive sparse-stream discrimination on the exact frozen 128-event OrbitTrace episode benchmark.",
+  "references": [
+    {
+      "title": "A meteoroid stream survey using the Canadian Meteor Orbit Radar II: Identification of minor showers using a 3D wavelet transform",
+      "authors": "Brown, Wong, Weryk, and Wiegert",
+      "year": 2010,
+      "doi": "10.1016/j.icarus.2009.11.015",
+      "role": "three-dimensional Mexican-hat wavelet family, Sun-centered radiant-speed coordinates, 4 degree angular probe, 10 percent speed probe, and four-probe truncation"
+    },
+    {
+      "title": "A comparative study of radar and optical observations of meteor showers using SAAMER-OS and CAMS",
+      "authors": "Bruzzone, Janches, Jenniskens, Weryk, and Hormaechea",
+      "year": 2020,
+      "doi": "10.1016/j.pss.2020.104936",
+      "role": "evidence that the wavelet family is applicable to optical video-orbit data"
+    }
+  ],
+  "benchmark": {
+    "development_corpus": "exact frozen SonotaCo 2025 episode benchmark",
+    "independent_corpus": "exact frozen SonotaCo 2023 one-shot episode benchmark after source and 2025 result freeze",
+    "episode_size": 128,
+    "positive_member_counts": [4, 6, 8, 12],
+    "calibration": "identical bin-specific calibration negatives used by every existing comparator",
+    "metrics": [
+      "weak-stream AUROC",
+      "five fold AUROC",
+      "pooled false-positive rate at alpha 0.05 and 0.01",
+      "worst reporting-sector false-positive rate",
+      "recall at k=4,6,8,12"
+    ]
+  },
+  "fixed_method": {
+    "coordinates": [
+      "Sun-centered geocentric ecliptic radiant longitude",
+      "geocentric ecliptic latitude",
+      "geocentric speed"
+    ],
+    "angular_distance": "great-circle separation on the radiant sphere",
+    "angular_probe_deg": 4.0,
+    "speed_probe_fraction": 0.10,
+    "dimensionless_radius_squared": "(great_circle_angle/4deg)^2 + ((speed-test_speed)/(0.10*test_speed))^2",
+    "kernel": "(3-r^2)*exp(-r^2/2), the unnormalized three-dimensional Mexican-hat/Laplacian-of-Gaussian core",
+    "truncation_radius": 4.0,
+    "test_locations": "each observed event's radiant and speed",
+    "self_contribution": "excluded",
+    "episode_score": "maximum leave-one-out wavelet coefficient across observed-event test locations",
+    "normalization": "none; every episode contains exactly 128 events and empirical calibration is identical across methods",
+    "parameter_tuning": "prohibited"
+  },
+  "claim_boundary": {
+    "allowed": "published-core wavelet adaptation on the common sparse-episode task",
+    "prohibited": [
+      "faithful reproduction of the Brown et al. global CMOR survey",
+      "catalogue-wide wavelet discovery",
+      "proof that the CMOR method was beaten",
+      "historical OrbitTrace discovery by the wavelet or fixed4 detector",
+      "selection of a different scale after seeing SonotaCo 2025 results"
+    ]
+  },
+  "freeze_rules": {
+    "orbittrace_candidate_access": "prohibited during development and transfer",
+    "blind_interval": "retain the existing 20-55 degree removal inherited by the frozen episode factories",
+    "post_result_changes": "no coordinate, kernel, scale, truncation, test-location, score, seed, episode, calibration, or metric changes",
+    "reporting": "report the result even if wavelet exceeds fixed4 or performs near chance"
+  }
+}

@@ -1,0 +1,156 @@
+name: OrbitTrace SonotaCo 2025 wavelet episode comparison
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-cmor-wavelet-multiyear-input-audit
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2025_wavelet_episode_comparison.yml
+      - orbittrace_literature_comparison/WAVELET_EPISODE_PROTOCOL.json
+      - orbittrace_literature_comparison/wavelet_episode_comparator.py
+      - orbittrace_literature_comparison/build_wavelet_episode_runner.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2025-wavelet-episode-comparison
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-wavelet-episode-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify and build frozen wavelet runner before data access
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_literature_comparison/WAVELET_EPISODE_PROTOCOL.json)" = "3e5862ad3f4434646ad62403c03ccba25a00b1fc"
+          test "$(git hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git hash-object orbittrace_literature_comparison/build_wavelet_episode_runner.py)" = "be8f3c79237e4f0a2d9625e816b2b4f806029ec5"
+          test "$(git hash-object orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py)" = "a10b8689791f647713689e3870901f633b6cc493"
+          python -m py_compile \
+            orbittrace_literature_comparison/wavelet_episode_comparator.py \
+            orbittrace_literature_comparison/build_wavelet_episode_runner.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import wavelet_episode_comparator as wavelet
+
+          protocol = json.loads(Path('orbittrace_literature_comparison/WAVELET_EPISODE_PROTOCOL.json').read_text())
+          assert protocol['status'] == 'frozen_before_any_sonotaco_2025_wavelet_coefficient_or_score'
+          assert protocol['classification'] == 'literature-inspired sparse-episode transfer; not a faithful CMOR catalogue-survey reproduction'
+          fixed = protocol['fixed_method']
+          assert fixed['angular_probe_deg'] == 4.0
+          assert fixed['speed_probe_fraction'] == 0.10
+          assert fixed['truncation_radius'] == 4.0
+          assert fixed['test_locations'] == "each observed event's radiant and speed"
+          assert fixed['self_contribution'] == 'excluded'
+          assert fixed['episode_score'].startswith('maximum leave-one-out')
+          assert fixed['parameter_tuning'] == 'prohibited'
+          tests = wavelet.self_test()
+          assert tests and all(tests.values()), tests
+          print('PASS_FROZEN_WAVELET_EPISODE_SOURCE_GUARD', tests)
+          PY
+          python orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            --base orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            --output /tmp/run_sonotaco_2025_wavelet_episode_comparison.py \
+            | tee output/runner_build.txt
+          python -m py_compile /tmp/run_sonotaco_2025_wavelet_episode_comparison.py
+          sha256sum /tmp/run_sonotaco_2025_wavelet_episode_comparison.py | tee output/adapted_runner_sha256.txt
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_sonotaco_2025_wavelet_episode_comparison.py').read_text()
+          assert source.count('brown2010_wavelet_episode_core') == 3
+          assert 'wavelet.wavelet_episode_score(episode)' in source
+          assert 'wavelet_rules_frozen' in source
+          assert 'literature-inspired episode adaptation' in source
+          print('PASS_ADAPTED_WAVELET_RUNNER_AUDIT')
+          PY
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute frozen wavelet episode comparison
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2025_wavelet_episode_comparison.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2025_LITERATURE_COMPARISON.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/WAVELET_EPISODE_PROTOCOL.json \
+            orbittrace_literature_comparison/wavelet_episode_comparator.py \
+            orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            input/audit.json input/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          if [ -f /tmp/run_sonotaco_2025_wavelet_episode_comparison.py ]; then
+            sha256sum /tmp/run_sonotaco_2025_wavelet_episode_comparison.py >> output/source_and_input_sha256.txt
+          fi
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload wavelet episode evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2025-wavelet-episode-comparison
+          path: output
+          if-no-files-found: error
+          retention-days: 90
