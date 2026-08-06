@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "status": "design_frozen_before_sonotaco_2025_execution",
+  "purpose": "Reconstruct the full uncertainty-aware catalogue stages of Sugar et al. (2017) on the blinded SonotaCo 2025 benchmark catalogue, then freeze every parameter and transfer once to SonotaCo 2023.",
+  "reference": {
+    "title": "Meteor shower detection with density-based clustering",
+    "authors": "Sugar, Moorhead, Brown, and Cooke",
+    "year": 2017,
+    "doi": "10.1111/maps.12856",
+    "arxiv": "1702.02656"
+  },
+  "track": "catalogue",
+  "development_corpus": "SonotaCo 2025 only",
+  "independent_transfer": "SonotaCo 2023 only after the 2025 source, epsilon, randomization, merge implementation, and result are frozen",
+  "orbittrace_access": "prohibited",
+  "benchmark_universe": {
+    "inherited_constraints": [
+      "remove solar longitude 20 through 55 degrees before label access",
+      "require at least two cameras through the existing frozen SonotaCo parser",
+      "remove the existing ESV background exclusion",
+      "exclude native shower codes that cannot be mapped through the frozen GMN-MDC audit"
+    ],
+    "paper_quality_filters": {
+      "minimum_convergence_angle_deg_strict": 15.0,
+      "maximum_geocentric_speed_km_s": 75.0,
+      "maximum_speed_uncertainty_km_s": "0.1 * vg + 1.0"
+    },
+    "field_mapping": {
+      "paper_camera_meteor_camera_angle": "SonotaCo Qc(deg) convergence angle",
+      "radiant_uncertainty": "SonotaCo ra sd(deg) and de sd(deg)",
+      "speed_uncertainty": "SonotaCo vg sd(km/s)"
+    },
+    "duplicate_removal": "not applicable because the transfer uses one SonotaCo network rather than merged overlapping networks"
+  },
+  "published_core": {
+    "feature_vector": "six-dimensional Sun-centered GEO vector [cos(sol), sin(sol), sin(lambda_g-sol)cos(beta_g), cos(lambda_g-sol)cos(beta_g), sin(beta_g), vg/72]",
+    "metric": "euclidean",
+    "minimum_samples": 5,
+    "epsilon_rule": "23rd percentile of the fourth-nearest-neighbor distances on the observed quality-filtered SonotaCo 2025 catalogue",
+    "epsilon_transfer": "freeze the numeric SonotaCo 2025 epsilon and reuse it unchanged on SonotaCo 2023",
+    "dbscan_implementation": "sklearn.cluster.DBSCAN",
+    "scikit_learn_version": "1.5.2",
+    "algorithm": "ball_tree",
+    "leaf_size": 40,
+    "n_jobs": 1
+  },
+  "uncertainty_cloning": {
+    "iterations": 1000,
+    "solar_longitude_uncertainty": 0.0,
+    "radiant_mapping": "independent Gaussian draws in reported equatorial right ascension and declination, followed by the exact frozen equatorial-to-ecliptic transform",
+    "speed_mapping": "independent Gaussian draw using reported geocentric-speed standard deviation",
+    "declination_boundary": "reflect draws across plus or minus 90 degrees and shift right ascension by 180 degrees until the direction is valid",
+    "speed_boundary": "deterministically redraw non-positive speeds from the same event Gaussian until positive",
+    "covariance_limitation": "SonotaCo supplies marginal standard deviations but not a full radiant-speed covariance; no covariance is invented",
+    "seed_root": 20170209,
+    "iteration_seed": "stable SHA-256 seed of seed_root, corpus, year, and iteration index"
+  },
+  "cluster_merging": {
+    "paper_rule": "merge clusters that share at least 50 percent of one cluster's members",
+    "deterministic_interpretation": "create an edge between two clone-run cluster instances when their intersection is at least half the size of either instance; master clusters are connected components of this overlap graph",
+    "comparison_scope": "cluster instances may be compared across all iterations; same-iteration DBSCAN clusters are disjoint and cannot satisfy the overlap rule",
+    "recurrence": "number of distinct clone iterations represented in a master component",
+    "retention_minimum_iterations": 100,
+    "strong_minimum_iterations": 500,
+    "weak_range_iterations": [100, 499],
+    "event_membership_probability": "number of component iterations in which the event belongs to a component cluster divided by component recurrence",
+    "hard_assignment_for_label_metrics": "assign each event to the retained master cluster with maximum membership probability; break ties by larger recurrence, then deterministic component identifier; otherwise assign noise"
+  },
+  "evaluation": {
+    "primary": [
+      "number of retained, strong, and weak master clusters",
+      "master-cluster recurrence distribution",
+      "hard-assignment normalized mutual information and adjusted Rand index",
+      "Hungarian-matched per-shower F1",
+      "matched-shower recovery by quality-filtered annual size stratum",
+      "noise fraction",
+      "meteor membership-probability summaries"
+    ],
+    "secondary": [
+      "single observed-catalogue deterministic DBSCAN result on the identical quality-filtered universe",
+      "cluster fragmentation and merge diagnostics",
+      "runtime and cluster-instance counts"
+    ],
+    "strong_and_weak_reporting": "report strong and weak retained master clusters separately without suppressing either",
+    "label_access": "labels are unavailable to epsilon selection, clone generation, DBSCAN, merging, recurrence filtering, and hard assignment; labels are revealed only for evaluation"
+  },
+  "integrity_rules": [
+    "The 1000-iteration count may not be reduced after data access.",
+    "The 50-percent overlap rule, 100-run retention threshold, and 500-run strong threshold may not change after data access.",
+    "The SonotaCo 2025 epsilon must be recorded before any SonotaCo 2023 access and reused numerically unchanged.",
+    "All weak, negative, fragmented, or merged outcomes must be retained.",
+    "The result must remain labelled a catalogue-scale uncertainty-pipeline reconstruction, not an episode comparison.",
+    "No fixed4 parameter, score, gate, or outcome may change.",
+    "The pipeline may not inspect OrbitTrace coordinates, members, scores, or targeted-recovery results."
+  ],
+  "claim_boundary": "The paper does not publish source code or a more detailed merge order. The connected-component overlap graph is a preregistered deterministic interpretation of the stated 50-percent rule. The SonotaCo marginal-error mapping is a survey transfer, not an exact reproduction of the ASGARD covariance model."
+}
