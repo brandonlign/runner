@@ -1,0 +1,250 @@
+name: OrbitTrace wavelet catalogue v3 Windows direct push
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-wavelet-catalogue-v3-development
+    paths:
+      - .github/workflows/orbittrace_wavelet_catalogue_v3_windows_direct_push.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-wavelet-catalogue-v3-windows-direct-push
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONPATH: orbittrace_wavelet_catalogue_v3
+      FROZEN_SOURCE_SHA: f930664025250c9861683bef5bdeb0c6d19a4231
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare exact frozen source
+        run: |
+          set -euo pipefail
+          cat > post_status.py <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          body = sys.stdin.read().strip()
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues/207/comments",
+              data=json.dumps({'body': body}).encode(),
+              method='POST',
+              headers={
+                  'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'Content-Type': 'application/json',
+              },
+          )
+          with urllib.request.urlopen(request, timeout=60) as response:
+              print(response.status)
+          PY
+          py -3.11 --version
+          printf '%s\n' \
+            'ORBITTRACE_WINDOWS_DIRECT_STAGE: started' \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            "frozen_source=${FROZEN_SOURCE_SHA}" \
+            'years=2022,2023 blind_exclusion=20,55 held_out_loaded=false' \
+            | py -3.11 post_status.py || true
+
+          rm -rf source
+          mkdir source
+          cd source
+          git init
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${FROZEN_SOURCE_SHA}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${FROZEN_SOURCE_SHA}"
+          py -3.11 -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          py -3.11 -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Run target-free source and implementation audits
+        working-directory: source
+        run: |
+          set -euo pipefail
+          mkdir -p input/fixed4 output
+          py -3.11 -c "from pathlib import Path; Path('/tmp').mkdir(parents=True, exist_ok=True)"
+          py -3.11 orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          py -3.11 -m py_compile \
+            output/run_wavelet_catalogue_v3_development.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
+          py -3.11 - <<'PY'
+          import importlib.util
+          import sys
+
+          sys.path.insert(0, 'orbittrace_wavelet_catalogue_v3')
+          import wavelet_episode_comparator as wavelet
+
+          wavelet_checks = wavelet.self_test()
+          print({'wavelet': wavelet_checks})
+          if not all(wavelet_checks.values()):
+              raise SystemExit('wavelet self-test failed')
+
+          source_path = 'output/run_wavelet_catalogue_v3_development.py'
+          spec = importlib.util.spec_from_file_location('wavelet_catalogue_v3_development', source_path)
+          module = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(module)
+          exact_checks = module.exact_rescore_implementation_self_test()
+          print({'exact_rescore_implementation': exact_checks})
+          if not all(exact_checks.values()):
+              raise SystemExit('exact-rescore implementation equivalence failed')
+          PY
+          printf '%s\n' \
+            'ORBITTRACE_WINDOWS_DIRECT_STAGE: audits_passed' \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            'source_sha=ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' \
+            'target_information_present=false held_out_catalogues_loaded=false' \
+            | py -3.11 ../post_status.py || true
+
+      - name: Retrieve exact frozen fixed4 baseline
+        working-directory: source
+        run: |
+          set -euo pipefail
+          py -3.11 - <<'PY'
+          import io
+          import json
+          import os
+          import zipfile
+          from pathlib import Path
+          import requests
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          response = requests.get(
+              f'https://api.github.com/repos/{repo}/actions/runs/31106001133/artifacts',
+              headers=headers,
+              timeout=60,
+          )
+          response.raise_for_status()
+          matches = [
+              artifact for artifact in response.json()['artifacts']
+              if artifact['name'] == 'orbittrace-fixed4-support-normalized-wrapper-development'
+          ]
+          if len(matches) != 1:
+              raise SystemExit(f'expected one frozen baseline artifact, found {len(matches)}')
+          archive = requests.get(matches[0]['archive_download_url'], headers=headers, timeout=120)
+          archive.raise_for_status()
+          output = Path('input/fixed4')
+          output.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(archive.content)) as bundle:
+              bundle.extractall(output)
+
+          result = json.loads((output / 'orbittrace_fixed4_support_wrapper_development.json').read_text())
+          assert result['verdict'] == 'FAIL_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT'
+          baseline = result['development']['panel_evaluations']['development']['metrics']['persistence']
+          assert baseline['recovered_at_100'] == 61
+          assert baseline['qualified_matches'] == 90
+          assert abs(baseline['top100_dominant_precision'] - 0.6809376504699393) < 1e-15
+          print('PASS_FIXED4_DEVELOPMENT_BASELINE_GUARD')
+          PY
+          printf '%s\n' \
+            'ORBITTRACE_WINDOWS_DIRECT_STAGE: baseline_passed' \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            'baseline_run=31106001133 recovered_at_100=61 qualified_matches=90' \
+            | py -3.11 ../post_status.py || true
+
+      - name: Run target-excluded wavelet catalogue development
+        working-directory: source
+        run: |
+          set -euo pipefail
+          py -3.11 output/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --fixed4-baseline-json input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            --output output
+          cat output/WAVELET_CATALOGUE_V3_DEVELOPMENT.md
+
+      - name: Enforce and publish complete result
+        working-directory: source
+        run: |
+          set -euo pipefail
+          py -3.11 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          result_path = Path('output/wavelet_catalogue_v3_development.json')
+          result = json.loads(result_path.read_text())
+          allowed = {
+              'PASS_WAVELET_CATALOGUE_V3_DEVELOPMENT',
+              'FAIL_WAVELET_CATALOGUE_V3_DEVELOPMENT',
+          }
+          if result.get('verdict') not in allowed:
+              raise SystemExit(f"invalid verdict: {result.get('verdict')}")
+          config = result['configuration']
+          assert config['years'] == [2022, 2023]
+          assert config['blind_exclusion'] == [20.0, 55.0]
+          assert config['rescue_alpha'] == 1.0 / 129.0
+          assert config['rescue_queue'] == 'fixed4 p <= 1/129; never inserted into wavelet ranking'
+
+          summary = {
+              'verdict': result['verdict'],
+              'evaluation': {key: value for key, value in result['evaluation'].items() if key != 'per_label'},
+              'fixed4_baseline': result['fixed4_development_baseline'],
+              'gates': result['gates'],
+              'counts': {
+                  'anchor_count': result['anchor_count'],
+                  'component_count': result['component_count'],
+                  'family_count': result['family_count'],
+              },
+          }
+          result_digest = hashlib.sha256(result_path.read_bytes()).hexdigest()
+          print('ORBITTRACE_RESULT_SUMMARY_BEGIN')
+          print(json.dumps(summary, indent=2))
+          print('ORBITTRACE_RESULT_SUMMARY_END')
+          print(f'RESULT_SHA256 {result_digest}')
+          print('ORBITTRACE_RESULT_JSON_BEGIN')
+          print(result_path.read_text())
+          print('ORBITTRACE_RESULT_JSON_END')
+          Path('../result_comment.md').write_text(
+              'ORBITTRACE_WINDOWS_DIRECT_STAGE: result_complete\n'
+              f"run={os.environ['GITHUB_RUN_ID']} attempt={os.environ['GITHUB_RUN_ATTEMPT']}\n"
+              f"result_sha256={result_digest}\n"
+              '```json\n' + json.dumps(summary, indent=2) + '\n```\n'
+          )
+          PY
+          py -3.11 ../post_status.py < ../result_comment.md || true
+
+      - name: Publish failure provenance
+        if: ${{ failure() }}
+        working-directory: source
+        run: |
+          set +e
+          printf '%s\n' \
+            'ORBITTRACE_WINDOWS_DIRECT_STAGE: failed' \
+            "run=${GITHUB_RUN_ID} attempt=${GITHUB_RUN_ATTEMPT}" \
+            "frozen_source=${FROZEN_SOURCE_SHA}" \
+            'No valid result_complete checkpoint was produced.' \
+            | py -3.11 ../post_status.py || true
+          echo "FROZEN_SOURCE_SHA=${FROZEN_SOURCE_SHA}"
+          sha256sum \
+            orbittrace_wavelet_catalogue_v3/audit_development_source.py \
+            orbittrace_wavelet_catalogue_v3/source_parts/part00.b64 \
+            orbittrace_wavelet_catalogue_v3/source_parts/part01.b64 \
+            orbittrace_wavelet_catalogue_v3/source_parts/part02.b64 \
+            orbittrace_wavelet_catalogue_v3/source_parts/part03.b64
+          find output -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
