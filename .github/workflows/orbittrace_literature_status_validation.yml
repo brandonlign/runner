@@ -87,9 +87,10 @@ jobs:
               'The literature-comparator development phase is complete for the current data.',
               'Promising strong transfer, but not fully robustly replicated under the complete preregistered standard.',
           )
-          assert all(phrase in coverage for phrase in required_phrases)
-          assert '199/324 = 61.4%' in wavelet_report
-          assert 'not evidence that the CMOR radar wavelet method performs poorly' in wavelet_report
+          missing = [phrase for phrase in required_phrases if phrase not in coverage]
+          assert not missing, f'missing coverage phrases: {missing}'
+          assert '199 / 324 = 61.4%' in wavelet_report
+          assert 'not a negative result for the wavelet method' in wavelet_report
 
           print('PASS_ORBITTRACE_LITERATURE_STATUS_VALIDATION')
           print('methods', len(methods), 'episode', len(status['episode_track']), 'catalogue', len(catalogue))
