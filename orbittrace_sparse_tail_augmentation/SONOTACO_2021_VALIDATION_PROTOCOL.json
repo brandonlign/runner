@@ -1,0 +1,70 @@
+{
+  "status": "frozen_before_any_sonotaco_2021_component_or_sparse_tail_score",
+  "method": {
+    "id": "wavelet_primary_fixed4_margin_025",
+    "statistic": "max(-log(p_wavelet), -log(p_fixed4) - 0.25)",
+    "margin": 0.25,
+    "component_pvalues": "bin-wise empirical upper-tail survival p-values",
+    "null_calibration": "paired leave-one-out component p-values transformed by the identical statistic",
+    "final_pvalue": "empirical upper-tail survival against the transformed paired null statistics"
+  },
+  "prospective_panel": {
+    "survey": "SonotaCo",
+    "year": 2021,
+    "corpus": "sonotaco-2021-sparse-tail-validation",
+    "archive_sha256": "8d58f089c4137e4de3994fedf57d10571a98e6f594535199fe30d5ec5f251efb",
+    "member_sha256": "adc4057714b6720a350d1dd965be558bb6a1bc9fa1db5c74a1c700ef70c7a8fc",
+    "eligibility_artifact": 8970738643,
+    "eligibility_artifact_sha256": "2a9f6a9ed54dc863e5b8d071af8d198d2745b87b563e7af93be77925f8f95900",
+    "supported_bins": 33,
+    "eligible_showers": 37,
+    "calibration_episodes": 4224,
+    "negative_episodes": 2112,
+    "positive_episodes": 592
+  },
+  "comparators": [
+    "orbittrace_fixed4",
+    "brown2010_wavelet_episode_core"
+  ],
+  "primary_endpoint": "weak AUROC on k=4,6,8 positive episodes versus all held-out negatives",
+  "secondary_endpoints": [
+    "five fold weak AUROCs",
+    "false-positive rates at alpha 0.05 and 0.01",
+    "worst reporting-sector false-positive rate at alpha 0.05",
+    "recall at alpha 0.05 and 0.01 for k=4,6,8,12"
+  ],
+  "execution_integrity_gates": {
+    "all_input_hashes_exact": true,
+    "all_parser_gates_pass": true,
+    "supported_bins_exact": true,
+    "eligible_showers_exact": true,
+    "episode_counts_exact": true,
+    "all_five_folds_nonempty": true,
+    "wavelet_rules_unchanged": true,
+    "fixed4_source_unchanged": true,
+    "sparse_tail_source_unchanged": true,
+    "all_scores_pvalues_and_metrics_finite": true
+  },
+  "promotion_gates": {
+    "weak_auc_exceeds_wavelet": true,
+    "k4_recall_005_exceeds_wavelet": true,
+    "recall_005_not_below_both_components_for_every_k": true,
+    "fpr_005_at_most": 0.065,
+    "fpr_001_at_most": 0.02,
+    "worst_sector_fpr_005_at_most": 0.08
+  },
+  "decision_rule": {
+    "promote": "all promotion gates pass",
+    "retain_optional": "execution passes and at least one of weak AUROC or balanced alpha-0.05 recall exceeds wavelet, but promotion fails",
+    "reject": "execution passes and neither weak AUROC nor balanced alpha-0.05 recall exceeds wavelet"
+  },
+  "prohibitions": [
+    "no alternative margin",
+    "no alternative combiner",
+    "no score weighting",
+    "no shower-specific or solar-longitude-specific rule",
+    "no post-result gate relaxation",
+    "no OrbitTrace access during validation"
+  ],
+  "claim_boundary": "Promotion would establish a prospectively validated sparse-episode detector on SonotaCo benchmarks. It would not by itself establish blind catalogue discovery of OrbitTrace, formal shower status, or historical first discovery."
+}
