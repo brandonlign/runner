@@ -1,0 +1,138 @@
+name: OrbitTrace CMOR wavelet multiyear input audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-cmor-wavelet-feasibility-audit
+    paths:
+      - .github/workflows/orbittrace_cmor_wavelet_multiyear_input_audit.yml
+      - orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json
+      - orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-cmor-wavelet-multiyear-input-audit
+  cancel-in-progress: true
+
+jobs:
+  multiyear-input-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-cmor-wavelet-multiyear-input-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen design and source before multiyear archive access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json)" = "6acc7a61e33ee2fce90741b7e5c88da180ccceaa"
+          test "$(git hash-object orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py)" = "f2d226014aaa22d063b01208bc911ddb302c8427"
+          python -m py_compile orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+
+          protocol = json.loads(Path('orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json').read_text())
+          assert protocol['status'] == 'design_frozen_before_multiyear_archive_access'
+          assert protocol['classification'] == 'multiyear input and exposure feasibility audit; not a wavelet comparator result'
+          assert protocol['virtual_year']['years'] == [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+          assert protocol['geometry_and_quality']['fields_read'] == ['sol(deg)', 'vg(km/s)', 'vg sd(km/s)', 'Qc(deg)']
+          assert protocol['geometry_and_quality']['shower_labels_read'] is False
+          assert protocol['published_rules_preserved']['minimum_radiants_contributing_to_coefficient'] == 300
+          assert protocol['published_rules_preserved']['maximum_link_gap_solar_longitude_deg'] == 2.0
+          assert protocol['published_rules_preserved']['minimum_linked_points'] == 3
+          assert protocol['published_rules_preserved']['seven_year_virtual_year'] is True
+
+          source = Path('orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py').read_text()
+          tree = ast.parse(source)
+          literal_globals = {}
+          exact_strings = set()
+          imports = set()
+          function_names = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                  exact_strings.add(node.value)
+              elif isinstance(node, ast.Import):
+                  imports.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split('.')[0])
+          for node in tree.body:
+              if isinstance(node, ast.FunctionDef):
+                  function_names.add(node.name)
+              elif isinstance(node, ast.Assign):
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except Exception:
+                      continue
+                  for target in node.targets:
+                      if isinstance(target, ast.Name):
+                          literal_globals[target.id] = value
+
+          assert tuple(literal_globals['YEARS']) == tuple(range(2019, 2026))
+          assert tuple(literal_globals['BLIND_INTERVAL_DEG']) == (20.0, 55.0)
+          assert literal_globals['PUBLISHED_MINIMUM_RADIANTS'] == 300
+          assert literal_globals['PUBLISHED_MAX_TIME_GAP_DEG'] == 2
+          assert literal_globals['PUBLISHED_MINIMUM_LINKED_POINTS'] == 3
+          assert literal_globals['BREADTH_FRACTION'] == 0.80
+          assert literal_globals['MINIMUM_CONTRIBUTING_YEARS'] == 5
+          assert literal_globals['DOMINANCE_SHARE'] == 0.50
+          assert literal_globals['MAXIMUM_DOMINATED_FRACTION'] == 0.10
+          assert literal_globals['MINIMUM_THREE_POINT_CHAINS'] == 200
+          assert imports.issubset({'__future__', 'argparse', 'csv', 'hashlib', 'io', 'json', 'math', 'statistics', 'zipfile', 'pathlib', 'typing'})
+          assert 'Shower' not in exact_strings
+          assert not any(name in function_names for name in ('wavelet', 'wavelet_coefficient', 'find_local_maxima', 'score_shower', 'recover_shower'))
+          assert {'load_year', 'select_annual_member', 'linked_triplets', 'longest_forward_chain', 'main'}.issubset(function_names)
+          assert 'numpy' not in source and 'scipy' not in source and 'sklearn' not in source
+          print('PASS_FROZEN_CMOR_MULTIYEAR_INPUT_SOURCE_GUARD')
+          PY
+
+      - name: Download seven preregistered annual archives
+        run: |
+          set -euo pipefail
+          for year in 019 020 021 022 023 024 025; do
+            curl --fail --location --retry 3 \
+              --output "input/${year}a.zip" \
+              "https://www.astro.sk/iaumdcDB/public/data/SNMv3/${year}a.zip"
+          done
+          sha256sum input/*a.zip | tee output/discovered_archive_sha256.txt
+
+      - name: Execute archive, support, and exposure audit
+        run: |
+          set -euo pipefail
+          python orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py \
+            --archive-dir input \
+            --protocol orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json \
+            --output output
+          cat output/CMOR_WAVELET_MULTIYEAR_INPUT_AUDIT.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json \
+            orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py \
+            input/*a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload multiyear input evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-cmor-wavelet-multiyear-input-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
