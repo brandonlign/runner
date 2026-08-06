@@ -1,0 +1,201 @@
+name: OrbitTrace episode-method final synthesis
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sparse-tail-2021-validation
+    paths:
+      - orbittrace_episode_method_synthesis/**
+      - .github/workflows/orbittrace_episode_method_final_synthesis.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-episode-method-final-synthesis
+  cancel-in-progress: false
+
+jobs:
+  synthesize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-episode-method-final-synthesis
+
+      - name: Retrieve exact frozen evidence artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          artifacts = {
+              8969020016: 'c8d72fa8b051da05c0e4701a48302f97bf53232bd623df30a6953e05b8522232',
+              8969274303: 'd00faaf9d781b988bbab0af09e1e27ddf0a824be63f96778bf295b4bf56c404b',
+              8970137965: '5cc0404f486e7ca060349345e42b042201a0a4732dfe680c98b1243d0ae1da43',
+              8970482364: '8ed861bc9468d61e474ae37b86a1871200fe17abc630b9172fb00e236f12b075',
+              8971081478: '7eb18dd939714ac1656dd2a1cfbef9ff29fece93cfa97a55f848598380c7fffd',
+          }
+          token = os.environ['GITHUB_TOKEN']
+          repo = os.environ['GITHUB_REPOSITORY']
+          for artifact_id, expected in artifacts.items():
+              zip_path = Path('input') / f'{artifact_id}.zip'
+              subprocess.run([
+                  'curl','--fail-with-body','-L',
+                  '-H',f'Authorization: Bearer {token}',
+                  '-H','Accept: application/vnd.github+json',
+                  '-H','X-GitHub-Api-Version: 2022-11-28',
+                  f'https://api.github.com/repos/{repo}/actions/artifacts/{artifact_id}/zip',
+                  '-o',str(zip_path),
+              ], check=True)
+              actual = subprocess.check_output(['sha256sum', str(zip_path)], text=True).split()[0]
+              if actual != expected:
+                  raise RuntimeError(f'artifact {artifact_id} digest mismatch: {actual}')
+              root = Path('input') / str(artifact_id)
+              root.mkdir()
+              subprocess.run(['unzip','-q',str(zip_path),'-d',str(root)], check=True)
+          PY
+
+      - name: Apply immutable synthesis rule
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def unique(root: str, filename: str) -> Path:
+              paths = list(Path(root).rglob(filename))
+              if len(paths) != 1:
+                  raise RuntimeError(f'expected one {filename} under {root}, found {paths}')
+              return paths[0]
+
+          development_2025 = json.loads(unique('input/8969020016', 'sonotaco_2025_wavelet_episode_comparison.json').read_text())
+          transfer_2023 = json.loads(unique('input/8969274303', 'sonotaco_2023_wavelet_episode_transfer.json').read_text())
+          hybrid_2022 = json.loads(unique('input/8970137965', 'sonotaco_2022_fixed4_wavelet_hybrid_validation.json').read_text())
+          sparse_development = json.loads(unique('input/8970482364', 'sparse_tail_augmentation_development.json').read_text())
+          sparse_2021 = json.loads(unique('input/8971081478', 'sonotaco_2021_sparse_tail_validation.json').read_text())
+
+          if hybrid_2022['verdict'] != 'PASS_SONOTACO_2022_PROSPECTIVE_HYBRID_VALIDATION':
+              raise RuntimeError('2022 hybrid execution did not pass')
+          if hybrid_2022['decision'] != 'RETAIN_AS_OPTIONAL_ENSEMBLE':
+              raise RuntimeError(f"unexpected 2022 hybrid decision: {hybrid_2022['decision']}")
+          if sparse_development['verdict'] != 'PASS_SPARSE_TAIL_AUGMENTATION_DEVELOPMENT':
+              raise RuntimeError('sparse-tail development did not pass')
+          if sparse_development['selected_margin'] != 0.25:
+              raise RuntimeError('sparse-tail margin changed')
+          if sparse_2021['verdict'] != 'PASS_SONOTACO_2021_PROSPECTIVE_SPARSE_TAIL_VALIDATION':
+              raise RuntimeError('2021 sparse-tail execution did not pass')
+          if sparse_2021['decision'] != 'REJECT_SPARSE_TAIL_AUGMENTATION':
+              raise RuntimeError(f"unexpected 2021 sparse-tail decision: {sparse_2021['decision']}")
+
+          methods_2021 = sparse_2021['metrics']
+          fixed4_2021 = methods_2021['orbittrace_fixed4']
+          wavelet_2021 = methods_2021['brown2010_wavelet_episode_core']
+          sparse_2021_metrics = methods_2021['wavelet_primary_fixed4_margin_025']
+          methods_2022 = hybrid_2022['metrics']
+          fixed4_2022 = methods_2022['orbittrace_fixed4']
+          wavelet_2022 = methods_2022['brown2010_wavelet_episode_core']
+          hybrid_2022_metrics = methods_2022['fixed4_wavelet_tippett_hybrid']
+
+          gates = {
+              'wavelet_auc_above_fixed4_2021': wavelet_2021['weak_auc'] > fixed4_2021['weak_auc'],
+              'wavelet_auc_above_sparse_tail_2021': wavelet_2021['weak_auc'] > sparse_2021_metrics['weak_auc'],
+              'wavelet_auc_above_fixed4_2022': wavelet_2022['weak_auc'] > fixed4_2022['weak_auc'],
+              'wavelet_auc_above_hybrid_2022': wavelet_2022['weak_auc'] > hybrid_2022_metrics['weak_auc'],
+              'fixed4_or_candidate_improves_k4_2021': max(
+                  fixed4_2021['recall']['0.05']['4'],
+                  sparse_2021_metrics['recall']['0.05']['4'],
+              ) > wavelet_2021['recall']['0.05']['4'],
+              'symmetric_hybrid_not_promoted': hybrid_2022['decision'] == 'RETAIN_AS_OPTIONAL_ENSEMBLE',
+              'sparse_tail_rejected': sparse_2021['decision'] == 'REJECT_SPARSE_TAIL_AUGMENTATION',
+          }
+          classification = (
+              'WAVELET_PRIMARY_FIXED4_COMPLEMENTARY_NO_PROMOTED_ENSEMBLE'
+              if all(gates.values())
+              else 'NO_STABLE_EPISODE_METHOD_CONCLUSION'
+          )
+
+          result = {
+              'classification': classification,
+              'evidence_type': 'artifact-only synthesis; no episode or detector rerun',
+              'general_episode_ranking': {
+                  'primary': 'brown2010_wavelet_episode_core',
+                  'reason': 'highest prospective weak AUROC on both SonotaCo 2022 and 2021',
+                  'prospective_auc': {
+                      '2022': wavelet_2022['weak_auc'],
+                      '2021': wavelet_2021['weak_auc'],
+                  },
+              },
+              'orbittrace_original_contribution': {
+                  'method': 'orbittrace_fixed4',
+                  'role': 'complementary sparse-four-member detector with strong calibration and targeted OrbitTrace recognition',
+                  'not_supported': 'primary general episode detector or promoted combined detector',
+              },
+              'ensemble_outcomes': {
+                  'symmetric_tippett_2022': hybrid_2022['decision'],
+                  'asymmetric_margin_025_2021': sparse_2021['decision'],
+              },
+              'development_context': {
+                  'wavelet_2025': development_2025.get('verdict'),
+                  'wavelet_2023': transfer_2023.get('verdict'),
+                  'sparse_tail_development': sparse_development['verdict'],
+              },
+              'gates': gates,
+              'paper_boundary': (
+                  'Do not present either hybrid as the final method. The literature-derived wavelet is the strongest '
+                  'general episode comparator; fixed4 remains the novel complementary sparse detector. Catalogue-scale '
+                  'family construction and blind recovery must be evaluated separately.'
+              ),
+          }
+          Path('output/orbittrace_episode_method_synthesis.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          md = f'''# OrbitTrace episode-method final synthesis
+
+Classification: `{classification}`
+
+## Final episode-level position
+
+- **Primary general episode ranking:** Brown-family wavelet.
+- **Novel OrbitTrace contribution:** fixed4 as a complementary sparse-four-member detector with strong calibration and targeted recognition evidence.
+- **Symmetric Tippett hybrid:** retained only as an optional ensemble after the prospective 2022 test.
+- **Wavelet-primary margin-0.25 augmentation:** rejected after the prospective 2021 test.
+
+Prospective weak AUROC:
+
+| Year | fixed4 | wavelet | tested ensemble |
+|---:|---:|---:|---:|
+| 2022 | {fixed4_2022['weak_auc']:.6f} | {wavelet_2022['weak_auc']:.6f} | {hybrid_2022_metrics['weak_auc']:.6f} |
+| 2021 | {fixed4_2021['weak_auc']:.6f} | {wavelet_2021['weak_auc']:.6f} | {sparse_2021_metrics['weak_auc']:.6f} |
+
+No ensemble is promoted. Retrospective hybrid gains cannot override the frozen prospective decisions.
+
+The wavelet is literature-derived, so this does not become an OrbitTrace novelty claim. The remaining novel-method question is catalogue-scale family construction and ranking, which is evaluated separately.
+'''
+          Path('output/ORBITTRACE_EPISODE_METHOD_SYNTHESIS.md').write_text(md, encoding='utf-8')
+          print(md)
+          if classification != 'WAVELET_PRIMARY_FIXED4_COMPLEMENTARY_NO_PROMOTED_ENSEMBLE':
+              raise SystemExit(classification)
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum orbittrace_episode_method_synthesis/PROTOCOL.md input/*.zip > output/source_and_input_sha256.txt
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-episode-method-final-synthesis
+          path: output
+          if-no-files-found: error
+          retention-days: 90
