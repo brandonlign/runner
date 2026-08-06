@@ -42,9 +42,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input/repaired output
-          echo 'af0172c52e5dd09683ddc4c4cb0f9a7d78c577e73ae14496ad9264425c4b981b  orbittrace_literature_freeze/hdbscan_2023_runner_parts/part00.b64' | sha256sum -c -
-          echo '521665d08b79a2b05dc74893f784d1d4bd9c9cbab3081078047e539cdc18cff9  orbittrace_literature_freeze/hdbscan_2023_runner_parts/part01.b64' | sha256sum -c -
-          echo '78f66cee1be0ab412b354904ad74e2da37942f2a218d17c8eda39e210c1846e1  orbittrace_literature_freeze/hdbscan_2023_runner_parts/part02.b64' | sha256sum -c -
+          echo '42c6e28291c9ad7b73bad8bad775e03826259a2d0ff25fbb403139c1e2a9b164  orbittrace_literature_freeze/hdbscan_2023_runner_parts/part00.b64' | sha256sum -c -
+          echo '452ac4d6b2e9f107d6e68b323cee931d3d12219eb44dd4b2fd4fc8e197efd405  orbittrace_literature_freeze/hdbscan_2023_runner_parts/part01.b64' | sha256sum -c -
+          echo 'f3f793b509f7aa96e36e7b9ba60e0743132997273397f7369bb125942669a1ed  orbittrace_literature_freeze/hdbscan_2023_runner_parts/part02.b64' | sha256sum -c -
           echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  orbittrace_literature_comparison/literature_comparators.py' | sha256sum -c -
           python - <<'PY'
           import base64
@@ -70,12 +70,13 @@ jobs:
           assert configuration['cluster_selection_method'] == 'eom'
           assert configuration['metric'] == 'euclidean'
           assert version('hdbscan') == '0.8.44'
+          assert version('scikit-learn') == '1.9.0'
 
           root = Path('orbittrace_literature_freeze/hdbscan_2023_runner_parts')
           encoded = ''.join(''.join((root / f'part{index:02d}.b64').read_text().split()) for index in range(3))
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
-          expected = 'd18c30a83a78e5b43626a9f0430838b941986466053fe15d2ce62a7ee94ad4a9'
+          expected = 'aa267c1125b09982970cf016fc3e141134101a6535d84f4c9ff8dae45d6b6af8'
           if digest != expected:
               raise RuntimeError(f'2023 HDBSCAN runner source mismatch: {digest}')
           Path('/tmp/run_sonotaco_2023_hdbscan_catalogue.py').write_bytes(source)
