@@ -1,0 +1,134 @@
+name: OrbitTrace SonotaCo 2025 literature comparison
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-literature-comparison-source-audit
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2025_literature_comparison.yml
+      - orbittrace_literature_comparison/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2025-literature-comparison
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-literature-comparison-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify comparator source and registry before data access
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_literature_comparison/literature_comparators.py \
+            orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py
+          PYTHONPATH=orbittrace_literature_comparison python - <<'PY'
+          import json
+          from pathlib import Path
+          import numpy as np
+          import literature_comparators as c
+
+          registry = json.loads(Path('orbittrace_literature_comparison/METHOD_REGISTRY.json').read_text())
+          assert registry['freeze_rules']['development_corpus'] == 'SonotaCo 2025 only'
+          assert registry['freeze_rules']['independent_corpus'].startswith('SonotaCo 2023')
+          rng = np.random.default_rng(20250805)
+          features = c.sugar_feature_matrix_from_arrays(
+              rng.uniform(0, 360, 128), rng.uniform(-180, 180, 128),
+              rng.uniform(-80, 80, 128), rng.uniform(10, 70, 128),
+          )
+          epsilon, _ = c.sugar_transferred_epsilon(features)
+          assert features.shape == (128, 6) and epsilon > 0
+          dsh = c.pairwise_dsh(
+              rng.uniform(0.05, 1.0, 24), rng.uniform(0.0, 1.2, 24),
+              rng.uniform(0, 180, 24), rng.uniform(0, 360, 24), rng.uniform(0, 360, 24),
+          )
+          assert dsh.shape == (24, 24) and np.allclose(dsh, dsh.T)
+          assert c.single_link_birth_threshold(dsh, 6) >= 0
+          print('PASS_COMPARATOR_SOURCE_AND_REGISTRY')
+          PY
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute frozen episode-track comparison
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          python orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2025_LITERATURE_COMPARISON.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/METHOD_REGISTRY.json \
+            orbittrace_literature_comparison/PROTOCOL.md \
+            orbittrace_literature_comparison/literature_comparators.py \
+            orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            input/audit.json input/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2025-literature-comparison
+          path: output
+          if-no-files-found: error
+          retention-days: 90
