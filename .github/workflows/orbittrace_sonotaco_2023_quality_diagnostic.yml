@@ -1,0 +1,52 @@
+name: OrbitTrace SonotaCo 2023 quality diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hdbscan-catalogue-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2023_quality_diagnostic.yml
+      - orbittrace_hdbscan_freeze/diagnose_sonotaco_2023_quality.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hdbscan-2023-transfer-v2
+
+      - name: Verify diagnostic source before data access
+        run: |
+          set -euo pipefail
+          echo 'ebe4f87f9a220f217f02343c098900221c304f9b8e0bb23cc8fc0eaad45074c4  orbittrace_hdbscan_freeze/diagnose_sonotaco_2023_quality.py' | sha256sum -c -
+          python -m py_compile orbittrace_hdbscan_freeze/diagnose_sonotaco_2023_quality.py
+
+      - name: Download exact SonotaCo 2023 replacement archive
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Audit frozen quality fields without clustering
+        run: |
+          set -euo pipefail
+          python orbittrace_hdbscan_freeze/diagnose_sonotaco_2023_quality.py \
+            --archive input/023a.zip \
+            --output output
+
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2023-quality-diagnostic
+          path: output
+          if-no-files-found: error
+          retention-days: 90

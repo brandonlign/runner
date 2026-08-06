@@ -1,0 +1,141 @@
+name: OrbitTrace SonotaCo 2023 HDBSCAN transfer v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hdbscan-catalogue-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2023_hdbscan_transfer_v2.yml
+      - orbittrace_hdbscan_freeze/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2023-hdbscan-transfer-v2
+  cancel-in-progress: true
+
+jobs:
+  one-shot-transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hdbscan-2023-transfer-v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+          python -m pip install hdbscan==0.8.44
+
+      - name: Verify freeze and recorded parser repairs before data access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python - <<'PY'
+          import base64, gzip, hashlib, json
+          from pathlib import Path
+
+          freeze = json.loads(Path('orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json').read_text())
+          assert freeze['verdict'] == 'PASS_SONOTACO_2025_HDBSCAN_CATALOGUE_TRANSFER'
+          assert freeze['workflow_run'] == 31071589912
+          assert freeze['artifact_id'] == 8955917326
+          assert freeze['artifact_digest'] == 'sha256:82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89'
+          assert freeze['result_sha256'] == 'd8cd3c6acf9ecf48bb06a1055e7197f60d315c062276bdbe654abd562e904db8'
+          assert freeze['frozen_before_sonotaco_2023_execution'] is True
+          config = freeze['configuration']
+          assert config['hdbscan_version'] == '0.8.44'
+          assert config['minimum_cluster_size'] == 100
+          assert config['minimum_samples'] is None
+          assert config['cluster_selection_method'] == 'eom'
+          assert config['metric'] == 'euclidean'
+          assert freeze['transfer_rules']['post_result_parameter_changes'] == 'prohibited'
+
+          header_repair = json.loads(Path('orbittrace_hdbscan_freeze/SONOTACO_2023_HEADER_REPAIR.json').read_text())
+          field_repair = json.loads(Path('orbittrace_hdbscan_freeze/SONOTACO_2023_FIELDNAME_REPAIR.json').read_text())
+          assert header_repair['classification'] == 'pre-scoring parser-only repair'
+          assert field_repair['classification'] == 'pre-clustering parser-only repair'
+          assert header_repair['scores_observed'] is False
+          assert field_repair['scores_observed'] is False
+          assert field_repair['quality_pass_rows'] == 27778
+          assert field_repair['quality_pass_sporadic_rows'] == 17372
+          assert field_repair['quality_pass_labels_at_least_100'] == 17
+
+          root = Path('orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts')
+          names = [
+              'part00_sub00.b64',
+              'part00_sub01a.b64', 'part00_sub01b.b64', 'part00_sub01c.b64',
+              'part00_sub01d0.b64', 'part00_sub01d1.b64', 'part00_sub01d2.b64', 'part00_sub01d3.b64',
+              'part00_sub02.b64', 'part00_sub03.b64', 'part00_sub04.b64', 'part00_sub05.b64',
+          ]
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+          original = gzip.decompress(base64.b64decode(encoded, validate=True))
+          original_hash = hashlib.sha256(original).hexdigest()
+          assert original_hash == '2e770252f68f40c7ebab8f072aef18b88246091e40a98673db69d09f7bb1d41b'
+
+          width_old = b'EXPECTED_FIELDS = 43'
+          width_new = b'EXPECTED_FIELDS = 46'
+          header_old = b'    header = [field.strip() for field in (reader.fieldnames or [])]\n'
+          header_new = header_old + b'    reader.fieldnames = header\n'
+          assert original.count(width_old) == 1
+          source = original.replace(width_old, width_new)
+          assert source.count(header_old) == 1
+          source = source.replace(header_old, header_new)
+          repaired_hash = hashlib.sha256(source).hexdigest()
+          assert repaired_hash == '13e5c488fcfa551236ab31c8685e600e747a4a61fd17a2cae78719f50b231c3a'
+          Path('/tmp/run_sonotaco_2023_hdbscan_transfer.py').write_bytes(source)
+          compile(source, 'run_sonotaco_2023_hdbscan_transfer.py', 'exec')
+          print('PASS_PRE_2023_HDBSCAN_FREEZE_AND_PARSER_REPAIRS', original_hash, repaired_hash)
+          PY
+
+      - name: Download exact SonotaCo 2023 replacement archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Execute frozen one-shot catalogue transfer
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2023_hdbscan_transfer.py \
+            --archive input/023a.zip \
+            --freeze orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json \
+            --core-dist-jobs 4 \
+            --output output
+          cat output/SONOTACO_2023_HDBSCAN_TRANSFER.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json \
+            orbittrace_hdbscan_freeze/SONOTACO_2023_HEADER_REPAIR.json \
+            orbittrace_hdbscan_freeze/SONOTACO_2023_FIELDNAME_REPAIR.json \
+            orbittrace_hdbscan_freeze/diagnose_sonotaco_2023_quality.py \
+            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/*.b64 \
+            input/023a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload one-shot transfer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2023-hdbscan-transfer-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
