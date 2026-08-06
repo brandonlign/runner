@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input/repaired output
-          echo '9badc559756141b638b14e8116df8b35b040630e713a466234a6ab19c486316f  orbittrace_literature_freeze/dn_2023_runner_parts/part00.b64' | sha256sum -c -
+          echo 'dc61b42a9592dde2a43942f480c69f7cc139c9f415dd3c557e535960d81d0991  orbittrace_literature_freeze/dn_2023_runner_parts/part00.b64' | sha256sum -c -
           echo '28a900dcd43143291dfa1259cb7b3363277f76133e3c53c65b38dc988a5dbacc  orbittrace_literature_comparison/dn_comparator.py' | sha256sum -c -
           echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  orbittrace_literature_comparison/literature_comparators.py' | sha256sum -c -
           python - <<'PY'
@@ -76,7 +76,7 @@ jobs:
           encoded = ''.join(Path('orbittrace_literature_freeze/dn_2023_runner_parts/part00.b64').read_text().split())
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
-          expected = 'b4c3a469fc4f63c2108671571a2c00f8c383d99c565ce3d97233912cf5fdf910'
+          expected = '65323adff80c76a50c02f60a046f57a15a3d978c611b29cca25338f924a49032'
           if digest != expected:
               raise RuntimeError(f'2023 D_N runner source mismatch: {digest}')
           Path('/tmp/run_sonotaco_2023_dn_episode.py').write_bytes(source)
