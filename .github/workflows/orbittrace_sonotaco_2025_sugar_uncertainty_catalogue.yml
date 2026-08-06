@@ -1,0 +1,168 @@
+name: OrbitTrace SonotaCo 2025 Sugar uncertainty catalogue
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-dn-episode-2023-transfer
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2025_sugar_uncertainty_catalogue.yml
+      - orbittrace_literature_comparison/SUGAR_UNCERTAINTY_CATALOGUE_PROTOCOL.json
+      - orbittrace_literature_comparison/sugar_uncertainty_core_parts/**
+      - orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2025-sugar-uncertainty-catalogue
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sugar-uncertainty-catalogue-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify and decode frozen source before data access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          echo '70b431705fc4fd67f45a86b254a3d81dad35955de4d24af459f142cf13146e19  orbittrace_literature_comparison/sugar_uncertainty_core_parts/part00.b64' | sha256sum -c -
+          echo '800bacef71c7ab7f7e35c7c52bcd4b1afef8056aa7e0317c91049201b913b894  orbittrace_literature_comparison/sugar_uncertainty_core_parts/part01.b64' | sha256sum -c -
+          echo 'b78cab4c6605b1bb94b4ed9656a37266b23fe0be6a4d3261aad289d17b70ab2c  orbittrace_literature_comparison/sugar_uncertainty_core_parts/part02.b64' | sha256sum -c -
+          echo 'd3c528d618839185a52d0a919337b36e5c7a1db8eb23856425a484f9dbc619b0  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part00.b64' | sha256sum -c -
+          echo 'f6c6014bf12c4253a64078296b8431c35f980fd7447284a6843f7105b551cd31  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part01.b64' | sha256sum -c -
+          echo 'f42e385ff434f54bb61f9ea220b6baeee6a6ed59d51bf77f565ee24020799589  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part02.b64' | sha256sum -c -
+          echo '62bca27205709b3b66997ef5f4932194c84ccf367366e9d19aecab7ad0662866  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part03.b64' | sha256sum -c -
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          protocol = json.loads(Path('orbittrace_literature_comparison/SUGAR_UNCERTAINTY_CATALOGUE_PROTOCOL.json').read_text())
+          assert protocol['status'] == 'design_frozen_before_sonotaco_2025_execution'
+          assert protocol['development_corpus'] == 'SonotaCo 2025 only'
+          assert protocol['orbittrace_access'] == 'prohibited'
+          core = protocol['published_core']
+          clone = protocol['uncertainty_cloning']
+          merge = protocol['cluster_merging']
+          assert core['minimum_samples'] == 5
+          assert core['scikit_learn_version'] == '1.5.2'
+          assert clone['iterations'] == 1000
+          assert merge['retention_minimum_iterations'] == 100
+          assert merge['strong_minimum_iterations'] == 500
+
+          def decode(directory, count):
+              root = Path(directory)
+              encoded = ''.join(''.join((root / f'part{index:02d}.b64').read_text().split()) for index in range(count))
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          core_source = decode('orbittrace_literature_comparison/sugar_uncertainty_core_parts', 3)
+          runner_source = decode('orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts', 4)
+          core_sha = hashlib.sha256(core_source).hexdigest()
+          runner_sha = hashlib.sha256(runner_source).hexdigest()
+          assert core_sha == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb', core_sha
+          assert runner_sha == 'adbeb8a8737079f8cd63568d8684733dce09f724305ef9605f22423a57fda936', runner_sha
+          Path('/tmp/sugar_uncertainty_catalogue.py').write_bytes(core_source)
+          Path('/tmp/run_sonotaco_2025_sugar_uncertainty_catalogue.py').write_bytes(runner_source)
+          compile(core_source, 'sugar_uncertainty_catalogue.py', 'exec')
+          compile(runner_source, 'run_sonotaco_2025_sugar_uncertainty_catalogue.py', 'exec')
+          print('PASS_SUGAR_SOURCE_FREEZE', core_sha, runner_sha)
+          PY
+          PYTHONPATH=/tmp python - <<'PY'
+          import sklearn
+          import sugar_uncertainty_catalogue as sugar
+          assert sklearn.__version__ == '1.5.2'
+          assert sugar.CLONE_ITERATIONS == 1000
+          assert sugar.MIN_SAMPLES == 5
+          assert sugar.EPS_PERCENTILE == 23.0
+          assert sugar.MERGE_OVERLAP_FRACTION == 0.5
+          assert sugar.MIN_RECURRENCE == 100
+          assert sugar.STRONG_RECURRENCE == 500
+          tests = sugar.self_test()
+          assert tests and all(tests.values()), tests
+          print('PASS_SUGAR_CORE_SELF_TEST', tests)
+          PY
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute 1000-clone Sugar uncertainty reconstruction
+        env:
+          PYTHONPATH: /tmp
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2025_sugar_uncertainty_catalogue.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --protocol orbittrace_literature_comparison/SUGAR_UNCERTAINTY_CATALOGUE_PROTOCOL.json \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2025_SUGAR_UNCERTAINTY_CATALOGUE.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/SUGAR_UNCERTAINTY_CATALOGUE_PROTOCOL.json \
+            orbittrace_literature_comparison/sugar_uncertainty_core_parts/part00.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_core_parts/part01.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_core_parts/part02.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part00.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part01.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part02.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part03.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            input/audit.json input/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          if [ -f /tmp/sugar_uncertainty_catalogue.py ]; then
+            sha256sum /tmp/sugar_uncertainty_catalogue.py /tmp/run_sonotaco_2025_sugar_uncertainty_catalogue.py >> output/source_and_input_sha256.txt
+          fi
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload Sugar uncertainty evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2025-sugar-uncertainty-catalogue
+          path: output
+          if-no-files-found: error
+          retention-days: 90
