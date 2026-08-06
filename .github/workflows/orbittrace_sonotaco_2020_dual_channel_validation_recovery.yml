@@ -1,0 +1,262 @@
+name: OrbitTrace SonotaCo 2020 dual-channel validation recovery
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-dual-channel-2020-serialization-repair-audit
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2020_dual_channel_validation_recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2020-dual-channel-validation-recovery
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONPATH: orbittrace_dual_channel_rescue:orbittrace_literature_comparison
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-dual-channel-2020-validation-recovery
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify exact scientific source and audited serialization recovery before archive access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/source-audit input/repair-audit input/repaired input output
+          test "$(git hash-object orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py)" = "4688b7234941d13112cec5269ee0030a37458c0e"
+          test "$(git hash-object orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json)" = "f93c75f80326b50de474173789c4989d6378e33f"
+          test "$(git hash-object orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64)" = "d9ee70466829fef4dd3b55fe455b51e33647a5b9"
+          test "$(git hash-object orbittrace_literature_freeze/SONOTACO_2020_LABEL_ELIGIBILITY_RESULT.json)" = "66b1038a5e7d5fc8ae40ac59f9668586a7fa80c4"
+          test "$(git hash-object orbittrace_dual_channel_rescue/build_sonotaco_2020_confirmation_source.py)" = "ad14adaed3258c076db47d83d69fa930ab0d3f61"
+          test "$(git hash-object orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py)" = "7060e28af642d18513cfa1acb4e452840f30daf9"
+          python -m py_compile \
+            orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py \
+            orbittrace_dual_channel_rescue/build_sonotaco_2020_confirmation_source.py \
+            orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py
+
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8972146681/zip" \
+            -o input/source-audit.zip
+          echo 'd9088e6804c271e7e33cd6dc54f3d784cc9fe3a0453aa858d13a71da2a68dc5f  input/source-audit.zip' | sha256sum -c -
+          unzip -q input/source-audit.zip -d input/source-audit
+
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8972424027/zip" \
+            -o input/repair-audit.zip
+          echo 'bd3d29dbddada567a835df43f8cbf8e00bbaf8dbdd9758b6e58715090ac6b22a  input/repair-audit.zip' | sha256sum -c -
+          unzip -q input/repair-audit.zip -d input/repair-audit
+
+          cmp orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py input/source-audit/dual_channel_minimum_rescue.py
+          cmp orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json input/source-audit/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json
+          cmp orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64 input/source-audit/run_sonotaco_2020_dual_channel_validation.py.gz.b64
+          cmp orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py input/repair-audit/run_with_numpy_json_serializer.py
+
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          encoded = ''.join(
+              Path('orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64')
+              .read_text(encoding='ascii')
+              .split()
+          )
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != 'db310cbe83a4653e3cf4479e60e5d0554ae9b5474e47c55d5bbfcb714970f0c7':
+              raise SystemExit(f'runner source mismatch: {digest}')
+          Path('/tmp/run_sonotaco_2020_dual_channel_validation.py').write_bytes(source)
+
+          source_record = json.loads(Path('input/source-audit/sonotaco_2020_dual_channel_runner_source_audit.json').read_text())
+          assert source_record['verdict'] == 'PASS_SONOTACO_2020_DUAL_CHANNEL_RUNNER_SOURCE_AUDIT'
+          assert source_record['runner_sha256'] == digest
+          assert source_record['archive_accessed'] is False
+          assert source_record['scores_computed'] is False
+
+          repair_record = json.loads(Path('input/repair-audit/serialization_repair_source_audit.json').read_text())
+          assert repair_record['verdict'] == 'PASS_NUMPY_JSON_SERIALIZATION_REPAIR_SOURCE_AUDIT'
+          assert repair_record['runner_sha256'] == digest
+          assert repair_record['scientific_runner_changed'] is False
+          assert repair_record['method_changed'] is False
+          assert repair_record['threshold_changed'] is False
+          assert repair_record['gates_changed'] is False
+          assert repair_record['archive_accessed'] is False
+          assert repair_record['scores_computed'] is False
+          print('PASS_EXACT_SCIENTIFIC_AND_REPAIR_ARTIFACT_GUARD')
+          PY
+          cmp /tmp/run_sonotaco_2020_dual_channel_validation.py input/source-audit/run_sonotaco_2020_dual_channel_validation.py
+          cmp /tmp/run_sonotaco_2020_dual_channel_validation.py input/repair-audit/run_sonotaco_2020_dual_channel_validation.py
+          python -m py_compile /tmp/run_sonotaco_2020_dual_channel_validation.py
+          python orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py
+
+      - name: Retrieve exact validated parser source and mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+          python orbittrace_dual_channel_rescue/build_sonotaco_2020_confirmation_source.py \
+            --source-2023 input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --output /tmp/run_sonotaco_2020_confirmation.py
+          echo '159e9be79fe9886ccdc2928a95bba9bca1131802c15dea85557c3e0321c82c5a  /tmp/run_sonotaco_2020_confirmation.py' | sha256sum -c -
+          python -m py_compile /tmp/run_sonotaco_2020_confirmation.py
+
+      - name: Download the frozen SonotaCo 2020 archive for deterministic recovery
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/020a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/020a.zip
+          echo '429c3a4556236c037051ecba2d5ecbe921a0a6865cac47df6f47ba2d44f43abc  input/020a.zip' | sha256sum -c -
+
+      - name: Execute the unchanged runner through the audited serializer shim
+        run: |
+          set -euo pipefail
+          python orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py \
+            /tmp/run_sonotaco_2020_dual_channel_validation.py \
+            --archive input/020a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --confirmation-source /tmp/run_sonotaco_2020_confirmation.py \
+            --protocol orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json \
+            --eligibility-freeze orbittrace_literature_freeze/SONOTACO_2020_LABEL_ELIGIBILITY_RESULT.json \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2020_DUAL_CHANNEL_VALIDATION.md
+
+      - name: Enforce immutable result and decision vocabulary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/sonotaco_2020_dual_channel_validation.json').read_text())
+          if result.get('verdict') != 'PASS_SONOTACO_2020_PROSPECTIVE_DUAL_CHANNEL_VALIDATION':
+              raise SystemExit(f"execution integrity failed: {result.get('verdict')}")
+          allowed = {
+              'PROMOTE_DUAL_CHANNEL_MINIMUM_RESCUE',
+              'RETAIN_AS_OPTIONAL_DUAL_CHANNEL_RESCUE',
+              'REJECT_DUAL_CHANNEL_MINIMUM_RESCUE',
+          }
+          if result.get('decision') not in allowed:
+              raise SystemExit(f"invalid frozen decision: {result.get('decision')}")
+          configuration = result['configuration']
+          if configuration['year'] != 2020:
+              raise SystemExit('prospective year changed')
+          if configuration['method_id'] != 'wavelet_rank_plus_minimum_fixed4_rescue':
+              raise SystemExit('method identifier changed')
+          if configuration['ranking_method'] != 'brown2010_wavelet_episode_core':
+              raise SystemExit('ranking method changed')
+          if configuration['rescue_method'] != 'orbittrace_fixed4':
+              raise SystemExit('rescue method changed')
+          if configuration['calibration_per_bin'] != 128:
+              raise SystemExit('calibration count changed')
+          if configuration['rescue_alpha'] != 1.0 / 129.0:
+              raise SystemExit('rescue threshold changed')
+          if configuration['decision_rule'] != '(p_wavelet <= 0.05) OR (p_fixed4 <= 1/129)':
+              raise SystemExit('decision rule changed')
+          if configuration['supported_bins'] != [0,1,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35]:
+              raise SystemExit('supported bins changed')
+          wavelet = result['metrics']['brown2010_wavelet_episode_core']
+          dual = result['metrics']['wavelet_rank_plus_minimum_fixed4_rescue']
+          if dual['weak_auc'] != wavelet['weak_auc'] or dual['fold_auc'] != wavelet['fold_auc']:
+              raise SystemExit('wavelet ranking was not preserved exactly')
+          print(json.dumps({
+              'verdict': result['verdict'],
+              'decision': result['decision'],
+              'metrics': result['metrics'],
+              'prospective_decision': result['prospective_decision'],
+              'execution_gates': result['execution_gates'],
+          }, indent=2))
+          PY
+
+      - name: Record final recovery provenance
+        if: always()
+        run: |
+          mkdir -p output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          recovery = {
+              'failed_attempt': {
+                  'workflow_run': 31112430101,
+                  'artifact_id': 8972260031,
+                  'artifact_sha256': 'ef1995d7709658619f52c96fd02517ae2ea3fff349276888996f70fd014499d1',
+                  'classification': 'technical JSON serialization failure before result emission',
+              },
+              'runner_source_audit': {
+                  'workflow_run': 31112185277,
+                  'artifact_id': 8972146681,
+                  'artifact_sha256': 'd9088e6804c271e7e33cd6dc54f3d784cc9fe3a0453aa858d13a71da2a68dc5f',
+              },
+              'serialization_repair_audit': {
+                  'workflow_run': 31112869695,
+                  'artifact_id': 8972424027,
+                  'artifact_sha256': 'bd3d29dbddada567a835df43f8cbf8e00bbaf8dbdd9758b6e58715090ac6b22a',
+              },
+              'scientific_runner_sha256': 'db310cbe83a4653e3cf4479e60e5d0554ae9b5474e47c55d5bbfcb714970f0c7',
+              'recovery_scope': 'numpy.generic JSON serialization only',
+          }
+          Path('output/recovery_provenance.json').write_text(json.dumps(recovery, indent=2) + '\n')
+          PY
+          sha256sum \
+            orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py \
+            orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json \
+            orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64 \
+            orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py \
+            orbittrace_literature_freeze/SONOTACO_2020_ARCHIVE_STRUCTURE_RESULT.json \
+            orbittrace_literature_freeze/SONOTACO_2020_LABEL_ELIGIBILITY_RESULT.json \
+            orbittrace_dual_channel_rescue/build_sonotaco_2020_confirmation_source.py \
+            input/source-audit.zip input/repair-audit.zip \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            /tmp/run_sonotaco_2020_confirmation.py \
+            /tmp/run_sonotaco_2020_dual_channel_validation.py \
+            input/audit.json input/020a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sonotaco-2020-dual-channel-validation-recovery
+          path: output
+          if-no-files-found: error
+          retention-days: 90
