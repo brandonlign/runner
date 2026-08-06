@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output
-          test "$(git hash-object orbittrace_fixed4_rank_fusion/audit_2019_2021_input.py)" = "7b4fc0b601ace45e59ca02df9d9825407e255f2b"
+          test "$(git hash-object orbittrace_fixed4_rank_fusion/audit_2019_2021_input.py)" = "72c145d3ef1321d8d46dd3193f9e511dce086c61"
           python -m py_compile orbittrace_fixed4_rank_fusion/audit_2019_2021_input.py
           python - <<'PY'
           import ast
@@ -70,6 +70,7 @@ jobs:
           assert not calls.intersection(forbidden)
           assert 'YEARS = (2019, 2020, 2021)' in source
           assert 'BLIND_INTERVAL = (20.0, 55.0)' in source
+          assert 'f"{year}-{month:02d}"' in source
           print('PASS_SCORE_FREE_2019_2021_INPUT_SOURCE_GUARD')
           PY
 
