@@ -1,0 +1,125 @@
+name: OrbitTrace fixed4 locked RRF reveal source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-locked-rrf-application-protocol
+    paths:
+      - orbittrace_fixed4_locked_rrf_reveal/**
+      - .github/workflows/orbittrace_fixed4_locked_rrf_reveal_source_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-fixed4-locked-rrf-reveal-source-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-locked-rrf-reveal-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Audit frozen reveal source without artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          echo '9bb8108c012b4681c4bfacdfbdfcc703b52ba2b1cc7dd38e8a2cd076eda811fd  orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py' | sha256sum -c -
+          test "$(wc -c < orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py)" = '12515'
+          python -m py_compile orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py
+          python - <<'PY'
+          import ast
+          import hashlib
+          import json
+          from pathlib import Path
+
+          path = Path('orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py')
+          text = path.read_text(encoding='utf-8')
+          tree = ast.parse(text)
+          imports = set()
+          functions = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  imports.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  imports.add(node.module.split('.')[0])
+              elif isinstance(node, ast.FunctionDef):
+                  functions.add(node.name)
+          allowed_imports = {
+              '__future__','argparse','csv','gzip','hashlib','io','json','zipfile','pathlib','typing'
+          }
+          if not imports.issubset(allowed_imports):
+              raise RuntimeError(f'unexpected imports: {sorted(imports - allowed_imports)}')
+          required_functions = {
+              'parse_args','sha256_bytes','safe_names','unique_suffix','load_scan',
+              'load_canonical','evaluate_family','main'
+          }
+          if not required_functions.issubset(functions):
+              raise RuntimeError(f'missing reveal functions: {sorted(required_functions - functions)}')
+          required_literals = [
+              'LOCKED_RRF_SCAN_FROZEN_AWAITING_SEPARATE_REVEAL',
+              'FULL_LOCKED_RRF_ORBITTRACE_RECOVERY',
+              'PARTIAL_LOCKED_RRF_ORBITTRACE_RECOVERY',
+              'NO_LOCKED_RRF_ORBITTRACE_RECOVERY',
+              'EXPECTED_CANONICAL_TOTAL = 95',
+              'rank <= 25', 'rank <= 100',
+              'len(overlap_ids) >= 16', 'len(overlap_ids) >= 12',
+              'years_with_four >= 3', 'years_with_four >= 2',
+              '"persistence_weight": 0.66', '"secondary_weight": 0.34',
+              '"constant": 60.0', '"secondary_rank": "min_year_strength"',
+          ]
+          missing = [value for value in required_literals if value not in text]
+          if missing:
+              raise RuntimeError(f'missing frozen reveal literals: {missing}')
+          forbidden_literals = [
+              '247.17', '-14.34', '37.62', 'F0059', '8958194010',
+              '897', 'locked_rrf_rank =', 'canonical_overlap =',
+          ]
+          # Artifact IDs and result values are supplied later by a separate workflow,
+          # not embedded in the source. The string "897" ban enforces that boundary.
+          found = [value for value in forbidden_literals if value in text]
+          if found:
+              raise RuntimeError(f'scan-specific result information present: {found}')
+          result = {
+              'verdict': 'PASS_LOCKED_RRF_REVEAL_SOURCE_AUDIT',
+              'scan_artifact_accessed': False,
+              'canonical_artifact_accessed': False,
+              'overlap_computed': False,
+              'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+              'source_bytes': len(path.read_bytes()),
+              'criteria': {
+                  'full': {'max_rank': 25, 'minimum_years': 4, 'minimum_overlap': 16, 'minimum_years_with_four': 3},
+                  'partial': {'max_rank': 100, 'minimum_years': 3, 'minimum_overlap': 12, 'minimum_years_with_four': 2},
+              },
+          }
+          Path('output/locked_rrf_reveal_source_audit.json').write_text(
+              json.dumps(result, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Preserve audited source and provenance
+        run: |
+          cp orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py output/
+          cp orbittrace_fixed4_locked_rrf_reveal/PROTOCOL.md output/
+          sha256sum \
+            orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py \
+            orbittrace_fixed4_locked_rrf_reveal/PROTOCOL.md \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-locked-rrf-reveal-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
