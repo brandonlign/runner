@@ -6,6 +6,11 @@ on:
       - agent/orbittrace-wavelet-v3-noactions-recovery
     paths:
       - .github/workflows/orbittrace_wavelet_catalogue_v3_noactions_recovery.yml
+  pull_request:
+    branches:
+      - agent/orbittrace-wavelet-catalogue-v3-development
+    paths:
+      - .github/workflows/orbittrace_wavelet_catalogue_v3_noactions_recovery.yml
   workflow_dispatch:
 
 permissions:
@@ -15,7 +20,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: orbittrace-wavelet-catalogue-v3-noactions-recovery
+  group: orbittrace-wavelet-catalogue-v3-noactions-recovery-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -197,6 +202,7 @@ jobs:
           python - <<'PY'
           import hashlib
           import json
+          import os
           from pathlib import Path
 
           result_path = Path('output/wavelet_catalogue_v3_development.json')
@@ -236,7 +242,7 @@ jobs:
           print('ORBITTRACE_RESULT_JSON_END')
           Path('/tmp/orbittrace_result_comment.md').write_text(
               'ORBITTRACE_NOACTIONS_STAGE: result_complete\n'
-              f"run={__import__('os').environ['GITHUB_RUN_ID']} attempt={__import__('os').environ['GITHUB_RUN_ATTEMPT']}\n"
+              f"run={os.environ['GITHUB_RUN_ID']} attempt={os.environ['GITHUB_RUN_ATTEMPT']}\n"
               '```json\n' + json.dumps(summary, indent=2) + '\n```\n'
           )
           PY
