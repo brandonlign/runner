@@ -37,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
           python -m pip install hdbscan==0.8.44
 
-      - name: Verify 2025 result freeze and one-shot runner before 2023 data access
+      - name: Verify freeze, transport, and parser repair before scoring
         run: |
           set -euo pipefail
           mkdir -p input output
@@ -67,6 +67,17 @@ jobs:
           assert rules['orbittrace_access'] == 'prohibited'
           assert rules['post_result_parameter_changes'] == 'prohibited'
 
+          repair = json.loads(Path('orbittrace_hdbscan_freeze/SONOTACO_2023_HEADER_REPAIR.json').read_text())
+          assert repair['classification'] == 'pre-scoring parser-only repair'
+          assert repair['trigger_run'] == 31075293977
+          assert repair['archive_sha256_verified'] == '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430'
+          assert repair['observed_header_fields'] == 46
+          assert repair['original_expected_header_fields'] == 43
+          assert repair['required_fields_missing'] == []
+          assert repair['scientific_execution_reached'] is False
+          assert repair['scores_observed'] is False
+          assert repair['post_result_parameter_changes'] == 'prohibited'
+
           root = Path('orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts')
           expected_parts = {
               'part00_sub00.b64': (1600, '37ef1ca13c856bb043eed74b0f6c335278c444d624cbf26fb646a43e319b28c8'),
@@ -92,14 +103,21 @@ jobs:
                   )
               pieces.append(piece)
           encoded = ''.join(pieces)
-          source = gzip.decompress(base64.b64decode(encoded, validate=True))
-          digest = hashlib.sha256(source).hexdigest()
-          expected = '2e770252f68f40c7ebab8f072aef18b88246091e40a98673db69d09f7bb1d41b'
-          if digest != expected:
-              raise RuntimeError(f'2023 HDBSCAN runner source mismatch: {digest}')
+          original_source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          original_digest = hashlib.sha256(original_source).hexdigest()
+          if original_digest != repair['original_runner_sha256']:
+              raise RuntimeError(f'original runner source mismatch: {original_digest}')
+          old = b'EXPECTED_FIELDS = 43'
+          new = b'EXPECTED_FIELDS = 46'
+          if original_source.count(old) != 1:
+              raise RuntimeError('header repair target is not unique')
+          source = original_source.replace(old, new)
+          repaired_digest = hashlib.sha256(source).hexdigest()
+          if repaired_digest != repair['repaired_runner_sha256']:
+              raise RuntimeError(f'repaired runner source mismatch: {repaired_digest}')
           Path('/tmp/run_sonotaco_2023_hdbscan_transfer.py').write_bytes(source)
           compile(source, 'run_sonotaco_2023_hdbscan_transfer.py', 'exec')
-          print('PASS_PRE_2023_HDBSCAN_FREEZE', digest)
+          print('PASS_PRE_2023_HDBSCAN_FREEZE', original_digest, repaired_digest)
           PY
 
       - name: Download exact SonotaCo 2023 replacement archive
@@ -127,6 +145,7 @@ jobs:
           mkdir -p output
           sha256sum \
             orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json \
+            orbittrace_hdbscan_freeze/SONOTACO_2023_HEADER_REPAIR.json \
             orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub00.b64 \
             orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub01a.b64 \
             orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub01b.b64 \
