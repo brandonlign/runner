@@ -8,6 +8,7 @@ on:
       - .github/workflows/orbittrace_cmor_wavelet_multiyear_input_audit.yml
       - orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json
       - orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py
+      - orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit_v2.py
   workflow_dispatch:
 
 permissions:
@@ -31,13 +32,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Verify frozen design and source before multiyear archive access
+      - name: Verify frozen design and schema-only repair before multiyear archive access
         run: |
           set -euo pipefail
           mkdir -p input output
           test "$(git hash-object orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json)" = "6acc7a61e33ee2fce90741b7e5c88da180ccceaa"
           test "$(git hash-object orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py)" = "f2d226014aaa22d063b01208bc911ddb302c8427"
-          python -m py_compile orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py
+          test "$(git hash-object orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit_v2.py)" = "8e9b7b7b0062388a43a5da41a9667e7b62fe838a"
+          python -m py_compile \
+            orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py \
+            orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit_v2.py
           python - <<'PY'
           import ast
           import json
@@ -55,7 +59,9 @@ jobs:
           assert protocol['published_rules_preserved']['seven_year_virtual_year'] is True
 
           source = Path('orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py').read_text()
+          wrapper = Path('orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit_v2.py').read_text()
           tree = ast.parse(source)
+          wrapper_tree = ast.parse(wrapper)
           literal_globals = {}
           exact_strings = set()
           imports = set()
@@ -79,6 +85,7 @@ jobs:
                       if isinstance(target, ast.Name):
                           literal_globals[target.id] = value
 
+          wrapper_functions = {node.name for node in wrapper_tree.body if isinstance(node, ast.FunctionDef)}
           assert 'YEARS = tuple(range(2019, 2026))' in source
           assert tuple(literal_globals['BLIND_INTERVAL_DEG']) == (20.0, 55.0)
           assert literal_globals['PUBLISHED_MINIMUM_RADIANTS'] == 300
@@ -93,8 +100,14 @@ jobs:
           assert 'Shower' not in exact_strings
           assert not any(name in function_names for name in ('wavelet', 'wavelet_coefficient', 'find_local_maxima', 'score_shower', 'recover_shower'))
           assert {'load_year', 'select_annual_member', 'linked_triplets', 'longest_forward_chain', 'main'}.issubset(function_names)
-          assert 'numpy' not in source and 'scipy' not in source and 'sklearn' not in source
-          print('PASS_FROZEN_CMOR_MULTIYEAR_INPUT_SOURCE_GUARD')
+          assert wrapper_functions == {'load_year_reconciled', 'main'}
+          assert 'frozen.load_year = load_year_reconciled' in wrapper
+          assert 'trailing_empty_header' in wrapper
+          assert 'PUBLISHED_MINIMUM_RADIANTS' not in wrapper
+          assert 'BREADTH_FRACTION' not in wrapper
+          assert 'MINIMUM_THREE_POINT_CHAINS' not in wrapper
+          assert 'numpy' not in source + wrapper and 'scipy' not in source + wrapper and 'sklearn' not in source + wrapper
+          print('PASS_FROZEN_CMOR_MULTIYEAR_INPUT_SOURCE_AND_SCHEMA_REPAIR_GUARD')
           PY
 
       - name: Download seven preregistered annual archives
@@ -107,10 +120,12 @@ jobs:
           done
           sha256sum input/*a.zip | tee output/discovered_archive_sha256.txt
 
-      - name: Execute archive, support, and exposure audit
+      - name: Execute schema-reconciled archive, support, and exposure audit
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
         run: |
           set -euo pipefail
-          python orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py \
+          python orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit_v2.py \
             --archive-dir input \
             --protocol orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json \
             --output output
@@ -124,6 +139,7 @@ jobs:
           sha256sum \
             orbittrace_literature_comparison/CMOR_WAVELET_MULTIYEAR_INPUT_PROTOCOL.json \
             orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit.py \
+            orbittrace_literature_comparison/run_cmor_wavelet_multiyear_input_audit_v2.py \
             input/*a.zip \
             > output/source_and_input_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
