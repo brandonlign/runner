@@ -36,21 +36,22 @@ jobs:
           git fetch --no-tags --depth=1 origin "${FROZEN_SOURCE_SHA}"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${FROZEN_SOURCE_SHA}"
-          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
-          python -m pip install --no-deps gmn-python-api==0.0.13
+          py -3.11 --version
+          py -3.11 -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          py -3.11 -m pip install --no-deps gmn-python-api==0.0.13
 
       - name: Run target-free source and implementation audits
         working-directory: source
         run: |
           set -euo pipefail
           mkdir -p input/fixed4 output
-          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
-          python -m py_compile \
-            "$RUNNER_TEMP/run_wavelet_catalogue_v3_development.py" \
+          py -3.11 -c "from pathlib import Path; Path('/tmp').mkdir(parents=True, exist_ok=True)"
+          py -3.11 orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          py -3.11 -m py_compile \
+            /tmp/run_wavelet_catalogue_v3_development.py \
             orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
-          python - <<'PY'
+          py -3.11 - <<'PY'
           import importlib.util
-          import os
           import sys
 
           sys.path.insert(0, 'orbittrace_wavelet_catalogue_v3')
@@ -61,7 +62,7 @@ jobs:
           if not all(wavelet_checks.values()):
               raise SystemExit('wavelet self-test failed')
 
-          source_path = os.path.join(os.environ['RUNNER_TEMP'], 'run_wavelet_catalogue_v3_development.py')
+          source_path = '/tmp/run_wavelet_catalogue_v3_development.py'
           spec = importlib.util.spec_from_file_location('wavelet_catalogue_v3_development', source_path)
           module = importlib.util.module_from_spec(spec)
           assert spec.loader is not None
@@ -76,7 +77,7 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          python - <<'PY'
+          py -3.11 - <<'PY'
           import io
           import json
           import os
@@ -124,7 +125,7 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          python "$RUNNER_TEMP/run_wavelet_catalogue_v3_development.py" \
+          py -3.11 /tmp/run_wavelet_catalogue_v3_development.py \
             --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
@@ -137,7 +138,7 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          python - <<'PY'
+          py -3.11 - <<'PY'
           import hashlib
           import json
           from pathlib import Path
