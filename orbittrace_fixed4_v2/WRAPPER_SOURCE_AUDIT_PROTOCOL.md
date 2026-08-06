@@ -1,5 +1,7 @@
 # OrbitTrace fixed4 v2 wrapper source audit
 
+Status: source audit authorized; decoded outputs must be persisted before v2 implementation.
+
 ## Purpose
 
 Inspect the two already executed catalogue wrappers around the immutable fixed-4° coverage-normalized Mondrian anchored four-clique core before designing any revised method.
