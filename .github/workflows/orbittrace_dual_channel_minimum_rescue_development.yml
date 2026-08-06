@@ -1,0 +1,156 @@
+name: OrbitTrace dual-channel minimum-rescue development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sparse-tail-2021-validation
+    paths:
+      - orbittrace_dual_channel_rescue/**
+      - .github/workflows/orbittrace_dual_channel_minimum_rescue_development.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-dual-channel-minimum-rescue-development
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-dual-channel-minimum-rescue-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen source and target-free development boundary
+        run: |
+          set -euo pipefail
+          mkdir -p input/2025 input/2023 input/2022 input/2021 output
+          test "$(git hash-object orbittrace_dual_channel_rescue/PROTOCOL.md)" = "d349c2c6589093f5ce3100075f3dc83a6eef9e54"
+          test "$(git hash-object orbittrace_dual_channel_rescue/develop_dual_channel_minimum_rescue.py)" = "16dbd7919e7a85d3132c08c3f38d46e989eee2f9"
+          python -m py_compile orbittrace_dual_channel_rescue/develop_dual_channel_minimum_rescue.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          source = Path('orbittrace_dual_channel_rescue/develop_dual_channel_minimum_rescue.py').read_text()
+          protocol = Path('orbittrace_dual_channel_rescue/PROTOCOL.md').read_text()
+          tree = ast.parse(source)
+          constants = {}
+          for node in tree.body:
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      constants[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+          assert constants['METHOD_ID'] == 'wavelet_rank_plus_minimum_fixed4_rescue'
+          assert constants['WAVELET'] == 'brown2010_wavelet_episode_core'
+          assert constants['FIXED4'] == 'orbittrace_fixed4'
+          assert constants['BASE_ALPHA'] == 0.05
+          assert constants['CALIBRATION_PER_BIN'] == 128
+          assert constants['YEARS'] == (2025, 2023, 2022, 2021)
+          assert 'RESCUE_ALPHA = 1.0 / (CALIBRATION_PER_BIN + 1.0)' in source
+          assert 'return wavelet_detected(row) or float(row["p"][FIXED4]) <= RESCUE_ALPHA + 1e-15' in source
+          assert 'weak = [row for row in positives if int(row["k"]) in (4, 6, 8)]' in source
+          assert '--input-2020' not in source
+          assert '020a.zip' not in source
+          assert 'No 2020 archive, labels, episodes, component scores, or endpoint values may be opened during development.' in protocol
+          assert 'There is no threshold grid and no alternative combiner.' in protocol
+          forbidden = ['247.17', '-14.34', '37.62', 'F0059', 'april_candidate_members.csv']
+          assert not any(value in source or value in protocol for value in forbidden)
+          print('PASS_DUAL_CHANNEL_DEVELOPMENT_SOURCE_GUARD')
+          PY
+
+      - name: Retrieve exact exposed episode records
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31104654956 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2025-wavelet-episode-comparison --dir input/2025
+          gh run download 31105278114 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2023-wavelet-episode-transfer --dir input/2023
+          gh run download 31107311777 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2022-fixed4-wavelet-hybrid-validation --dir input/2022
+          gh run download 31109550246 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2021-sparse-tail-validation --dir input/2021
+
+          echo '0dfe2d312818318768ebbf2fc2ded4275b734339849392187878eb142726462c  input/2025/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo 'e6757788f44f6881e059e7b167555b0cd497cae31b2abb366cd6c22df7684996  input/2025/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo 'ba3c0dc382a66afdec6616bb39724f22705d7ba87d703d21ce65c695f4e85d2f  input/2023/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo '2a2c2e521402bba8beefaef98582f9fee86715cbb7e587d6e6d66a435cdeb1b7  input/2023/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo '41c551cbe58321941e549f1c49bdc1e58467ab9400ebbb62095480c69323848e  input/2022/positive_hybrid_records.jsonl.gz' | sha256sum -c -
+          echo '58c897fb8277d7e29822fbd5e4c21b0acfc17015125770322c3afaa2885a694a  input/2022/negative_hybrid_records.jsonl.gz' | sha256sum -c -
+          echo 'c4067b12e8900c274c43727f41591f3ee82f16777718074e3409632c455032ee  input/2021/positive_sparse_tail_records.jsonl.gz' | sha256sum -c -
+          echo '975057cc00b45d6451b37e766b5574ec0b3864864dd83eee63e0f884b28ef7b1  input/2021/negative_sparse_tail_records.jsonl.gz' | sha256sum -c -
+
+      - name: Run fixed dual-channel development audit
+        run: |
+          set -euo pipefail
+          python orbittrace_dual_channel_rescue/develop_dual_channel_minimum_rescue.py \
+            --input-2025 input/2025 \
+            --input-2023 input/2023 \
+            --input-2022 input/2022 \
+            --input-2021 input/2021 \
+            --output output
+          cat output/DUAL_CHANNEL_MINIMUM_RESCUE_DEVELOPMENT.md
+
+      - name: Enforce frozen development result
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/dual_channel_minimum_rescue_development.json').read_text())
+          if result.get('verdict') != 'PASS_DUAL_CHANNEL_MINIMUM_RESCUE_DEVELOPMENT':
+              raise SystemExit(f"unexpected verdict: {result.get('verdict')}")
+          if result.get('method_id') != 'wavelet_rank_plus_minimum_fixed4_rescue':
+              raise SystemExit('method identifier changed')
+          architecture = result['architecture']
+          if architecture['ranking'] != 'brown2010_wavelet_episode_core':
+              raise SystemExit('ranking changed')
+          if architecture['rescue_alpha'] != 1.0 / 129.0:
+              raise SystemExit('rescue threshold changed')
+          if architecture['prospective_corpus_reserved'] != 2020:
+              raise SystemExit('prospective corpus changed')
+          if result['development_years'] != [2025, 2023, 2022, 2021]:
+              raise SystemExit('development years changed')
+          for year in result['development_years']:
+              row = result['results'][str(year)]
+              if row['ranking']['wavelet_auc'] != row['ranking']['dual_architecture_auc']:
+                  raise SystemExit(f'ranking not preserved in {year}')
+          print(json.dumps({
+              'verdict': result['verdict'],
+              'summary': result['summary'],
+              'gates': result['gates'],
+          }, indent=2))
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_dual_channel_rescue/PROTOCOL.md \
+            orbittrace_dual_channel_rescue/develop_dual_channel_minimum_rescue.py \
+            input/2025/positive_literature_records.jsonl.gz \
+            input/2025/negative_literature_records.jsonl.gz \
+            input/2023/positive_literature_records.jsonl.gz \
+            input/2023/negative_literature_records.jsonl.gz \
+            input/2022/positive_hybrid_records.jsonl.gz \
+            input/2022/negative_hybrid_records.jsonl.gz \
+            input/2021/positive_sparse_tail_records.jsonl.gz \
+            input/2021/negative_sparse_tail_records.jsonl.gz \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-dual-channel-minimum-rescue-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
