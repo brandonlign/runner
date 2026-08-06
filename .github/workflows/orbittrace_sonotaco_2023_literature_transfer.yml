@@ -40,7 +40,10 @@ jobs:
           set -euo pipefail
           mkdir -p input/repaired output
           echo '0e3af3c5f2b8f2265f5f67cbbd3e43616e3ccc7ca7cd3b5ebfe01f920fbb18ca  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part00.b64' | sha256sum -c -
-          echo 'c2cb6e7de2741040d1ced7f307b28a11fbbd2ba85e1ee3d3f40dcfe0088cefa3  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01.b64' | sha256sum -c -
+          echo 'ccfbed79a2c50f0e9768badb58700696ce6401961d1e85f412d3962211d2b8f1  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub00.b64' | sha256sum -c -
+          echo '2904c359c237671e4a20d3d18606f7a4ca91b472d1298c8c5d8c5c6d4753c5aa  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub01.b64' | sha256sum -c -
+          echo '721719076fd28015b2ff7ff0d299b69b77e3bd774fc9adf1705cbfce52702a3c  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub02.b64' | sha256sum -c -
+          echo '8bfbfd7e5deb22d64c1687767b9c7a10ecb28573c6b4dac01548e7d9102a54d1  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub03.b64' | sha256sum -c -
           echo 'a1c0da4f5a52ff9495b578e6becd4e58bb902b3b38251ffd04cb1fbc31f463e0  orbittrace_literature_freeze/sonotaco_2023_runner_parts/part02.b64' | sha256sum -c -
           echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  orbittrace_literature_comparison/literature_comparators.py' | sha256sum -c -
           python - <<'PY'
@@ -57,7 +60,12 @@ jobs:
           assert freeze['artifact_id'] == 8954882633
           assert freeze['frozen_before_sonotaco_2023_comparator_execution'] is True
           root = Path('orbittrace_literature_freeze/sonotaco_2023_runner_parts')
-          encoded = ''.join(''.join((root / name).read_text().split()) for name in ('part00.b64', 'part01.b64', 'part02.b64'))
+          names = (
+              'part00.b64',
+              'part01_sub00.b64', 'part01_sub01.b64', 'part01_sub02.b64', 'part01_sub03.b64',
+              'part02.b64',
+          )
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
           expected = '582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747'
@@ -133,7 +141,10 @@ jobs:
           sha256sum \
             orbittrace_literature_freeze/SONOTACO_2025_EPISODE_COMPARATOR_FREEZE.json \
             orbittrace_literature_freeze/sonotaco_2023_runner_parts/part00.b64 \
-            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01.b64 \
+            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub00.b64 \
+            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub01.b64 \
+            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub02.b64 \
+            orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub03.b64 \
             orbittrace_literature_freeze/sonotaco_2023_runner_parts/part02.b64 \
             orbittrace_literature_comparison/literature_comparators.py \
             input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
