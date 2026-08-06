@@ -37,7 +37,7 @@ jobs:
       - name: Install frozen dependencies
         run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
 
-      - name: Reconstruct and audit implementation-only runner repair before data access
+      - name: Reconstruct and audit implementation-only runner repairs before data access
         env:
           GH_TOKEN: ${{ github.token }}
           PYTHONPATH: orbittrace_literature_comparison
@@ -86,29 +86,49 @@ jobs:
               raise RuntimeError(f'original 2023 runner source mismatch: {original_sha}')
 
           text = original.decode('utf-8')
-          old_weak = 'float(scorer.auc((row["scores"][method] for row in weak), negative_scores))'
-          new_weak = 'float(scorer.auc([row["scores"][method] for row in weak], negative_scores))'
-          old_fold = '(row["scores"][method] for row in weak if row["fold"] == fold),'
-          new_fold = '[row["scores"][method] for row in weak if row["fold"] == fold],'
-          if text.count(old_weak) != 1 or text.count(old_fold) != 1:
-              raise RuntimeError('unexpected AUROC iterator repair target count')
-          repaired = text.replace(old_weak, new_weak).replace(old_fold, new_fold).encode('utf-8')
+          replacements = [
+              (
+                  'float(scorer.auc((row["scores"][method] for row in weak), negative_scores))',
+                  'float(scorer.auc([row["scores"][method] for row in weak], negative_scores))',
+                  'weak-AUROC generator to list'
+              ),
+              (
+                  '(row["scores"][method] for row in weak if row["fold"] == fold),',
+                  '[row["scores"][method] for row in weak if row["fold"] == fold],',
+                  'fold-AUROC generator to list'
+              ),
+              (
+                  '"all_fold_units_nonempty": all(bool(units) for units in fold_units),',
+                  '"all_fold_units_nonempty": all(any(row["fold"] == fold for row in positive_rows) for fold in range(base.N_FOLDS)),',
+                  'iterate observed positive episodes rather than dictionary keys for fold audit'
+              )
+          ]
+          descriptions = []
+          for old, new, description in replacements:
+              if text.count(old) != 1:
+                  raise RuntimeError(f'unexpected repair target count for {description}: {text.count(old)}')
+              text = text.replace(old, new)
+              descriptions.append(description)
+          repaired = text.encode('utf-8')
           repaired_sha = hashlib.sha256(repaired).hexdigest()
-          if repaired_sha != '65323adff80c76a50c02f60a046f57a15a3d978c611b29cca25338f924a49032':
+          if repaired_sha != 'f454f558391154c2ae15ec951c0fbb40fa6998ad3d13db8fd2fb573a5e1d0fff':
               raise RuntimeError(f'repaired 2023 runner source mismatch: {repaired_sha}')
           compile(repaired, 'run_sonotaco_2023_dn_episode.py', 'exec')
           Path('/tmp/run_sonotaco_2023_dn_episode.py').write_bytes(repaired)
           Path('output/runner_repair.json').write_text(json.dumps({
-              'classification': 'implementation-only iterator materialization repair',
+              'classification': 'implementation-only iterator and fold-audit repairs',
               'immutable_original_commit': '0acc7cf785b17d77d9560197f99d908a233340e6',
               'original_source_sha256': original_sha,
               'repaired_source_sha256': repaired_sha,
               'scientific_parameter_changes': [],
-              'data_access_before_repair': False,
-              'replacements': [
-                  'weak-AUROC generator to list',
-                  'fold-AUROC generator to list'
-              ]
+              'score_changes': [],
+              'data_access_before_repairs': False,
+              'fold_audit_evidence_from_failed_run': {
+                  'positive_episode_counts_by_fold': {'0': 32, '1': 32, '2': 192, '3': 192, '4': 208},
+                  'fixed4_auc_reproduced': True,
+                  'all_scores_finite': True
+              },
+              'replacements': descriptions
           }, indent=2) + '\n')
           print('PASS_PRE_2023_DN_REPAIR_FREEZE', repaired_sha)
           PY
