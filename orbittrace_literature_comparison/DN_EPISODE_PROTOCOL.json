@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_sonotaco_2025_execution",
+  "purpose": "Add the Valsecchi-Jopek-Froeschle D_N geocentric-observable criterion to the exact frozen SonotaCo sparse-episode benchmark without changing the OrbitTrace detector or any previous comparator result.",
+  "references": [
+    {
+      "title": "Meteoroid stream identification: a new approach — I. Theory",
+      "authors": "Valsecchi, Jopek, and Froeschle",
+      "year": 1999,
+      "doi": "10.1046/j.1365-8711.1999.02264.x"
+    },
+    {
+      "title": "Meteoroid stream identification: a new approach — II. Application to 865 photographic meteor orbits",
+      "authors": "Jopek, Valsecchi, and Froeschle",
+      "year": 1999,
+      "doi": "10.1046/j.1365-8711.1999.02265.x"
+    }
+  ],
+  "development_corpus": "SonotaCo 2025 only",
+  "independent_corpus": "SonotaCo 2023 one-shot only after source and rules are frozen",
+  "orbittrace_access": "prohibited",
+  "shared_benchmark": {
+    "unit": "the exact frozen 128-event SonotaCo episode",
+    "calibration": "identical Mondrian calibration-negative episodes and conservative rank p-values",
+    "evaluation": [
+      "identical held-out negative episodes",
+      "identical positive k=4,6,8,12 episodes",
+      "identical folds",
+      "weak-stream AUROC",
+      "pooled and worst-sector false-positive rates",
+      "recall at alpha 0.05 and 0.01"
+    ]
+  },
+  "published_criterion": {
+    "observables": [
+      "geocentric right ascension",
+      "geocentric declination",
+      "geocentric velocity",
+      "solar longitude"
+    ],
+    "earth_speed_km_s": 29.7,
+    "obliquity_deg": 23.4392911,
+    "variables": ["U", "cos(theta)", "phi", "encounter longitude"],
+    "weights": [1.0, 1.0, 1.0],
+    "angular_branch": "minimum of the direct and paired 180-degree twin-node differences",
+    "linkage": "single-neighbour / single-link"
+  },
+  "episode_scores": [
+    {
+      "id": "valsecchi1999_dn6",
+      "target_members": 6,
+      "classification": "published D_N distance and single-neighbour linkage evaluated at M=6 for direct parity with the existing six-member classical comparator",
+      "score": "negative first single-link distance at which a component reaches six events"
+    },
+    {
+      "id": "dn4_sparse_transfer",
+      "target_members": 4,
+      "classification": "predeclared sparse benchmark transfer; not a separately published four-member pipeline",
+      "score": "negative first single-link distance at which a component reaches four events"
+    }
+  ],
+  "threshold_boundary": "The original application estimated sample- and membership-dependent chance thresholds. This benchmark does not claim to reproduce that simulation; it applies the published distance and linkage and uses the benchmark's identical empirical negative calibration.",
+  "integrity": {
+    "dn_comparator_source_sha256": "28a900dcd43143291dfa1259cb7b3363277f76133e3c53c65b38dc988a5dbacc",
+    "development_runner_source_sha256": "b8a7bfe55e3ad921b22aa0c0512a7b38016ea837b0ae98e5981e9f5466c83a84",
+    "fixed4_expected_weak_auc": 0.8132503733660131,
+    "result_accessed": false
+  },
+  "prohibitions": [
+    "Do not change the frozen OrbitTrace detector, episode generator, seeds, folds, calibration panels, or gates.",
+    "Do not choose weights, target membership, or transformations after viewing results.",
+    "Do not call the M=4 transfer a published four-member D_N pipeline.",
+    "Do not claim reproduction of the original chance-threshold simulations.",
+    "Do not access or score SonotaCo 2023 before the 2025 source and result are frozen.",
+    "Do not inspect OrbitTrace coordinates, members, scores, or recovery outcomes during development."
+  ]
+}

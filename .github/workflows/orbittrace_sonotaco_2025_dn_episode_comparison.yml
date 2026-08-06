@@ -1,0 +1,147 @@
+name: OrbitTrace SonotaCo 2025 D_N episode comparison
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hdbscan-catalogue-2023-transfer
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2025_dn_episode_comparison.yml
+      - orbittrace_literature_comparison/DN_EPISODE_PROTOCOL.json
+      - orbittrace_literature_comparison/dn_comparator.py
+      - orbittrace_literature_comparison/dn_2025_runner_parts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2025-dn-episode
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-dn-episode-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify D_N protocol and source before data access
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          echo 'd4e2a05100a27504933f6ecedf0be23727c9a3b77ad2c828a80a30b2bc93f753  orbittrace_literature_comparison/dn_2025_runner_parts/part00.b64' | sha256sum -c -
+          echo 'b030e42d96a331cb761d719068f301b4e4761a5336326c3059df5985d8b1f10c  orbittrace_literature_comparison/dn_2025_runner_parts/part01.b64' | sha256sum -c -
+          echo 'ed6e40ae5481926a04f31c6ad86c32e4914e09b62521c3b475bad45c5336f732  orbittrace_literature_comparison/dn_2025_runner_parts/part02.b64' | sha256sum -c -
+          echo '28a900dcd43143291dfa1259cb7b3363277f76133e3c53c65b38dc988a5dbacc  orbittrace_literature_comparison/dn_comparator.py' | sha256sum -c -
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  orbittrace_literature_comparison/literature_comparators.py' | sha256sum -c -
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+          import dn_comparator as dn
+
+          protocol_path = Path('orbittrace_literature_comparison/DN_EPISODE_PROTOCOL.json')
+          protocol = json.loads(protocol_path.read_text())
+          assert protocol['status'] == 'frozen_before_sonotaco_2025_execution'
+          assert protocol['development_corpus'] == 'SonotaCo 2025 only'
+          assert protocol['orbittrace_access'] == 'prohibited'
+          assert protocol['published_criterion']['weights'] == [1.0, 1.0, 1.0]
+          assert [row['target_members'] for row in protocol['episode_scores']] == [6, 4]
+          assert protocol['integrity']['dn_comparator_source_sha256'] == '28a900dcd43143291dfa1259cb7b3363277f76133e3c53c65b38dc988a5dbacc'
+          assert protocol['integrity']['development_runner_source_sha256'] == 'b8a7bfe55e3ad921b22aa0c0512a7b38016ea837b0ae98e5981e9f5466c83a84'
+          assert all(dn.self_test().values())
+
+          root = Path('orbittrace_literature_comparison/dn_2025_runner_parts')
+          encoded = ''.join(''.join((root / f'part{index:02d}.b64').read_text().split()) for index in range(3))
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          assert digest == 'b8a7bfe55e3ad921b22aa0c0512a7b38016ea837b0ae98e5981e9f5466c83a84', digest
+          Path('/tmp/run_sonotaco_2025_dn_episode.py').write_bytes(source)
+          compile(source, 'run_sonotaco_2025_dn_episode.py', 'exec')
+          print('PASS_DN_PROTOCOL_AND_SOURCE_FREEZE', digest)
+          PY
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute frozen D_N episode comparison
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2025_dn_episode.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --protocol orbittrace_literature_comparison/DN_EPISODE_PROTOCOL.json \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2025_DN_EPISODE_COMPARISON.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/DN_EPISODE_PROTOCOL.json \
+            orbittrace_literature_comparison/dn_comparator.py \
+            orbittrace_literature_comparison/dn_2025_runner_parts/part00.b64 \
+            orbittrace_literature_comparison/dn_2025_runner_parts/part01.b64 \
+            orbittrace_literature_comparison/dn_2025_runner_parts/part02.b64 \
+            orbittrace_literature_comparison/literature_comparators.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            input/audit.json input/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload D_N comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2025-dn-episode-comparison
+          path: output
+          if-no-files-found: error
+          retention-days: 90
