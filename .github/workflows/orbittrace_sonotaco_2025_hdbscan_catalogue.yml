@@ -1,0 +1,142 @@
+name: OrbitTrace SonotaCo 2025 HDBSCAN catalogue
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-literature-comparison-2023-replication
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2025_hdbscan_catalogue.yml
+      - orbittrace_literature_comparison/HDBSCAN_CATALOGUE_PROTOCOL.json
+      - orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2025-hdbscan-catalogue
+  cancel-in-progress: true
+
+jobs:
+  catalogue-transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hdbscan-catalogue-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+          python -m pip install hdbscan==0.8.44
+
+      - name: Verify frozen HDBSCAN protocol and source before data access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          echo 'caf0677a2841f7b376d0d99cdbc7792d3ce40b108f868eb278b89e3ad3f35b78  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part00.b64' | sha256sum -c -
+          echo '19b35fff3b254dc8065c76d425edacb32f9e1754aa7c4b4f0a9b85d27895c444  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part01.b64' | sha256sum -c -
+          echo 'efcb273912dc59de00961e55c22a7b55c39f3e3797d77bdf164e6c4d54b55a19  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part02.b64' | sha256sum -c -
+          echo '0b604814cf9d78c74f422b3e957d50e049c7e81bf7fa428f1aff03bf8b89dfb6  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part03.b64' | sha256sum -c -
+          echo '9bef0c8c2039f8846433ab0961e8f8c9fa401535793218697cdebf2e2737078f  orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part04.b64' | sha256sum -c -
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          protocol = json.loads(Path('orbittrace_literature_comparison/HDBSCAN_CATALOGUE_PROTOCOL.json').read_text())
+          primary = protocol['primary_faithful_transfer']
+          assert protocol['status'] == 'frozen_before_sonotaco_2025_execution'
+          assert protocol['development_corpus'] == 'SonotaCo 2025 only'
+          assert protocol['orbittrace_access'] == 'prohibited'
+          assert primary['package_version'] == '0.8.44'
+          assert primary['minimum_cluster_size'] == 100
+          assert primary['minimum_samples'] is None
+          assert primary['cluster_selection_method'] == 'eom'
+          assert primary['metric'] == 'euclidean'
+
+          root = Path('orbittrace_literature_comparison/hdbscan_catalogue_runner_parts')
+          names = [f'part{index:02d}.b64' for index in range(5)]
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = 'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'
+          if digest != expected:
+              raise RuntimeError(f'HDBSCAN runner source mismatch: {digest}')
+          Path('/tmp/run_sonotaco_2025_hdbscan_catalogue.py').write_bytes(source)
+          compile(source, 'run_sonotaco_2025_hdbscan_catalogue.py', 'exec')
+          print('PASS_FROZEN_HDBSCAN_PROTOCOL_AND_SOURCE', digest)
+          PY
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute frozen catalogue-scale HDBSCAN transfer
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2025_hdbscan_catalogue.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --protocol orbittrace_literature_comparison/HDBSCAN_CATALOGUE_PROTOCOL.json \
+            --core-dist-jobs 4 \
+            --output output
+          cat output/SONOTACO_2025_HDBSCAN_CATALOGUE.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/HDBSCAN_CATALOGUE_PROTOCOL.json \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part00.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part01.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part02.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part03.b64 \
+            orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part04.b64 \
+            orbittrace_literature_comparison/literature_comparators.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            input/audit.json input/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload catalogue-transfer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2025-hdbscan-catalogue
+          path: output
+          if-no-files-found: error
+          retention-days: 90
