@@ -41,7 +41,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input output
-          echo 'c67c8ed880e058ba5def510e58c21cfb00d506edd55679369ff6aea2d47cf1c2  orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json' | sha256sum -c -
           python - <<'PY'
           import base64
           import gzip
@@ -54,6 +53,8 @@ jobs:
           assert freeze['workflow_run'] == 31071589912
           assert freeze['artifact_id'] == 8955917326
           assert freeze['artifact_digest'] == 'sha256:82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89'
+          assert freeze['result_sha256'] == 'd8cd3c6acf9ecf48bb06a1055e7197f60d315c062276bdbe654abd562e904db8'
+          assert freeze['markdown_sha256'] == '7bf1327c764ead4537b923076854f4ed69ee3c1832f11e2db6fb5ad1d0b08628'
           assert freeze['frozen_before_sonotaco_2023_execution'] is True
           config = freeze['configuration']
           assert config['hdbscan_version'] == '0.8.44'
@@ -61,6 +62,10 @@ jobs:
           assert config['minimum_samples'] is None
           assert config['cluster_selection_method'] == 'eom'
           assert config['metric'] == 'euclidean'
+          rules = freeze['transfer_rules']
+          assert rules['one_shot'] is True
+          assert rules['orbittrace_access'] == 'prohibited'
+          assert rules['post_result_parameter_changes'] == 'prohibited'
 
           root = Path('orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts')
           names = [f'part00_sub{index:02d}.b64' for index in range(6)]
