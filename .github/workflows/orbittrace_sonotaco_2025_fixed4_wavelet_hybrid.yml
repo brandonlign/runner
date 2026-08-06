@@ -1,0 +1,136 @@
+name: OrbitTrace SonotaCo 2025 fixed4-wavelet hybrid
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-wavelet-episode-2023-transfer
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2025_fixed4_wavelet_hybrid.yml
+      - orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json
+      - orbittrace_literature_comparison/fixed4_wavelet_hybrid.py
+      - orbittrace_literature_comparison/build_fixed4_wavelet_hybrid_runner.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2025-fixed4-wavelet-hybrid
+  cancel-in-progress: true
+
+jobs:
+  retrospective-development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-wavelet-hybrid-development
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify and build the frozen hybrid before hybrid scoring
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json)" = "2a8d154ccda12ac4c5612cfc13448b6609c389f8"
+          test "$(git hash-object orbittrace_literature_comparison/fixed4_wavelet_hybrid.py)" = "504ca0ceef347fe3fdde3274738d03cc9b51bd52"
+          test "$(git hash-object orbittrace_literature_comparison/build_fixed4_wavelet_hybrid_runner.py)" = "7d79ed4502208dd56b2ebad2fdfba114330c66cb"
+          python -m py_compile \
+            orbittrace_literature_comparison/fixed4_wavelet_hybrid.py \
+            orbittrace_literature_comparison/build_fixed4_wavelet_hybrid_runner.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fixed4_wavelet_hybrid as hybrid
+          protocol = json.loads(Path('orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json').read_text())
+          assert protocol['status'] == 'frozen_before_any_hybrid_score_on_2025_2023_or_2022'
+          assert protocol['combination_rule']['alternative_combiners_tested'] == 0
+          assert protocol['combination_rule']['weights'] == 'none'
+          assert protocol['evaluation']['fresh_independent_corpus'] == 'SonotaCo 2022 one-shot'
+          tests = hybrid.self_test()
+          assert tests and all(tests.values()), tests
+          print('PASS_FROZEN_HYBRID_SOURCE_GUARD', tests)
+          PY
+          python orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            --base orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            --output /tmp/run_2025_wavelet.py
+          python orbittrace_literature_comparison/build_fixed4_wavelet_hybrid_runner.py \
+            --base /tmp/run_2025_wavelet.py \
+            --output /tmp/run_2025_fixed4_wavelet_hybrid.py \
+            | tee output/hybrid_runner_build.txt
+          python -m py_compile /tmp/run_2025_fixed4_wavelet_hybrid.py
+          sha256sum /tmp/run_2025_fixed4_wavelet_hybrid.py | tee output/hybrid_runner_sha256.txt
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_2025_fixed4_wavelet_hybrid.py').read_text()
+          assert source.count('fixed4_wavelet_tippett_hybrid') >= 1
+          assert 'hybrid_calibration = {' in source
+          assert source.count('hybrid.target_hybrid_statistic(') == 2
+          assert source.count('hybrid.final_hybrid_pvalue(') == 2
+          assert 'alternative_combiners' not in source
+          print('PASS_HYBRID_RUNNER_AUDIT')
+          PY
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact SonotaCo 2025 archive
+        run: |
+          curl --fail --location --retry 3 --output input/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute frozen retrospective hybrid evaluation
+        env:
+          PYTHONPATH: orbittrace_literature_comparison
+        run: |
+          set -euo pipefail
+          python /tmp/run_2025_fixed4_wavelet_hybrid.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --adapter-parts sonotaco_mondrian_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2025_LITERATURE_COMPARISON.md
+
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json \
+            orbittrace_literature_comparison/fixed4_wavelet_hybrid.py \
+            orbittrace_literature_comparison/build_fixed4_wavelet_hybrid_runner.py \
+            orbittrace_literature_comparison/wavelet_episode_comparator.py \
+            orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            input/audit.json input/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload hybrid evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2025-fixed4-wavelet-hybrid
+          path: output
+          if-no-files-found: error
+          retention-days: 90

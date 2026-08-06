@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_any_hybrid_score_on_2025_2023_or_2022",
+  "classification": "post-comparison exploratory hybrid; not the historical OrbitTrace discovery method and not part of the original fixed4 preregistration",
+  "purpose": "Combine the complementary ultra-sparse sensitivity of fixed4 with the stronger moderate-member discrimination of the frozen wavelet episode core using a single predeclared null-calibrated union rule.",
+  "fixed_components": {
+    "fixed4": {
+      "id": "orbittrace_fixed4",
+      "source_sha256": "747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301",
+      "allowed_changes": []
+    },
+    "wavelet": {
+      "id": "brown2010_wavelet_episode_core",
+      "source_sha256": "5ef0f7b33a1c3ed87885ee70be0cdd184055d819eb1196c65eebc7e867f747e2",
+      "angular_probe_deg": 4.0,
+      "speed_probe_fraction": 0.10,
+      "kernel": "(3-r^2)*exp(-r^2/2)",
+      "truncation_radius": 4.0,
+      "allowed_changes": []
+    }
+  },
+  "combination_rule": {
+    "component_direction": "larger raw score is more signal-like",
+    "component_p_for_target": "within the target solar-longitude bin, (1 + number of calibration scores >= target score) / (N + 1)",
+    "component_p_for_calibration": "leave-one-out within its solar-longitude bin, (1 + number of other calibration scores >= its score) / N",
+    "tippett_statistic": "-log(min(p_fixed4, p_wavelet))",
+    "hybrid_calibration_distribution": "the N leave-one-out Tippett statistics in the same solar-longitude bin",
+    "final_target_p": "(1 + number of hybrid calibration statistics >= target hybrid statistic) / (N + 1)",
+    "episode_score_for_auc": "Tippett statistic before final p-value conversion",
+    "weights": "none",
+    "threshold_tuning": "none",
+    "alternative_combiners_tested": 0
+  },
+  "evaluation": {
+    "retrospective_descriptive_corpora": [
+      "SonotaCo 2025 development episodes",
+      "SonotaCo 2023 already-exposed one-shot episodes"
+    ],
+    "fresh_independent_corpus": "SonotaCo 2022 one-shot",
+    "freshness_boundary": "The earlier 2019-2025 wavelet input audit read only geometry and per-bin counts and explicitly did not read shower labels, coefficients, or detection endpoints. SonotaCo 2022 labelled episode outcomes remain unused before this hybrid freeze.",
+    "episode_size": 128,
+    "member_counts": [4, 6, 8, 12],
+    "metrics": [
+      "weak-stream AUROC",
+      "five fold AUROC",
+      "false-positive rate at alpha 0.05 and 0.01",
+      "worst-sector false-positive rate at alpha 0.05",
+      "recall at k=4,6,8,12"
+    ]
+  },
+  "decision_rules": {
+    "promote_as_complementary_hybrid": "On fresh SonotaCo 2022, hybrid weak-stream AUROC must exceed both components and hybrid recall must not be lower than both components at any k under alpha 0.05.",
+    "retain_as_optional_ensemble": "Hybrid exceeds the better component in AUROC but fails one no-worse-than-both recall condition, or improves balanced recall without exceeding the better AUROC.",
+    "reject_hybrid": "Hybrid does not improve the better component's weak-stream AUROC and offers no material recall tradeoff improvement.",
+    "no_post_result_relaxation": true
+  },
+  "claim_boundary": {
+    "allowed": "a newly developed null-calibrated ensemble evaluated prospectively on SonotaCo 2022",
+    "prohibited": [
+      "independent validation on SonotaCo 2023",
+      "historical OrbitTrace discovery by the hybrid",
+      "replacement of the original fixed4 preregistration",
+      "claim that the hybrid beat the full CMOR catalogue survey",
+      "selection of another p-value combiner after viewing results"
+    ]
+  }
+}
