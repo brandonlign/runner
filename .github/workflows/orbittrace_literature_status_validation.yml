@@ -3,14 +3,15 @@ name: OrbitTrace literature status validation
 on:
   pull_request:
     branches:
-      - agent/orbittrace-cmor-wavelet-feasibility-audit
+      - agent/orbittrace-hybrid-2022-source-audit
     paths:
       - .github/workflows/orbittrace_literature_status_validation.yml
       - orbittrace_literature_comparison/METHOD_REGISTRY.json
       - orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json
       - orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md
-      - orbittrace_literature_freeze/SONOTACO_2019_2025_CMOR_WAVELET_MULTIYEAR_INPUT_RESULT.json
-      - orbittrace_literature_results/CMOR_WAVELET_MULTIYEAR_INPUT_EVALUATION.md
+      - orbittrace_literature_results/FINAL_METHOD_EVALUATION.md
+      - orbittrace_literature_results/WAVELET_EPISODE_AND_HYBRID_EVALUATION.md
+      - orbittrace_literature_freeze/SONOTACO_2022_FIXED4_WAVELET_HYBRID_VALIDATION_RESULT.json
   workflow_dispatch:
 
 permissions:
@@ -22,13 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-cmor-wavelet-multiyear-input-audit
+          ref: agent/orbittrace-hybrid-2022-validation
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Validate machine-readable completion records
+      - name: Validate revised completion records
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -37,63 +38,93 @@ jobs:
 
           registry = json.loads(Path('orbittrace_literature_comparison/METHOD_REGISTRY.json').read_text())
           status = json.loads(Path('orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json').read_text())
-          wavelet = json.loads(Path('orbittrace_literature_freeze/SONOTACO_2019_2025_CMOR_WAVELET_MULTIYEAR_INPUT_RESULT.json').read_text())
+          prospective = json.loads(Path('orbittrace_literature_freeze/SONOTACO_2022_FIXED4_WAVELET_HYBRID_VALIDATION_RESULT.json').read_text())
           coverage = Path('orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md').read_text()
-          wavelet_report = Path('orbittrace_literature_results/CMOR_WAVELET_MULTIYEAR_INPUT_EVALUATION.md').read_text()
+          final = Path('orbittrace_literature_results/FINAL_METHOD_EVALUATION.md').read_text()
+          wavelet_hybrid = Path('orbittrace_literature_results/WAVELET_EPISODE_AND_HYBRID_EVALUATION.md').read_text()
 
           methods = {method['id']: method for method in registry['methods']}
           expected_ids = {
               'orbittrace_fixed4', 'internal_split', 'internal_density', 'internal_dbscan',
               'sugar2017_core_transfer', 'rudawska2014_dsh6', 'dsh4_sparse_adaptation',
               'valsecchi1999_dn6', 'dn4_sparse_transfer',
+              'brown2010_wavelet_episode_core', 'fixed4_wavelet_tippett_hybrid',
               'pena_asensio2025_hdbscan', 'sugar2017_uncertainty_catalogue', 'brown2010_wavelet',
           }
-          assert expected_ids == set(methods)
-          assert registry['schema_version'] == 2
-          assert registry['completion']['status'] == 'complete_for_current_public_inputs'
-          assert methods['sugar2017_uncertainty_catalogue']['status'] == 'complete_2025_and_one_shot_2023'
-          assert methods['pena_asensio2025_hdbscan']['status'] == 'complete_2025_and_one_shot_2023'
-          assert methods['brown2010_wavelet']['status'] == 'formally_deferred_input_incompatible'
-          assert methods['brown2010_wavelet']['evidence']['multiyear_run'] == 31078486173
-          assert methods['brown2010_wavelet']['evidence']['multiyear_artifact'] == 8958469799
-
-          assert status['status'] == 'complete_for_current_public_inputs'
-          assert len(status['episode_track']) == 9
-          catalogue = {method['id']: method for method in status['catalogue_track']}
-          assert set(catalogue) == {
-              'pena_asensio2025_hdbscan_geo',
-              'sugar2017_uncertainty_catalogue',
-              'brown2010_cmor_wavelet',
+          assert set(methods) == expected_ids
+          assert registry['schema_version'] == 3
+          assert registry['completion'] == {
+              'status': 'complete_for_current_public_inputs_after_prospective_2022',
+              'episode_method_count': 11,
+              'catalogue_family_count': 3,
+              'registered_method_count': 14,
+              'primary_episode_discriminator': 'brown2010_wavelet_episode_core',
+              'novel_ultra_sparse_component': 'orbittrace_fixed4',
+              'optional_ensemble': 'fixed4_wavelet_tippett_hybrid',
+              'next_requirement': 'new independent survey data or a denser exposure-controlled radar-scale catalogue, not post-result tuning',
           }
+          assert methods['brown2010_wavelet_episode_core']['status'] == 'complete_2025_one_shot_2023_and_prospective_2022'
+          assert methods['brown2010_wavelet_episode_core']['weak_auc'] == {
+              '2025': 0.8285055722,
+              '2023': 0.8319715832,
+              '2022': 0.8209355064,
+          }
+          assert methods['fixed4_wavelet_tippett_hybrid']['prospective_decision'] == 'RETAIN_AS_OPTIONAL_ENSEMBLE'
+          assert methods['brown2010_wavelet']['status'] == 'formally_deferred_input_incompatible'
+
+          assert status['status'] == 'complete_for_current_public_inputs_after_prospective_2022'
+          assert status['counts'] == {'registered_methods': 14, 'episode_methods': 11, 'catalogue_families': 3}
+          episode = {method['id']: method for method in status['episode_track']}
+          catalogue = {method['id']: method for method in status['catalogue_track']}
+          assert len(episode) == 11
+          assert len(catalogue) == 3
+          assert episode['brown2010_wavelet_episode_core']['weak_auc']['2022'] == 0.8209355064
+          assert episode['fixed4_wavelet_tippett_hybrid']['prospective_decision'] == 'RETAIN_AS_OPTIONAL_ENSEMBLE'
           assert catalogue['brown2010_cmor_wavelet']['status'] == 'formally_deferred_input_incompatible'
 
-          assert wavelet['verdict'] == 'PASS_CMOR_WAVELET_MULTIYEAR_INPUT_AUDIT'
-          assert wavelet['decision'] == 'DEFER_FULL_CMOR_WAVELET_COMPARATOR_UNTIL_A_BETTER_EXPOSURE_CONTROLLED_MULTYEAR_SURVEY_INPUT_EXISTS'
-          assert wavelet['workflow']['run'] == 31078486173
-          assert wavelet['workflow']['artifact_id'] == 8958469799
-          assert wavelet['workflow']['artifact_digest'] == 'sha256:8fee6f4de39e1719e1cc135827c0d00b1772b3a2495235113200785c16e287be'
-          assert wavelet['stack_summary']['total_retained_events'] == 178188
-          assert wavelet['stack_summary']['bins_at_or_above_300'] == 199
-          assert abs(wavelet['stack_summary']['fraction_bins_at_or_above_300'] - 199 / 324) < 1e-12
-          assert wavelet['authorization_gates'] == {
-              'broad_total_support': False,
-              'broad_multiyear_support': True,
-              'limited_single_year_dominance': True,
-              'temporal_coverage': True,
-          }
+          assert prospective['verdict'] == 'PASS_SONOTACO_2022_PROSPECTIVE_HYBRID_VALIDATION'
+          assert prospective['decision'] == 'RETAIN_AS_OPTIONAL_ENSEMBLE'
+          assert prospective['workflow_run'] == 31107311777
+          assert prospective['artifact_id'] == 8970137965
+          assert prospective['artifact_digest'] == 'sha256:5cc0404f486e7ca060349345e42b042201a0a4732dfe680c98b1243d0ae1da43'
+          pm = prospective['prospective_metrics']
+          assert pm['brown2010_wavelet_episode_core']['weak_auc'] > pm['fixed4_wavelet_tippett_hybrid']['weak_auc'] > pm['orbittrace_fixed4']['weak_auc']
+          assert prospective['frozen_decision_evidence']['hybrid_auc_exceeds_both_components'] is False
+          assert prospective['frozen_decision_evidence']['balanced_recall_005']['hybrid'] == 0.5625
+          assert all(prospective['frozen_decision_evidence']['hybrid_no_worse_than_both_recall_at_each_k_005'].values())
 
-          required_phrases = (
+          required_coverage = (
               'No major comparable family is silently omitted.',
               'The literature-comparator development phase is complete for the current data.',
-              'Promising strong transfer, but not fully robustly replicated under the complete preregistered standard.',
+              'fixed4 is therefore not the best overall episode discriminator tested.',
+              'RETAIN_AS_OPTIONAL_ENSEMBLE',
+              '14 registered methods',
+              '11 episode methods',
           )
-          missing = [phrase for phrase in required_phrases if phrase not in coverage]
+          missing = [phrase for phrase in required_coverage if phrase not in coverage]
           assert not missing, f'missing coverage phrases: {missing}'
-          assert '199 / 324 = 61.4%' in wavelet_report
-          assert 'not a negative result for the wavelet method' in wavelet_report
 
-          print('PASS_ORBITTRACE_LITERATURE_STATUS_VALIDATION')
-          print('methods', len(methods), 'episode', len(status['episode_track']), 'catalogue', len(catalogue))
+          required_final = (
+              'The wavelet episode adaptation is the strongest overall discriminator tested.',
+              'fixed4 can no longer be claimed to outperform every implemented comparator.',
+              'Retain fixed4 as a real but narrower methodological contribution.',
+              'Wavelet episode adaptation: primary overall sparse-episode discriminator',
+          )
+          missing = [phrase for phrase in required_final if phrase not in final]
+          assert not missing, f'missing final-evaluation phrases: {missing}'
+
+          required_wavelet_hybrid = (
+              '0.820936',
+              '0.815525',
+              '0.791405',
+              'RETAIN_AS_OPTIONAL_ENSEMBLE',
+              'not a reproduction of the full CMOR catalogue survey',
+          )
+          missing = [phrase for phrase in required_wavelet_hybrid if phrase not in wavelet_hybrid]
+          assert not missing, f'missing wavelet/hybrid phrases: {missing}'
+
+          print('PASS_ORBITTRACE_REVISED_LITERATURE_STATUS_VALIDATION')
+          print('methods', len(methods), 'episode', len(episode), 'catalogue', len(catalogue))
           PY
 
       - name: Record status hashes
@@ -102,5 +133,6 @@ jobs:
             orbittrace_literature_comparison/METHOD_REGISTRY.json \
             orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json \
             orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md \
-            orbittrace_literature_freeze/SONOTACO_2019_2025_CMOR_WAVELET_MULTIYEAR_INPUT_RESULT.json \
-            orbittrace_literature_results/CMOR_WAVELET_MULTIYEAR_INPUT_EVALUATION.md
+            orbittrace_literature_results/FINAL_METHOD_EVALUATION.md \
+            orbittrace_literature_results/WAVELET_EPISODE_AND_HYBRID_EVALUATION.md \
+            orbittrace_literature_freeze/SONOTACO_2022_FIXED4_WAVELET_HYBRID_VALIDATION_RESULT.json
