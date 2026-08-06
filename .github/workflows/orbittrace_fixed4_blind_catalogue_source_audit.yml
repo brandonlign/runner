@@ -1,0 +1,123 @@
+name: OrbitTrace fixed4 blind catalogue source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/ghoststream-fixed4-frozen-application
+    paths:
+      - orbittrace_blind_catalogue/**
+      - .github/workflows/orbittrace_fixed4_blind_catalogue_source_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-blind-catalogue-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-blind-catalogue-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Decode and inventory frozen sources
+        run: |
+          set -euo pipefail
+          mkdir -p output/decoded
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          payloads = {
+              'candidate.py': Path('sonotaco_fixed4_final_development/candidate.py.gz.b64'),
+              'baseline.py': Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64'),
+              'targeted_application.py': Path('ghoststream_fixed4_application/run_application.py.gz.b64'),
+          }
+          scorer_parts = sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
+          adapter_parts = sorted(Path('sonotaco_mondrian_development/source_parts').glob('part*.b64'))
+
+          def decode_payload(path: Path) -> bytes:
+              encoded = ''.join(path.read_text(encoding='ascii').split())
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          def decode_parts(parts):
+              encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+              raw = base64.b64decode(encoded, validate=True)
+              try:
+                  return gzip.decompress(raw)
+              except OSError:
+                  return raw
+
+          decoded = {name: decode_payload(path) for name, path in payloads.items()}
+          decoded['scorer.py'] = decode_parts(scorer_parts)
+          decoded['sonotaco_adapter.py'] = decode_parts(adapter_parts)
+
+          expected_candidate = '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301'
+          if hashlib.sha256(decoded['candidate.py']).hexdigest() != expected_candidate:
+              raise RuntimeError('frozen candidate hash mismatch')
+
+          inventory = {}
+          for name, source in decoded.items():
+              path = Path('output/decoded') / name
+              path.write_bytes(source)
+              tree = ast.parse(source.decode('utf-8'), filename=name)
+              inventory[name] = {
+                  'bytes': len(source),
+                  'sha256': hashlib.sha256(source).hexdigest(),
+                  'functions': [
+                      {
+                          'name': node.name,
+                          'args': [arg.arg for arg in node.args.args],
+                          'lineno': node.lineno,
+                      }
+                      for node in tree.body
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  ],
+                  'classes': [node.name for node in tree.body if isinstance(node, ast.ClassDef)],
+                  'assignments': [
+                      target.id
+                      for node in tree.body
+                      if isinstance(node, (ast.Assign, ast.AnnAssign))
+                      for target in ((node.targets if isinstance(node, ast.Assign) else [node.target]))
+                      if isinstance(target, ast.Name)
+                  ],
+              }
+
+          Path('output/source_inventory.json').write_text(json.dumps(inventory, indent=2, sort_keys=True))
+          Path('output/SOURCE_AUDIT.md').write_text(
+              '# OrbitTrace blind-catalogue source audit\n\n'
+              f'Frozen detector SHA-256: `{expected_candidate}`\n\n'
+              'All source payloads decoded and parsed successfully. No catalogue or OrbitTrace artifact was accessed.\n'
+          )
+          print(json.dumps(inventory, indent=2)[:30000])
+          PY
+          python -m py_compile output/decoded/*.py
+      - name: Record provenance
+        run: |
+          sha256sum \
+            orbittrace_blind_catalogue/AUDIT_PROTOCOL.md \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            ghoststream_fixed4_application/run_application.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part*.b64 \
+            sonotaco_mondrian_development/source_parts/part*.b64 \
+            > output/source_payload_sha256.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-blind-catalogue-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
