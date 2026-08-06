@@ -45,10 +45,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input/fixed4 output
-          py -3.11 -c "from pathlib import Path; Path('/tmp').mkdir(parents=True, exist_ok=True)"
           py -3.11 orbittrace_wavelet_catalogue_v3/audit_development_source.py
           py -3.11 -m py_compile \
-            /tmp/run_wavelet_catalogue_v3_development.py \
+            output/run_wavelet_catalogue_v3_development.py \
             orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
           py -3.11 - <<'PY'
           import importlib.util
@@ -62,7 +61,7 @@ jobs:
           if not all(wavelet_checks.values()):
               raise SystemExit('wavelet self-test failed')
 
-          source_path = '/tmp/run_wavelet_catalogue_v3_development.py'
+          source_path = 'output/run_wavelet_catalogue_v3_development.py'
           spec = importlib.util.spec_from_file_location('wavelet_catalogue_v3_development', source_path)
           module = importlib.util.module_from_spec(spec)
           assert spec.loader is not None
@@ -125,7 +124,7 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          py -3.11 /tmp/run_wavelet_catalogue_v3_development.py \
+          py -3.11 output/run_wavelet_catalogue_v3_development.py \
             --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
