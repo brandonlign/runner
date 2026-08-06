@@ -1,0 +1,204 @@
+name: OrbitTrace fixed4 locked RRF application
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-locked-rrf-validation
+    paths:
+      - orbittrace_fixed4_locked_rrf_application/**
+      - .github/workflows/orbittrace_fixed4_locked_rrf_application.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-locked-rrf-application
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      VALIDATION_ARTIFACT_ID: '8972135768'
+      VALIDATION_ARTIFACT_SHA256: 'dfce647283e42776ae1ff9291c63414fc163242004ff97d7db4043e99e44c140'
+      V2_SOURCE_SHA256: 'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+      PATCH_SHA256: 'ab51749264214041865ce7ef9db7fa897c1b3ea4b9c7fb8311fa9d10329624a5'
+      APPLICATION_SOURCE_SHA256: 'e18f02d2c67ceb36bfd048f134bd8dc5efa718739949b910e60f0e05dc1c15ca'
+      APPLICATION_SOURCE_BYTES: '28207'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-locked-rrf-application-protocol
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Verify exact validation authorization
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/validation output
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VALIDATION_ARTIFACT_ID}/zip" \
+            -o input/validation.zip
+          echo "${VALIDATION_ARTIFACT_SHA256}  input/validation.zip" | sha256sum -c -
+          unzip -q input/validation.zip -d input/validation
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          paths = list(Path('input/validation').rglob('orbittrace_fixed4_locked_rrf_validation.json'))
+          if len(paths) != 1:
+              raise RuntimeError(f'unexpected validation result paths: {paths}')
+          result = json.loads(paths[0].read_text(encoding='utf-8'))
+          if result.get('verdict') != 'PASS_LOCKED_RRF_TEMPORAL_VALIDATION':
+              raise RuntimeError(f"application not authorized: {result.get('verdict')}")
+          if result.get('configuration', {}).get('years') != [2019, 2020, 2021]:
+              raise RuntimeError('validation years changed')
+          locked = result.get('configuration', {}).get('locked_rrf', {})
+          expected = {'persistence_weight': 0.66, 'secondary_weight': 0.34, 'constant': 60.0, 'secondary_rank': 'min_year_strength'}
+          if locked != expected:
+              raise RuntimeError(f'locked formula changed: {locked}')
+          print('authorized by exact validation artifact:', paths[0])
+          PY
+      - name: Reconstruct and audit target-free application source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast, base64, gzip, hashlib, os, subprocess
+          from pathlib import Path
+
+          parts = sorted(Path('orbittrace_fixed4_support_wrapper_development/source_parts').glob('part*.b64'))
+          expected = [f'part{i:02d}.b64' for i in range(4)]
+          if [p.name for p in parts] != expected:
+              raise RuntimeError(f'wrong v2 source parts: {[p.name for p in parts]}')
+          encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+          v2 = gzip.decompress(base64.b64decode(encoded, validate=True))
+          v2_digest = hashlib.sha256(v2).hexdigest()
+          if v2_digest != os.environ['V2_SOURCE_SHA256']:
+              raise RuntimeError(f'v2 source hash mismatch: {v2_digest}')
+          Path('/tmp/v2.py').write_bytes(v2)
+
+          patch_encoded = ''.join(Path('orbittrace_fixed4_locked_rrf_application/source_patch.gz.b64').read_text(encoding='ascii').split())
+          patch = gzip.decompress(base64.b64decode(patch_encoded, validate=True))
+          patch_digest = hashlib.sha256(patch).hexdigest()
+          if patch_digest != os.environ['PATCH_SHA256']:
+              raise RuntimeError(f'application patch hash mismatch: {patch_digest}')
+          Path('/tmp/application.patch').write_bytes(patch)
+          with open('/tmp/application.patch', 'rb') as handle:
+              subprocess.run(['patch', '--batch', '--silent', '/tmp/v2.py'], stdin=handle, check=True)
+          source = Path('/tmp/v2.py').read_bytes()
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != os.environ['APPLICATION_SOURCE_SHA256'] or len(source) != int(os.environ['APPLICATION_SOURCE_BYTES']):
+              raise RuntimeError(f'application source mismatch: {digest} / {len(source)}')
+          text = source.decode('utf-8')
+          original = v2.decode('utf-8')
+
+          forbidden = [
+              '247.17', '-14.34', '37.62', 'F0059', '8958194010', '8814798136',
+              'april_candidate_members.csv', 'GhostStream_Expert_Review_Bundle',
+              'PARTIAL_BLIND_ORBITTRACE_RECOVERY', 'canonical_overlap',
+          ]
+          found = [value for value in forbidden if value in text]
+          if found:
+              raise RuntimeError(f'target or reveal information present: {found}')
+
+          def functions(value):
+              return {n.name: ast.dump(n, include_attributes=False) for n in ast.parse(value).body if isinstance(n, ast.FunctionDef)}
+          before, after = functions(original), functions(text)
+          changed = {name for name in before.keys() & after.keys() if before[name] != after[name]}
+          if changed != {'parse_catalogue', 'rank_families', 'main'}:
+              raise RuntimeError(f'unexpected changed functions: {sorted(changed)}')
+          required_unchanged = {
+              'read_gmn_frame','column_map','normalize_label','load_sources','feature_matrix',
+              'exact_anchor_distances','quartet_score','circular_mean_deg','component_records',
+              'centroid_distance','family_scores','build_families','scan_year',
+          }
+          bad = [name for name in required_unchanged if before.get(name) != after.get(name)]
+          if bad:
+              raise RuntimeError(f'detector/core equivalence failed: {bad}')
+          required_literals = [
+              'YEARS = (2022, 2023, 2024, 2025, 2026)',
+              'RRF_PERSISTENCE_WEIGHT = 0.66', 'RRF_SECONDARY_WEIGHT = 0.34',
+              'RRF_CONSTANT = 60.0', 'LOCKED_RRF_SCAN_FROZEN_AWAITING_SEPARATE_REVEAL',
+          ]
+          missing = [value for value in required_literals if value not in text]
+          if missing:
+              raise RuntimeError(f'missing application literals: {missing}')
+          main_block = text[text.index('def main'):]
+          if 'canonical' in main_block.lower() or 'orbittrace member' in main_block.lower():
+              raise RuntimeError('target reveal logic present in blind application main')
+          Path('/tmp/run_fixed4_locked_rrf_application.py').write_bytes(source)
+          Path('output/application_source_sha256.txt').write_text(digest + '\n', encoding='ascii')
+          print('validation artifact SHA-256:', os.environ['VALIDATION_ARTIFACT_SHA256'])
+          print('v2 source SHA-256:', v2_digest)
+          print('application patch SHA-256:', patch_digest)
+          print('application source SHA-256:', digest)
+          print('changed functions:', sorted(changed))
+          PY
+          python -m py_compile /tmp/run_fixed4_locked_rrf_application.py
+      - name: Run one-shot target-free OrbitTrace catalogue application
+        run: |
+          set -euo pipefail
+          python /tmp/run_fixed4_locked_rrf_application.py \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --output output
+          cat output/ORBITTRACE_FIXED4_LOCKED_RRF_SCAN.md
+      - name: Freeze pre-reveal scan integrity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip, hashlib, json
+          from pathlib import Path
+          path = Path('output/orbittrace_fixed4_locked_rrf_scan.json.gz')
+          payload = path.read_bytes()
+          recorded = Path('output/locked_rrf_scan_sha256.txt').read_text().split()[0]
+          actual = hashlib.sha256(payload).hexdigest()
+          if actual != recorded:
+              raise RuntimeError(f'scan hash mismatch: {actual} != {recorded}')
+          result = json.loads(gzip.decompress(payload))
+          if result.get('verdict') != 'LOCKED_RRF_SCAN_FROZEN_AWAITING_SEPARATE_REVEAL':
+              raise RuntimeError(f"invalid scan verdict: {result.get('verdict')}")
+          if result.get('configuration', {}).get('locked_rrf') != {
+              'persistence_weight': 0.66, 'secondary_weight': 0.34,
+              'constant': 60.0, 'secondary_rank': 'min_year_strength'
+          }:
+              raise RuntimeError('locked formula changed in scan')
+          if result.get('family_count', 0) < 1:
+              raise RuntimeError('no recurrent families produced')
+          print('frozen pre-reveal scan SHA-256:', actual)
+          print('families:', result['family_count'])
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_fixed4_locked_rrf_application/PROTOCOL.md \
+            orbittrace_fixed4_locked_rrf_application/source_patch.gz.b64 \
+            input/validation.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen pre-reveal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-locked-rrf-application-pre-reveal
+          path: output
+          if-no-files-found: error
+          retention-days: 90
