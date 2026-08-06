@@ -4,4 +4,4 @@ This branch exists only to trigger the already-frozen, action-free recovery work
 
 No scientific source, threshold, calibration, ranking rule, development data boundary, or held-out catalogue access is changed.
 
-Synchronization nonce: `2026-08-06T17:31Z`.
+Synchronization nonce: `2026-08-06T22:56Z`.
