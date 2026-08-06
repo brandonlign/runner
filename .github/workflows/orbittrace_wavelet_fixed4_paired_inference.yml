@@ -1,0 +1,111 @@
+name: OrbitTrace wavelet fixed4 paired inference
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-wavelet-episode-development
+    paths:
+      - .github/workflows/orbittrace_wavelet_fixed4_paired_inference.yml
+      - orbittrace_literature_comparison/WAVELET_FIXED4_PAIRED_INFERENCE_PROTOCOL.json
+      - orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-wavelet-fixed4-paired-inference
+  cancel-in-progress: true
+
+jobs:
+  paired-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-wavelet-episode-2023-transfer
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen inference source before artifact access
+        run: |
+          set -euo pipefail
+          mkdir -p input/2025 input/2023 output
+          echo 'b25c844e2dcfd9802d7dee7135d2bd1271b0087bea10c53cf51270ccfda9c56d  orbittrace_literature_comparison/WAVELET_FIXED4_PAIRED_INFERENCE_PROTOCOL.json' | sha256sum -c -
+          echo '628f4e82271e31938418e0e45e4c93180211cee4ab60279fd90723bd4f566242  orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py' | sha256sum -c -
+          python -m py_compile orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          protocol = json.loads(Path('orbittrace_literature_comparison/WAVELET_FIXED4_PAIRED_INFERENCE_PROTOCOL.json').read_text())
+          assert protocol['status'] == 'frozen_before_paired_record_analysis'
+          assert protocol['methods'] == ['orbittrace_fixed4', 'brown2010_wavelet_episode_core']
+          assert protocol['primary_endpoint']['weak_k'] == [4, 6, 8]
+          assert protocol['primary_endpoint']['positive_resampling_unit'] == 'complex_key'
+          assert protocol['primary_endpoint']['negative_resampling_unit'] == 'Mondrian bin'
+          assert protocol['bootstrap']['replicates'] == 20000
+          assert protocol['secondary_endpoints']['recall_difference']['k'] == [4, 6, 8, 12]
+          print('PASS_FROZEN_PAIRED_INFERENCE_SOURCE_GUARD')
+          PY
+
+      - name: Retrieve exact frozen wavelet episode artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31104654956 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-sonotaco-2025-wavelet-episode-comparison \
+            --dir input/2025
+          gh run download 31105278114 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-sonotaco-2023-wavelet-episode-transfer \
+            --dir input/2023
+          echo '526544fc39fd441fd73472c36e8d563b245728b3d33e858f0b1da11aa024070a  input/2025/sonotaco_2025_literature_comparison.json' | sha256sum -c -
+          echo '0dfe2d312818318768ebbf2fc2ded4275b734339849392187878eb142726462c  input/2025/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo 'e6757788f44f6881e059e7b167555b0cd497cae31b2abb366cd6c22df7684996  input/2025/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo '450c8db66dd2644a617573c5aadcf4d554c6d4c642e2a0654652dcec3391f964  input/2023/sonotaco_2023_literature_transfer.json' | sha256sum -c -
+          echo 'ba3c0dc382a66afdec6616bb39724f22705d7ba87d703d21ce65c695f4e85d2f  input/2023/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo '2a2c2e521402bba8beefaef98582f9fee86715cbb7e587d6e6d66a435cdeb1b7  input/2023/negative_literature_records.jsonl.gz' | sha256sum -c -
+
+      - name: Run paired cluster-bootstrap inference
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade numpy
+          python orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py \
+            --input-2025 input/2025 \
+            --input-2023 input/2023 \
+            --protocol orbittrace_literature_comparison/WAVELET_FIXED4_PAIRED_INFERENCE_PROTOCOL.json \
+            --output output
+          cat output/WAVELET_FIXED4_PAIRED_INFERENCE.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/WAVELET_FIXED4_PAIRED_INFERENCE_PROTOCOL.json \
+            orbittrace_literature_comparison/run_wavelet_fixed4_paired_inference.py \
+            input/2025/sonotaco_2025_literature_comparison.json \
+            input/2025/positive_literature_records.jsonl.gz \
+            input/2025/negative_literature_records.jsonl.gz \
+            input/2023/sonotaco_2023_literature_transfer.json \
+            input/2023/positive_literature_records.jsonl.gz \
+            input/2023/negative_literature_records.jsonl.gz \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload paired inference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-wavelet-fixed4-paired-inference
+          path: output
+          if-no-files-found: error
+          retention-days: 90
