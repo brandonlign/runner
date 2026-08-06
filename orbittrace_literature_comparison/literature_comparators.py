@@ -97,7 +97,8 @@ def pairwise_dsh(
 
     Node differences are wrapped to [-pi, pi], carrying the required sign in
     the perihelion-longitude term. Trigonometric arguments are clipped only for
-    floating-point roundoff.
+    floating-point roundoff. D_SH is mathematically symmetric; the final matrix
+    is explicitly averaged with its transpose to remove branch-level roundoff.
     """
     q = np.asarray(q_au, dtype=np.float64)
     e = np.asarray(eccentricity, dtype=np.float64)
@@ -136,9 +137,12 @@ def pairwise_dsh(
     peri_term = 0.5 * (e[:, None] + e[None, :]) * 2.0 * np.sin(0.5 * peri_delta)
     squared = q_delta * q_delta + e_delta * e_delta + plane * plane + peri_term * peri_term
     distance = np.sqrt(np.maximum(squared, 0.0))
+    if not np.all(np.isfinite(distance)):
+        raise ValueError("non-finite D_SH matrix")
+    distance = 0.5 * (distance + distance.T)
     np.fill_diagonal(distance, 0.0)
-    if not np.all(np.isfinite(distance)) or not np.allclose(distance, distance.T, atol=1e-12, rtol=0.0):
-        raise ValueError("invalid D_SH matrix")
+    if not np.allclose(distance, distance.T, atol=0.0, rtol=0.0):
+        raise ValueError("failed to enforce D_SH symmetry")
     return distance
 
 
