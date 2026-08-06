@@ -1,0 +1,190 @@
+name: OrbitTrace fixed4 v2 wrapper source audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-fixed4-v2-wrapper-source-audit
+    paths:
+      - orbittrace_fixed4_v2/**
+      - .github/workflows/orbittrace_fixed4_v2_wrapper_source_audit.yml
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-blind-catalogue-scan
+    paths:
+      - orbittrace_fixed4_v2/**
+      - .github/workflows/orbittrace_fixed4_v2_wrapper_source_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-fixed4-v2-wrapper-source-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-v2-wrapper-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Decode and compare frozen wrapper sources
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          EXPECTED_CALIBRATED = '48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5'
+
+          def decode_single(path: str) -> bytes:
+              text = ''.join(Path(path).read_text(encoding='ascii').split())
+              return gzip.decompress(base64.b64decode(text, validate=True))
+
+          def decode_parts(root: str) -> bytes:
+              parts = sorted(Path(root).glob('part*.b64'))
+              expected = [f'part{i:02d}.b64' for i in range(4)]
+              if [p.name for p in parts] != expected:
+                  raise RuntimeError(f'wrong calibrated source parts: {[p.name for p in parts]}')
+              text = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+              return gzip.decompress(base64.b64decode(text, validate=True))
+
+          broad = decode_single('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64')
+          calibrated = decode_parts('orbittrace_fixed4_blind_catalogue/source_parts')
+          broad_sha = hashlib.sha256(broad).hexdigest()
+          calibrated_sha = hashlib.sha256(calibrated).hexdigest()
+          if calibrated_sha != EXPECTED_CALIBRATED:
+              raise RuntimeError(f'calibrated source mismatch: {calibrated_sha}')
+
+          Path('output/broad_ranked_quartet_wrapper.py').write_bytes(broad)
+          Path('output/calibrated_component_wrapper.py').write_bytes(calibrated)
+
+          def call_name(node):
+              if isinstance(node, ast.Name):
+                  return node.id
+              if isinstance(node, ast.Attribute):
+                  left = call_name(node.value)
+                  return f'{left}.{node.attr}' if left else node.attr
+              return None
+
+          def inventory(source: bytes):
+              text = source.decode('utf-8')
+              tree = ast.parse(text)
+              functions = {}
+              classes = []
+              imports = []
+              constants = {}
+              for node in tree.body:
+                  if isinstance(node, (ast.Import, ast.ImportFrom)):
+                      imports.append(ast.unparse(node))
+                  elif isinstance(node, ast.ClassDef):
+                      classes.append({'name': node.name, 'line': node.lineno, 'end_line': node.end_lineno})
+                  elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                      calls = sorted({name for name in (call_name(n.func) for n in ast.walk(node) if isinstance(n, ast.Call)) if name})
+                      args = [a.arg for a in node.args.posonlyargs + node.args.args + node.args.kwonlyargs]
+                      normalized = ast.unparse(node)
+                      functions[node.name] = {
+                          'line': node.lineno,
+                          'end_line': node.end_lineno,
+                          'args': args,
+                          'calls': calls,
+                          'ast_sha256': hashlib.sha256(normalized.encode()).hexdigest(),
+                          'normalized_source': normalized,
+                      }
+                  elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                      value = node.value
+                      targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                      try:
+                          literal = ast.literal_eval(value)
+                      except Exception:
+                          continue
+                      for target in targets:
+                          if isinstance(target, ast.Name) and target.id.isupper():
+                              constants[target.id] = literal
+              return {'imports': imports, 'classes': classes, 'constants': constants, 'functions': functions}
+
+          broad_inv = inventory(broad)
+          calibrated_inv = inventory(calibrated)
+          broad_hash_to_name = {v['ast_sha256']: k for k, v in broad_inv['functions'].items()}
+          common = []
+          for name, meta in calibrated_inv['functions'].items():
+              other = broad_hash_to_name.get(meta['ast_sha256'])
+              if other:
+                  common.append({'broad': other, 'calibrated': name, 'ast_sha256': meta['ast_sha256']})
+
+          def bucket(names):
+              core_terms = ('distance', 'quartet', 'anchor', 'score', 'embed')
+              wrapper_terms = ('family', 'component', 'catalog', 'scan', 'parse', 'year', 'link')
+              return {
+                  'detector_core_candidates': sorted(n for n in names if any(t in n.lower() for t in core_terms)),
+                  'catalogue_wrapper_candidates': sorted(n for n in names if any(t in n.lower() for t in wrapper_terms)),
+              }
+
+          result = {
+              'status': 'PASS_FIXED4_V2_WRAPPER_SOURCE_AUDIT',
+              'data_accessed': False,
+              'orbittrace_accessed': False,
+              'sources': {
+                  'broad': {'sha256': broad_sha, 'bytes': len(broad)},
+                  'calibrated': {'sha256': calibrated_sha, 'bytes': len(calibrated)},
+              },
+              'broad_inventory': broad_inv,
+              'calibrated_inventory': calibrated_inv,
+              'ast_identical_functions': common,
+              'buckets': {
+                  'broad': bucket(broad_inv['functions']),
+                  'calibrated': bucket(calibrated_inv['functions']),
+              },
+              'revision_boundary': {
+                  'keep_fixed': ['fixed 4-degree geometry', 'anchored four-clique score', 'target exclusion'],
+                  'develop_blindly': ['quartet calibration and retention', 'within-year component construction', 'cross-year association', 'family ranking and stability'],
+                  'development_data': 'non-OrbitTrace known showers and controls after removing solar longitude 20-55 degrees before label access',
+              },
+          }
+          Path('output/wrapper_source_audit.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+
+          md = f'''# Fixed4 v2 wrapper source audit
+
+Verdict: `PASS_FIXED4_V2_WRAPPER_SOURCE_AUDIT`
+
+- broad wrapper source: `{broad_sha}`, {len(broad):,} bytes
+- calibrated wrapper source: `{calibrated_sha}`, {len(calibrated):,} bytes
+- broad top-level functions: {len(broad_inv['functions'])}
+- calibrated top-level functions: {len(calibrated_inv['functions'])}
+- AST-identical functions across wrappers: {len(common)}
+
+No catalogue, labels, or OrbitTrace artifact was accessed.
+
+## Revision decision
+
+Keep the fixed 4° geometry and anchored four-clique score as the baseline core. Revise and benchmark the catalogue evidence layer: calibration/retention, within-year graph components, cross-year association, and family ranking. Select the v2 wrapper only on non-OrbitTrace showers after removing solar longitude 20°–55° before label access.
+'''
+          Path('output/WRAPPER_SOURCE_AUDIT.md').write_text(md, encoding='utf-8')
+          print(md)
+          PY
+      - name: Record provenance
+        run: |
+          sha256sum \
+            orbittrace_fixed4_v2/WRAPPER_SOURCE_AUDIT_PROTOCOL.md \
+            orbittrace_blind_catalogue/run_blind_scan.py.gz.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part00.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part01.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part02.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part03.b64 \
+            > output/provenance_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-v2-wrapper-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
