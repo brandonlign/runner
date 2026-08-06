@@ -1,0 +1,93 @@
+name: OrbitTrace SonotaCo 2022 hybrid runner source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hybrid-2022-source-audit
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2022_hybrid_runner_source_audit.yml
+      - orbittrace_literature_comparison/run_sonotaco_2022_fixed4_wavelet_hybrid_validation.py
+      - orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json
+      - orbittrace_literature_freeze/SONOTACO_2022_LABEL_ELIGIBILITY_RESULT.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hybrid-2022-validation
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Audit exact prospective source without catalogue access
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          test "$(git hash-object orbittrace_literature_comparison/run_sonotaco_2022_fixed4_wavelet_hybrid_validation.py)" = "be516f563e453c5d4967af2e679a6392a4423f0e"
+          python -m py_compile orbittrace_literature_comparison/run_sonotaco_2022_fixed4_wavelet_hybrid_validation.py
+          python - <<'PY'
+          import ast
+          import hashlib
+          import json
+          from pathlib import Path
+          runner_path = Path('orbittrace_literature_comparison/run_sonotaco_2022_fixed4_wavelet_hybrid_validation.py')
+          source = runner_path.read_text()
+          tree = ast.parse(source)
+          protocol = json.loads(Path('orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json').read_text())
+          eligibility = json.loads(Path('orbittrace_literature_freeze/SONOTACO_2022_LABEL_ELIGIBILITY_RESULT.json').read_text())
+          assert protocol['status'] == 'frozen_before_any_hybrid_score_on_2025_2023_or_2022'
+          assert protocol['evaluation']['fresh_independent_corpus'] == 'SonotaCo 2022 one-shot'
+          assert protocol['combination_rule']['alternative_combiners_tested'] == 0
+          assert eligibility['verdict'] == 'PASS_SONOTACO_2022_LABEL_ELIGIBILITY_AUDIT'
+          assert eligibility['pre_score_gates']['no_detector_score_computed'] is True
+          literal_assignments = {}
+          for node in tree.body:
+              if isinstance(node, ast.Assign):
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except Exception:
+                      continue
+                  for target in node.targets:
+                      if isinstance(target, ast.Name):
+                          literal_assignments[target.id] = value
+          assert literal_assignments['YEAR'] == 2022
+          assert literal_assignments['CORPUS'] == 'sonotaco-2022-hybrid-validation'
+          assert tuple(literal_assignments['EXPECTED_SUPPORTED_BINS']) == tuple(eligibility['counts']['supported_bins'])
+          assert tuple(literal_assignments['EXPECTED_ELIGIBLE_SHOWERS']) == tuple(eligibility['counts']['eligible_showers'])
+          assert literal_assignments['EXPECTED_CALIBRATION_EPISODES'] == 4224
+          assert literal_assignments['EXPECTED_NEGATIVE_EPISODES'] == 2112
+          assert literal_assignments['EXPECTED_POSITIVE_EPISODES'] == 608
+          assert 'hybrid.HYBRID_ID' in source
+          assert 'PROMOTE_AS_COMPLEMENTARY_HYBRID' in source
+          assert 'RETAIN_AS_OPTIONAL_ENSEMBLE' in source
+          assert 'REJECT_HYBRID' in source
+          assert source.count('hybrid.target_hybrid_statistic(') == 1
+          assert source.count('hybrid.calibration_hybrid_statistics(') == 1
+          assert source.count('hybrid.final_hybrid_pvalue(') == 1
+          digest = hashlib.sha256(source.encode()).hexdigest()
+          record = {
+              'verdict': 'PASS_SONOTACO_2022_HYBRID_RUNNER_SOURCE_AUDIT',
+              'runner_git_blob': 'be516f563e453c5d4967af2e679a6392a4423f0e',
+              'runner_sha256': digest,
+              'catalogue_access': False,
+              'detector_score_access': False,
+              'method_or_decision_change': False,
+          }
+          Path('output/sonotaco_2022_hybrid_runner_source_audit.json').write_text(json.dumps(record, indent=2) + '\n')
+          Path('output/runner_sha256.txt').write_text(digest + '  ' + str(runner_path) + '\n')
+          print(json.dumps(record, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2022-hybrid-runner-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

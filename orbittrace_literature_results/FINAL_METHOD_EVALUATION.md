@@ -1,117 +1,101 @@
-# OrbitTrace novel-methodology evaluation
+# OrbitTrace final methodology evaluation
 
-## Frozen evidence
+## Historical separation
 
-The fixed-4° coverage-normalized Mondrian anchored four-clique detector was developed and frozen without OrbitTrace access. The comparison system reused the exact frozen SonotaCo episode generators, folds, calibration-negative panels, held-out negatives, positive weak-stream episodes, seeds, and metrics. Methods designed for full survey catalogues were evaluated separately on a catalogue track rather than forced into the 128-event sparse-episode leaderboard.
+OrbitTrace was historically discovered by the blind HDBSCAN workflow. The observational validation program is separate. fixed4, the wavelet episode comparator, and the hybrid were developed afterward and must not be described as the original discovery procedure.
 
-## Episode-track results
+fixed4 remains the novel methodological component: a frozen coverage-normalized anchored four-clique detector developed without OrbitTrace access. The Brown-family wavelet episode method is literature-inspired. The Tippett hybrid is a later post-comparison ensemble.
 
-### SonotaCo 2025 development comparison
+## Sparse-episode results
 
-Primary workflow: `31068866741`, artifact `8954882633`  
-D_N extension: workflow `31073086886`, artifact `8956382792`
+All episode methods use the same 128-event windows, calibration negatives, held-out negatives, folds, member counts, seeds, and metrics.
 
-| Method | Classification | Weak-stream AUROC | FPR at .05 | FPR at .01 |
-|---|---|---:|---:|---:|
-| fixed-4° detector | frozen candidate | 0.813250 | 0.047852 | 0.006836 |
-| split statistic | internal baseline | 0.756654 | 0.044922 | 0.007324 |
-| local density | internal baseline | 0.753978 | 0.018555 | 0.001465 |
-| internal DBSCAN | internal baseline | 0.749487 | 0.021973 | 0.003906 |
-| Sugar et al. deterministic core | literature published-core transfer | 0.508578 | 0.000000 | 0.000000 |
-| Rudawska–Jenniskens D_SH, six members | literature implementation | 0.604533 | 0.040039 | 0.004883 |
-| D_SH, four-member sparse adaptation | predeclared adaptation | 0.640364 | 0.048340 | 0.011719 |
-| Valsecchi–Jopek–Froeschlé D_N, six members | published distance/linkage evaluated at M=6 | 0.731316 | 0.046875 | 0.005371 |
-| D_N, four-member sparse transfer | predeclared sparse transfer | 0.759251 | 0.045898 | 0.007324 |
+### Overall weak-stream AUROC
 
-### SonotaCo 2023 one-shot transfer
+| Method | SonotaCo 2025 | SonotaCo 2023 one-shot | SonotaCo 2022 prospective |
+|---|---:|---:|---:|
+| fixed4 | 0.813250 | 0.811631 | 0.791405 |
+| Brown-family 3D wavelet episode core | **0.828506** | **0.831972** | **0.820936** |
+| fixed4-wavelet Tippett hybrid | 0.835878* | — | 0.815525 |
 
-Primary workflow: `31070015674`, artifact `8955293144`  
-D_N extension: workflow `31074254968`, artifact `8956855273`  
-D_N artifact digest: `sha256:fb9f5e37c5efed148c21dd49f0f44be00385f27182043dac3317ec5a520617b9`
+`*` Retrospective development evidence; the hybrid decision was determined only from prospective SonotaCo 2022.
 
-| Method | Classification | Weak-stream AUROC | FPR at .05 | FPR at .01 |
-|---|---|---:|---:|---:|
-| fixed-4° detector | frozen candidate | 0.811631 | 0.050663 | 0.006629 |
-| split statistic | internal baseline | 0.772837 | 0.046402 | 0.006629 |
-| local density | internal baseline | 0.758780 | 0.026989 | 0.003788 |
-| internal DBSCAN | internal baseline | 0.748877 | 0.023674 | 0.004261 |
-| Sugar et al. deterministic core | literature published-core transfer | 0.524927 | 0.000947 | 0.000473 |
-| Rudawska–Jenniskens D_SH, six members | literature implementation | 0.579954 | 0.048295 | 0.007576 |
-| D_SH, four-member sparse adaptation | predeclared adaptation | 0.637606 | 0.050189 | 0.009470 |
-| Valsecchi–Jopek–Froeschlé D_N, six members | published distance/linkage evaluated at M=6 | 0.714395 | 0.040720 | 0.007102 |
-| D_N, four-member sparse transfer | predeclared sparse transfer | 0.746209 | 0.047822 | 0.008523 |
+The wavelet episode adaptation is the strongest overall discriminator tested. It exceeded fixed4 in development, one-shot transfer, and a genuinely prospective third-year validation. fixed4 can no longer be claimed to outperform every implemented comparator.
 
-The independent ordering is stable. Fixed4 changed from 0.813250 to 0.811631; D_N at M=6 changed from 0.731316 to 0.714395; and the sparse D_N transfer changed from 0.759251 to 0.746209. D_N at M=4 is the strongest classical sparse comparator tested, while fixed4 retains an AUROC advantage of approximately 0.054 in 2025 and 0.065 in 2023.
+### Member-count tradeoff
 
-The advantage is not uniform at every operating point. D_N at M=6 slightly exceeds fixed4 for k=12 recall at alpha .05 in both years, and some internal baselines also exceed fixed4 at selected high-k or strict-alpha points. The defensible claim is stronger overall weak-stream discrimination, not universal dominance.
+The ordering differs in the hardest ultra-sparse regime. At alpha .05, fixed4 retained the highest four-member recall in all three evaluated years. On prospective SonotaCo 2022:
 
-## Catalogue-track HDBSCAN reproduction
+| Method | k=4 | k=6 | k=8 | k=12 |
+|---|---:|---:|---:|---:|
+| fixed4 | **0.171053** | 0.401316 | 0.585526 | 0.815789 |
+| wavelet | 0.092105 | 0.421053 | 0.703947 | 0.921053 |
+| hybrid | 0.131579 | **0.447368** | **0.723684** | **0.947368** |
 
-The published Peña-Asensio–Ferrari GEO-vector HDBSCAN configuration was reproduced separately with the unstandardized six-component GEO vector, Euclidean distance, `min_cluster_size=100`, default `min_samples`, and `eom` selection. The existing 20°–55° blind interval remained removed before label access, so neither catalogue run inspected or scored OrbitTrace.
+fixed4 therefore retains a reproducible ultra-sparse niche. The wavelet is stronger once the stream contains enough members for a smooth radiant-speed concentration to emerge.
 
-### SonotaCo 2025
+## Wavelet classification
 
-Workflow `31071589912`, artifact `8955917326`, digest `sha256:82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89`.
+The successful wavelet comparator is a separately labelled sparse-episode adaptation using:
 
-- 18,939 quality-filtered events and 13 reference showers retaining at least 100 events;
-- 11 HDBSCAN clusters;
-- NMI 0.747578 and ARI 0.763809;
-- 11/13 showers with matched F1 above 0.5 and 6/13 above 0.8;
-- mean matched shower F1 0.704556.
+- Sun-centered ecliptic radiant longitude and latitude plus geocentric speed;
+- 4° angular and 10% fractional-speed probes;
+- the three-dimensional Mexican-hat kernel `(3-r^2) exp(-r^2/2)`;
+- truncation at four probe radii;
+- leave-one-out coefficients at observed-event locations;
+- maximum coefficient as the episode score.
 
-In the identical-parameter all-label coverage audit, mean F1 by annual shower size was 0.000000 for 4–9, 0.000000 for 10–24, 0.030769 for 25–49, 0.267677 for 50–99, and 0.707397 for 100+ members.
+It is not a faithful reproduction of the full Brown et al. CMOR catalogue survey. The full survey remains formally deferred because the seven-year optical stack failed the frozen global-support breadth gate. No full-survey coefficient or detection endpoint was computed.
 
-### SonotaCo 2023 one-shot transfer
+## Hybrid decision
 
-Workflow `31072548443`, artifact `8956177186`, digest `sha256:230319166d2de757fbe709eecb0d904f258f0e45a93c8dcdd31c104f05c38169`.
+The hybrid uses the frozen bin-calibrated Tippett union of fixed4 and wavelet empirical p-values. No weight or alternative combiner was tested.
 
-- 24,923 quality-filtered events and 14 reference showers retaining at least 100 events;
-- 13 HDBSCAN clusters;
-- NMI 0.743023 and ARI 0.745363;
-- 11/14 showers with matched F1 above 0.5 and 8/14 above 0.8;
-- mean matched shower F1 0.651696.
+On prospective SonotaCo 2022:
 
-The identical-parameter all-label audit produced mean F1 of 0.000000 for 4–9, 0.005310 for 10–24, 0.000000 for 25–49, 0.174118 for 50–99, and 0.649272 for 100+ members.
+- wavelet AUROC: 0.820936;
+- hybrid AUROC: 0.815525;
+- fixed4 AUROC: 0.791405;
+- balanced alpha-.05 recall: 0.534539, 0.562500, and 0.493421, respectively.
 
-These results validate HDBSCAN as a strong large-shower catalogue method and independently demonstrate the structural consequence of transferring its published 100-member minimum to sparse annual showers. This is evidence of task complementarity, not evidence that fixed4 beat HDBSCAN on HDBSCAN's intended catalogue task.
+The hybrid failed the promotion gate because it did not exceed the wavelet’s AUROC. Its frozen decision is **`RETAIN_AS_OPTIONAL_ENSEMBLE`** because it produced the strongest balanced recall and highest k=6/8/12 recall.
 
-## Comparator audit
+## Catalogue-track context
 
-The internal DBSCAN comparator is not Sugar et al. It uses the project's internal four-dimensional distance, `eps=2.5`, and `min_samples=4`.
+The published HDBSCAN configuration and full uncertainty-aware Sugar reconstruction remain strong for large catalogue populations and weak in the smallest annual strata. Those results establish task complementarity rather than a universal head-to-head victory.
 
-The Sugar episode comparison implemented the published six-dimensional Sun-centered geocentric vector, `min_samples=5`, and the published fourth-nearest-neighbor / 23rd-percentile epsilon rule. It remains explicitly the deterministic published core. The paper's 1,000 uncertainty-clone recurrence and catalogue-level cluster-merging stages remain unimplemented.
+The full CMOR-style survey was handled with frozen feasibility gates rather than a weakened imitation. The successful episode wavelet result does not change that catalogue-level defer decision.
 
-The classical orbital comparator implemented the exact Southworth–Hawkins criterion with single linkage, the published `D_SH < 0.05` threshold, and the published six-member minimum. Its four-member variant was registered before scores and remains labelled an adaptation.
+## Revised independent judgment
 
-The D_N comparator implemented the published geocentric variables derived from right ascension, declination, geocentric speed, and solar longitude; Earth-speed normalization at 29.7 km/s; unit weights; the direct-versus-180° twin-node angular branch; and single-neighbour linkage. The original application used sample- and membership-specific chance-threshold simulations. Those simulations were not claimed as reproduced: the episode benchmark instead evaluated continuous single-link birth thresholds under the same empirical negative calibration used for every comparator. The M=4 result remains a predeclared sparse transfer, not a published four-member pipeline.
+**Retain fixed4 as a real but narrower methodological contribution.**
 
-The HDBSCAN catalogue comparison is now complete across 2025 development and one-shot 2023 transfer. A CMOR-style 3D wavelet survey remains on the catalogue track because its published unit is a multi-year activity map, not isolated 128-event episodes.
+The prior judgment—fixed4 as the best overall sparse detector tested—is no longer supported. The correct scientific interpretation is:
 
-## Independent judgment
+1. **Wavelet episode adaptation:** primary overall sparse-episode discriminator by reproducible AUROC across three years.
+2. **fixed4:** novel topology-based ultra-sparse detector with higher four-member recall, independent targeted OrbitTrace recovery, and complementary value.
+3. **Hybrid:** optional high-recall ensemble, not the primary method.
 
-**Retain the methodology as a major second OrbitTrace contribution, with a narrow and explicit claim.**
+This is not a reason to remove fixed4. Its value is now clearer: it captures a regime the smoother wavelet method misses. The paper should frame the methodology as a **multi-regime sparse-stream analysis**, not as one new detector beating all established methods.
 
-The strongest defensible result is that the frozen detector has a reproducible advantage for sparse, weak-stream episode recognition under controlled false-positive evaluation. It transferred from SonotaCo 2025 to the one-shot SonotaCo 2023 panel with almost unchanged AUROC and remained above all implemented internal baselines, classical D_SH variants, both D_N episode variants, and the deterministic published core of Sugar et al.
+The original fixed4 weaknesses also remain: the frozen k=4 alpha-.01 replication failure and calibration-seed robustness failure were not erased by later comparisons. The fixed4-specific conclusion is therefore:
 
-The completed HDBSCAN track strengthens the framing rather than creating a head-to-head victory claim. Published HDBSCAN performed well for large showers and poorly for sub-50-member annual showers under unchanged parameters, confirming that fixed4 targets a different sparse-recognition regime.
+> **Promising strong transfer and useful ultra-sparse complement, but not fully robustly replicated under the complete preregistered standard.**
 
-This evidence does not erase the frozen k=4 alpha=.01 replication failure or the calibration-seed robustness failure. The general-method conclusion therefore remains: **promising strong transfer, but not fully robustly replicated under the complete preregistered standard.**
+## OrbitTrace-specific application
 
-The frozen OrbitTrace application remains an independent targeted recovery. It is strong evidence that the detector recognizes the OrbitTrace structure, but it is not the original discovery method and not a blind catalogue rediscovery.
-
-The methodology is still not ready for a separate technical paper. The most important unfinished literature implementation is the full uncertainty-aware Sugar pipeline. A CMOR-style wavelet catalogue comparison and a fresh independent survey catalogue would further strengthen a standalone methods paper. Those additions are not required to justify the method as a major second contribution in the OrbitTrace paper, because the present contribution is explicitly sparse-episode recognition rather than universal catalogue discovery.
+The frozen targeted fixed4 application remains valid evidence that the novel detector recognizes the OrbitTrace structure. It is not a blind catalogue rediscovery and not the original discovery method. A targeted wavelet or hybrid application, if later performed, must retain the same boundary.
 
 ## Allowed manuscript claim
 
-> An independently developed and frozen sparse-stream detector recovered the OrbitTrace structure under a targeted protocol and showed reproducible discrimination of weak SonotaCo stream episodes across development and one-shot transfer benchmarks. On the identical episode benchmark, it outperformed the project's internal split, density, and DBSCAN baselines; classical Southworth–Hawkins linkage; Valsecchi–Jopek–Froeschlé D_N linkage; and the deterministic published core of the Sugar et al. DBSCAN pipeline in overall weak-stream AUROC. A separate reproduction of published catalogue-scale HDBSCAN showed strong recovery of large showers but little recovery of sparse annual showers under unchanged parameters, supporting the detector as a complementary sparse-stream recognition method rather than a universal catalogue replacement. The detector was not the historical OrbitTrace discovery procedure, and its targeted OrbitTrace recovery is not a blind catalogue rediscovery.
+> A frozen Brown-family three-dimensional wavelet core achieved the highest overall weak-stream discrimination on the common sparse-episode benchmark, exceeding the novel fixed4 detector in SonotaCo 2025, a one-shot SonotaCo 2023 transfer, and a prospectively frozen SonotaCo 2022 validation. fixed4 nevertheless retained consistently higher four-member recall at alpha .05 and independently recovered the OrbitTrace structure under a targeted protocol, supporting it as a complementary topology-based detector for the hardest ultra-sparse regime. A preregistered Tippett hybrid did not exceed the wavelet’s prospective AUROC and was retained only as an optional high-recall ensemble. None of these later methods was the historical OrbitTrace discovery procedure.
 
 ## Prohibited claims
 
-- “OrbitTrace was discovered by the novel detector.”
-- “The detector blindly rediscovered OrbitTrace from the full catalogue.”
-- “The detector beat the complete uncertainty-aware Sugar et al. pipeline.”
-- “The detector beat HDBSCAN on HDBSCAN's intended catalogue task.”
-- “The detector beat CMOR wavelet discovery.”
-- “The detector is the best general meteor-stream discovery method.”
-- “The detector was uniformly superior at every stream strength and operating point.”
-- “The detector fully passed its complete independent-validation standard.”
+- “OrbitTrace was discovered by fixed4, wavelet, or the hybrid.”
+- “fixed4 is the best overall sparse-stream method tested.”
+- “Wavelet is uniformly superior at every member count and operating point.”
+- “The full CMOR catalogue survey was reproduced or beaten.”
+- “The hybrid is the primary overall discriminator.”
+- “The targeted fixed4 recovery is a blind catalogue rediscovery.”
+- “fixed4 fully passed its complete independent-validation standard.”
