@@ -1,10 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "registry_status": "updated_after_completed_literature_comparison_program",
   "frozen_detector": {
     "name": "fixed-4deg coverage-normalized Mondrian anchored four-clique detector",
     "source_sha256": "747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301",
     "status": "frozen",
-    "allowed_changes": []
+    "allowed_changes": [],
+    "general_conclusion": "Promising strong transfer, but not fully robustly replicated under the complete preregistered standard."
   },
   "benchmark_tracks": {
     "episode": {
@@ -18,11 +20,12 @@
         "identical conservative rank p-values",
         "identical pooled false-positive rates",
         "identical k=4/6/8/12 recall"
-      ]
+      ],
+      "claim_boundary": "episode results measure sparse-stream recognition and may not be represented as blind full-catalogue discovery"
     },
     "catalogue": {
-      "unit": "a full survey catalogue or preregistered annual catalogue slice",
-      "purpose": "evaluate methods whose published target is catalogue-wide clustering or activity-map discovery",
+      "unit": "a full survey catalogue or preregistered multiyear survey input",
+      "purpose": "evaluate methods whose published target is catalogue-wide clustering, recurrence reconstruction, or activity-map discovery",
       "prohibited_interpretation": "catalogue-track results may not be substituted for sparse-episode performance or targeted OrbitTrace recovery"
     }
   },
@@ -32,7 +35,9 @@
       "label": "OrbitTrace fixed-4deg detector",
       "track": "episode",
       "classification": "frozen candidate",
+      "status": "complete_2025_and_one_shot_2023",
       "parameter_source": "frozen SonotaCo 2025 development",
+      "weak_auc": {"2025": 0.81325, "2023": 0.8116305009},
       "tunable": false
     },
     {
@@ -40,7 +45,8 @@
       "label": "Internal split statistic",
       "track": "episode",
       "classification": "internal baseline",
-      "parameter_source": "frozen internal benchmark",
+      "status": "complete_2025_and_2023",
+      "weak_auc": {"2025": 0.7566540288, "2023": 0.7728369826},
       "tunable": false
     },
     {
@@ -48,7 +54,8 @@
       "label": "Internal local-density statistic",
       "track": "episode",
       "classification": "internal baseline",
-      "parameter_source": "frozen internal benchmark",
+      "status": "complete_2025_and_2023",
+      "weak_auc": {"2025": 0.7539780561, "2023": 0.7587796794},
       "tunable": false
     },
     {
@@ -56,14 +63,16 @@
       "label": "Internal four-dimensional DBSCAN",
       "track": "episode",
       "classification": "internal baseline; not a Sugar et al. reproduction",
-      "parameter_source": "frozen internal benchmark",
+      "status": "complete_2025_and_2023",
+      "weak_auc": {"2025": 0.7494865866, "2023": 0.748876917},
       "tunable": false
     },
     {
       "id": "sugar2017_core_transfer",
-      "label": "Sugar et al. DBSCAN published-core transfer",
+      "label": "Sugar et al. deterministic DBSCAN published core",
       "track": "episode",
       "classification": "literature implementation: deterministic published core",
+      "status": "complete_2025_and_one_shot_2023",
       "reference": {
         "title": "Meteor Shower Detection with Density-Based Clustering",
         "authors": "Sugar, Moorhead, Brown, and Cooke",
@@ -74,30 +83,18 @@
         "feature_vector": "published six-dimensional Sun-centered geocentric vector",
         "min_samples": 5,
         "epsilon_transfer": "23rd percentile of each filtered SonotaCo-2025 event's fourth-nearest-neighbor distance, computed without labels and frozen before SonotaCo 2023",
-        "episode_score": "largest DBSCAN cluster size; ties broken only for deterministic provenance",
-        "k4_interpretation": "structurally below the published minimum cluster size"
+        "episode_score": "largest DBSCAN cluster size"
       },
-      "excluded_from_core_claim": "the paper's 1000 uncertainty-clone recurrence and cluster-merging stage",
+      "weak_auc": {"2025": 0.5085784314, "2023": 0.524927245},
+      "excluded_from_core_claim": "the uncertainty-clone recurrence and cluster-merging stages are evaluated separately on the catalogue track",
       "tunable": false
-    },
-    {
-      "id": "sugar2017_uncertainty_catalogue",
-      "label": "Sugar et al. uncertainty-aware catalogue pipeline",
-      "track": "catalogue",
-      "classification": "faithful-pipeline target",
-      "fixed_rules": {
-        "uncertainty_clones": 1000,
-        "min_samples": 5,
-        "cluster_overlap_merge_fraction": 0.5,
-        "minimum_recurrence_count": 100
-      },
-      "status": "scheduled after deterministic-core transfer is frozen"
     },
     {
       "id": "rudawska2014_dsh6",
       "label": "Rudawska-Jenniskens D_SH single linkage",
       "track": "episode",
-      "classification": "literature implementation",
+      "classification": "classical literature implementation",
+      "status": "complete_2025_and_one_shot_2023",
       "reference": {
         "title": "New meteor showers identified in the CAMS and SonotaCo meteoroid orbit surveys",
         "authors": "Rudawska and Jenniskens",
@@ -108,10 +105,9 @@
         "distance": "Southworth-Hawkins D_SH",
         "linkage": "single linkage",
         "published_threshold": 0.05,
-        "minimum_members": 6,
-        "continuous_episode_score": "negative linkage threshold at which a connected component first reaches six members"
+        "minimum_members": 6
       },
-      "k4_interpretation": "structurally below the published six-member minimum",
+      "weak_auc": {"2025": 0.604533476, "2023": 0.5799539796},
       "tunable": false
     },
     {
@@ -119,39 +115,162 @@
       "label": "D_SH single-link sparse adaptation",
       "track": "episode",
       "classification": "predeclared adaptation; not the published six-member method",
+      "status": "complete_2025_and_one_shot_2023",
       "fixed_rules": {
         "distance": "Southworth-Hawkins D_SH",
         "linkage": "single linkage",
-        "minimum_members": 4,
-        "continuous_episode_score": "negative linkage threshold at which a connected component first reaches four members"
+        "minimum_members": 4
       },
+      "weak_auc": {"2025": 0.6403635062, "2023": 0.6376055717},
+      "tunable": false
+    },
+    {
+      "id": "valsecchi1999_dn6",
+      "label": "Valsecchi-Jopek-Froeschle D_N single-neighbour linkage",
+      "track": "episode",
+      "classification": "classical geocentric-distance transfer",
+      "status": "complete_2025_and_one_shot_2023",
+      "reference": {
+        "title": "Meteoroid stream identification: a new approach",
+        "authors": "Valsecchi, Jopek, and Froeschle",
+        "year": 1999
+      },
+      "fixed_rules": {
+        "distance": "published D_N geocentric-observable distance",
+        "linkage": "single-neighbour linkage",
+        "minimum_members": 6,
+        "calibration": "identical empirical-negative episode calibration; original sample-specific chance-threshold simulations not claimed as reproduced"
+      },
+      "weak_auc": {"2025": 0.731316, "2023": 0.714395},
+      "tunable": false
+    },
+    {
+      "id": "dn4_sparse_transfer",
+      "label": "D_N sparse benchmark transfer",
+      "track": "episode",
+      "classification": "predeclared sparse transfer",
+      "status": "complete_2025_and_one_shot_2023",
+      "fixed_rules": {
+        "distance": "published D_N geocentric-observable distance",
+        "linkage": "single-neighbour linkage",
+        "minimum_members": 4
+      },
+      "weak_auc": {"2025": 0.759251, "2023": 0.746209},
       "tunable": false
     },
     {
       "id": "pena_asensio2025_hdbscan",
-      "label": "Peña-Asensio-Ferrari HDBSCAN",
+      "label": "Pena-Asensio-Ferrari GEO HDBSCAN",
       "track": "catalogue",
-      "classification": "faithful catalogue-scale literature implementation",
+      "classification": "published catalogue-scale configuration",
+      "status": "complete_2025_and_one_shot_2023",
       "reference": {
         "title": "Meteoroid Stream Identification with HDBSCAN Unsupervised Clustering Algorithm",
-        "authors": "Peña-Asensio and Ferrari",
+        "authors": "Pena-Asensio and Ferrari",
         "year": 2025,
         "doi": "10.3847/1538-3881/adec8c"
       },
-      "reason_not_episode_primary": "the published minimum-cluster-size search and catalogue normalization do not represent k=4 to k=12 injection episodes"
+      "fixed_rules": {
+        "feature_vector": "published unstandardized GEO six-vector",
+        "hdbscan_version": "0.8.44",
+        "minimum_cluster_size": 100,
+        "minimum_samples": null,
+        "metric": "euclidean",
+        "cluster_selection_method": "eom"
+      },
+      "evidence": {
+        "development_run": 31071589912,
+        "development_artifact": 8955917326,
+        "transfer_run": 31074645262,
+        "transfer_artifact": 8957004084,
+        "primary_nmi": {"2025": 0.7475780174, "2023": 0.747418}
+      },
+      "boundary": "strong and stable for large catalogue populations; zero or nearly zero recovery below 50 annual members under unchanged parameters",
+      "reason_not_episode_primary": "the published minimum-cluster-size search and catalogue normalization do not represent k=4 to k=12 injection episodes",
+      "tunable": false
+    },
+    {
+      "id": "sugar2017_uncertainty_catalogue",
+      "label": "Sugar et al. uncertainty-aware catalogue reconstruction",
+      "track": "catalogue",
+      "classification": "faithful published-stage survey transfer; not exact unpublished software reproduction",
+      "status": "complete_2025_and_one_shot_2023",
+      "fixed_rules": {
+        "uncertainty_clones": 1000,
+        "min_samples": 5,
+        "epsilon": 0.028705145052265017,
+        "epsilon_source": "SonotaCo 2025 development catalogue",
+        "cluster_overlap_merge_fraction": 0.5,
+        "minimum_recurrence_count": 100,
+        "strong_recurrence_count": 500,
+        "seed_root": 20170209,
+        "scikit_learn_version": "1.5.2"
+      },
+      "evidence": {
+        "development_run": 31075178517,
+        "development_artifact": 8957263372,
+        "transfer_run": 31076789635,
+        "transfer_artifact": 8957940764,
+        "retained_master_nmi": {"2025": 0.751013, "2023": 0.7844914979}
+      },
+      "boundary": "uncertainty stages improve catalogue assignment; mean retained-master F1 for 4-9 annual members remains approximately 0.03 in both years",
+      "tunable": false
     },
     {
       "id": "brown2010_wavelet",
       "label": "CMOR-style 3D wavelet survey",
       "track": "catalogue",
-      "classification": "survey-adapted catalogue-scale literature implementation",
+      "classification": "radar survey method audited for optical-input compatibility",
+      "status": "formally_deferred_input_incompatible",
       "reference": {
         "title": "A meteoroid stream survey using the Canadian Meteor Orbit Radar II: Identification of minor showers using a 3D wavelet transform",
         "authors": "Brown, Wong, Weryk, and Wiegert",
         "year": 2010,
         "doi": "10.1016/j.icarus.2009.11.015"
       },
-      "reason_not_episode_primary": "the published method stacks years in one-degree solar-longitude bins and searches a catalogue activity map, not isolated 128-event windows"
+      "published_rules_preserved": {
+        "virtual_years": 7,
+        "solar_longitude_bin_width_deg": 1,
+        "minimum_contributing_radiants": 300,
+        "maximum_temporal_link_gap_deg": 2,
+        "minimum_linked_points": 3
+      },
+      "evidence": {
+        "one_year_run": 31077762735,
+        "one_year_artifact": 8958194513,
+        "multiyear_run": 31078486173,
+        "multiyear_artifact": 8958469799,
+        "multiyear_total_events": 178188,
+        "supported_bins": 199,
+        "available_bins": 324,
+        "supported_fraction": 0.6141975309,
+        "frozen_required_fraction": 0.8
+      },
+      "decision": "defer coefficient execution because the available optical stack fails the frozen global-support breadth gate",
+      "prohibited_interpretation": "not evidence of poor CMOR-wavelet performance and not evidence that fixed4 wins",
+      "tunable": false
+    }
+  ],
+  "classified_noncomparators": [
+    {
+      "family": "additional Drummond, Jopek, and related D-function variants",
+      "status": "represented_by_classical_family_not_individually_added",
+      "reason": "D_SH and D_N span the principal orbital-element versus geocentric-observable distinction; adding correlated post-result variants with database-specific thresholds would create method shopping"
+    },
+    {
+      "family": "KDE false-positive estimation",
+      "status": "ancillary_significance_framework_not_discovery_comparator",
+      "reason": "estimates contamination of proposed associations rather than blindly identifying streams"
+    },
+    {
+      "family": "known-shower lookup, template matching, and parent-body association",
+      "status": "excluded_from_blind_discovery_leaderboard",
+      "reason": "postulates a known target or relationship rather than performing the same discovery task"
+    },
+    {
+      "family": "supervised neural stream classifiers",
+      "status": "not_comparable_on_current_public_inputs",
+      "reason": "no fixed published sparse-stream discovery architecture, training set, and independent training protocol matches this benchmark"
     }
   ],
   "freeze_rules": {
@@ -160,6 +279,12 @@
     "orbittrace_access": "prohibited during comparator construction and freezing",
     "method_shopping": "prohibited",
     "post_result_parameter_changes": "prohibited",
-    "reporting": "every result must retain its classification as internal baseline, literature implementation, adaptation, targeted recovery, or catalogue-scale discovery"
+    "reporting": "every result must retain its classification as internal baseline, literature implementation, adaptation, targeted recovery, catalogue-scale method, or formally deferred incompatible-input method"
+  },
+  "completion": {
+    "status": "complete_for_current_public_inputs",
+    "next_requirement": "a new denser or exposure-controlled independent survey catalogue rather than additional post-result variants",
+    "coverage_document": "orbittrace_literature_results/LITERATURE_COMPARATOR_COVERAGE_COMPLETION.md",
+    "machine_status": "orbittrace_literature_results/LITERATURE_COMPARATOR_STATUS.json"
   }
 }
