@@ -6,7 +6,7 @@ on:
       - agent/orbittrace-fixed4-blind-catalogue-audit
     paths:
       - orbittrace_fixed4_blind_catalogue/EXECUTION_PROTOCOL.md
-      - orbittrace_fixed4_blind_catalogue/run_blind_scan.py.gz.b64
+      - orbittrace_fixed4_blind_catalogue/source_parts/**
       - .github/workflows/orbittrace_fixed4_blind_catalogue_scan.yml
   workflow_dispatch:
 
@@ -47,8 +47,10 @@ jobs:
           python - <<'PY'
           import ast, base64, gzip, hashlib, os
           from pathlib import Path
-          payload = Path('orbittrace_fixed4_blind_catalogue/run_blind_scan.py.gz.b64')
-          encoded = ''.join(payload.read_text(encoding='ascii').split())
+          parts = sorted(Path('orbittrace_fixed4_blind_catalogue/source_parts').glob('part*.b64'))
+          if [p.name for p in parts] != [f'part{i:02d}.b64' for i in range(4)]:
+              raise RuntimeError(f'wrong source parts: {[p.name for p in parts]}')
+          encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
           if len(encoded) != int(os.environ['SCAN_ENCODED_LENGTH']):
               raise RuntimeError(f'encoded length mismatch: {len(encoded)}')
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
@@ -67,7 +69,7 @@ jobs:
               raise RuntimeError(f'target information present in blind source: {found}')
           tree = ast.parse(text)
           names = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
-          required = {'parse_catalogue', 'scan_year', 'build_families', 'exact_anchor_distances'}
+          required = {'parse_catalogue', 'scan_year', 'build_families', 'exact_anchor_distances', 'read_gmn_frame'}
           if not required.issubset(names):
               raise RuntimeError(f'missing blind interfaces: {sorted(required - names)}')
           Path('/tmp/run_orbittrace_fixed4_blind_scan.py').write_bytes(source)
@@ -90,7 +92,10 @@ jobs:
           mkdir -p output
           sha256sum \
             orbittrace_fixed4_blind_catalogue/EXECUTION_PROTOCOL.md \
-            orbittrace_fixed4_blind_catalogue/run_blind_scan.py.gz.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part00.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part01.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part02.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part03.b64 \
             sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             mondrian_clique_development/source_parts_v2/part00.b64 \
