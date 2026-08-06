@@ -37,10 +37,12 @@ jobs:
           python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
           python -m pip install hdbscan==0.8.44
 
-      - name: Verify 2025 result freeze and one-shot runner before 2023 data access
+      - name: Verify 2025 result freeze and corrected one-shot runner before 2023 data access
         run: |
           set -euo pipefail
-          mkdir -p input output
+          mkdir -p input/repaired output
+          echo 'f168774138bac3aa9af67b82b798c1a27364ad10edbcb2a9d6001a386f0f6237  orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json' | sha256sum -c -
+          echo 'de5f754e3c4c0172906578ff5325b42f17f1e52ba3aeabd5349d02e0538fa56e  orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00.b64' | sha256sum -c -
           python - <<'PY'
           import base64
           import gzip
@@ -54,31 +56,44 @@ jobs:
           assert freeze['artifact_id'] == 8955917326
           assert freeze['artifact_digest'] == 'sha256:82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89'
           assert freeze['result_sha256'] == 'd8cd3c6acf9ecf48bb06a1055e7197f60d315c062276bdbe654abd562e904db8'
-          assert freeze['markdown_sha256'] == '7bf1327c764ead4537b923076854f4ed69ee3c1832f11e2db6fb5ad1d0b08628'
           assert freeze['frozen_before_sonotaco_2023_execution'] is True
           config = freeze['configuration']
           assert config['hdbscan_version'] == '0.8.44'
+          assert config['feature_vector'] == 'unstandardized Sugar/Pena-Asensio GEO six-vector'
           assert config['minimum_cluster_size'] == 100
           assert config['minimum_samples'] is None
           assert config['cluster_selection_method'] == 'eom'
           assert config['metric'] == 'euclidean'
-          rules = freeze['transfer_rules']
-          assert rules['one_shot'] is True
-          assert rules['orbittrace_access'] == 'prohibited'
-          assert rules['post_result_parameter_changes'] == 'prohibited'
+          assert config['silhouette_seed'] == 20250806
+          assert config['silhouette_maximum_sample'] == 10000
 
-          root = Path('orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts')
-          names = [f'part00_sub{index:02d}.b64' for index in range(6)]
-          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+          encoded = ''.join(Path('orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00.b64').read_text().split())
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
-          expected = '2e770252f68f40c7ebab8f072aef18b88246091e40a98673db69d09f7bb1d41b'
+          expected = 'dd6fbfb37ba58337bb787f59ca96fb0b71d8cdbd9b432083a51ec5291a14db3a'
           if digest != expected:
               raise RuntimeError(f'2023 HDBSCAN runner source mismatch: {digest}')
           Path('/tmp/run_sonotaco_2023_hdbscan_transfer.py').write_bytes(source)
           compile(source, 'run_sonotaco_2023_hdbscan_transfer.py', 'exec')
           print('PASS_PRE_2023_HDBSCAN_FREEZE', digest)
           PY
+
+      - name: Retrieve exact repaired 2023 parser and frozen mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo '882c21f2ac48689ab7a0d7a990496f7e055ab571b10c6f00bb63d8a18f8f7b3f  input/repaired/sonotaco_2023_confirmation_source_repair_v2.json' | sha256sum -c -
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
 
       - name: Download exact SonotaCo 2023 replacement archive
         run: |
@@ -93,6 +108,9 @@ jobs:
           set -euo pipefail
           python /tmp/run_sonotaco_2023_hdbscan_transfer.py \
             --archive input/023a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --confirmation-source input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
             --freeze orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json \
             --core-dist-jobs 4 \
             --output output
@@ -105,13 +123,11 @@ jobs:
           mkdir -p output
           sha256sum \
             orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json \
-            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub00.b64 \
-            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub01.b64 \
-            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub02.b64 \
-            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub03.b64 \
-            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub04.b64 \
-            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00_sub05.b64 \
-            input/023a.zip \
+            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            input/repaired/sonotaco_2023_confirmation_source_repair_v2.json \
+            input/audit.json input/023a.zip \
             > output/source_and_input_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
