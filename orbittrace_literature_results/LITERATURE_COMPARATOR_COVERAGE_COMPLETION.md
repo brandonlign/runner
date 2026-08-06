@@ -26,7 +26,9 @@ Results from one track are not substituted for the other.
 | Southworth–Hawkins D_SH, six-member single linkage | classical orbital-element comparator | 0.604533 | 0.579954 | complete |
 | Sugar et al. deterministic published core | literature DBSCAN core | 0.508578 | 0.524927 | complete |
 
-The wavelet episode core now has the highest overall weak-stream AUROC in both years. Fixed4 is not the overall benchmark leader, but it retains the stronger four-member recall and tighter α=.05 false-positive control. The two methods are therefore complementary rather than one uniformly dominating the other.
+The wavelet episode core now has the highest overall weak-stream AUROC in both years. Fixed4 is not the overall benchmark leader, but it retains the stronger four-member recall and generally tighter false-positive control. The two methods are complementary rather than one uniformly dominating the other.
+
+A paired cluster bootstrap used 20,000 replicates, resampling positive episodes by shower-complex unit and negatives by Mondrian bin. Wavelet-minus-fixed4 AUROC was +0.0153 in 2025 and +0.0203 in 2023. The equal-weight combined estimate was +0.0178 with 95% interval [−0.0043, +0.0406] and P(difference > 0)=0.9399. The direction replicated, but the interval crossed zero, so the advantage is consistent rather than statistically decisive.
 
 At α=.05, fixed4 versus wavelet k=4 recall was 0.154 versus 0.081 in 2025 and 0.189 versus 0.134 in 2023. For k=6–12, the wavelet core was generally stronger, especially at α=.01.
 
@@ -74,7 +76,7 @@ KDE false-positive estimation remains an ancillary significance framework rather
 
 ## Current completion state
 
-All comparator executions are complete for the current public inputs. The only remaining analysis is a checksum-pinned paired cluster bootstrap on the already frozen 2025 and 2023 wavelet and fixed4 records. It will quantify uncertainty without changing a method, score, episode, threshold, or result.
+All comparator executions and the paired uncertainty analysis are complete for the current public inputs.
 
 Further independent method development requires a new survey or exposure-controlled external catalogue, not additional post-result variants.
 
@@ -84,11 +86,11 @@ Fixed4 should remain a major OrbitTrace methodological contribution, but its rol
 
 - it is an independently developed extreme-sparse recognition method;
 - it has the best four-member recall of the two leading methods;
-- it provides tighter α=.05 false-positive control;
+- it generally provides tighter false-positive control;
 - it performed a frozen targeted OrbitTrace recovery;
 - it is **not** the strongest overall sparse-episode benchmark method.
 
-The Brown-family wavelet adaptation is the strongest overall episode comparator currently implemented. This does not change the historical structure of the project:
+The Brown-family wavelet adaptation has the strongest overall episode point estimates currently implemented, but paired uncertainty does not establish a decisive difference from fixed4. This does not change the historical structure of the project:
 
 `exploratory HDBSCAN candidate discovery → independent methodological recognition tests → observational validation`.
 
