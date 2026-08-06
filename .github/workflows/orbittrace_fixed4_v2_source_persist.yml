@@ -1,0 +1,111 @@
+name: OrbitTrace fixed4 v2 source persist
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-fixed4-v2-wrapper-source-audit
+    paths:
+      - .github/workflows/orbittrace_fixed4_v2_source_persist.yml
+      - orbittrace_fixed4_v2/WRAPPER_SOURCE_AUDIT_PROTOCOL.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: orbittrace-fixed4-v2-source-persist
+  cancel-in-progress: false
+
+jobs:
+  persist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-v2-wrapper-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Decode exact frozen sources
+        run: |
+          set -euo pipefail
+          mkdir -p orbittrace_fixed4_v2_source_audit_output
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          def decode_single(path):
+              encoded = ''.join(Path(path).read_text(encoding='ascii').split())
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          def decode_parts(root):
+              parts = sorted(Path(root).glob('part*.b64'))
+              expected = [f'part{i:02d}.b64' for i in range(4)]
+              if [p.name for p in parts] != expected:
+                  raise RuntimeError(f'wrong source parts: {[p.name for p in parts]}')
+              encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          broad = decode_single('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64')
+          calibrated = decode_parts('orbittrace_fixed4_blind_catalogue/source_parts')
+          calibrated_sha = hashlib.sha256(calibrated).hexdigest()
+          expected = '48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5'
+          if calibrated_sha != expected:
+              raise RuntimeError(f'calibrated source mismatch: {calibrated_sha}')
+
+          root = Path('orbittrace_fixed4_v2_source_audit_output')
+          (root / 'broad_ranked_quartet_wrapper.py').write_bytes(broad)
+          (root / 'calibrated_component_wrapper.py').write_bytes(calibrated)
+
+          def inventory(source):
+              tree = ast.parse(source.decode('utf-8'))
+              functions = {}
+              for node in tree.body:
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                      normalized = ast.unparse(node)
+                      functions[node.name] = {
+                          'line': node.lineno,
+                          'end_line': node.end_lineno,
+                          'args': [a.arg for a in node.args.posonlyargs + node.args.args + node.args.kwonlyargs],
+                          'ast_sha256': hashlib.sha256(normalized.encode()).hexdigest(),
+                      }
+              return functions
+
+          broad_functions = inventory(broad)
+          calibrated_functions = inventory(calibrated)
+          broad_hashes = {v['ast_sha256']: k for k, v in broad_functions.items()}
+          identical = [
+              {'broad': broad_hashes[v['ast_sha256']], 'calibrated': k, 'ast_sha256': v['ast_sha256']}
+              for k, v in calibrated_functions.items() if v['ast_sha256'] in broad_hashes
+          ]
+          result = {
+              'status': 'PASS_FIXED4_V2_SOURCE_PERSIST',
+              'data_accessed': False,
+              'orbittrace_accessed': False,
+              'broad_source_sha256': hashlib.sha256(broad).hexdigest(),
+              'calibrated_source_sha256': calibrated_sha,
+              'broad_source_bytes': len(broad),
+              'calibrated_source_bytes': len(calibrated),
+              'broad_functions': broad_functions,
+              'calibrated_functions': calibrated_functions,
+              'ast_identical_functions': identical,
+          }
+          (root / 'source_inventory.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+      - name: Commit audit outputs
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add orbittrace_fixed4_v2_source_audit_output
+          if git diff --cached --quiet; then
+            echo 'No source-audit output change.'
+            exit 0
+          fi
+          git commit -m 'Persist fixed4 wrapper source audit'
+          git push origin HEAD:agent/orbittrace-fixed4-v2-wrapper-source-audit
