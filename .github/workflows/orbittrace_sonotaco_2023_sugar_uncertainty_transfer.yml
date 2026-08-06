@@ -1,0 +1,206 @@
+name: OrbitTrace SonotaCo 2023 Sugar uncertainty one-shot transfer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sugar-uncertainty-catalogue-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2023_sugar_uncertainty_transfer.yml
+      - orbittrace_literature_freeze/SONOTACO_2025_SUGAR_UNCERTAINTY_CATALOGUE_FREEZE.json
+      - orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/**
+      - orbittrace_literature_comparison/sugar_uncertainty_core_parts/**
+      - orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2023-sugar-uncertainty-transfer
+  cancel-in-progress: true
+
+jobs:
+  one-shot-transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sugar-uncertainty-catalogue-2023-transfer
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify frozen 2025 result and decode 2023 runner before data access
+        run: |
+          set -euo pipefail
+          mkdir -p input/repaired output
+          echo '70b431705fc4fd67f45a86b254a3d81dad35955de4d24af459f142cf13146e19  orbittrace_literature_comparison/sugar_uncertainty_core_parts/part00.b64' | sha256sum -c -
+          echo '800bacef71c7ab7f7e35c7c52bcd4b1afef8056aa7e0317c91049201b913b894  orbittrace_literature_comparison/sugar_uncertainty_core_parts/part01.b64' | sha256sum -c -
+          echo 'b78cab4c6605b1bb94b4ed9656a37266b23fe0be6a4d3261aad289d17b70ab2c  orbittrace_literature_comparison/sugar_uncertainty_core_parts/part02.b64' | sha256sum -c -
+          echo 'd3c528d618839185a52d0a919337b36e5c7a1db8eb23856425a484f9dbc619b0  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part00.b64' | sha256sum -c -
+          echo 'f6c6014bf12c4253a64078296b8431c35f980fd7447284a6843f7105b551cd31  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part01.b64' | sha256sum -c -
+          echo 'f42e385ff434f54bb61f9ea220b6baeee6a6ed59d51bf77f565ee24020799589  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part02.b64' | sha256sum -c -
+          echo '62bca27205709b3b66997ef5f4932194c84ccf367366e9d19aecab7ad0662866  orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part03.b64' | sha256sum -c -
+          echo '15e5d2d16e2f5f0e770f6aac85bc0909c6ea1a3294501689d5ff1542a3947a4d  orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part00.b64' | sha256sum -c -
+          echo '63f5dbf8234508d01a723e43128356b6e72bfdbefcd61d69893f23da01644519  orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part01.b64' | sha256sum -c -
+          echo '5cc32d45d0beb8cc778e6ce1af2e8a5e324998fa58e153b41e14e8daaa1ea794  orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part02.b64' | sha256sum -c -
+          echo '89719dad18e4f8f1cc1156e3cb4281f1d0475a87800b1ace6f3f362bb93841cb  orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part03.b64' | sha256sum -c -
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          freeze = json.loads(Path('orbittrace_literature_freeze/SONOTACO_2025_SUGAR_UNCERTAINTY_CATALOGUE_FREEZE.json').read_text())
+          assert freeze['verdict'] == 'PASS_SONOTACO_2025_SUGAR_UNCERTAINTY_CATALOGUE_TRANSFER'
+          assert freeze['source_commit'] == '6594cc992841cf8d37572f9877c35580009095bd'
+          assert freeze['workflow_run'] == 31075178517
+          assert freeze['artifact_id'] == 8957263372
+          assert freeze['artifact_digest'] == 'sha256:9df4a48f4808180d534086e560e68ae56486f60171510207acd7bd6fedeebbc9'
+          assert freeze['result_sha256'] == 'e65f09c453f30c64649314554ab44fc878ac8da4b4c726c6c79254b9717d909a'
+          assert freeze['protocol_sha256'] == '50d62f5c6ba38beeceea5e85dd94d4bf918fcefbe26985aa93a4fdf1bf6eab68'
+          assert freeze['core_source_sha256'] == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb'
+          assert freeze['runner_source_sha256'] == 'adbeb8a8737079f8cd63568d8684733dce09f724305ef9605f22423a57fda936'
+          assert freeze['configuration']['epsilon'] == 0.028705145052265017
+          assert freeze['configuration']['clone_iterations'] == 1000
+          assert freeze['configuration']['merge_overlap_fraction'] == 0.5
+          assert freeze['configuration']['minimum_recurrence'] == 100
+          assert freeze['configuration']['strong_recurrence'] == 500
+          assert freeze['frozen_before_sonotaco_2023_execution'] is True
+
+          def decode(directory, count):
+              root = Path(directory)
+              encoded = ''.join(''.join((root / f'part{index:02d}.b64').read_text().split()) for index in range(count))
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          core_source = decode('orbittrace_literature_comparison/sugar_uncertainty_core_parts', 3)
+          helper_source = decode('orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts', 4)
+          runner_source = decode('orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts', 4)
+          core_sha = hashlib.sha256(core_source).hexdigest()
+          helper_sha = hashlib.sha256(helper_source).hexdigest()
+          runner_sha = hashlib.sha256(runner_source).hexdigest()
+          assert core_sha == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb', core_sha
+          assert helper_sha == 'adbeb8a8737079f8cd63568d8684733dce09f724305ef9605f22423a57fda936', helper_sha
+          assert runner_sha == '9a7661da940de568521f2b87df0647783bb224fdc66142a8e5415b95461e249d', runner_sha
+          Path('/tmp/sugar_uncertainty_catalogue.py').write_bytes(core_source)
+          Path('/tmp/sugar_2025_helpers.py').write_bytes(helper_source)
+          Path('/tmp/run_sonotaco_2023_sugar_uncertainty_catalogue.py').write_bytes(runner_source)
+          compile(core_source, 'sugar_uncertainty_catalogue.py', 'exec')
+          compile(helper_source, 'sugar_2025_helpers.py', 'exec')
+          compile(runner_source, 'run_sonotaco_2023_sugar_uncertainty_catalogue.py', 'exec')
+          print('PASS_PRE_2023_SUGAR_FREEZE', core_sha, helper_sha, runner_sha)
+          PY
+          PYTHONPATH=/tmp python - <<'PY'
+          import sklearn
+          import sugar_uncertainty_catalogue as sugar
+          import run_sonotaco_2023_sugar_uncertainty_catalogue as runner
+          assert sklearn.__version__ == '1.5.2'
+          assert runner.EXPECTED_EPSILON == 0.028705145052265017
+          assert sugar.CLONE_ITERATIONS == 1000
+          assert sugar.MIN_SAMPLES == 5
+          assert sugar.MERGE_OVERLAP_FRACTION == 0.5
+          assert sugar.MIN_RECURRENCE == 100
+          assert sugar.STRONG_RECURRENCE == 500
+          assert all(sugar.self_test().values())
+          print('PASS_PRE_2023_SUGAR_SELF_TEST')
+          PY
+
+      - name: Retrieve exact repaired 2023 confirmation source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo '882c21f2ac48689ab7a0d7a990496f7e055ab571b10c6f00bb63d8a18f8f7b3f  input/repaired/sonotaco_2023_confirmation_source_repair_v2.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          repair = json.loads(Path('input/repaired/sonotaco_2023_confirmation_source_repair_v2.json').read_text())
+          assert repair['verdict'] == 'PASS_SONOTACO_2023_CONFIRMATION_SOURCE_REPAIR_V2'
+          assert all(repair['gates'].values())
+          assert repair['opaque_structure']['expected_data_rows'] == 47087
+          PY
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact SonotaCo 2023 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Execute one-shot 1000-clone Sugar transfer
+        env:
+          PYTHONPATH: /tmp
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2023_sugar_uncertainty_catalogue.py \
+            --archive input/023a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --confirmation-source input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --freeze orbittrace_literature_freeze/SONOTACO_2025_SUGAR_UNCERTAINTY_CATALOGUE_FREEZE.json \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2023_SUGAR_UNCERTAINTY_CATALOGUE_TRANSFER.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_freeze/SONOTACO_2025_SUGAR_UNCERTAINTY_CATALOGUE_FREEZE.json \
+            orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part00.b64 \
+            orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part01.b64 \
+            orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part02.b64 \
+            orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part03.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_core_parts/part00.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_core_parts/part01.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_core_parts/part02.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part00.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part01.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part02.b64 \
+            orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part03.b64 \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            input/audit.json input/023a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          if [ -f /tmp/run_sonotaco_2023_sugar_uncertainty_catalogue.py ]; then
+            sha256sum /tmp/sugar_uncertainty_catalogue.py /tmp/sugar_2025_helpers.py /tmp/run_sonotaco_2023_sugar_uncertainty_catalogue.py >> output/source_and_input_sha256.txt
+          fi
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload one-shot Sugar evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2023-sugar-uncertainty-transfer
+          path: output
+          if-no-files-found: error
+          retention-days: 90
