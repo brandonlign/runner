@@ -1,0 +1,198 @@
+{
+  "constants": {
+    "AUDIT_SHORTLIST_K": 128,
+    "BLIND_HIGH": 55.0,
+    "BLIND_LOW": 20.0,
+    "CALIBRATION_PER_BIN": 128,
+    "FAMILY_LINK_RADIUS": 1.5,
+    "MAX_QUARTETS_PER_BIN": 512,
+    "RANKING_VARIANTS": [
+      "persistence",
+      "mean_year_strength",
+      "sqrt_support_strength",
+      "min_year_strength",
+      "size_penalized_strength"
+    ],
+    "SHORTLIST_K": 64,
+    "YEARS": [
+      2022,
+      2023,
+      2024,
+      2025
+    ]
+  },
+  "data_accessed": false,
+  "frozen_rank_fusion": {
+    "development_result_path": "orbittrace_fixed4_rank_fusion/FROZEN_DEVELOPMENT_RESULT.json",
+    "formula": "(1-w)*normalized_persistence_rank + w*normalized_mean_year_strength_rank",
+    "weight": 0.02
+  },
+  "interfaces": {
+    "build_families": {
+      "ast_sha256": "b13af8360a0c10649742b9926f74a98f78a53458ef78b3fc3e0e2d7b2ca946ff",
+      "defaults": [],
+      "end_line": 406,
+      "keyword_only_args": [],
+      "line": 361,
+      "normalized_source": "def build_families(components: list[dict[str, Any]], base: types.ModuleType) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:\n    adjacency: dict[int, set[int]] = defaultdict(set)\n    for i, left in enumerate(components):\n        for j in range(i + 1, len(components)):\n            right = components[j]\n            if left['year'] == right['year']:\n                continue\n            if centroid_distance(left['centroid'], right['centroid'], base) <= FAMILY_LINK_RADIUS:\n                adjacency[i].add(j)\n                adjacency[j].add(i)\n    seen: set[int] = set()\n    families: list[dict[str, Any]] = []\n    for start in range(len(components)):\n        if start in seen or start not in adjacency:\n            continue\n        queue = deque([start])\n        seen.add(start)\n        members: list[int] = []\n        while queue:\n            idx = queue.popleft()\n            members.append(idx)\n            for nxt in adjacency[idx]:\n                if nxt not in seen:\n                    seen.add(nxt)\n                    queue.append(nxt)\n        family_components = [components[i] for i in members]\n        years = sorted({int(c['year']) for c in family_components})\n        if len(years) < MIN_FAMILY_YEARS:\n            continue\n        event_ids = sorted(set().union(*(set(c['event_ids']) for c in family_components)))\n        component_ids = sorted((c['component_id'] for c in family_components))\n        stable_id = 'G' + hashlib.sha256('|'.join(component_ids).encode()).hexdigest()[:12]\n        year_strengths = {str(year): float(max((c['component_strength'] for c in family_components if int(c['year']) == year))) for year in years}\n        family = {'family_id': stable_id, 'years': years, 'year_count': len(years), 'component_ids': component_ids, 'component_count': len(family_components), 'event_ids': event_ids, 'event_count': len(event_ids), 'quartet_count': int(sum((c['quartet_count'] for c in family_components))), 'anchor_count': int(sum((c['anchor_count'] for c in family_components))), 'best_score': float(max((c['best_score'] for c in family_components))), 'year_strengths': year_strengths, 'centroids': {str(c['year']): c['centroid'] for c in family_components}, 'ranks': {}}\n        family['ranking_scores'] = family_scores(family)\n        families.append(family)\n    rankings = rank_families(families)\n    return (families, rankings)",
+      "positional_args": [
+        "components",
+        "base"
+      ]
+    },
+    "component_records": {
+      "ast_sha256": "49f2a417bee609e43fca5ee9b47669c4be899c8691cabd8743f35a27643c2fa6",
+      "defaults": [],
+      "end_line": 315,
+      "keyword_only_args": [],
+      "line": 266,
+      "normalized_source": "def component_records(year: int, passing: list[dict[str, Any]], event_lookup: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:\n    adjacency: dict[str, set[str]] = defaultdict(set)\n    quartet_by_node: dict[str, set[int]] = defaultdict(set)\n    for q_index, record in enumerate(passing):\n        ids = record['quartet_ids']\n        for event_id in ids:\n            quartet_by_node[event_id].add(q_index)\n        for i in range(4):\n            for j in range(i + 1, 4):\n                adjacency[ids[i]].add(ids[j])\n                adjacency[ids[j]].add(ids[i])\n    seen: set[str] = set()\n    components: list[dict[str, Any]] = []\n    for start in sorted(adjacency):\n        if start in seen:\n            continue\n        queue = deque([start])\n        seen.add(start)\n        nodes: list[str] = []\n        while queue:\n            node = queue.popleft()\n            nodes.append(node)\n            for nxt in adjacency[node]:\n                if nxt not in seen:\n                    seen.add(nxt)\n                    queue.append(nxt)\n        quartet_indices = sorted(set().union(*(quartet_by_node[node] for node in nodes)))\n        if len(nodes) < MIN_COMPONENT_EVENTS or len(quartet_indices) < MIN_COMPONENT_QUARTETS:\n            continue\n        events = [event_lookup[node] for node in nodes]\n        sol_center = circular_mean_deg((float(e['sol']) for e in events))\n        lon_center = circular_mean_deg((float(e['sun_lon']) for e in events))\n        strengths = [float(passing[i]['bin_strength']) for i in quartet_indices]\n        component_strength = float(sum(strengths) / math.sqrt(len(strengths)))\n        component = {'year': year, 'event_ids': sorted(nodes), 'event_count': len(nodes), 'quartet_count': len(quartet_indices), 'anchor_count': int(sum((passing[i]['anchor_count'] for i in quartet_indices))), 'best_score': float(max((passing[i]['score'] for i in quartet_indices))), 'median_score': float(np.median([passing[i]['score'] for i in quartet_indices])), 'component_strength': component_strength, 'centroid': {'sol': sol_center, 'sun_lon': lon_center, 'ecl_lat': float(np.median([float(e['ecl_lat']) for e in events])), 'vg': float(np.median([float(e['vg']) for e in events]))}, 'solar_span_deg': float(max((float(e['sol']) for e in events)) - min((float(e['sol']) for e in events)))}\n        components.append(component)\n    components.sort(key=lambda x: (-x['event_count'], -x['quartet_count'], -x['component_strength'], x['centroid']['sol']))\n    for index, component in enumerate(components, 1):\n        component['component_id'] = f'{year}-C{index:04d}'\n    return components",
+      "positional_args": [
+        "year",
+        "passing",
+        "event_lookup"
+      ]
+    },
+    "develop_wrapper": {
+      "ast_sha256": "0148147e7171cc156c299cd6eb8a247c7e7803879c0a83e5a8c46d73ffec05a8",
+      "defaults": [],
+      "end_line": 657,
+      "keyword_only_args": [],
+      "line": 609,
+      "normalized_source": "def develop_wrapper(hidden_labels: dict[str, str], panel_results: dict[str, dict[str, Any]]) -> dict[str, Any]:\n    development = panel_results['development']['evaluation']\n    validation = panel_results['validation']['evaluation']\n\n    def selection_key(variant: str) -> tuple[float, ...]:\n        m = development['metrics'][variant]\n        return (float(m['recovered_at_100']), float(m['recovered_at_500']), float(m['mrr']), float(m['top100_dominant_precision']))\n    selected_variant = max(RANKING_VARIANTS, key=lambda variant: (selection_key(variant), -RANKING_VARIANTS.index(variant)))\n    comparisons: dict[str, dict[str, float]] = {}\n    for panel_name, panel in (('development', development), ('validation', validation)):\n        baseline = panel['metrics']['persistence']\n        selected = panel['metrics'][selected_variant]\n        comparisons[panel_name] = {'recovered_at_100_delta': selected['recovered_at_100'] - baseline['recovered_at_100'], 'recovered_at_500_delta': selected['recovered_at_500'] - baseline['recovered_at_500'], 'mrr_delta': selected['mrr'] - baseline['mrr'], 'top100_precision_delta': selected['top100_dominant_precision'] - baseline['top100_dominant_precision']}\n    passes = bool(selected_variant != 'persistence' and comparisons['development']['recovered_at_100_delta'] >= 1 and (comparisons['validation']['recovered_at_100_delta'] >= 0) and (comparisons['validation']['recovered_at_500_delta'] >= 0) and (comparisons['validation']['mrr_delta'] > 0.0) and (comparisons['validation']['top100_precision_delta'] >= -0.1))\n    return {'selected_variant': selected_variant, 'selection_used_years': development['years'], 'untouched_validation_years': validation['years'], 'panel_evaluations': {'development': development, 'validation': validation}, 'improvement_over_persistence': comparisons, 'verdict': 'PASS_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT' if passes else 'FAIL_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT'}",
+      "positional_args": [
+        "hidden_labels",
+        "panel_results"
+      ]
+    },
+    "evaluate_panel": {
+      "ast_sha256": "852a291e8ca65ae4f78b913558edad05b377d4a25279f5d18066517ab6997ce4",
+      "defaults": [],
+      "end_line": 606,
+      "keyword_only_args": [],
+      "line": 505,
+      "normalized_source": "def evaluate_panel(hidden_labels: dict[str, str], families: list[dict[str, Any]], rankings: dict[str, list[str]], panel_years: tuple[int, ...]) -> dict[str, Any]:\n    label_year_counts: dict[str, Counter[int]] = defaultdict(Counter)\n    for event_id, label in hidden_labels.items():\n        year = int(str(event_id)[:4])\n        if year in panel_years and label != 'SPORADIC':\n            label_year_counts[label][year] += 1\n    eligible = {label: counts for label, counts in label_year_counts.items() if sum(counts.values()) >= 8 and all((counts.get(year, 0) >= 4 for year in panel_years))}\n    if len(eligible) < 8:\n        raise RuntimeError(f'insufficient eligible known showers in years {panel_years}: {len(eligible)}')\n    family_by_id = {f['family_id']: f for f in families}\n    family_label_stats: dict[str, dict[str, Any]] = {}\n    for family in families:\n        counts = Counter((hidden_labels.get(event_id, 'SPORADIC') for event_id in family['event_ids']))\n        counts.pop('SPORADIC', None)\n        label, count = counts.most_common(1)[0] if counts else (None, 0)\n        family_label_stats[family['family_id']] = {'dominant_label': label, 'dominant_count': int(count), 'dominant_precision': float(count / family['event_count']) if family['event_count'] else 0.0}\n    best_family_for_label: dict[str, dict[str, Any] | None] = {}\n    for label, year_counts in eligible.items():\n        total = int(sum(year_counts.values()))\n        candidates: list[tuple[float, float, int, str, int]] = []\n        for family in families:\n            overlap = sum((hidden_labels.get(event_id) == label for event_id in family['event_ids']))\n            if overlap < 4:\n                continue\n            precision = overlap / family['event_count']\n            recall = overlap / total\n            f1 = 2.0 * precision * recall / (precision + recall) if precision + recall else 0.0\n            candidates.append((f1, precision, overlap, family['family_id'], total))\n        if not candidates:\n            best_family_for_label[label] = None\n            continue\n        f1, precision, overlap, family_id, total = max(candidates, key=lambda x: (x[0], x[1], x[2], x[3]))\n        best_family_for_label[label] = {'family_id': family_id, 'overlap': int(overlap), 'precision': float(precision), 'recall': float(overlap / total), 'f1': float(f1), 'total': total}\n    metrics: dict[str, dict[str, Any]] = {}\n    for variant in RANKING_VARIANTS:\n        rank_map = {family_id: rank for rank, family_id in enumerate(rankings[variant], 1)}\n        top100 = [family_by_id[fid] for fid in rankings[variant][:100]]\n        top100_precision = float(np.mean([family_label_stats[f['family_id']]['dominant_precision'] for f in top100])) if top100 else 0.0\n        ranks: list[int] = []\n        f1s: list[float] = []\n        recovered100 = 0\n        recovered500 = 0\n        qualified = 0\n        per_label: list[dict[str, Any]] = []\n        for label in sorted(eligible):\n            match = best_family_for_label[label]\n            if match is None:\n                per_label.append({'label': label, 'rank': None, 'qualified': False})\n                continue\n            rank = rank_map[match['family_id']]\n            is_qualified = bool(match['precision'] >= 0.5 and match['overlap'] >= 4)\n            if is_qualified:\n                qualified += 1\n                ranks.append(rank)\n                f1s.append(match['f1'])\n                recovered100 += int(rank <= 100)\n                recovered500 += int(rank <= 500)\n            per_label.append({'label': label, 'rank': rank, 'qualified': is_qualified, **match})\n        metrics[variant] = {'eligible_labels': len(eligible), 'qualified_matches': qualified, 'recovered_at_100': recovered100, 'recovered_at_500': recovered500, 'mrr': float(np.mean([1.0 / rank for rank in ranks])) if ranks else 0.0, 'median_rank': float(np.median(ranks)) if ranks else None, 'macro_f1': float(np.mean(f1s)) if f1s else 0.0, 'top100_dominant_precision': top100_precision, 'per_label': per_label}\n    return {'years': list(panel_years), 'eligible_label_count': len(eligible), 'eligible_label_year_counts': {label: {str(year): int(counts.get(year, 0)) for year in panel_years} for label, counts in sorted(eligible.items())}, 'metrics': metrics}",
+      "positional_args": [
+        "hidden_labels",
+        "families",
+        "rankings",
+        "panel_years"
+      ]
+    },
+    "exact_anchor_distances": {
+      "ast_sha256": "cf428bd02be0b3c0c14f2f38a07f3a6d82fffb35af4fa3f3eb9b76c67d1a79bd",
+      "defaults": [],
+      "end_line": 255,
+      "keyword_only_args": [],
+      "line": 248,
+      "normalized_source": "def exact_anchor_distances(anchor: dict[str, Any], others: list[dict[str, Any]], base: types.ModuleType) -> np.ndarray:\n    d_sol = np.asarray([float(base.wrap180(float(e['sol']) - float(anchor['sol']))) for e in others]) / 4.0\n    d_lon_raw = np.asarray([float(base.wrap180(float(e['sun_lon']) - float(anchor['sun_lon']))) for e in others])\n    mean_lat = np.radians(0.5 * (np.asarray([float(e['ecl_lat']) for e in others]) + float(anchor['ecl_lat'])))\n    d_lon = d_lon_raw * np.cos(mean_lat) / 2.0\n    d_lat = (np.asarray([float(e['ecl_lat']) for e in others]) - float(anchor['ecl_lat'])) / 2.0\n    d_vg = (np.asarray([float(e['vg']) for e in others]) - float(anchor['vg'])) / 2.0\n    return np.sqrt(d_sol * d_sol + d_lon * d_lon + d_lat * d_lat + d_vg * d_vg)",
+      "positional_args": [
+        "anchor",
+        "others",
+        "base"
+      ]
+    },
+    "family_scores": {
+      "ast_sha256": "52d0418ce262c90705c5ebaa9b4973e96712e8722c45099021243ed88e964855",
+      "defaults": [],
+      "end_line": 339,
+      "keyword_only_args": [],
+      "line": 326,
+      "normalized_source": "def family_scores(family: dict[str, Any]) -> dict[str, float]:\n    year_strength = [float(v) for v in family['year_strengths'].values()]\n    support = len(year_strength)\n    total = float(sum(year_strength))\n    mean = total / support\n    sqrt_support = total / math.sqrt(support)\n    min_support = float(min(year_strength)) * math.sqrt(support)\n    size_penalized = sqrt_support / math.log2(2.0 + float(family['event_count']))\n    return {'mean_year_strength': mean, 'sqrt_support_strength': sqrt_support, 'min_year_strength': min_support, 'size_penalized_strength': size_penalized}",
+      "positional_args": [
+        "family"
+      ]
+    },
+    "load_sources": {
+      "ast_sha256": "7a9bbb69f902809267518a5291e4408b871e943ea1ab30f7b0d97690ba3cf6f4",
+      "defaults": [],
+      "end_line": 105,
+      "keyword_only_args": [],
+      "line": 87,
+      "normalized_source": "def load_sources(args: argparse.Namespace) -> tuple[types.ModuleType, types.ModuleType, types.ModuleType]:\n    candidate = load_module('orbittrace_blind_candidate', decode_payload(args.candidate_payload), EXPECTED_CANDIDATE_SHA)\n    baseline = load_module('orbittrace_blind_baseline', decode_payload(args.baseline_payload), EXPECTED_BASELINE_SHA)\n    scorer = load_module('orbittrace_blind_scorer', decode_parts(args.scorer_parts, ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']), EXPECTED_SCORER_SHA)\n    frozen = {'candidate_scale': getattr(candidate, 'CANDIDATE_SCALE', None), 'episode_size': getattr(baseline, 'EPISODE_SIZE', None), 'window': getattr(baseline, 'WINDOW', None), 'calibration': getattr(scorer, 'CALIBRATION_NEGATIVES_PER_BIN', None), 'bin_width': getattr(scorer, 'MONDRIAN_BIN_WIDTH_DEG', None)}\n    expected = {'candidate_scale': 4.0, 'episode_size': 128, 'window': 10.0, 'calibration': 128, 'bin_width': 10.0}\n    if frozen != expected:\n        raise RuntimeError(f'frozen constants mismatch: {frozen}')\n    return (candidate, baseline, scorer)",
+      "positional_args": [
+        "args"
+      ]
+    },
+    "main": {
+      "ast_sha256": "b1ebdbe44a22731247870dfcb873adad15ee7dc064fc385674c3d5e3041cc517",
+      "defaults": [],
+      "end_line": 763,
+      "keyword_only_args": [],
+      "line": 660,
+      "normalized_source": "def main() -> int:\n    args = parse_args()\n    args.output.mkdir(parents=True, exist_ok=True)\n    candidate, base, scorer = load_sources(args)\n    scan_by_year, calibration_by_year, hidden_labels, sources = parse_catalogue(base)\n    year_audits: list[dict[str, Any]] = []\n    all_quartets: list[dict[str, Any]] = []\n    all_components: list[dict[str, Any]] = []\n    for year in YEARS:\n        audit, quartets, components = scan_year(year, scan_by_year[year], calibration_by_year[year], candidate, base, scorer)\n        year_audits.append(audit)\n        all_quartets.extend(quartets)\n        all_components.extend(components)\n    panel_years = {'development': (2022, 2023), 'validation': (2024, 2025)}\n    panel_results: dict[str, dict[str, Any]] = {}\n    for panel_name, years in panel_years.items():\n        components = [c for c in all_components if int(c['year']) in years]\n        families, rankings = build_families(components, base)\n        panel_results[panel_name] = {'years': list(years), 'component_count': len(components), 'family_count': len(families), 'families': families, 'rankings': rankings, 'evaluation': evaluate_panel(hidden_labels, families, rankings, years)}\n    development = develop_wrapper(hidden_labels, panel_results)\n    result = {'configuration': {'years': list(YEARS), 'development_years': list(panel_years['development']), 'untouched_validation_years': list(panel_years['validation']), 'month_keys': list(MONTH_KEYS), 'corpus': CORPUS, 'blind_exclusion': [BLIND_LOW, BLIND_HIGH], 'candidate_scale': 4.0, 'calibration_per_bin': CALIBRATION_PER_BIN, 'shortlist_k': SHORTLIST_K, 'audit_shortlist_k': AUDIT_SHORTLIST_K, 'family_link_radius': FAMILY_LINK_RADIUS, 'minimum_component_events': MIN_COMPONENT_EVENTS, 'minimum_component_quartets': MIN_COMPONENT_QUARTETS, 'minimum_family_years': MIN_FAMILY_YEARS, 'minimum_anchor_count': MIN_ANCHOR_COUNT, 'max_quartets_per_bin': MAX_QUARTETS_PER_BIN, 'ranking_variants': list(RANKING_VARIANTS)}, 'source_sha256': {'candidate': EXPECTED_CANDIDATE_SHA, 'baseline': EXPECTED_BASELINE_SHA, 'scorer': EXPECTED_SCORER_SHA}, 'catalogue_sources': sources, 'year_audits': year_audits, 'panel_results': panel_results, 'development': development, 'blindness_boundary': 'Solar longitude 20-55 degrees was removed before label normalization. Ranking selection used only 2022-2023. The 2024-2025 validation panel did not influence variant selection. OrbitTrace members, coordinates, prior ranks, and recovery outcomes were unavailable.', 'verdict': development['verdict']}\n    (args.output / 'orbittrace_fixed4_support_wrapper_development.json').write_text(json.dumps(result, indent=2, sort_keys=True) + '\\n', encoding='utf-8')\n    selected_name = development['selected_variant']\n    lines = ['# OrbitTrace fixed4 support-normalized wrapper development', '', f\"Verdict: `{development['verdict']}`\", '', f'Selected ranking: **{selected_name}**', '', 'Selection years: **2022-2023**. Untouched validation years: **2024-2025**.', '', '| panel | ranking | recall@100 | recall@500 | MRR | top-100 dominant precision |', '|---|---|---:|---:|---:|---:|']\n    for panel_name in ('development', 'validation'):\n        evaluation = development['panel_evaluations'][panel_name]\n        for ranking_name in ('persistence', selected_name):\n            table = evaluation['metrics'][ranking_name]\n            lines.append(f\"| {panel_name} | {ranking_name} | {table['recovered_at_100']}/{table['eligible_labels']} | {table['recovered_at_500']}/{table['eligible_labels']} | {table['mrr']:.6f} | {table['top100_dominant_precision']:.4f} |\")\n    lines.extend(['', 'The OrbitTrace interval was removed before label access. A pass authorizes a separately frozen one-shot transfer; it does not retroactively alter the detector or earlier blind results.'])\n    (args.output / 'ORBITTRACE_FIXED4_SUPPORT_WRAPPER_DEVELOPMENT.md').write_text('\\n'.join(lines) + '\\n', encoding='utf-8')\n    print('\\n'.join(lines), flush=True)\n    return 0",
+      "positional_args": []
+    },
+    "parse_catalogue": {
+      "ast_sha256": "91d0dffc640ef88802334acbb35680bb101dbbf4a8285e8b0d4645741a254d60",
+      "defaults": [],
+      "end_line": 229,
+      "keyword_only_args": [],
+      "line": 162,
+      "normalized_source": "def parse_catalogue(base: types.ModuleType) -> tuple[dict[int, list[dict[str, Any]]], dict[int, list[dict[str, Any]]], dict[str, str], list[dict[str, Any]]]:\n    scan_by_year: dict[int, list[dict[str, Any]]] = defaultdict(list)\n    calibration_by_year: dict[int, list[dict[str, Any]]] = defaultdict(list)\n    hidden_labels: dict[str, str] = {}\n    sources: list[dict[str, Any]] = []\n    seen: set[str] = set()\n    for key in MONTH_KEYS:\n        year = int(key[:4])\n        text = dd.get_monthly_file_content_by_date(key)\n        payload = text.encode('utf-8')\n        frame = read_gmn_frame(text)\n        columns = column_map(frame)\n        data = pd.DataFrame({'id': frame[columns['id']].astype(str), 'sol': pd.to_numeric(frame[columns['sol']], errors='coerce'), 'lam': pd.to_numeric(frame[columns['lam']], errors='coerce'), 'bet': pd.to_numeric(frame[columns['bet']], errors='coerce'), 'vg': pd.to_numeric(frame[columns['vg']], errors='coerce')})\n        valid = np.isfinite(data[['sol', 'lam', 'bet', 'vg']]).all(axis=1)\n        valid &= data['sol'].between(0.0, 360.0)\n        valid &= data['lam'].between(0.0, 360.0)\n        valid &= data['bet'].between(-90.0, 90.0)\n        valid &= data['vg'].between(5.0, 75.0)\n        valid &= ~data['sol'].between(BLIND_LOW, BLIND_HIGH, inclusive='both')\n        selected = data.loc[valid].copy()\n        selected['label'] = frame.loc[selected.index, columns['label']].map(normalize_label)\n        duplicate_rows = int(selected['id'].isin(seen).sum())\n        selected = selected.loc[~selected['id'].isin(seen)]\n        seen.update(selected['id'].tolist())\n        sun_lon = base.wrap180(selected['lam'].to_numpy(float) - selected['sol'].to_numpy(float))\n        scan_events: list[dict[str, Any]] = []\n        calibration_events: list[dict[str, Any]] = []\n        for event_id, sol, lon, bet, vg, label in zip(selected['id'].tolist(), selected['sol'].to_numpy(float), np.asarray(sun_lon, dtype=float), selected['bet'].to_numpy(float), selected['vg'].to_numpy(float), selected['label'].tolist()):\n            event_id = str(event_id)\n            event = {'id': event_id, 'year': year, 'sol': float(sol), 'sun_lon': float(lon), 'ecl_lat': float(bet), 'vg': float(vg), 'iau': 0, 'complex_key': 'HIDDEN'}\n            scan_events.append(event)\n            hidden_labels[event_id] = str(label)\n            if label == 'SPORADIC':\n                calibration_events.append(dict(event, complex_key='SPORADIC'))\n        scan_by_year[year].extend(scan_events)\n        calibration_by_year[year].extend(calibration_events)\n        sources.append({'key': key, 'bytes': len(payload), 'sha256': sha256_bytes(payload), 'raw_rows': int(len(frame)), 'selected_rows_after_blind_exclusion': int(len(scan_events)), 'selected_sporadic_calibration_rows': int(len(calibration_events)), 'duplicate_rows_removed': duplicate_rows, 'columns': columns})\n        print(f'catalogue {key}: raw={len(frame):,} scan={len(scan_events):,} calibration={len(calibration_events):,}', flush=True)\n    for year in YEARS:\n        if len(scan_by_year[year]) < 1000 or len(calibration_by_year[year]) < 1000:\n            raise RuntimeError(f'insufficient catalogue events for {year}: scan={len(scan_by_year[year])}, calibration={len(calibration_by_year[year])}')\n    return (dict(scan_by_year), dict(calibration_by_year), hidden_labels, sources)",
+      "positional_args": [
+        "base"
+      ]
+    },
+    "quartet_score": {
+      "ast_sha256": "676b7287d7cd1767f7216a0cabbaf9fb5c149d4f904051f6073320bda5fa3424",
+      "defaults": [],
+      "end_line": 263,
+      "keyword_only_args": [],
+      "line": 258,
+      "normalized_source": "def quartet_score(events: list[dict[str, Any]], base: types.ModuleType) -> float:\n    distance = np.empty((4, 4), dtype=np.float64)\n    for i, anchor in enumerate(events):\n        distance[i] = exact_anchor_distances(anchor, events, base)\n    np.fill_diagonal(distance, 0.0)\n    return -float(np.max(distance))",
+      "positional_args": [
+        "events",
+        "base"
+      ]
+    },
+    "rank_families": {
+      "ast_sha256": "2ef9496bbb5e476ec2950760867d2a8b982b03b18ef123b294b7d75a3b03c253",
+      "defaults": [],
+      "end_line": 358,
+      "keyword_only_args": [],
+      "line": 342,
+      "normalized_source": "def rank_families(families: list[dict[str, Any]]) -> dict[str, list[str]]:\n    rankings: dict[str, list[str]] = {}\n    persistence = sorted(families, key=lambda x: (-x['year_count'], -x['event_count'], -x['quartet_count'], -x['anchor_count'], -x['best_score'], x['family_id']))\n    rankings['persistence'] = [f['family_id'] for f in persistence]\n    for variant in RANKING_VARIANTS[1:]:\n        ordered = sorted(families, key=lambda x: (-float(x['ranking_scores'][variant]), -x['year_count'], -x['anchor_count'], x['event_count'], x['family_id']))\n        rankings[variant] = [f['family_id'] for f in ordered]\n    for variant, ordered in rankings.items():\n        for rank, family_id in enumerate(ordered, 1):\n            next((f for f in families if f['family_id'] == family_id))['ranks'][variant] = rank\n    return rankings",
+      "positional_args": [
+        "families"
+      ]
+    },
+    "read_gmn_frame": {
+      "ast_sha256": "f8c7bfeeaa02dcdde642aaf5759a90821bacee126db5434cd5c93e8fbe453f2f",
+      "defaults": [],
+      "end_line": 160,
+      "keyword_only_args": [],
+      "line": 145,
+      "normalized_source": "def read_gmn_frame(text: str) -> pd.DataFrame:\n    original = pd.to_datetime\n\n    def tolerant_to_datetime(arg: Any, *args: Any, **kwargs: Any) -> Any:\n        try:\n            return original(arg, *args, **kwargs)\n        except ValueError:\n            repaired = dict(kwargs)\n            repaired.pop('format', None)\n            return original(arg, *args, format='mixed', **repaired)\n    pd.to_datetime = tolerant_to_datetime\n    try:\n        return reader.read_data(text, output_camel_case=True).reset_index(drop=False)\n    finally:\n        pd.to_datetime = original",
+      "positional_args": [
+        "text"
+      ]
+    },
+    "scan_year": {
+      "ast_sha256": "eeab4adc7e57d7373e963a8bc0a13e4055c686c5babdf5a8e23b20f11fb85bfa",
+      "defaults": [],
+      "end_line": 503,
+      "keyword_only_args": [],
+      "line": 408,
+      "normalized_source": "def scan_year(year: int, events: list[dict[str, Any]], calibration_events: list[dict[str, Any]], candidate: types.ModuleType, base: types.ModuleType, scorer: types.ModuleType) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:\n    factory = scorer.MondrianWindowFactory(base, calibration_events)\n    event_lookup = {str(e['id']): e for e in events}\n    supported_bins: list[int] = []\n    calibration_max: dict[int, float] = {}\n    calibration_summary: list[dict[str, Any]] = []\n    for bin_index in range(36):\n        values: list[float] = []\n        try:\n            for index in range(CALIBRATION_PER_BIN):\n                episode = factory.make(year, bin_index, scorer.stable_seed('orbittrace-wrapper-development-calibration', CORPUS, year, bin_index, index))\n                scores, _ = candidate.scores_for_episode(base, episode)\n                values.append(float(scores['4']))\n        except RuntimeError:\n            continue\n        if len(values) != CALIBRATION_PER_BIN:\n            continue\n        supported_bins.append(bin_index)\n        calibration_max[bin_index] = float(max(values))\n        calibration_summary.append({'bin': bin_index, 'count': len(values), 'median': float(np.median(values)), 'max': float(max(values))})\n    print(f'year {year}: {len(events):,} scan events, {len(calibration_events):,} calibration events, {len(supported_bins)} supported bins', flush=True)\n    passing: list[dict[str, Any]] = []\n    passing_anchor_count = 0\n    shortlist_audit_failures = 0\n    for bin_pos, bin_index in enumerate(supported_bins, 1):\n        low = bin_index * 10.0\n        high = (bin_index + 1) * 10.0\n        anchors = [e for e in events if low <= float(e['sol']) < high]\n        pool = [e for e in events if abs(float(base.wrap180(float(e['sol']) - (low + 5.0)))) <= 15.0]\n        if len(pool) < 128 or not anchors:\n            continue\n        pool_index = {str(e['id']): i for i, e in enumerate(pool)}\n        features = feature_matrix(pool, low + 5.0, base)\n        k_query = min(AUDIT_SHORTLIST_K, len(pool))\n        nn = NearestNeighbors(n_neighbors=k_query, algorithm='auto', metric='euclidean', n_jobs=-1).fit(features)\n        anchor_rows = np.asarray([pool_index[str(e['id'])] for e in anchors], dtype=np.int64)\n        _, neighbor_indices = nn.kneighbors(features[anchor_rows], return_distance=True)\n        threshold = calibration_max[bin_index]\n        local_dedup: dict[tuple[str, ...], dict[str, Any]] = {}\n        for anchor, candidates_idx in zip(anchors, neighbor_indices):\n            candidate_events = [pool[int(i)] for i in candidates_idx if str(pool[int(i)]['id']) != str(anchor['id'])]\n            first = candidate_events[:max(3, SHORTLIST_K - 1)]\n            distances = exact_anchor_distances(anchor, first, base)\n            order = np.argsort(distances, kind='stable')[:3]\n            quartet = [anchor] + [first[int(i)] for i in order]\n            score = quartet_score(quartet, base)\n            if score <= threshold:\n                continue\n            full = candidate_events[:max(3, AUDIT_SHORTLIST_K - 1)]\n            full_distances = exact_anchor_distances(anchor, full, base)\n            full_order = np.argsort(full_distances, kind='stable')[:3]\n            audit_quartet = [anchor] + [full[int(i)] for i in full_order]\n            audit_score = quartet_score(audit_quartet, base)\n            ids = tuple(sorted((str(e['id']) for e in quartet)))\n            audit_ids = tuple(sorted((str(e['id']) for e in audit_quartet)))\n            if ids != audit_ids or abs(score - audit_score) > 1e-12:\n                shortlist_audit_failures += 1\n                quartet = audit_quartet\n                score = audit_score\n                ids = audit_ids\n                if score <= threshold:\n                    continue\n            passing_anchor_count += 1\n            record = local_dedup.get(ids)\n            if record is None:\n                local_dedup[ids] = {'year': year, 'bin': bin_index, 'quartet_ids': list(ids), 'score': float(score), 'threshold': threshold, 'anchor_count': 1, 'anchor_ids': [str(anchor['id'])]}\n            else:\n                record['anchor_count'] += 1\n                record['anchor_ids'].append(str(anchor['id']))\n                record['score'] = max(float(record['score']), float(score))\n        retained = [record for record in local_dedup.values() if int(record['anchor_count']) >= MIN_ANCHOR_COUNT]\n        retained.sort(key=lambda x: (-x['anchor_count'], -x['score'], x['quartet_ids']))\n        retained = retained[:MAX_QUARTETS_PER_BIN]\n        count = len(retained)\n        for rank, record in enumerate(retained, 1):\n            rank_fraction = (rank - 0.5) / max(1, count)\n            record['bin_rank'] = rank\n            record['bin_count'] = count\n            record['bin_strength'] = -math.log10(rank_fraction)\n        passing.extend(retained)\n        print(f'year {year}: scanned bin {bin_index} ({bin_pos}/{len(supported_bins)}), pass anchors={passing_anchor_count:,}, retained quartets={len(passing):,}', flush=True)\n    passing.sort(key=lambda x: (x['bin'], x['bin_rank'], x['quartet_ids']))\n    components = component_records(year, passing, event_lookup)\n    audit = {'year': year, 'scan_events': len(events), 'calibration_events': len(calibration_events), 'supported_bins': supported_bins, 'calibration': calibration_summary, 'passing_anchor_count': passing_anchor_count, 'unique_passing_quartets': len(passing), 'components': len(components), 'shortlist_audit_failures': shortlist_audit_failures}\n    return (audit, passing, components)",
+      "positional_args": [
+        "year",
+        "events",
+        "calibration_events",
+        "candidate",
+        "base",
+        "scorer"
+      ]
+    }
+  },
+  "labels_accessed": false,
+  "orbittrace_accessed": false,
+  "prospective_years": [
+    2019,
+    2020,
+    2021
+  ],
+  "scanner_source_bytes": 36311,
+  "scanner_source_sha256": "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62",
+  "verdict": "PASS_FIXED4_RANK_FUSION_PROSPECTIVE_INTERFACE_AUDIT"
+}
