@@ -5,3 +5,5 @@ This draft-PR-only marker triggers the base-branch recovery workflows. They exec
 Runner pools requested: Ubuntu and Windows.
 
 Final cancellation-protected trigger: 2026-08-06.
+
+Synchronized PR event trigger.
