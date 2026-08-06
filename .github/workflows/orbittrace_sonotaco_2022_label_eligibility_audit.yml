@@ -1,0 +1,137 @@
+name: OrbitTrace SonotaCo 2022 label eligibility audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-wavelet-hybrid-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2022_label_eligibility_audit.yml
+      - orbittrace_literature_comparison/build_sonotaco_2022_confirmation_source.py
+      - orbittrace_literature_comparison/run_sonotaco_2022_label_eligibility_audit.py
+      - orbittrace_literature_freeze/SONOTACO_2022_ARCHIVE_STRUCTURE_RESULT.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  eligibility-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hybrid-2022-source-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify frozen inputs and score-free eligibility source
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_literature_comparison/build_sonotaco_2022_confirmation_source.py)" = "43131118ee668fa89cd7aa8b6897316bfc17d722"
+          test "$(git hash-object orbittrace_literature_comparison/run_sonotaco_2022_label_eligibility_audit.py)" = "d5f7b40be5788f3dc299fb9922f8ac4baa0ad4d7"
+          python -m py_compile \
+            orbittrace_literature_comparison/build_sonotaco_2022_confirmation_source.py \
+            orbittrace_literature_comparison/run_sonotaco_2022_label_eligibility_audit.py
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+          structure = json.loads(Path('orbittrace_literature_freeze/SONOTACO_2022_ARCHIVE_STRUCTURE_RESULT.json').read_text())
+          assert structure['verdict'] == 'PASS_SONOTACO_2022_ARCHIVE_STRUCTURE_AUDIT'
+          assert structure['archive']['sha256'] == '94537246035322b466df8dc17e19ef08212433e2bda0a8fe3d53dc45ba7c747d'
+          assert structure['annual_member']['sha256'] == '0fcaab867405cc010d9b1dbd6212d58c6461106475ce79c30cce5b5e8e4226d4'
+          assert structure['annual_member']['total_nonblank_rows'] == 48788
+          source = Path('orbittrace_literature_comparison/run_sonotaco_2022_label_eligibility_audit.py').read_text()
+          tree = ast.parse(source)
+          calls = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Call):
+                  if isinstance(node.func, ast.Name):
+                      calls.add(node.func.id)
+                  elif isinstance(node.func, ast.Attribute):
+                      calls.add(node.func.attr)
+          assert not calls.intersection({'fixed4_score','score_all','wavelet_episode_score','target_hybrid_statistic','roc_auc_score','auc','rate'})
+          assert 'parse_sonotaco_2022_events' in source
+          print('PASS_SCORE_FREE_2022_ELIGIBILITY_SOURCE_GUARD')
+          PY
+
+      - name: Retrieve validated 2023 parser source and frozen mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 --repo "$GITHUB_REPOSITORY" --name sonotaco-2023-confirmation-source-repair-v2 --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Build and audit the deterministic 2022 parser source before label access
+        run: |
+          set -euo pipefail
+          python orbittrace_literature_comparison/build_sonotaco_2022_confirmation_source.py \
+            --source-2023 input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --output /tmp/run_sonotaco_2022_confirmation.py \
+            | tee output/parser_build.txt
+          python -m py_compile /tmp/run_sonotaco_2022_confirmation.py
+          sha256sum /tmp/run_sonotaco_2022_confirmation.py | tee output/parser_source_sha256.txt
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_sonotaco_2022_confirmation.py').read_text()
+          assert 'YEAR = 2022' in source
+          assert 'CORPUS = "sonotaco-2022-hybrid-validation"' in source
+          assert 'def parse_sonotaco_2022_events(' in source
+          assert 'f"SNM2022:{row_index}"' in source
+          assert '94537246035322b466df8dc17e19ef08212433e2bda0a8fe3d53dc45ba7c747d' in source
+          assert '0fcaab867405cc010d9b1dbd6212d58c6461106475ce79c30cce5b5e8e4226d4' in source
+          assert 'EXPECTED_ROWS = 48_788' in source
+          print('PASS_BUILT_2022_PARSER_SOURCE_AUDIT')
+          PY
+
+      - name: Download exact SonotaCo 2022 archive
+        run: |
+          curl --fail --location --retry 3 --output input/022a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/022a.zip
+          echo '94537246035322b466df8dc17e19ef08212433e2bda0a8fe3d53dc45ba7c747d  input/022a.zip' | sha256sum -c -
+
+      - name: Execute label and episode eligibility audit without scoring
+        run: |
+          set -euo pipefail
+          python orbittrace_literature_comparison/run_sonotaco_2022_label_eligibility_audit.py \
+            --archive input/022a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --confirmation-source /tmp/run_sonotaco_2022_confirmation.py \
+            --output output
+
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/FIXED4_WAVELET_HYBRID_PROTOCOL.json \
+            orbittrace_literature_freeze/SONOTACO_2022_ARCHIVE_STRUCTURE_RESULT.json \
+            orbittrace_literature_comparison/build_sonotaco_2022_confirmation_source.py \
+            orbittrace_literature_comparison/run_sonotaco_2022_label_eligibility_audit.py \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            input/audit.json input/022a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          if [ -f /tmp/run_sonotaco_2022_confirmation.py ]; then sha256sum /tmp/run_sonotaco_2022_confirmation.py >> output/source_and_input_sha256.txt; fi
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sonotaco-2022-label-eligibility-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
