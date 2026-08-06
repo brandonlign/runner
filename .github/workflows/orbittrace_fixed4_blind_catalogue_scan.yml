@@ -1,0 +1,115 @@
+name: OrbitTrace fixed4 blind catalogue scan
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-blind-catalogue-audit
+    paths:
+      - orbittrace_fixed4_blind_catalogue/EXECUTION_PROTOCOL.md
+      - orbittrace_fixed4_blind_catalogue/source_parts/**
+      - .github/workflows/orbittrace_fixed4_blind_catalogue_scan.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-blind-catalogue-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      SCAN_SOURCE_SHA256: '48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5'
+      SCAN_SOURCE_BYTES: '24135'
+      SCAN_ENCODED_LENGTH: '9600'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-blind-catalogue-scan
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Decode, verify, and audit blind source
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast, base64, gzip, hashlib, os
+          from pathlib import Path
+          parts = sorted(Path('orbittrace_fixed4_blind_catalogue/source_parts').glob('part*.b64'))
+          if [p.name for p in parts] != [f'part{i:02d}.b64' for i in range(4)]:
+              raise RuntimeError(f'wrong source parts: {[p.name for p in parts]}')
+          encoded = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in parts)
+          if len(encoded) != int(os.environ['SCAN_ENCODED_LENGTH']):
+              raise RuntimeError(f'encoded length mismatch: {len(encoded)}')
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          if len(source) != int(os.environ['SCAN_SOURCE_BYTES']):
+              raise RuntimeError(f'source byte mismatch: {len(source)}')
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != os.environ['SCAN_SOURCE_SHA256']:
+              raise RuntimeError(f'source hash mismatch: {digest}')
+          text = source.decode('utf-8')
+          forbidden = [
+              '8814798136', '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5',
+              'april_candidate_members.csv', '247.17', '-14.34', '37.62', 'GhostStream_Expert_Review_Bundle'
+          ]
+          found = [value for value in forbidden if value in text]
+          if found:
+              raise RuntimeError(f'target information present in blind source: {found}')
+          tree = ast.parse(text)
+          names = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+          required = {'parse_catalogue', 'scan_year', 'build_families', 'exact_anchor_distances', 'read_gmn_frame'}
+          if not required.issubset(names):
+              raise RuntimeError(f'missing blind interfaces: {sorted(required - names)}')
+          Path('/tmp/run_orbittrace_fixed4_blind_scan.py').write_bytes(source)
+          print('blind source bytes:', len(source))
+          print('blind source SHA-256:', digest)
+          PY
+          python -m py_compile /tmp/run_orbittrace_fixed4_blind_scan.py
+      - name: Run frozen blind catalogue scan
+        run: |
+          set -euo pipefail
+          python /tmp/run_orbittrace_fixed4_blind_scan.py \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --output output
+          cat output/ORBITTRACE_FIXED4_BLIND_SCAN.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_fixed4_blind_catalogue/EXECUTION_PROTOCOL.md \
+            orbittrace_fixed4_blind_catalogue/source_parts/part00.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part01.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part02.b64 \
+            orbittrace_fixed4_blind_catalogue/source_parts/part03.b64 \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen blind evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-blind-catalogue-scan
+          path: output
+          if-no-files-found: error
+          retention-days: 90
