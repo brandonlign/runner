@@ -18,7 +18,7 @@ Development years: **2022 and 2023 only**.
 
 Every row with solar longitude in the closed interval **20°–55°** is removed from geometry before shower-label normalization or storage. No 2024–2026 catalogue is loaded. No OrbitTrace coordinate, member identity, canonical artifact, activity interval, or target exception is available.
 
-Known-shower labels may be opened only after the target interval has been removed and the unlabeled candidate families have been frozen in memory. They are used solely to evaluate this development formulation.
+After the target interval is removed, labels are stored in a separate lookup used only by the final evaluation function. Candidate scanning, exact rescoring, component formation, cross-year linking, and ranking receive no label lookup and contain no label-dependent branch.
 
 ## Frozen candidate generation
 
