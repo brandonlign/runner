@@ -71,6 +71,7 @@ jobs:
           core_sha = hashlib.sha256(core).hexdigest()
           runner_sha = hashlib.sha256(runner).hexdigest()
           assert core_sha == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb'
+          assert runner_sha == '2013ffc91cc299da1635ddd0cc728b460aebf030671ea0a83b7ddce4632a39a8'
           compile(core, 'sugar_uncertainty_catalogue.py', 'exec')
           compile(runner, 'run_sonotaco_2023_sugar_uncertainty_transfer.py', 'exec')
           output.joinpath('sugar_uncertainty_catalogue.py').write_bytes(core)
@@ -98,15 +99,24 @@ jobs:
               'MEMBER_SHA256': '3f1cfedf59553568d6471e022ad032ec5ba71ce5287a24071d30bcc1e8bac685',
               'EXPECTED_SKLEARN_VERSION': '1.5.2',
           }
+          prohibited_candidate_literals = (
+              'GhostStream', '247.17', '-14.34', '37.62', '0.0801', '0.9436', '24.37', '333.64', '37.16'
+          )
           gates = {
               'exact_successful_core': core_sha == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb',
+              'exact_staged_runner_hash': runner_sha == '2013ffc91cc299da1635ddd0cc728b460aebf030671ea0a83b7ddce4632a39a8',
               'runner_compiles': True,
               'year_and_archive_literals_exact': all(literal_globals.get(key) == value for key, value in required_literals.items()),
               'freeze_argument_present': '--freeze' in text,
               'confirmation_parser_argument_present': '--confirmation-source' in text,
               'frozen_epsilon_literal_present': '0.028705145052265017' in text,
               'one_thousand_clone_rule_present': 'CLONE_ITERATIONS' in text and '1000' in text,
-              'no_orbittrace_access_literal': 'GhostStream' not in text and 'OrbitTrace' not in text and '247.17' not in text,
+              'no_candidate_value_or_name_literal': not any(value in text for value in prohibited_candidate_literals),
+              'orbittrace_only_in_claim_boundary': all(
+                  'blind OrbitTrace rediscovery test' in line
+                  for line in text.splitlines()
+                  if 'OrbitTrace' in line
+              ),
               'expected_transfer_functions_present': all(name in functions for name in ('load_sidecars', 'prepare_records', 'score_iteration', 'evaluate', 'main')),
               'no_data_access': True,
           }
