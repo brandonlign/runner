@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Decode immutable final-development source
+      - name: Decode immutable benchmark sources
         run: |
           set -euo pipefail
           mkdir -p audit_output
@@ -41,65 +41,101 @@ jobs:
           import json
           from pathlib import Path
 
-          payload = Path('sonotaco_fixed4_final_development/candidate.py.gz.b64')
-          encoded = ''.join(payload.read_text(encoding='ascii').split())
-          source = gzip.decompress(base64.b64decode(encoded, validate=True))
-          digest = hashlib.sha256(source).hexdigest()
-          expected = '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301'
-          if digest != expected:
-              raise RuntimeError(f'candidate source mismatch: {digest}')
+          def decode_file(path: Path) -> bytes:
+              encoded = ''.join(path.read_text(encoding='ascii').split())
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
 
-          text = source.decode('utf-8')
-          tree = ast.parse(text)
-          Path('audit_output/decoded_candidate.py').write_text(text, encoding='utf-8')
+          def decode_parts(path: Path, names: list[str]) -> bytes:
+              parts = [path / name for name in names]
+              if not all(part.is_file() for part in parts):
+                  raise RuntimeError(f'missing source part under {path}')
+              encoded = ''.join(''.join(part.read_text(encoding='ascii').split()) for part in parts)
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
 
-          inventory = {
-              'source_sha256': digest,
-              'source_bytes': len(source),
-              'imports': [],
-              'classes': [],
-              'functions': [],
-              'assignments': [],
+          sources = {
+              'candidate': (
+                  decode_file(Path('sonotaco_fixed4_final_development/candidate.py.gz.b64')),
+                  '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301',
+              ),
+              'baseline': (
+                  decode_file(Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64')),
+                  '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50',
+              ),
+              'scorer': (
+                  decode_parts(Path('mondrian_clique_development/source_parts_v2'),
+                               ['part00.b64', 'part01.b64', 'part02.b64', 'part03.b64']),
+                  'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8',
+              ),
+              'adapter': (
+                  decode_parts(Path('sonotaco_mondrian_development/source_parts'), ['part00.b64']),
+                  '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518',
+              ),
           }
-          excerpts = []
+
           keywords = (
               'episode', 'window', 'negative', 'positive', 'calib', 'score',
               'dbscan', 'density', 'split', 'auc', 'fold', 'parse', 'load',
-              'adapter', 'baseline', 'mondrian', 'shower', 'feature', 'distance'
+              'adapter', 'baseline', 'mondrian', 'shower', 'feature', 'distance',
+              'event', 'orbit', 'radiant', 'link', 'cluster'
           )
+          combined_inventory = {}
+          combined_excerpts = []
+          digest_lines = []
 
-          for node in tree.body:
-              if isinstance(node, (ast.Import, ast.ImportFrom)):
-                  inventory['imports'].append(ast.get_source_segment(text, node))
-              elif isinstance(node, ast.ClassDef):
-                  inventory['classes'].append({
-                      'name': node.name,
-                      'line': node.lineno,
-                      'methods': [n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))],
-                  })
-                  if any(k in node.name.lower() for k in keywords):
-                      excerpts.append(ast.get_source_segment(text, node))
-              elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                  inventory['functions'].append({
-                      'name': node.name,
-                      'line': node.lineno,
-                      'args': [a.arg for a in node.args.args],
-                  })
-                  if any(k in node.name.lower() for k in keywords):
-                      excerpts.append(ast.get_source_segment(text, node))
-              elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-                  segment = ast.get_source_segment(text, node)
-                  if segment and len(segment) <= 1000:
-                      inventory['assignments'].append({'line': node.lineno, 'source': segment})
+          for name, (source, expected) in sources.items():
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != expected:
+                  raise RuntimeError(f'{name} source mismatch: {digest}')
+              text = source.decode('utf-8')
+              tree = ast.parse(text)
+              Path(f'audit_output/decoded_{name}.py').write_text(text, encoding='utf-8')
+              digest_lines.append(f'{digest}  decoded_{name}.py')
+
+              inventory = {
+                  'source_sha256': digest,
+                  'source_bytes': len(source),
+                  'imports': [],
+                  'classes': [],
+                  'functions': [],
+                  'assignments': [],
+              }
+              excerpts = []
+              for node in tree.body:
+                  if isinstance(node, (ast.Import, ast.ImportFrom)):
+                      inventory['imports'].append(ast.get_source_segment(text, node))
+                  elif isinstance(node, ast.ClassDef):
+                      inventory['classes'].append({
+                          'name': node.name,
+                          'line': node.lineno,
+                          'methods': [n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))],
+                      })
+                      if any(k in node.name.lower() for k in keywords):
+                          excerpts.append(ast.get_source_segment(text, node))
+                  elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                      inventory['functions'].append({
+                          'name': node.name,
+                          'line': node.lineno,
+                          'args': [a.arg for a in node.args.args],
+                      })
+                      if any(k in node.name.lower() for k in keywords):
+                          excerpts.append(ast.get_source_segment(text, node))
+                  elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                      segment = ast.get_source_segment(text, node)
+                      if segment and len(segment) <= 1200:
+                          inventory['assignments'].append({'line': node.lineno, 'source': segment})
+              combined_inventory[name] = inventory
+              combined_excerpts.append(
+                  f'# MODULE: {name}\n\n' + '\n\n# ' + ('-' * 76) + '\n\n'.join([''] + excerpts)
+              )
 
           Path('audit_output/ast_inventory.json').write_text(
-              json.dumps(inventory, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+              json.dumps(combined_inventory, indent=2, sort_keys=True) + '\n', encoding='utf-8'
           )
           Path('audit_output/relevant_excerpts.py').write_text(
-              '\n\n# ' + ('-' * 76) + '\n\n'.join([''] + excerpts) + '\n', encoding='utf-8'
+              '\n\n# ' + ('=' * 76) + '\n\n'.join([''] + combined_excerpts) + '\n', encoding='utf-8'
           )
-          Path('audit_output/source_sha256.txt').write_text(digest + '  decoded_candidate.py\n', encoding='utf-8')
-          print(json.dumps(inventory, indent=2))
+          Path('audit_output/source_sha256.txt').write_text('\n'.join(digest_lines) + '\n', encoding='utf-8')
+          print(json.dumps(combined_inventory, indent=2))
           PY
 
       - name: Enforce source-only boundary
@@ -115,7 +151,10 @@ jobs:
               raise SystemExit(f'forbidden data-access token(s): {found}')
           required = [
               '747b2b1471f3ba193d68a39dd82ad3ac8506be63b651d45f84ffabb8d1acd301',
-              'decoded_candidate.py',
+              '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50',
+              'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8',
+              '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518',
+              'decoded_candidate.py', 'decoded_baseline.py', 'decoded_scorer.py', 'decoded_adapter.py',
               'ast_inventory.json',
           ]
           missing = [token for token in required if token not in audited_section]
