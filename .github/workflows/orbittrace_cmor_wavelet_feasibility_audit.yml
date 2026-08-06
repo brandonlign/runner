@@ -1,0 +1,134 @@
+name: OrbitTrace CMOR wavelet feasibility audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sugar-uncertainty-catalogue-development
+    paths:
+      - .github/workflows/orbittrace_cmor_wavelet_feasibility_audit.yml
+      - orbittrace_literature_comparison/CMOR_WAVELET_FEASIBILITY_PROTOCOL.json
+      - orbittrace_literature_comparison/run_cmor_wavelet_feasibility_audit.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-cmor-wavelet-feasibility-audit
+  cancel-in-progress: true
+
+jobs:
+  feasibility-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-cmor-wavelet-feasibility-audit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify frozen protocol and source before catalogue access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_literature_comparison/CMOR_WAVELET_FEASIBILITY_PROTOCOL.json)" = "4a9bba3aafb9062d9c1076e4dd2c1ff494aeda85"
+          test "$(git hash-object orbittrace_literature_comparison/run_cmor_wavelet_feasibility_audit.py)" = "5e255ff37a7bc7e7cc99d6759af4911420009fd5"
+          python -m py_compile orbittrace_literature_comparison/run_cmor_wavelet_feasibility_audit.py
+          python - <<'PY'
+          import ast
+          import json
+          from pathlib import Path
+
+          protocol = json.loads(Path('orbittrace_literature_comparison/CMOR_WAVELET_FEASIBILITY_PROTOCOL.json').read_text())
+          assert protocol['status'] == 'frozen_before_any_wavelet_coefficient_or detection endpoint'
+          assert protocol['classification'] == 'source-grounded feasibility audit; not a scientific comparator result'
+          published = protocol['published_design']
+          assert published['time_partition'] == 'one-degree solar-longitude bins'
+          assert published['minimum_radiants_contributing_to_coefficient'] == 300
+          assert published['temporal_linking']['maximum_solar_longitude_separation_deg'] == 2.0
+          assert published['temporal_linking']['minimum_linked_points'] == 3
+          assert protocol['sonotaco_2025_feasibility_audit']['blind_interval_removed_before_label_access_deg'] == [20.0, 55.0]
+
+          source_path = Path('orbittrace_literature_comparison/run_cmor_wavelet_feasibility_audit.py')
+          source = source_path.read_text()
+          tree = ast.parse(source)
+          literal_globals = {}
+          imports = set()
+          exact_string_literals = set()
+          function_names = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                  exact_string_literals.add(node.value)
+              if isinstance(node, (ast.Import, ast.ImportFrom)):
+                  if isinstance(node, ast.Import):
+                      imports.update(alias.name.split('.')[0] for alias in node.names)
+                  elif node.module:
+                      imports.add(node.module.split('.')[0])
+          for node in tree.body:
+              if isinstance(node, ast.FunctionDef):
+                  function_names.add(node.name)
+              elif isinstance(node, ast.Assign):
+                  try:
+                      value = ast.literal_eval(node.value)
+                  except Exception:
+                      continue
+                  for target in node.targets:
+                      if isinstance(target, ast.Name):
+                          literal_globals[target.id] = value
+
+          assert literal_globals['YEAR'] == 2025
+          assert literal_globals['ARCHIVE_SHA256'] == 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52'
+          assert literal_globals['MEMBER_SHA256'] == '30d8cbdf414b2e9d6e587374fec7a4b6fa94c86e76a35e9b335cd4d0cbc917f7'
+          assert tuple(literal_globals['BLIND_INTERVAL_DEG']) == (20.0, 55.0)
+          assert literal_globals['PUBLISHED_MINIMUM_RADIANTS'] == 300
+          assert literal_globals['PUBLISHED_MAX_TIME_GAP_DEG'] == 2
+          assert literal_globals['PUBLISHED_MINIMUM_LINKED_POINTS'] == 3
+          assert imports.issubset({'__future__', 'argparse', 'csv', 'hashlib', 'io', 'json', 'math', 'statistics', 'zipfile', 'pathlib', 'typing'})
+          assert 'Shower' not in exact_string_literals
+          assert not any(name in function_names for name in ('wavelet', 'wavelet_coefficient', 'find_local_maxima', 'score_shower', 'recover_shower'))
+          assert {'load_counts', 'linked_triplets', 'longest_forward_chain', 'main'}.issubset(function_names)
+          assert 'numpy' not in source and 'scipy' not in source and 'sklearn' not in source
+          print('PASS_FROZEN_CMOR_FEASIBILITY_SOURCE_GUARD')
+          PY
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute support-only feasibility audit
+        run: |
+          set -euo pipefail
+          python orbittrace_literature_comparison/run_cmor_wavelet_feasibility_audit.py \
+            --archive input/025a.zip \
+            --protocol orbittrace_literature_comparison/CMOR_WAVELET_FEASIBILITY_PROTOCOL.json \
+            --output output
+          cat output/CMOR_WAVELET_FEASIBILITY_AUDIT.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_literature_comparison/CMOR_WAVELET_FEASIBILITY_PROTOCOL.json \
+            orbittrace_literature_comparison/run_cmor_wavelet_feasibility_audit.py \
+            input/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-cmor-wavelet-feasibility-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
