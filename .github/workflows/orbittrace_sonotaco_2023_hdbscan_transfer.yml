@@ -1,0 +1,115 @@
+name: OrbitTrace SonotaCo 2023 HDBSCAN transfer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hdbscan-catalogue-development
+    paths:
+      - .github/workflows/orbittrace_sonotaco_2023_hdbscan_transfer.yml
+      - orbittrace_hdbscan_freeze/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sonotaco-2023-hdbscan-transfer
+  cancel-in-progress: true
+
+jobs:
+  one-shot-transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hdbscan-2023-transfer
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+          python -m pip install hdbscan==0.8.44
+
+      - name: Verify 2025 result freeze and one-shot runner before 2023 data access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          echo 'c67c8ed880e058ba5def510e58c21cfb00d506edd55679369ff6aea2d47cf1c2  orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json' | sha256sum -c -
+          echo '306c9cda0d5fe6df04f4585a1f8fb77ad70a7f64b0ecff8f56f109e31a8f2b4f  orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00.b64' | sha256sum -c -
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          freeze = json.loads(Path('orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json').read_text())
+          assert freeze['verdict'] == 'PASS_SONOTACO_2025_HDBSCAN_CATALOGUE_TRANSFER'
+          assert freeze['workflow_run'] == 31071589912
+          assert freeze['artifact_id'] == 8955917326
+          assert freeze['artifact_digest'] == 'sha256:82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89'
+          assert freeze['frozen_before_sonotaco_2023_execution'] is True
+          config = freeze['configuration']
+          assert config['hdbscan_version'] == '0.8.44'
+          assert config['minimum_cluster_size'] == 100
+          assert config['minimum_samples'] is None
+          assert config['cluster_selection_method'] == 'eom'
+          assert config['metric'] == 'euclidean'
+
+          encoded = ''.join(Path('orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00.b64').read_text().split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '2e770252f68f40c7ebab8f072aef18b88246091e40a98673db69d09f7bb1d41b'
+          if digest != expected:
+              raise RuntimeError(f'2023 HDBSCAN runner source mismatch: {digest}')
+          Path('/tmp/run_sonotaco_2023_hdbscan_transfer.py').write_bytes(source)
+          compile(source, 'run_sonotaco_2023_hdbscan_transfer.py', 'exec')
+          print('PASS_PRE_2023_HDBSCAN_FREEZE', digest)
+          PY
+
+      - name: Download exact SonotaCo 2023 replacement archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Execute frozen one-shot catalogue transfer
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2023_hdbscan_transfer.py \
+            --archive input/023a.zip \
+            --freeze orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json \
+            --core-dist-jobs 4 \
+            --output output
+          cat output/SONOTACO_2023_HDBSCAN_TRANSFER.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_hdbscan_freeze/SONOTACO_2025_HDBSCAN_FREEZE.json \
+            orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/part00.b64 \
+            input/023a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload one-shot transfer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2023-hdbscan-transfer
+          path: output
+          if-no-files-found: error
+          retention-days: 90
