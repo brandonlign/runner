@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "status": "design_frozen_before_multiyear_archive_access",
+  "purpose": "Determine whether a seven-year SonotaCo virtual-year stack has sufficiently broad and stable support to authorize a survey-adapted implementation of the Brown et al. (2010) CMOR 3D wavelet search without weakening its published one-degree bins, 300-contributor floor, or three-point temporal-linking rule.",
+  "reference": {
+    "title": "A meteoroid stream survey using the Canadian Meteor Orbit Radar II: Identification of minor showers using a 3D wavelet transform",
+    "authors": "Brown, Wong, Weryk, and Wiegert",
+    "year": 2010,
+    "doi": "10.1016/j.icarus.2009.11.015"
+  },
+  "classification": "multiyear input and exposure feasibility audit; not a wavelet comparator result",
+  "virtual_year": {
+    "years": [2019, 2020, 2021, 2022, 2023, 2024, 2025],
+    "archive_url_template": "https://www.astro.sk/iaumdcDB/public/data/SNMv3/{year_two_digit}a.zip",
+    "stacking_rule": "raw concatenation into one virtual year, matching the published seven-year stacking concept; no coefficient or count is exposure-renormalized in this audit",
+    "archive_hash_policy": "This source-only design is frozen before access. The audit discovers and records exact archive and member SHA-256 values; every later coefficient run must pin them.",
+    "member_selection": "require exactly one annual CSV member matching */_U2_YYYY0101_S.csv in each archive"
+  },
+  "geometry_and_quality": {
+    "fields_read": ["sol(deg)", "vg(km/s)", "vg sd(km/s)", "Qc(deg)"],
+    "shower_labels_read": false,
+    "minimum_convergence_angle_deg_exclusive": 15.0,
+    "maximum_geocentric_speed_km_s": 75.0,
+    "maximum_speed_uncertainty_km_s": "0.10 * Vg + 1.0",
+    "blind_interval_removed_before_any_label_access_deg": [20.0, 55.0]
+  },
+  "published_rules_preserved": {
+    "time_bin_width_solar_longitude_deg": 1.0,
+    "minimum_radiants_contributing_to_coefficient": 300,
+    "maximum_link_gap_solar_longitude_deg": 2.0,
+    "minimum_linked_points": 3,
+    "seven_year_virtual_year": true
+  },
+  "support_and_exposure_metrics": [
+    "exact archive and member hashes and schemas by year",
+    "retained events by year",
+    "stacked retained events in every available one-degree bin",
+    "number of contributing years in every available bin",
+    "largest single-year share in every supported bin",
+    "fraction of bins meeting the necessary 300-total-event floor",
+    "number of published-gap three-point chains",
+    "longest published-gap chain",
+    "year-count and dominance summaries"
+  ],
+  "authorization_gates": {
+    "broad_total_support": "at least 80 percent of available one-degree bins contain at least 300 retained events in the seven-year raw stack",
+    "broad_multiyear_support": "at least 80 percent of available bins contain at least one retained event in five or more of the seven years",
+    "limited_single_year_dominance": "among bins reaching 300 total events, no more than 10 percent have one year contributing more than 50 percent of the bin total",
+    "temporal_coverage": "at least 200 distinct forward three-point chains satisfy the published maximum two-degree gap",
+    "all_required": true
+  },
+  "authorized_if_all_gates_pass": "freeze the exact seven archives and write a separate coefficient-level protocol before any wavelet value is computed",
+  "decision_if_any_gate_fails": "DEFER_FULL_CMOR_WAVELET_COMPARATOR_UNTIL_A_BETTER_EXPOSURE_CONTROLLED_MULTYEAR_SURVEY_INPUT_EXISTS",
+  "prohibitions": [
+    "Do not calculate a wavelet coefficient, local maximum, shower recovery, or comparison endpoint in this audit.",
+    "Do not read shower labels or OrbitTrace candidate values.",
+    "Do not replace raw seven-year stacking with post-result year weighting.",
+    "Do not lower the 300-radiant floor, reduce the five-of-seven exposure requirement, relax the 80-percent breadth gates, increase the 10-percent dominance allowance, or reduce the 200-chain gate after seeing the data.",
+    "Do not interpret a failed optical-input gate as evidence that the radar wavelet method performs poorly or that fixed4 wins."
+  ],
+  "claim_boundary": "A pass authorizes only coefficient-protocol development. A failure means the available SonotaCo stack is not a fair global input for this published survey design. Neither outcome is a direct fixed4-versus-wavelet performance comparison."
+}
