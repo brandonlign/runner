@@ -30,10 +30,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: orbittrace_fixed4_support_wrapper_development/requirements.txt
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
 
       - name: Install exact scanner dependencies
-        run: python -m pip install --upgrade pip -r orbittrace_fixed4_support_wrapper_development/requirements.txt
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
 
       - name: Verify score-free source and frozen development result
         run: |
