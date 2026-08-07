@@ -1,0 +1,199 @@
+name: OrbitTrace v5 SonotaCo 2024 prospective validation
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-2024-prospective-base
+    paths:
+      - orbittrace_highres_v5/SONOTACO_2024_PROSPECTIVE_PROTOCOL.md
+      - orbittrace_highres_v5/run_sonotaco_2024_v5_prospective.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v5-sonotaco-2024-prospective-once
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v5-2024-prospective
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install exact frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Freeze and audit prospective source before 2024 scientific access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_highres_v5
+        run: |
+          set -euo pipefail
+          mkdir -p input/eligibility input/repaired output
+          test "$(git hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_highres_v5/decision_v5.py)" = "0df6ef9d16b2a1f9139d0435776f605e00420984"
+          test "$(git hash-object orbittrace_highres_v5/SONOTACO_2024_ELIGIBILITY_FREEZE.json)" = "733f868626745a33a541b411123c86da7cda6e41"
+          python -m py_compile \
+            orbittrace_literature_comparison/wavelet_episode_comparator.py \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_highres_v5/decision_v5.py \
+            orbittrace_highres_v5/build_sonotaco_2024_confirmation_source.py \
+            orbittrace_highres_v5/run_sonotaco_2024_v5_prospective.py
+          python - <<'PY'
+          import json
+          import sys
+          sys.path.insert(0, 'orbittrace_literature_comparison')
+          sys.path.insert(0, 'orbittrace_multi_anchor_energy_v3')
+          sys.path.insert(0, 'orbittrace_highres_v5')
+          import wavelet_episode_comparator as wavelet
+          import multi_anchor_energy_v3 as v3
+          import decision_v5 as decision
+          assert all(wavelet.self_test().values()), wavelet.self_test()
+          assert all(v3.self_test().values()), v3.self_test()
+          assert all(decision.self_test().values()), decision.self_test()
+          freeze = json.load(open('orbittrace_highres_v5/SONOTACO_2024_ELIGIBILITY_FREEZE.json'))
+          assert freeze['verdict'] == 'PASS_SONOTACO_2024_V5_ELIGIBILITY_AUDIT'
+          assert freeze['scientific_scores_computed'] is False
+          assert freeze['workflow_run'] == 31152846579
+          assert freeze['artifact_id'] == 8983961420
+          assert freeze['counts']['supported_bin_count'] == 33
+          assert freeze['counts']['eligible_shower_count'] == 33
+          assert freeze['counts']['calibration_episodes'] == 16896
+          assert freeze['counts']['negative_episodes'] == 2112
+          assert freeze['counts']['positive_episodes'] == 528
+          assert freeze['benchmark_constants']['calibration_per_bin'] == 512
+          assert freeze['benchmark_constants']['calibration_denominator'] == 513
+          assert freeze['benchmark_constants']['v3_max_rank'] == 20
+          assert freeze['benchmark_constants']['fixed4_max_rank'] == 10
+          protocol = open('orbittrace_highres_v5/SONOTACO_2024_PROSPECTIVE_PROTOCOL.md').read()
+          required = (
+              'one scientific execution',
+              'first 128 calibration nulls',
+              '20/513',
+              '10/513',
+              'pooled FPR <= 0.055',
+              'worst-sector FPR <= 0.08',
+              'k=4 recall',
+              'k=6/8/12',
+              'No 2024 result may alter',
+          )
+          for phrase in required:
+              assert phrase in protocol, phrase
+          print('PASS_PRE_2024_PROSPECTIVE_SOURCE_FREEZE')
+          PY
+          sha256sum \
+            orbittrace_highres_v5/SONOTACO_2024_PROSPECTIVE_PROTOCOL.md \
+            orbittrace_highres_v5/run_sonotaco_2024_v5_prospective.py \
+            orbittrace_highres_v5/SONOTACO_2024_ELIGIBILITY_FREEZE.json \
+            orbittrace_highres_v5/decision_v5.py \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_literature_comparison/wavelet_episode_comparator.py \
+            > output/prospective_source_sha256.txt
+          git rev-parse HEAD | tee output/prospective_source_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve and guard exact eligibility evidence and validated parser ancestor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31152846579 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v5-sonotaco-2024-eligibility-audit \
+            --dir input/eligibility
+          python - <<'PY'
+          import json
+          committed = json.load(open('orbittrace_highres_v5/SONOTACO_2024_ELIGIBILITY_FREEZE.json'))
+          observed = json.load(open('input/eligibility/sonotaco_2024_v5_eligibility_audit.json'))
+          assert observed['verdict'] == committed['verdict']
+          assert observed['confirmation_source_sha256'] == committed['parser']['sonotaco_2024_confirmation_source_sha256']
+          assert observed['counts'] == committed['counts']
+          assert observed['benchmark_constants'] == committed['benchmark_constants']
+          assert all(observed['gates'].values())
+          assert not any(observed['prohibited_access'].values())
+          print('PASS_EXACT_2024_ELIGIBILITY_FREEZE_GUARD')
+          PY
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+
+      - name: Reconstruct exact frozen 2024 parser before archive access
+        run: |
+          set -euo pipefail
+          python orbittrace_highres_v5/build_sonotaco_2024_confirmation_source.py \
+            --source-2023 input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --output /tmp/run_sonotaco_2024_confirmation.py
+          echo '502712f062d6bdc2a4a464106fd7e3fa944f6bee49317daae2950eac31f9082f  /tmp/run_sonotaco_2024_confirmation.py' | sha256sum -c -
+          python -m py_compile /tmp/run_sonotaco_2024_confirmation.py
+          echo 'PASS_EXACT_2024_PARSER_GUARD'
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download the exact audited SonotaCo 2024 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/024a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/024a.zip
+          echo '409bb958c6f114e542d818e7c4fcf7a58d89b2fb33090a442c8087bdcaa1540f  input/024a.zip' | sha256sum -c -
+
+      - name: Execute the single frozen SonotaCo 2024 prospective validation
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_highres_v5
+        run: |
+          set -euo pipefail
+          python orbittrace_highres_v5/run_sonotaco_2024_v5_prospective.py \
+            --archive input/024a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --confirmation-source /tmp/run_sonotaco_2024_confirmation.py \
+            --eligibility-freeze orbittrace_highres_v5/SONOTACO_2024_ELIGIBILITY_FREEZE.json \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2024_V5_PROSPECTIVE_RESULT.md
+
+      - name: Record immutable prospective provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            input/eligibility/sonotaco_2024_v5_eligibility_audit.json \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            /tmp/run_sonotaco_2024_confirmation.py \
+            input/audit.json input/024a.zip \
+            >> output/prospective_source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v5-sonotaco-2024-prospective
+          path: output
+          if-no-files-found: error
+          retention-days: 90
