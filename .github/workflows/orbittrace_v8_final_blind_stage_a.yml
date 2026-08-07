@@ -1,16 +1,13 @@
 name: OrbitTrace v8 final blind discovery Stage A
 
 on:
-  workflow_dispatch:
-    inputs:
-      authorization_artifact_id:
-        description: External-validation authorization artifact ID
-        required: true
-        type: string
-      authorization_artifact_sha256:
-        description: Exact SHA-256 of authorization artifact ZIP
-        required: true
-        type: string
+  pull_request_target:
+    branches:
+      - agent/orbittrace-v8-final-blind-discovery-freeze
+    paths:
+      - orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json
+
+authorization: {}
 
 permissions:
   contents: read
@@ -27,13 +24,51 @@ jobs:
     env:
       PYTHONHASHSEED: '0'
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact frozen base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Verify execution-only child and parse request
+        id: request
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          test "$HEAD_REPO" = "$GITHUB_REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          git fetch --no-tags --depth=2 origin "$HEAD_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          test "$changed" = "orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json"
+          mkdir -p input
+          git show "$HEAD_SHA:orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json" > input/stage_a_execution_request.json
+          python - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          r=json.loads(Path('input/stage_a_execution_request.json').read_text())
+          expected={'schema','freeze_commit','authorization_artifact_id','authorization_artifact_sha256'}
+          assert set(r)==expected, set(r)
+          assert r['schema']=='orbittrace-v8-stage-a-execution-request-v1'
+          assert re.fullmatch(r'[0-9a-f]{40}',str(r['freeze_commit']))
+          assert re.fullmatch(r'[0-9]+',str(r['authorization_artifact_id']))
+          assert re.fullmatch(r'[0-9a-f]{64}',str(r['authorization_artifact_sha256']))
+          current=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert r['freeze_commit']==current, (r['freeze_commit'],current)
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as fh:
+              fh.write(f"auth_id={r['authorization_artifact_id']}\n")
+              fh.write(f"auth_sha={r['authorization_artifact_sha256']}\n")
+              fh.write(f"freeze_commit={r['freeze_commit']}\n")
+          print('PASS_STAGE_A_EXECUTION_ONLY_CHILD_REQUEST')
+          PY
 
       - name: Install exact frozen scientific dependencies
         run: |
@@ -47,6 +82,7 @@ jobs:
           mkdir -p output input/v3 stage_a_output
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           python orbittrace_v8_final_blind_discovery/audit_sources.py
+          test "$(python -c 'import json; print(json.load(open("output/FREEZE_MANIFEST.json"))["freeze_commit"])')" = "${{ steps.request.outputs.freeze_commit }}"
           git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
           echo 'f80676974804768cb1994ef1b8de3ad551028c934c8759d247db915a3925fe91  input/v3/multi_anchor_energy_v3.py' | sha256sum -c -
@@ -62,8 +98,8 @@ jobs:
       - name: Retrieve external-validation authorization only
         env:
           GH_TOKEN: ${{ github.token }}
-          AUTH_ID: ${{ inputs.authorization_artifact_id }}
-          AUTH_SHA: ${{ inputs.authorization_artifact_sha256 }}
+          AUTH_ID: ${{ steps.request.outputs.auth_id }}
+          AUTH_SHA: ${{ steps.request.outputs.auth_sha }}
         run: |
           set -euo pipefail
           test -n "$AUTH_ID" && test -n "$AUTH_SHA"
@@ -107,7 +143,7 @@ jobs:
         run: |
           set +e
           git rev-parse HEAD > stage_a_output/execution_commit.txt
-          sha256sum output/FREEZE_MANIFEST.json output/v8_final_blind_source_audit.json output/stage_a_authorization.json > stage_a_output/predata_sha256.txt 2>/dev/null
+          sha256sum input/stage_a_execution_request.json output/FREEZE_MANIFEST.json output/v8_final_blind_source_audit.json output/stage_a_authorization.json > stage_a_output/predata_sha256.txt 2>/dev/null
           python --version > stage_a_output/python_version.txt
           python -m pip freeze > stage_a_output/environment.txt
 
@@ -118,6 +154,7 @@ jobs:
           name: orbittrace-v8-final-blind-stage-a
           path: |
             stage_a_output
+            input/stage_a_execution_request.json
             output/FREEZE_MANIFEST.json
             output/v8_final_blind_source_audit.json
             output/stage_a_authorization.json
