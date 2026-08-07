@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen support-overlap v9 development. No support-radius definition, multiplier, quantile, family-link variant, proposal/component rule, pooled-centroid rule, score, ranking, threshold, cap, weight, endpoint, development panel, blindness rule, integrity gate, scientific gate, or target information may change.
