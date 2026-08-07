@@ -3,6 +3,8 @@
 ## Status
 Frozen before the first UKMON meteor-data API call. This stage may access **2022 only**. UKMON 2024 and 2025 remain scientifically reserved and may not be queried.
 
+The first execution attempt (`31214357613`) used an incorrect endpoint shape and received HTTP 403 before any JSON meteor payload was returned. UKMON's public API documentation proves that the summary route is `/matches?reqtyp=summary&reqval=yyyymmdd`. This transport-correction branch changes **only that endpoint literal**. The date, field mapping, interface gates, reserved-year prohibition, blindness rule, and no-method-evaluation boundary remain unchanged.
+
 ## Why this date
 Use exactly the date `2022-08-14`, because it is the example date published by UKMON in its public API documentation. The date was therefore not selected after inspecting meteor data. Its seasonal location is outside the blinded OrbitTrace solar-longitude interval 20°–55°.
 
@@ -18,7 +20,7 @@ Use exactly the date `2022-08-14`, because it is the example date published by U
 
 ## Allowed API access
 Exactly one UKMON matched-summary request:
-`https://api.ukmeteors.co.uk/?reqtyp=summary&year=2022&month=08&day=14`
+`https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval=20220814`
 
 No 2024/2025 request, no arbitrary date search, no full-trajectory pickle, and no OrbitTrace target information.
 
