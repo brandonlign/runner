@@ -1,14 +1,22 @@
-# OrbitTrace UKMON 2020/2021 pre-scientific structure/interface audit
+# OrbitTrace UKMON 2020/2021 pre-scientific structure/interface audit — transport correction
 
 ## Status
-Frozen before the first HTTP request to any UKMON 2020 or 2021 meteor endpoint.
+Frozen before any scientific UKMON 2020/2021 field value is inspected.
 
-This stage is not a scientific evaluation and may not inspect meteor scientific values. It exists only to determine whether the already-validated UKMON 2022 parser/interface contract is structurally usable on the fresh 2020/2021 panel before the full v8 external protocol is exposed to scientific values.
+The first frozen structure attempt (run `31225678351`, job `93019373431`, artifact `9012001791`, artifact ZIP SHA-256 `08dc0b6de876733c2de8ce6079487ee5b3bdb1245bb98bc63da84c41566e4dfa`) reached the fixed 2020 daily endpoint and failed because successful JSON was a non-list `dict`. It failed before converting, logging, persisting, comparing, or otherwise inspecting `_sol`, radiant, speed, orbit, orbname, source-label, or OrbitTrace target values. Preserve that failure.
+
+This correction changes only transport handling. It does not add a target-year-derived parser shape. It copies the deterministic daily/period fallback already frozen in the pre-existing UKMON external runner source blob `fd554e1b25731439cff02711558ed2c009665004`, which existed before UKMON 2020/2021 access:
+
+1. request daily `https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval=YYYYMMDD`;
+2. accept only a top-level JSON list of record dictionaries;
+3. if daily transport fails or JSON is not such a list, request exactly four period URLs in this fixed order: `0-6`, `6-12`, `12-18`, `18-24`;
+4. every period response must be a top-level list; concatenate in fixed order;
+5. no other endpoint, wrapper, date, period, parser branch, or repair is allowed.
+
+Thus the correction is independently pre-specified transport reuse, not parser design learned from 2020/2021 values.
 
 ## Immutable freshness prerequisite
-The corrected raw repository audit remains a conservative FAIL, but its sole hit was separately adjudicated from immutable source evidence as the spent-SAAMER positive control rather than UKMON 2020/2021 use.
-
-Required adjudication:
+Required zero-data adjudication:
 - run `31225516384`;
 - job `93018899034`;
 - artifact `9011943529`;
@@ -16,54 +24,47 @@ Required adjudication:
 - verdict `PASS_UKMON_2020_2021_ZERO_DATA_FRESHNESS_ADJUDICATION`;
 - raw audit FAIL preserved;
 - raw hit count exactly 1;
-- additional hits forgiven exactly 0;
-- no UKMON/API/scientific/label/target access in adjudication.
+- additional hits forgiven exactly 0.
 
 ## Parser design source
-Parser/interface design is copied only from the already-validated corrected UKMON 2022 interface work:
-- endpoint shape: `https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval=YYYYMMDD`;
-- required keys: `orbname`, `_sol`, `_ra_t`, `_dc_t`, `_vg`, `_q`, `_e`, `_incl`, `_peri`, `_node`;
-- accepted response containers: top-level list of records; dictionary list under `data`, `results`, `matches`, or `summary`; dictionary of records.
+Scientific field mapping remains copied only from the already-validated corrected UKMON 2022 interface work:
+- trajectory id: `orbname`;
+- solar longitude: `_sol`;
+- geocentric radiant: `_ra_t`, `_dc_t`;
+- geocentric speed: `_vg`;
+- later orbital fields: `_q`, `_e`, `_incl`, `_peri`, `_node`.
 
-No 2020/2021 value may be used to add a parser branch, rename a field, select a date, change a key-presence floor, or otherwise redesign the interface.
+No 2020/2021 scientific value may add or rename a field, select a date, change a key-presence floor, or redesign the parser.
 
 ## Frozen audit dates
-Use exactly two dates:
+Exactly:
 - `2020-08-14`;
 - `2021-08-14`.
 
-They are chosen prospectively by copying the month/day of the UKMON-published and already-used 2022 documented example date `2022-08-14`. There is no date search or fallback date selection.
-
-For each date issue exactly one daily summary request. Do not use period fallback in this structure audit. A transport failure is preserved as a structure/transport failure; it is not repaired by searching other dates.
+These prospectively copy the month/day of the UKMON-published and already-validated 2022 example date `2022-08-14`. No date search is allowed.
 
 ## Allowed inspection
-The audit may inspect only:
+The corrected audit may inspect only:
 - HTTP success/failure;
-- whether JSON decoding succeeds;
-- response container type/shape;
-- whether at least 5 record objects exist;
-- record key names and required-key membership counts/fractions.
+- JSON top-level type;
+- whether a response is a top-level list of record dictionaries;
+- whether the fixed period fallback was required;
+- whether at least 5 record objects exist after deterministic concatenation;
+- record key membership and required-key presence fractions.
 
-The audit must not:
-- convert, compare, summarize, print, store, hash, rank, or otherwise inspect the value of `_sol`, `_ra_t`, `_dc_t`, `_vg`, `_q`, `_e`, `_incl`, `_peri`, or `_node`;
-- inspect the value of `orbname`;
-- inspect any source/shower/classification value;
-- print or save raw rows/payloads;
-- compute event densities beyond the boolean `rows_at_least_5` and key-presence fractions needed for interface viability;
-- run v8 or any detector/comparator;
-- access OrbitTrace target information.
+It must not inspect, convert, summarize, print, persist, compare, hash, rank, or otherwise use the value of `_sol`, `_ra_t`, `_dc_t`, `_vg`, `_q`, `_e`, `_incl`, `_peri`, `_node`, or `orbname`; inspect source/shower/classification values; save raw payloads; run v8; or access OrbitTrace target information.
 
 ## Frozen structure gates
-Each of the two fixed dates must satisfy all of:
-1. HTTP request succeeds and JSON decodes;
-2. the payload matches one of the already-allowed 2022 container shapes;
-3. at least 5 record objects are present;
+Each fixed date must satisfy all:
+1. daily top-level list succeeds OR the pre-existing four-period fallback succeeds completely;
+2. final rows are record dictionaries;
+3. at least 5 records exist;
 4. every required key is present in at least 95% of records.
 
-The 95% key-presence floor is copied from the frozen 2022 live-interface audit and is not adjustable after 2020/2021 access.
+The 95% key-presence floor is unchanged from the prior structure attempt and the validated 2022 interface audit.
 
 ## Decision
-- `PASS_UKMON_2020_2021_STRUCTURE_AUDIT`: all gates pass on both fixed dates. This authorizes freezing the complete v8 external scientific protocol before any scientific 2020/2021 value is inspected.
-- `FAIL_UKMON_2020_2021_STRUCTURE_AUDIT`: any gate fails. Preserve the failure. Do not inspect scientific values and do not redesign the parser using 2020/2021 payload values.
+- `PASS_UKMON_2020_2021_STRUCTURE_TRANSPORT_CORRECTION`: both fixed dates pass all gates. This authorizes freezing the complete v8 scientific external protocol before any scientific UKMON 2020/2021 value is inspected.
+- `FAIL_UKMON_2020_2021_STRUCTURE_TRANSPORT_CORRECTION`: any gate fails. Preserve it. Do not learn a new parser from target-year values.
 
-A pass says only that the already-fixed UKMON interface is structurally usable. It is not evidence of v8 power or scientific performance.
+A pass establishes only structural/transport usability. It is not a scientific v8 result and does not establish external power.
