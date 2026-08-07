@@ -1,0 +1,105 @@
+name: OrbitTrace Hissar structure audit pdftotext dependency fix
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hissar-structure-pdftotext-fix
+    paths:
+      - 'orbittrace_hissar_1968_1969_structure_audit/DEPENDENCY_RETRY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out dependency-fix parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hissar-structure-pdftotext-fix
+          fetch-depth: 1
+
+      - name: Install missing PDF text utility only
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          command -v pdftotext
+
+      - name: Enforce byte-identical frozen Hissar audit
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_hissar_1968_1969_structure_audit/PROTOCOL.md)" = "139367bd4a5c2edbefb432084491052d45256fcd"
+          test "$(git hash-object orbittrace_hissar_1968_1969_structure_audit/audit_structure.py)" = "fbd40dc82a5c763ba66796e85aad7964f10300e3"
+          python -m py_compile orbittrace_hissar_1968_1969_structure_audit/audit_structure.py
+
+      - name: Fetch immutable freshness adjudication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012644763/zip" -o input/freshness.zip
+          echo "31f50436e7dfad5a2768d12e559942a1ee5dd0f96816d71226151ed381701598  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/freshness/hissar_1968_1969_freshness_adjudication.json').read_text())
+          assert r['verdict']=='PASS_HISSAR_1968_1969_ZERO_DATA_FRESHNESS_ADJUDICATION'
+          assert r['scientific_record_access'] is False
+          assert r['scientific_value_access'] is False
+          assert r['target_information_access'] is False
+          PY
+
+      - name: Run byte-identical metadata-only interface audit
+        run: |
+          set -euo pipefail
+          python orbittrace_hissar_1968_1969_structure_audit/audit_structure.py \
+            --freshness-json input/freshness/hissar_1968_1969_freshness_adjudication.json \
+            --output output
+
+      - name: Enforce pre-scientific boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/hissar_1968_1969_structure_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['form_submitted'] is False
+              assert r['result_endpoint_contacted'] is False
+              assert r['scientific_record_access'] is False
+              assert r['scientific_values_inspected'] is False
+              assert r['source_labels_inspected'] is False
+              assert r['orbittrace_target_information_access'] is False
+          assert not Path('output/radio.html').exists()
+          assert not Path('output/HISSAR_documentation.pdf').exists()
+          assert not Path('output/HISSAR_documentation.txt').exists()
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/structure_dependency_fix_commit.txt
+          sha256sum orbittrace_hissar_1968_1969_structure_audit/PROTOCOL.md orbittrace_hissar_1968_1969_structure_audit/audit_structure.py > output/source_sha256.txt
+          sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true
+          pdftotext -v > output/pdftotext_version.txt 2>&1 || true
+          python --version > output/python_version.txt
+
+      - name: Upload corrected Hissar structure artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-hissar-1968-1969-structure-pdftotext-fix
+          path: output
+          if-no-files-found: error
+          retention-days: 90
