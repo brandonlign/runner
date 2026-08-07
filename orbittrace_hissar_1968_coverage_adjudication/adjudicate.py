@@ -94,7 +94,6 @@ def main() -> int:
     args = ap.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
-    # Frozen repository rule checks. git blob SHA is enforced again by workflow.
     src = args.v6_source.read_text(errors="replace")
     source_gates = {
         "min_scannable_bins_24": "MIN_SCANNABLE_BINS=24" in src,
@@ -114,10 +113,10 @@ def main() -> int:
     fetch(JPL_URL, jpl_path)
     iau_hash = sha256(iau_path)
     jpl_hash = sha256(jpl_path)
+    iau_raw = iau_path.read_text(errors="replace")
     iau = html_text(iau_path)
     jpl = html_text(jpl_path)
 
-    # Metadata only: exact published overall Hissar start. No form submission.
     extent_match = re.search(
         r"Extent of data from\s+1968\s+12\s+12\.73530\s+to\s+1969\s+12\s+24\.18900",
         iau,
@@ -125,10 +124,9 @@ def main() -> int:
     )
     if not extent_match:
         raise RuntimeError("published Hissar extent changed or could not be verified")
-    if "Hissar" not in iau or "iaumdcHIS1" not in iau:
+    if "Hissar" not in iau or "iaumdcHIS1" not in iau_raw:
         raise RuntimeError("Hissar metadata selector changed")
 
-    # Verify the exact JPL Table 2a constants are still published by the primary source.
     jpl_gates = {
         "em_bary_table2a_e0": "0.01673163" in jpl,
         "em_bary_table2a_edot": "-0.00003661" in jpl,
@@ -139,8 +137,6 @@ def main() -> int:
     if not all(jpl_gates.values()):
         raise RuntimeError(f"JPL primary-source constants changed or unavailable: {jpl_gates}")
 
-    # Day 12.73530 means Dec 12 plus 0.73530 day. Give Hissar the entire rest of
-    # calendar 1968, which is the most favorable possible bound for scannability.
     start = datetime(1968, 12, 12, tzinfo=timezone.utc) + timedelta(days=0.73530)
     end = datetime(1969, 1, 1, tzinfo=timezone.utc)
     duration_days = (end - start).total_seconds() / 86400.0
@@ -174,6 +170,7 @@ def main() -> int:
 
     result = {
         "verdict": verdict,
+        "prior_metadata_checker_failure_run_preserved": 31228464278,
         "v6_blob_sha_expected": V6_BLOB_SHA,
         "source_gates": source_gates,
         "required_scannable_bins_per_year": REQUIRED_SCANNABLE_BINS,
@@ -210,7 +207,6 @@ def main() -> int:
     )
     print(json.dumps(result, indent=2, sort_keys=True))
 
-    # Metadata pages are not retained in the artifact.
     iau_path.unlink()
     jpl_path.unlink()
     return 0
