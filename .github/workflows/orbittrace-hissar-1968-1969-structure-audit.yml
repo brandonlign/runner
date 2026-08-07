@@ -1,0 +1,58 @@
+name: OrbitTrace Hissar 1968-1969 pre-scientific structure audit
+on:
+  pull_request:
+    branches: [agent/orbittrace-hissar-1968-1969-structure-audit]
+    paths: ['orbittrace_hissar_1968_1969_structure_audit/RUN.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hissar-1968-1969-structure-audit
+          fetch-depth: 1
+      - name: Enforce frozen source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_hissar_1968_1969_structure_audit/PROTOCOL.md)" = "139367bd4a5c2edbefb432084491052d45256fcd"
+          test "$(git hash-object orbittrace_hissar_1968_1969_structure_audit/audit_structure.py)" = "fbd40dc82a5c763ba66796e85aad7964f10300e3"
+          python -m py_compile orbittrace_hissar_1968_1969_structure_audit/audit_structure.py
+          command -v pdftotext
+      - name: Fetch immutable freshness adjudication
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail; mkdir -p input/freshness output
+          curl --fail --location --silent --show-error -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9012644763/zip" -o input/freshness.zip
+          echo "31f50436e7dfad5a2768d12e559942a1ee5dd0f96816d71226151ed381701598  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+      - name: Run frozen metadata-only interface audit
+        run: |
+          set -euo pipefail
+          python orbittrace_hissar_1968_1969_structure_audit/audit_structure.py --freshness-json input/freshness/hissar_1968_1969_freshness_adjudication.json --output output
+      - name: Enforce no scientific access
+        if: always()
+        run: |
+          set -euo pipefail
+          test ! -e output/radio.html; test ! -e output/HISSAR_documentation.pdf; test ! -e output/HISSAR_documentation.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/hissar_1968_1969_structure_audit.json')
+          if p.exists():
+            r=json.loads(p.read_text()); assert r['form_submitted'] is False; assert r['result_endpoint_contacted'] is False; assert r['scientific_record_access'] is False; assert r['scientific_values_inspected'] is False; assert r['source_labels_inspected'] is False; assert r['orbittrace_target_information_access'] is False
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e; mkdir -p output; git rev-parse HEAD > output/structure_commit.txt; sha256sum orbittrace_hissar_1968_1969_structure_audit/PROTOCOL.md orbittrace_hissar_1968_1969_structure_audit/audit_structure.py > output/source_sha256.txt; sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true; python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-hissar-1968-1969-structure-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
