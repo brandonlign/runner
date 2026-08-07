@@ -1,0 +1,102 @@
+name: OrbitTrace v5 corroborated rescue development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-corroborated-base
+    paths:
+      - .github/workflows/orbittrace_v5_corroborated_rescue_development.yml
+      - orbittrace_corroborated_rescue_v5/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v5-corroborated-rescue-development
+  cancel-in-progress: true
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-corroborated-rescue-v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Freeze selector before opening development records
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 output
+          python -m py_compile orbittrace_corroborated_rescue_v5/select_corroborated_rescue.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          path = Path('orbittrace_corroborated_rescue_v5/select_corroborated_rescue.py')
+          spec = importlib.util.spec_from_file_location('v5selector', path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert module.DENOMINATOR == 129
+          assert module.PRIMARY_RANKS == (2, 3, 4, 5, 6)
+          assert module.SPARSE_RANKS == (2, 3, 4, 5, 6)
+          assert module.CORROBORATION_RANKS == (10, 15, 20, 25, 30, 35, 40)
+          assert module.FPR_DEVELOPMENT_CAP == 0.052
+          assert module.SECTOR_FPR_DEVELOPMENT_CAP == 0.075
+          assert module.RECALL_TOLERANCE == 0.03
+          assert module.V3 == 'orbittrace_multi_anchor_wavelet_energy_v3'
+          assert module.FIXED4 == 'orbittrace_fixed4'
+          print('PASS_V5_SELECTOR_PRE_DATA_AUDIT')
+          PY
+          sha256sum \
+            orbittrace_corroborated_rescue_v5/PROTOCOL.md \
+            orbittrace_corroborated_rescue_v5/select_corroborated_rescue.py \
+            | tee output/v5_source_sha256.txt
+          git rev-parse HEAD | tee output/v5_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact frozen v3 2025 development evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31146579074 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-multi-anchor-energy-v3-development \
+            --dir input/v3
+          echo '712c5a012ecaa93d45ed11eb05de180ba4c7d08b8d0f9dad13245bb45b5e29cc  input/v3/sonotaco_2025_literature_comparison.json' | sha256sum -c -
+          echo '486427bc3eb37a9fb73187a78c9f63069887d3fd39a45ad8cddda2ed11266a81  input/v3/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo '6937ecf0293c8a415a4620eb9cfffa32cad2bb2ea241652b5a3bed2ad0da90e4  input/v3/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo '9fbc71a38d31dde8ecfc481e380f95ee4d443c96b5c4c241fbe7a2ac4443bab4  input/v3/V3_DEVELOPMENT_RESULT.json' | sha256sum -c -
+          test "$(tr -d '\r\n' < input/v3/v3_commit.txt)" = "34634faa13420af162298d5d0e17b77c93419ad8"
+
+      - name: Execute finite v5 selection on SonotaCo 2025 only
+        run: |
+          set -euo pipefail
+          python orbittrace_corroborated_rescue_v5/select_corroborated_rescue.py \
+            --artifact-dir input/v3 \
+            --output output
+          cat output/V5_DEVELOPMENT_SELECTION.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          sha256sum input/v3/* >> output/v5_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v5 development evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v5-corroborated-rescue-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
