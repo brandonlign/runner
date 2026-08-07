@@ -1,0 +1,80 @@
+name: OrbitTrace SAAMER 2022-2023 common-coverage adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-saamer-2022-2023-common-coverage-audit
+    paths:
+      - 'orbittrace_saamer_2022_2023_common_coverage/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen adjudication parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-saamer-2022-2023-common-coverage-audit
+
+      - name: Enforce artifact-only source guards
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_saamer_2022_2023_common_coverage/PROTOCOL.md)" = "a3ff99eda82e80b36ca8e8b2b50d58db283e0d96"
+          test "$(git hash-object orbittrace_saamer_2022_2023_common_coverage/adjudicate.py)" = "cc76887bdb1bf3d9c5e3b50e08e207d3e721cc38"
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9006922387/zip" \
+            -o input/structure.zip
+          echo "cb709dc9e9157c587c54f95595181a3ee3d4b61e27b8ec1b8a401ebc74fa22d9  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+          test -f input/structure/saamer_2022_2023_structural_audit.json
+          echo PASS_COMMON_COVERAGE_ARTIFACT_ONLY_GUARDS
+
+      - name: Adjudicate exact common month coverage
+        run: |
+          set -euo pipefail
+          python orbittrace_saamer_2022_2023_common_coverage/adjudicate.py \
+            --structure-json input/structure/saamer_2022_2023_structural_audit.json \
+            --output output
+
+      - name: Enforce no-data boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/saamer_2022_2023_common_coverage_adjudication.json').read_text())
+          assert r['verdict']=='PASS_SAAMER_2022_2023_COMMON_COVERAGE_ADJUDICATION'
+          assert r['frozen_common_nominal_months']==list(range(1,11))
+          assert r['archive_access_this_adjudication'] is False
+          assert r['meteor_value_access_this_adjudication'] is False
+          assert r['target_information_access'] is False
+          assert r['scientific_rules_changed'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/adjudication_commit.txt
+          sha256sum orbittrace_saamer_2022_2023_common_coverage/PROTOCOL.md orbittrace_saamer_2022_2023_common_coverage/adjudicate.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - name: Upload adjudication artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-saamer-2022-2023-common-coverage-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
