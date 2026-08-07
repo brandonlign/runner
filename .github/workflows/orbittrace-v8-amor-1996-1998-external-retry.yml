@@ -1,0 +1,215 @@
+name: OrbitTrace v8 AMOR 1996-1998 delimiter-corrected retry
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-amor-1996-1998-external-delimiter-correction
+    paths:
+      - 'orbittrace_v8_amor_1996_1998_external/RETRY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen delimiter-correction parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-amor-1996-1998-external-delimiter-correction
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen science and source-proven transport correction
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v8 input/structure input/frozen output
+
+          test "$(git hash-object orbittrace_v8_amor_1996_1998_external/PROTOCOL.md)" = "999fd04d0513ffe3c2f1902fdbb7c93f7ff33eeb"
+          test "$(git hash-object orbittrace_v8_amor_1996_1998_external/run_external_validation.py)" = "8891f994f138efbd62c97c65f77f29bfdf5c8bc3"
+          test "$(git hash-object orbittrace_v8_amor_1996_1998_external/TRANSPORT_CORRECTION.md)" = "8de515a6cf6a82565b8cd2d77043aabc2fe6638b"
+          test "$(git hash-object orbittrace_v8_amor_1996_1998_external/run_transport_corrected.py)" = "08f17824eeae2bf2d9021cb08bbe0946e5f7a888"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/PROTOCOL.md)" = "8b0a1dc8565a702af6188d42dcebe6b1b71002b6"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = "f248df78e1258b132b41aecca6a985a5eb782654"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/wavelet_catalogue_v3_source_audit.json').read_text())
+          assert r['verdict']=='PASS_WAVELET_CATALOGUE_V3_SOURCE_AUDIT'
+          assert r['support_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert r['target_information_present'] is False
+          assert r['labels_enter_candidate_generation'] is False
+          PY
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+
+          git fetch --no-tags --depth=1 origin agent/orbittrace-label-free-v6-saamer-2020-2021-external
+          git show FETCH_HEAD:orbittrace_label_free_v6_saamer_external/run_external_validation.py > input/frozen/saamer_external_evaluator.py
+          test "$(git hash-object input/frozen/saamer_external_evaluator.py)" = "16a4e832893cbc689ff084510f792349035e5ff7"
+
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/frozen/literature_comparators.py
+          test "$(git hash-object input/frozen/literature_comparators.py)" = "ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2"
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip" | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009809682/zip" -o input/structure.zip
+          echo "9f3646a37e519b2de121b0e4083cc92b795ec72f09e3f0ce0fafc48c2aed12dc  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v=json.loads(Path('input/v8/pooled_year_centroid_v8_development.json').read_text())
+          assert v['verdict']=='PASS_POOLED_YEAR_CENTROID_V8_DEVELOPMENT'
+          assert all(v['integrity_gates'].values()) and all(v['scientific_gates'].values())
+          assert v['family_count']==226
+          assert v['configuration']['family_builder']=='exact passed-v6 connected recurrent family graph'
+          assert v['configuration']['centroid_statistic']=={'sol':'circular_mean_deg','sun_lon':'circular_mean_deg','ecl_lat':'median','vg':'median'}
+          assert 'No OrbitTrace target information' in v['claim_boundary']
+
+          s=json.loads(Path('input/structure/amor_1990_1999_structure_audit.json').read_text())
+          assert s['verdict']=='PASS_AMOR_1990_1999_STRUCTURE_AUDIT'
+          assert s['selected_years']==[1996,1998]
+          assert s['scientific_value_interpretation'] is False
+          assert s['scientific_token_conversion_performed'] is False
+          assert s['target_information_access'] is False
+          by={int(a['year']):a for a in s['archives']}
+          for year,sha,member,records,width17,width18 in [
+              (1996,'d2444969fff5f99bd74f94b5742f07f36a6ce5dec040adf4832bf7e8ea116de1','amor1996.csv',129210,546,128665),
+              (1998,'f65a562d37d55d0d751d30213350dc333a3620717d3236436a35154e73c3f054','amor1998.csv',112159,371,111789),
+          ]:
+              a=by[year]
+              assert a['archive_sha256']==sha and a['opaque_data_record_count']==records
+              assert len(a['members'])==1
+              m=a['members'][0]
+              assert m['name']==member
+              assert m['delimiter_class']=='whitespace'
+              assert m['header_detected'] is True
+              assert m['header_tokens']==['DB','IC','Yr','Mn','Day','LS','RA','dRA','DECL','dDECL','Vg','Vh','q','e','a','i','arg','nod']
+              assert m['token_width_counts']=={'17':width17,'18':width18}
+          PY
+
+          python -m py_compile \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            input/frozen/saamer_external_evaluator.py \
+            input/frozen/literature_comparators.py \
+            orbittrace_v8_amor_1996_1998_external/run_external_validation.py \
+            orbittrace_v8_amor_1996_1998_external/run_transport_corrected.py
+          rm -rf output/*
+          echo PASS_V8_AMOR_DELIMITER_CORRECTION_PREDATA_GUARDS
+
+      - name: Run one-shot delimiter-corrected AMOR external validation
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_amor_1996_1998_external/run_transport_corrected.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --structure-json input/structure/amor_1990_1999_structure_audit.json \
+            --saamer-evaluator input/frozen/saamer_external_evaluator.py \
+            --dsh-comparator input/frozen/literature_comparators.py \
+            --output output
+          cat output/V8_AMOR_1996_1998_EXTERNAL_VALIDATION.md
+
+      - name: Enforce frozen result integrity and claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v8_amor_1996_1998_external_validation.json').read_text())
+          assert r['verdict'] in {
+              'PASS_V8_AMOR_EXTERNAL_VALIDATION',
+              'FAIL_V8_AMOR_EXTERNAL_VALIDATION',
+              'INCONCLUSIVE_V8_AMOR_EXTERNAL_POWER',
+              'FAIL_V8_AMOR_EXTERNAL_INTEGRITY',
+          }
+          c=r['configuration']
+          assert c['years']==[1996,1998]
+          assert c['blind_exclusion']==[20.0,55.0]
+          assert c['accepted_csv_width']==18
+          assert c['malformed_width_policy']=='drop_without_repair_or_inference'
+          assert c['density_cap_per_10deg_bin']==10000
+          assert c['family_builder']=='exact v6 connected recurrent family graph'
+          assert c['family_link_radius']==1.5
+          assert c['centroid_statistic']=={'sol':'circular_mean_deg','sun_lon':'circular_mean_deg','ecl_lat':'median','vg':'median'}
+          assert c['episode_size']==128 and c['primary_ranking']=='multiplicity'
+          assert c['top_k_rule']=='min(100,N)'
+          assert c['dsh_threshold']==0.05
+          assert c['minimum_orbit_members_each_year']==4
+          assert c['minimum_orbital_component_precision']==0.50
+          assert c['no_threshold_radius_cap_pooling_weight_or_endpoint_search'] is True
+          assert c['no_rrf'] is True
+          assert r['integrity_gates']['rankings_frozen_before_orbit_access'] is True
+          assert r['integrity_gates']['no_label_input'] is True
+          assert r['integrity_gates']['no_target_information_input'] is True
+          assert len(r['ranking_sha256_before_orbit_access'])==4
+          assert 'No OrbitTrace target information' in r['claim_boundary']
+          print('ORBITTRACE_V8_AMOR_EXTERNAL_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_V8_AMOR_EXTERNAL_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/external_commit.txt
+          sha256sum \
+            orbittrace_v8_amor_1996_1998_external/PROTOCOL.md \
+            orbittrace_v8_amor_1996_1998_external/run_external_validation.py \
+            orbittrace_v8_amor_1996_1998_external/TRANSPORT_CORRECTION.md \
+            orbittrace_v8_amor_1996_1998_external/run_transport_corrected.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            input/v3/multi_anchor_energy_v3.py \
+            input/frozen/saamer_external_evaluator.py \
+            input/frozen/literature_comparators.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload delimiter-corrected external artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-amor-1996-1998-external-validation-delimiter-corrected
+          path: output
+          if-no-files-found: error
+          retention-days: 90
