@@ -20,8 +20,10 @@ FREEZE_PATHS = (
     "orbittrace_v8_final_blind_discovery/SOURCE_AND_BRANCH_AUDIT.md",
     "orbittrace_v8_final_blind_discovery/audit_sources.py",
     "orbittrace_v8_final_blind_discovery/authorize_stage_a.py",
+    "orbittrace_v8_final_blind_discovery/seal_stage_a.py",
     "orbittrace_v8_final_blind_discovery/run_stage_a.py",
     "orbittrace_v8_final_blind_discovery/run_stage_b.py",
+    ".github/workflows/orbittrace_v8_final_blind_freeze_audit.yml",
     ".github/workflows/orbittrace_v8_final_blind_stage_a.yml",
     ".github/workflows/orbittrace_v8_final_blind_stage_b.yml",
 )
@@ -73,10 +75,12 @@ def main() -> int:
     stage_a_path = Path("orbittrace_v8_final_blind_discovery/run_stage_a.py")
     stage_b_path = Path("orbittrace_v8_final_blind_discovery/run_stage_b.py")
     auth_path = Path("orbittrace_v8_final_blind_discovery/authorize_stage_a.py")
+    seal_path = Path("orbittrace_v8_final_blind_discovery/seal_stage_a.py")
     protocol_path = Path("orbittrace_v8_final_blind_discovery/PROTOCOL.md")
     stage_a_text = stage_a_path.read_text()
     stage_b_text = stage_b_path.read_text()
     auth_text = auth_path.read_text()
+    seal_text = seal_path.read_text()
     protocol_text = protocol_path.read_text()
     stage_a_tree = ast.parse(stage_a_text)
     stage_b_tree = ast.parse(stage_b_text)
@@ -90,7 +94,7 @@ def main() -> int:
     require("normalize_label" not in attrs_a, "Stage A normalizes source labels")
     require("hidden_labels" not in stage_a_text, "Stage A contains hidden-label interface")
     require("withheld_reference_artifact_id" not in stage_a_text, "Stage A contains a withheld-reference locator")
-    require("F0059" not in stage_a_text + auth_text + protocol_text, "old revealed family identifier entered the final freeze")
+    require("F0059" not in stage_a_text + auth_text + seal_text + protocol_text, "old revealed family identifier entered the final freeze")
 
     forbidden_stage_b_import_roots = {
         "numpy", "pandas", "sklearn", "scipy", "gmn_python_api",
