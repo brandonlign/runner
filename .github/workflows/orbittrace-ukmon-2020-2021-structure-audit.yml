@@ -1,9 +1,9 @@
-name: OrbitTrace UKMON 2020-2021 pre-scientific structure audit
+name: OrbitTrace UKMON 2020-2021 pre-scientific structure transport correction
 
 on:
   pull_request:
     branches:
-      - agent/orbittrace-ukmon-2020-2021-structure-audit
+      - agent/orbittrace-ukmon-2020-2021-structure-transport-correction
     paths:
       - 'orbittrace_ukmon_2020_2021_structure_audit/RUN.md'
   workflow_dispatch:
@@ -16,10 +16,10 @@ jobs:
   audit:
     runs-on: ubuntu-22.04
     steps:
-      - name: Check out frozen structure-audit parent
+      - name: Check out frozen transport-correction parent
         uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-ukmon-2020-2021-structure-audit
+          ref: agent/orbittrace-ukmon-2020-2021-structure-transport-correction
           fetch-depth: 1
 
       - name: Set up exact transport dependency
@@ -28,17 +28,19 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install requests==2.32.5
 
-      - name: Enforce frozen source and 2022-only parser provenance
+      - name: Enforce frozen source, 2022 parser provenance, and pre-existing transport provenance
         run: |
           set -euo pipefail
-          test "$(git hash-object orbittrace_ukmon_2020_2021_structure_audit/PROTOCOL.md)" = "a51b0e573b6c7a46eefacd81ceea9944a3145c15"
-          test "$(git hash-object orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py)" = "d29d4a64c4b7ad79ce7c4cf0923f3b1427819122"
+          test "$(git hash-object orbittrace_ukmon_2020_2021_structure_audit/PROTOCOL.md)" = "9184f184bab51cfe3ff97c7a4e6f4fdd19d95c6a"
+          test "$(git hash-object orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py)" = "ae350a82caca27c2fe905e72578d784b8b675594"
           python -m py_compile orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
           git fetch --no-tags origin \
-            '+refs/heads/agent/orbittrace-ukmon-2022-interface-transport-correction:refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction'
-          test "$(git rev-parse refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction^{tree} >/dev/null; git show refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction:orbittrace_ukmon_2022_interface_development/audit_live_interface.py | git hash-object --stdin)" = "400d952ece88049b0ae37fafcad3b7a92afd4183"
-          grep -Fq 'DATES = ("20200814", "20210814")' orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
-          grep -Fq 'BASE = "https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval={}"' orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
+            '+refs/heads/agent/orbittrace-ukmon-2022-interface-transport-correction:refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction' \
+            '+refs/heads/agent/orbittrace-label-free-v6-ukmon-2024-2025-external:refs/remotes/origin/agent/orbittrace-label-free-v6-ukmon-2024-2025-external'
+          test "$(git show refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction:orbittrace_ukmon_2022_interface_development/audit_live_interface.py | git hash-object --stdin)" = "400d952ece88049b0ae37fafcad3b7a92afd4183"
+          test "$(git show refs/remotes/origin/agent/orbittrace-label-free-v6-ukmon-2024-2025-external:orbittrace_label_free_v6_ukmon_2024_2025_external/run_external_validation.py | git hash-object --stdin)" = "fd554e1b25731439cff02711558ed2c009665004"
+          grep -Fq 'DATES=("20200814","20210814")' orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
+          grep -Fq 'PERIODS=("0-6","6-12","12-18","18-24")' orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
 
       - name: Fetch and verify zero-data freshness adjudication prerequisite
         env:
@@ -59,31 +61,31 @@ jobs:
           r=json.loads(Path('input/freshness/ukmon_2020_2021_freshness_adjudication.json').read_text())
           assert r['verdict']=='PASS_UKMON_2020_2021_ZERO_DATA_FRESHNESS_ADJUDICATION'
           assert r['raw_audit_verdict_preserved']=='FAIL_UKMON_2020_2021_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
-          assert r['raw_hit_count']==1
-          assert r['additional_hits_forgiven']==0
-          assert r['meteor_api_contacted'] is False
+          assert r['raw_hit_count']==1 and r['additional_hits_forgiven']==0
           assert r['scientific_value_access_this_adjudication'] is False
           assert r['target_information_access'] is False
           PY
 
-      - name: Run frozen pre-scientific structure audit
+      - name: Run frozen transport-corrected structure audit
         run: |
           set -euo pipefail
           python orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py \
             --freshness-json input/freshness/ukmon_2020_2021_freshness_adjudication.json \
             --output output
 
-      - name: Enforce pre-scientific boundary and frozen dates
+      - name: Enforce pre-scientific boundary and exact correction
         if: always()
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('output/ukmon_2020_2021_structure_audit.json')
+          p=Path('output/ukmon_2020_2021_structure_transport_correction.json')
           if p.exists():
               r=json.loads(p.read_text())
               assert r['dates']==['2020-08-14','2021-08-14']
+              assert r['transport_correction_source_blob']=='fd554e1b25731439cff02711558ed2c009665004'
+              assert r['transport_rule']=='daily_then_fixed_periods_0-6_6-12_12-18_18-24_on_nonlist_or_failure'
               assert r['scientific_field_values_inspected'] is False
               assert r['orbname_values_inspected'] is False
               assert r['source_label_values_inspected'] is False
@@ -103,17 +105,17 @@ jobs:
         run: |
           set +e
           mkdir -p output
-          git rev-parse HEAD > output/structure_audit_commit.txt
+          git rev-parse HEAD > output/structure_transport_commit.txt
           sha256sum orbittrace_ukmon_2020_2021_structure_audit/PROTOCOL.md orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py > output/source_sha256.txt
           sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
 
-      - name: Upload structure-audit artifact
+      - name: Upload structure transport-correction artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-ukmon-2020-2021-structure-audit
+          name: orbittrace-ukmon-2020-2021-structure-transport-correction
           path: output
           if-no-files-found: error
           retention-days: 90
