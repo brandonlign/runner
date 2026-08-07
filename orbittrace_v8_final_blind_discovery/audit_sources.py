@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 EXPECTED = {
@@ -14,9 +15,20 @@ EXPECTED = {
     "orbittrace_sparse_support_multiplicity_v5/run_holdout.py": "fd9526ecb75751b6fb0e936fe5dd237a77c406b729c96ecd9b24aba634b0f43f",
     "orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py": "5ef0f7b33a1c3ed87885ee70be0cdd184055d819eb1196c65eebc7e867f747e2",
 }
+FREEZE_PATHS = (
+    "orbittrace_v8_final_blind_discovery/PROTOCOL.md",
+    "orbittrace_v8_final_blind_discovery/SOURCE_AND_BRANCH_AUDIT.md",
+    "orbittrace_v8_final_blind_discovery/audit_sources.py",
+    "orbittrace_v8_final_blind_discovery/authorize_stage_a.py",
+    "orbittrace_v8_final_blind_discovery/run_stage_a.py",
+    "orbittrace_v8_final_blind_discovery/run_stage_b.py",
+    ".github/workflows/orbittrace_v8_final_blind_stage_a.yml",
+    ".github/workflows/orbittrace_v8_final_blind_stage_b.yml",
+)
 SUPPORT_SOURCE_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
 WAVELET_RUNTIME_SHA256 = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
 V8_PARENT_COMMIT = "c9d6c44704013ba0c9430100e98a29a56b453304"
+V8_DEVELOPMENT_ARTIFACT_SHA256 = "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e"
 
 
 def sha(path: Path) -> str:
@@ -68,7 +80,6 @@ def main() -> int:
     protocol_text = protocol_path.read_text()
     stage_a_tree = ast.parse(stage_a_text)
     stage_b_tree = ast.parse(stage_b_text)
-    auth_tree = ast.parse(auth_text)
 
     imports_a = imported_modules(stage_a_tree)
     imports_b = imported_modules(stage_b_tree)
@@ -96,18 +107,38 @@ def main() -> int:
         "exact stable GMN trajectory/event-ID equality", "STAGE A — BLIND DISCOVERY", "STAGE B — REVEAL",
     ]
     require(all(fragment in protocol_text for fragment in required_protocol), "protocol lost a frozen rule")
+    for path in FREEZE_PATHS:
+        require(Path(path).is_file(), f"freeze file missing: {path}")
+
+    freeze_hashes = {path: sha(Path(path)) for path in FREEZE_PATHS}
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    require(len(commit) == 40, "cannot resolve execution commit")
+    manifest = {
+        "schema": "orbittrace-v8-final-blind-freeze-v1",
+        "freeze_commit": commit,
+        "v8_parent_commit": V8_PARENT_COMMIT,
+        "v8_development_artifact_sha256": V8_DEVELOPMENT_ARTIFACT_SHA256,
+        "support_source_sha256": SUPPORT_SOURCE_SHA256,
+        "wavelet_runtime_sha256": WAVELET_RUNTIME_SHA256,
+        "upstream_file_sha256": hashes,
+        "freeze_file_sha256": freeze_hashes,
+        "target_region_data_access": False,
+        "withheld_reference_access": False,
+        "catalogue_access": False,
+    }
+    manifest_path = output / "FREEZE_MANIFEST.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
     result = {
         "schema": "orbittrace-v8-final-blind-source-audit-v1",
         "verdict": "PASS_V8_FINAL_BLIND_SOURCE_AUDIT",
         "v8_parent_commit": V8_PARENT_COMMIT,
+        "freeze_commit": commit,
+        "freeze_manifest_sha256": sha(manifest_path),
         "upstream_hashes": hashes,
+        "freeze_file_sha256": freeze_hashes,
         "support_source_sha256": SUPPORT_SOURCE_SHA256,
         "wavelet_runtime_sha256": WAVELET_RUNTIME_SHA256,
-        "stage_a_sha256": sha(stage_a_path),
-        "stage_b_sha256": sha(stage_b_path),
-        "authorization_sha256": sha(auth_path),
-        "protocol_sha256": sha(protocol_path),
         "stage_a_imports_v9": False,
         "stage_a_imports_postpass": False,
         "stage_a_calls_label_aware_parser": False,
