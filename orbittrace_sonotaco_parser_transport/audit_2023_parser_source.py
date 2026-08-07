@@ -14,13 +14,23 @@ INTERESTING_FUNCTIONS = (
 )
 
 
+def json_safe(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(json_safe(v) for v in value)
+    return value
+
+
 def literal_assignments(tree: ast.Module) -> dict[str, object]:
     out: dict[str, object] = {}
     for node in tree.body:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
             continue
         try:
-            out[node.targets[0].id] = ast.literal_eval(node.value)
+            out[node.targets[0].id] = json_safe(ast.literal_eval(node.value))
         except Exception:
             pass
     return out
