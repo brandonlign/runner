@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen v8 AMOR 1996+1998 external validation. No source, parser policy, panel, scientific constant, detector rule, family rule, centroid rule, threshold, radius, cap, weight, endpoint, power gate, scientific gate, blindness rule, or target information may change in this child.
