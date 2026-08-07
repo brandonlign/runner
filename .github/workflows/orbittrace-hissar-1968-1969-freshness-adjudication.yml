@@ -1,0 +1,89 @@
+name: OrbitTrace Hissar 1968-1969 zero-data freshness adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hissar-1968-1969-freshness-adjudication
+    paths:
+      - 'orbittrace_hissar_1968_1969_freshness_adjudication/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen Hissar adjudication parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hissar-1968-1969-freshness-adjudication
+          fetch-depth: 1
+
+      - name: Enforce frozen source and fetch exact context ref
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_hissar_1968_1969_freshness_adjudication/PROTOCOL.md)" = "22b201f14e25e4313d7aac3da2af7761fcb3cacf"
+          test "$(git hash-object orbittrace_hissar_1968_1969_freshness_adjudication/adjudicate.py)" = "2f9d35c3fc084ab7fc53f633ca56fb45cbae84fc"
+          python -m py_compile orbittrace_hissar_1968_1969_freshness_adjudication/adjudicate.py
+          git fetch --no-tags origin '+refs/heads/agent/orbittrace-fripon-2018-2019-freshness-audit:refs/remotes/origin/agent/orbittrace-fripon-2018-2019-freshness-audit'
+
+      - name: Fetch and verify immutable raw Hissar audit artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/raw output
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9012608649/zip" \
+            -o input/raw.zip
+          echo "93eca9bc5513f8d569b7643d0f8c36ed3bc42b1ef6d9f6755e1ce09a05090b75  input/raw.zip" | sha256sum -c -
+          unzip -q input/raw.zip -d input/raw
+          test -f input/raw/hissar_1968_1969_repo_freshness_audit.json
+
+      - name: Adjudicate sole raw hit from source context only
+        run: |
+          set -euo pipefail
+          python orbittrace_hissar_1968_1969_freshness_adjudication/adjudicate.py \
+            --raw-json input/raw/hissar_1968_1969_repo_freshness_audit.json \
+            --output output
+
+      - name: Enforce zero-data boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/hissar_1968_1969_freshness_adjudication.json').read_text())
+          assert r['verdict']=='PASS_HISSAR_1968_1969_ZERO_DATA_FRESHNESS_ADJUDICATION'
+          assert r['raw_audit_verdict_preserved']=='FAIL_HISSAR_1968_1969_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          assert r['raw_hit_count']==1
+          assert r['additional_hits_forgiven']==0
+          assert r['iau_mdc_contacted'] is False
+          assert r['catalogue_form_submitted'] is False
+          assert r['scientific_record_access'] is False
+          assert r['source_label_access'] is False
+          assert r['orbittrace_target_information_access'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/adjudication_commit.txt
+          sha256sum orbittrace_hissar_1968_1969_freshness_adjudication/PROTOCOL.md orbittrace_hissar_1968_1969_freshness_adjudication/adjudicate.py > output/source_sha256.txt
+          sha256sum input/raw.zip > output/raw_artifact_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload Hissar adjudication artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-hissar-1968-1969-freshness-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
