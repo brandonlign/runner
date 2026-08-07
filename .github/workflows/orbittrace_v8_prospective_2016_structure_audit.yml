@@ -1,0 +1,89 @@
+name: OrbitTrace v8 prospective 2016 structure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-prospective-2016-audit-base
+    paths:
+      - orbittrace_prospective_2016/audit_archive_structure.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v8-prospective-2016-structure-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-prospective-2016-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify v8 freeze and audit source before prospective archive access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python -m py_compile orbittrace_prospective_2016/audit_archive_structure.py
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          freeze=json.loads(Path('orbittrace_method_freeze/V8_TWO_YEAR_DEVELOPMENT_RESULT.json').read_text())
+          assert freeze['verdict']=='PASS_EVIDENCE_OFFSET_V8_DEVELOPMENT'
+          assert freeze['selected']['method']=='orbittrace_v3_fixed4_offset_pos050_v8'
+          assert freeze['selected']['offset']==0.5
+          assert freeze['prospective_year']==2016
+          assert freeze['prospective_scientific_access_authorized'] is False
+          source=Path('orbittrace_prospective_2016/audit_archive_structure.py').read_text()
+          forbidden=('multi_anchor_energy_episode_score','scores_for_episode','roc_auc_score','fixed4','wavelet_coefficients','evidence_offset_v8')
+          # 'fixed4' may occur only in explicit prohibited-access result keys; no imports/calls allowed.
+          assert 'import multi_anchor' not in source
+          assert 'import evidence_offset' not in source
+          assert 'roc_auc_score' not in source
+          assert 'scores_for_episode(' not in source
+          print('PASS_2016_STRUCTURE_AUDIT_SOURCE_GUARD')
+          PY
+          sha256sum orbittrace_method_freeze/V8_TWO_YEAR_DEVELOPMENT_RESULT.json orbittrace_prospective_2016/audit_archive_structure.py \
+            > output/source_sha256.txt
+          git rev-parse HEAD > output/audit_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Download preregistered SonotaCo 2016 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/016a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/016a.zip
+          test -s input/016a.zip
+
+      - name: Run transport and schema audit only
+        run: |
+          set -euo pipefail
+          python orbittrace_prospective_2016/audit_archive_structure.py \
+            --archive input/016a.zip --output output
+          cat output/SONOTACO_2016_ARCHIVE_STRUCTURE_RESULT.json
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          sha256sum input/016a.zip >> output/source_sha256.txt 2>/dev/null || true
+
+      - name: Upload score-free 2016 structure audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-2016-structure-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
