@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 EXPECTED_SUPPORT_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
+EXPECTED_RUNTIME_SHA256 = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
 FUNCTIONS = (
     "parse_catalogue",
     "scan_year",
@@ -40,9 +41,20 @@ def literal_assignments(tree: ast.Module) -> dict[str, object]:
     return out
 
 
+def function_source(text: str, tree: ast.Module, name: str) -> str:
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            segment = ast.get_source_segment(text, node)
+            if segment is None:
+                raise RuntimeError(f"could not recover source for {name}")
+            return segment
+    raise RuntimeError(f"function missing: {name}")
+
+
 def main() -> None:
     output = Path("output")
     output.mkdir(exist_ok=True)
+
     source = decode_parts(Path("orbittrace_fixed4_support_wrapper_development/source_parts"))
     digest = hashlib.sha256(source).hexdigest()
     if digest != EXPECTED_SUPPORT_SHA256:
@@ -69,9 +81,19 @@ def main() -> None:
                 "last_lineno": getattr(node, "end_lineno", None),
             }
             excerpts.append(segment)
+
+    runtime_source = decode_parts(Path("orbittrace_wavelet_catalogue_v3/source_parts"))
+    runtime_digest = hashlib.sha256(runtime_source).hexdigest()
+    if runtime_digest != EXPECTED_RUNTIME_SHA256:
+        raise RuntimeError(f"runtime source digest changed: {runtime_digest}")
+    runtime_text = runtime_source.decode("utf-8")
+    runtime_tree = ast.parse(runtime_text)
+    loader_source = function_source(runtime_text, runtime_tree, "load_support_module")
+
     result = {
         "verdict": "PASS_MULTIPLICITY_V5_SUPPORT_SOURCE_AUDIT",
         "support_sha256": digest,
+        "runtime_sha256": runtime_digest,
         "constants": selected_constants,
         "functions": funcs,
         "catalogue_access": False,
@@ -79,7 +101,11 @@ def main() -> None:
     }
     (output / "support_source_audit.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     (output / "support_source_excerpt.py").write_text("\n\n\n".join(excerpts) + "\n")
+    (output / "runtime_load_support_module.py").write_text(loader_source + "\n")
     print(json.dumps(result, indent=2, sort_keys=True))
+    print("RUNTIME_LOAD_SUPPORT_MODULE_BEGIN")
+    print(loader_source)
+    print("RUNTIME_LOAD_SUPPORT_MODULE_END")
     print("SUPPORT_SOURCE_EXCERPT_BEGIN")
     print("\n\n\n".join(excerpts))
     print("SUPPORT_SOURCE_EXCERPT_END")
