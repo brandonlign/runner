@@ -1,0 +1,128 @@
+name: OrbitTrace v6 corroborated rescue development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-corroborated-rescue-base
+    paths:
+      - orbittrace_corroborated_rescue_v6/PROTOCOL.md
+      - orbittrace_corroborated_rescue_v6/select_corroborated_rescue.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-corroborated-rescue
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Freeze and audit v6 selector source before opening development records
+        run: |
+          set -euo pipefail
+          mkdir -p input/2025 input/2023 input/2024 output
+          python -m py_compile orbittrace_corroborated_rescue_v6/select_corroborated_rescue.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          path = Path('orbittrace_corroborated_rescue_v6/select_corroborated_rescue.py')
+          spec = importlib.util.spec_from_file_location('v6selector', path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert module.DENOMINATOR == 513
+          assert module.PRIMARY_RANKS == tuple(range(1, 27))
+          assert module.FIXED4_RANKS == tuple(range(1, 27))
+          assert module.CORROBORATION_RANKS == tuple(range(26, 129))
+          assert module.FPR_CAP == 0.055
+          assert module.SECTOR_FPR_CAP == 0.08
+          assert module.RECALL_TOLERANCE == 0.03
+          assert module.DEVELOPMENT_YEARS == (2025, 2023, 2024)
+          protocol = Path('orbittrace_corroborated_rescue_v6/PROTOCOL.md').read_text()
+          required = (
+              'SonotaCo 2018',
+              '69,628',
+              'p_v3 <= r_primary/513',
+              'p_fixed4 <= r_fixed4/513',
+              'p_v3 <= r_corroboration/513',
+              'No 2018',
+              '2025, 2023, and 2024',
+          )
+          for phrase in required:
+              assert phrase in protocol, phrase
+          print('PASS_V6_SELECTOR_SOURCE_AUDIT')
+          PY
+          sha256sum \
+            orbittrace_corroborated_rescue_v6/PROTOCOL.md \
+            orbittrace_corroborated_rescue_v6/select_corroborated_rescue.py \
+            | tee output/v6_source_sha256.txt
+          git rev-parse HEAD | tee output/v6_source_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact frozen 2025 and 2023 high-resolution development records
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31151459055 --repo "$GITHUB_REPOSITORY" --name orbittrace-v5-highres-2025 --dir input/2025
+          gh run download 31151459055 --repo "$GITHUB_REPOSITORY" --name orbittrace-v5-highres-2023 --dir input/2023
+          echo 'b2a1f1a6564e9681f4774611e94a62c59061f24cf7f178edeb7d36691db667da  input/2025/sonotaco_2025_literature_comparison.json' | sha256sum -c -
+          echo 'a549c04967a14f092d8a55b587c3299af28589db876942e624fc3483926fcc43  input/2025/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo '5bb5752ab49e8d7680e89bc5846f6acc749e81881b767685668ef9aa9b599d34  input/2025/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo '2869ce2eb004cfeef641790d656c98e92fac8514083170f0a220a0f6d8fbfcad  input/2023/sonotaco_2023_literature_transfer.json' | sha256sum -c -
+          echo 'cb3011f933cc8df1bf38007717c7e8487a7edca4150a4c8b34d583f6d1ea9f5b  input/2023/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo 'bd73c67c6b0f39051c20d75156d292a0bf1b6eb979c84690faec9ecf58f81f26  input/2023/positive_literature_records.jsonl.gz' | sha256sum -c -
+
+      - name: Retrieve exact failed 2024 prospective records as successor-development evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31153711851 --repo "$GITHUB_REPOSITORY" --name orbittrace-v5-sonotaco-2024-prospective --dir input/2024
+          echo 'ac49bbf1eb009295a5ee0a22794cd9042c7c7db248f1db6cb63c81471b6d071c  input/2024/SONOTACO_2024_V5_PROSPECTIVE_RESULT.json' | sha256sum -c -
+          echo '20ec4a161f2f0a285df7df60019009a5da349dcc27ecf6242c8fe4538d984a92  input/2024/negative_records.jsonl.gz' | sha256sum -c -
+          echo 'c9474c8dc84a2d2ebb9f3e205dc142e38053c5c2f51247eb29f973c7966cc753  input/2024/positive_records.jsonl.gz' | sha256sum -c -
+          grep -F 'FAIL_V5_SONOTACO_2024_PROSPECTIVE_VALIDATION' orbittrace_highres_v5/FROZEN_SONOTACO_2024_PROSPECTIVE_RESULT.md
+
+      - name: Execute complete preregistered v6 development grid
+        run: |
+          set -euo pipefail
+          python orbittrace_corroborated_rescue_v6/select_corroborated_rescue.py \
+            --year2025 input/2025 \
+            --year2023 input/2023 \
+            --year2024 input/2024 \
+            --output output
+          cat output/V6_DEVELOPMENT_SELECTION.md
+          python - <<'PY'
+          import json
+          result = json.load(open('output/V6_DEVELOPMENT_SELECTION.json'))
+          assert result['configuration']['grid_pairs'] == 69628
+          assert result['configuration']['denominator'] == 513
+          assert result['configuration']['development_years'] == [2025, 2023, 2024]
+          print('V6_DEVELOPMENT_VERDICT', result['verdict'], 'FEASIBLE', result['feasible_pairs'])
+          PY
+
+      - name: Record immutable input provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum input/2025/* input/2023/* input/2024/* >> output/v6_source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-corroborated-rescue-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
