@@ -6,6 +6,7 @@ on:
       - agent/orbittrace-pooled-year-centroid-v8
     paths:
       - 'orbittrace_literature_matched_v8/FINAL_CONCLUSION_AUDIT_CORRECTION.md'
+      - 'orbittrace_literature_matched_v8/FROZEN_LITERATURE_BENCHMARK_CONCLUSION.md'
       - '.github/workflows/orbittrace-literature-final-conclusion-audit-v2.yml'
   workflow_dispatch:
 
@@ -26,6 +27,7 @@ jobs:
           set -euo pipefail
           test "$(git hash-object orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.md)" = "2fbe1edc3739caa27657b21cbd5c28e60b80ba66"
           test "$(git hash-object orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json)" = "175b8deefbe786da0da1564517b98263cdff01b7"
+          test "$(git hash-object orbittrace_literature_matched_v8/FROZEN_LITERATURE_BENCHMARK_CONCLUSION.md)" = "f35426c99cf8dd6fd6c5cbbab3ec1eb2d24300f0"
 
       - name: Require substantive stages from detailed audit to have passed
         env:
@@ -45,7 +47,7 @@ jobs:
           print('PASS_PRIOR_SUBSTANTIVE_FINAL_AUDIT_STAGES')
           PY
 
-      - name: Verify explicit frozen claim boundary and wording-only correction
+      - name: Verify explicit frozen claim boundary and supersession
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -54,6 +56,7 @@ jobs:
           correction=Path('orbittrace_literature_matched_v8/FINAL_CONCLUSION_AUDIT_CORRECTION.md').read_text()
           md=Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.md').read_text()
           f=json.loads(Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json').read_text())
+          superseded=Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_BENCHMARK_CONCLUSION.md').read_text()
           assert '31227913108' in correction
           assert 'The OrbitTrace target, its coordinates, members, identity, excluded-interval contents, and final target result were not accessed.' in md
           assert f['orbittrace_target_accessed'] is False
@@ -64,6 +67,10 @@ jobs:
           assert f['answers']['general_state_of_the_art_sparse_discovery_claim']=='NOT_SUPPORTED'
           assert 'not scientifically supported' in md
           assert 'canonical preregistered blind-safe HDBSCAN-2023 rerun `31226945294`' in md
+          assert superseded.startswith('# Superseded literature benchmark conclusion')
+          assert 'must **not** be used for scientific claims' in superseded
+          assert '`orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.md`' in superseded
+          assert 'not established superiority for v8 in sparse-stream discovery' in superseded
           out={
             'verdict':'PASS_FROZEN_FINAL_LITERATURE_CONCLUSION_AUDIT_V2',
             'detailed_audit_run':31227913108,
@@ -72,6 +79,7 @@ jobs:
             'prior_final_failure_classification':'wording_only_literal_guard',
             'frozen_markdown_blob':'2fbe1edc3739caa27657b21cbd5c28e60b80ba66',
             'frozen_json_blob':'175b8deefbe786da0da1564517b98263cdff01b7',
+            'superseded_benchmark_blob':'f35426c99cf8dd6fd6c5cbbab3ec1eb2d24300f0',
             'orbittrace_target_access':False,
             'excluded_interval_contents_access':False,
             'v8_retuning':False,
