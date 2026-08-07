@@ -1,0 +1,223 @@
+name: OrbitTrace multiplicity SonotaCo 2017-2019 locked score-label holdout
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-sonotaco-2017-2019-scoreholdout
+    paths:
+      - 'orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: orbittrace_wavelet_catalogue_v3:orbittrace_sparse_support_multiplicity_v5:input/v3
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen score-label holdout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-multiplicity-sonotaco-2017-2019-scoreholdout
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen protocol transform and detector sources before score-label access
+        run: |
+          set -euo pipefail
+          mkdir -p input/original input/v3 input/boundary input/parser2017 input/parser2019 input/mapping input/transform_audit input/archive_identity output
+          test "$(git hash-object orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/PROTOCOL.md)" = "dd43862b82dc21815898399b188205cb1ab5a2ac"
+          test "$(git hash-object orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/run_score_label_holdout.py)" = "5ea84ca2ecd0e312c314141985b2bfecddbce22a"
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('output/wavelet_catalogue_v3_source_audit.json').read_text())
+          assert a['support_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert a['held_out_catalogues_loaded'] is False
+          assert a['target_information_present'] is False
+          PY
+          git fetch --no-tags --depth=1 origin agent/orbittrace-multiplicity-sonotaco-2015-2017-external
+          git show FETCH_HEAD:orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation.py > input/original/run_external_validation.py
+          test "$(git hash-object input/original/run_external_validation.py)" = "a4128e0620dcf1242fe90bb6758c96d46caf0119"
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          python -m py_compile input/v3/multi_anchor_energy_v3.py orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py orbittrace_sparse_support_multiplicity_v5/run_holdout.py orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/run_score_label_holdout.py
+          rm -rf output/*
+          echo PASS_SCORE_LABEL_HOLDOUT_FROZEN_SOURCE_GUARDS
+
+      - name: Enforce score-label boundary parser mapping and transform evidence before score-label access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31202654482 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2017-2019-score-label-boundary-audit --dir input/boundary
+          gh run download 31199214174 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2015-2017-parser-transport --dir input/parser2017
+          gh run download 31203088669 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2019-parser-transport --dir input/parser2019
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input/mapping
+          gh run download 31203608226 --repo "$GITHUB_REPOSITORY" --name orbittrace-multiplicity-sonotaco-2017-2019-transform-audit --dir input/transform_audit
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          boundary=json.loads(Path('input/boundary/sonotaco_2017_2019_score_label_boundary_audit.json').read_text())
+          assert boundary['verdict']=='PASS_SONOTACO_2017_2019_SCORE_LABEL_HOLDOUT_BOUNDARY_AUDIT'
+          assert boundary['catalogue_download_this_audit'] is False
+          assert boundary['scientific_score_access_this_audit'] is False
+          assert boundary['target_information_access'] is False
+          assert boundary['years']['2017']['parser_invoked_before_failure'] is False
+          assert boundary['years']['2017']['shower_labels_read_in_current_chain'] is False
+          assert boundary['years']['2017']['detector_scores_computed_in_current_chain'] is False
+          assert boundary['years']['2019']['shower_labels_read_in_prior_input_audit'] is False
+          assert boundary['years']['2019']['wavelet_coefficients_computed_in_prior_input_audit'] is False
+          assert boundary['years']['2019']['candidate_values_accessed_in_prior_input_audit'] is False
+
+          p17=Path('input/parser2017/run_sonotaco_2017_transport_parser.py')
+          assert hashlib.sha256(p17.read_bytes()).hexdigest()=='ee81d66b318ed2fa473ddfcee4c1cea0ef8ba08cba33da47103fd7c53ee625dc'
+          t19=json.loads(Path('input/parser2019/sonotaco_2019_parser_transport.json').read_text())
+          assert t19['verdict']=='PASS_SONOTACO_2019_SOURCE_ONLY_PARSER_TRANSPORT'
+          assert t19['catalogue_access'] is False and t19['shower_label_access'] is False and t19['scientific_score_access'] is False
+          assert t19['target_information_access'] is False
+          assert t19['source_sha256']=='301a711e4de43566ba434f2d4a94fc38a85714a33dcee45e26cb19340101ea43'
+          p19=Path('input/parser2019/run_sonotaco_2019_transport_parser.py')
+          assert hashlib.sha256(p19.read_bytes()).hexdigest()==t19['source_sha256']
+          assert t19['blind_interval_removed_before_label_access'] is True
+          assert t19['parser_integrity_gates_unchanged'] is True
+
+          mapping=Path('input/mapping/audit.json')
+          assert hashlib.sha256(mapping.read_bytes()).hexdigest()=='f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          transform=Path('input/transform_audit/score_label_holdout_transform_audit.txt').read_text()
+          assert 'patched_sha256=68c060e5334383c25cc423890c4be5beb55008b7eb2cca19585b5be071272723' in transform
+          assert 'replacement_count=14' in transform
+          assert 'scientific_gate_change=false' in transform
+          assert 'target_information_access=false' in transform
+          print('PASS_SCORE_LABEL_HOLDOUT_BOUNDARY_AND_PARSER_GUARDS')
+          PY
+
+      - name: Verify exact already-exposed archive identities without parsing or label access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          import requests
+          expected={
+            2017:('https://www.astro.sk/iaumdcDB/PDA/SNMv3/017a.zip','1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf'),
+            2019:('https://www.astro.sk/iaumdcDB/public/data/SNMv3/019a.zip','d49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4'),
+          }
+          out=Path('input/archive_identity'); out.mkdir(exist_ok=True)
+          for year,(url,digest) in expected.items():
+              r=requests.get(url,timeout=180,headers={'User-Agent':'OrbitTrace-score-label-holdout-identity/1.0'})
+              r.raise_for_status()
+              payload=r.content
+              got=hashlib.sha256(payload).hexdigest()
+              assert got==digest,(year,got,digest)
+              (out/f'sonotaco_{year}.sha256').write_text(got+'\n')
+          print('PASS_EXACT_RAW_ARCHIVE_IDENTITY_WITHOUT_PARSING')
+          PY
+
+      - name: Run first locked SonotaCo 2017-2019 shower-label and scientific-score evaluation
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/run_score_label_holdout.py \
+            --original-runner input/original/run_external_validation.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --parser-2017 input/parser2017/run_sonotaco_2017_transport_parser.py \
+            --parser-2019 input/parser2019/run_sonotaco_2019_transport_parser.py \
+            --mapping-audit input/mapping/audit.json \
+            --archive-dir input/archives \
+            --output output
+          cat output/MULTIPLICITY_SONOTACO_EXTERNAL.md
+
+      - name: Enforce frozen result integrity and honest score-label holdout claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/multiplicity_sonotaco_external.json').read_text())
+          allowed={
+            'PASS_MULTIPLICITY_SONOTACO_EXTERNAL_VALIDATION',
+            'FAIL_MULTIPLICITY_SONOTACO_EXTERNAL_VALIDATION',
+            'INCONCLUSIVE_MULTIPLICITY_SONOTACO_EXTERNAL_POWER',
+            'FAIL_MULTIPLICITY_SONOTACO_EXTERNAL_INTEGRITY',
+          }
+          assert r['verdict'] in allowed
+          assert r['orbittrace_target_access'] is False
+          assert r['years']==[2017,2019] if r.get('scientific_ranking_result_available') is False else True
+          src={int(x['year']):x for x in r['archive_sources']}
+          assert src[2017]['sha256']=='1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf'
+          assert src[2019]['sha256']=='d49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4'
+          if r.get('scientific_ranking_result_available') is not False:
+              c=r['configuration']
+              assert c['years']==[2017,2019]
+              assert c['corpus']=='sonotaco-2017-2019-sparse-support-multiplicity-score-label-holdout'
+              assert c['blind_exclusion']==[20.0,55.0]
+              assert c['development_family_count']==197 and c['development_top_k']==100
+              assert c['scaled_k_formula']=='ceil(100*N/197)'
+              assert c['k']==(100*c['family_count']+196)//197
+              assert c['no_multiplicity_pvalue'] and c['no_rrf'] and c['no_threshold_search'] and c['no_weight_search'] and c['no_endpoint_search']
+              assert 'score/label-unseen SonotaCo 2017/2019' in r['claim_boundary']
+          context={
+            'classification':'prospectively locked scientific-score/label external holdout',
+            'raw_data_pristine':False,
+            'scientific_score_label_unseen_at_preregistration':True,
+            'method_changed_after_boundary_audit':False,
+            'orbittrace_target_access':False,
+            'excluded_target_interval_access':False,
+            'boundary_audit_run':31202654482,
+            'transform_audit_run':31203608226,
+            'result_verdict':r['verdict'],
+          }
+          Path('output/SCORE_LABEL_HOLDOUT_CONTEXT.json').write_text(json.dumps(context,indent=2,sort_keys=True)+'\n')
+          print('ORBITTRACE_2017_2019_SCORE_LABEL_HOLDOUT_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_2017_2019_SCORE_LABEL_HOLDOUT_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/score_label_holdout_commit.txt
+          sha256sum \
+            orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/PROTOCOL.md \
+            orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/run_score_label_holdout.py \
+            input/original/run_external_validation.py \
+            input/v3/multi_anchor_energy_v3.py \
+            input/parser2017/run_sonotaco_2017_transport_parser.py \
+            input/parser2019/run_sonotaco_2019_transport_parser.py \
+            input/mapping/audit.json \
+            input/archives/sonotaco_2017.zip \
+            input/archives/sonotaco_2019.zip > output/score_label_holdout_source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload locked score-label holdout artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiplicity-sonotaco-2017-2019-score-label-holdout
+          path: output
+          if-no-files-found: error
+          retention-days: 90
