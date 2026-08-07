@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Pre-data adjudication of Harvard 1968/1969 against the frozen v8 input contract."""
+"""Pre-data adjudication of Harvard 1968/1969 against the frozen v8 input contract.
+
+Source-check correction: wrapper proves the geocentric input mapping/family radius;
+the paired immutable blind-catalogue source proves the feature-matrix transform/scales.
+"""
 from __future__ import annotations
 
 import argparse
@@ -9,7 +13,8 @@ import re
 import zipfile
 from pathlib import Path
 
-EXPECTED_FIXED4_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
+EXPECTED_WRAPPER_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
+EXPECTED_BLIND_SHA256 = "48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5"
 EXPECTED_FIELDS = {
     "ORBIT_NUMBER",
     "OBSERVATION_TIME",
@@ -46,11 +51,15 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def find_fixed4_source(root: Path) -> Path:
-    matches = list(root.rglob("run_fixed4_support_wrapper_development.py"))
+def find_one(root: Path, basename: str) -> Path:
+    matches = list(root.rglob(basename))
     if len(matches) != 1:
-        raise RuntimeError(f"expected one fixed4 source file, found {len(matches)}")
+        raise RuntimeError(f"expected one {basename}, found {len(matches)}")
     return matches[0]
+
+
+def field_text(field: dict) -> str:
+    return " ".join(str(v) for v in field.values()).lower()
 
 
 def main() -> int:
@@ -71,19 +80,27 @@ def main() -> int:
     fixed4_dir.mkdir(exist_ok=True)
     with zipfile.ZipFile(args.fixed4_artifact) as zf:
         zf.extractall(fixed4_dir)
-    fixed4 = find_fixed4_source(fixed4_dir)
-    fixed4_sha = sha256(fixed4)
-    assert fixed4_sha == EXPECTED_FIXED4_SHA256, fixed4_sha
-    src = fixed4.read_text(errors="replace")
+
+    wrapper = find_one(fixed4_dir, "run_fixed4_support_wrapper_development.py")
+    blind = find_one(fixed4_dir, "run_fixed4_blind_catalogue.py")
+    wrapper_sha = sha256(wrapper)
+    blind_sha = sha256(blind)
+    assert wrapper_sha == EXPECTED_WRAPPER_SHA256, wrapper_sha
+    assert blind_sha == EXPECTED_BLIND_SHA256, blind_sha
+    wrapper_src = wrapper.read_text(errors="replace")
+    blind_src = blind.read_text(errors="replace")
 
     source_gates = {
-        "geocentric_ecliptic_longitude_contract": '"lam": pick(cols, [("lamgeo", "deg"), ("geocentric", "ecliptic", "longitude")])' in src,
-        "geocentric_ecliptic_latitude_contract": '"bet": pick(cols, [("betgeo", "deg"), ("geocentric", "ecliptic", "latitude")])' in src,
-        "geocentric_velocity_contract": '"vg": pick(cols, [("vgeo", "km", "s"), ("geocentric", "velocity")])' in src,
-        "feature_matrix_uses_ecliptic_lon": "e.ecl_lon" in src,
-        "feature_matrix_uses_ecliptic_lat": "e.ecl_lat" in src,
-        "feature_matrix_uses_vg_over_40": "e.vg / 40.0" in src,
-        "family_link_radius_1_5": bool(re.search(r"^FAMILY_LINK_RADIUS\s*=\s*1\.5\s*$", src, re.M)),
+        "geocentric_ecliptic_longitude_contract": '"lam": pick(cols, [("lamgeo", "deg"), ("geocentric", "ecliptic", "longitude")])' in wrapper_src,
+        "geocentric_ecliptic_latitude_contract": '"bet": pick(cols, [("betgeo", "deg"), ("geocentric", "ecliptic", "latitude")])' in wrapper_src,
+        "geocentric_velocity_contract": '"vg": pick(cols, [("vgeo", "km", "s"), ("geocentric", "velocity")])' in wrapper_src,
+        "sun_centered_longitude_from_lam_minus_sol": 'sun_lon = base.wrap180(selected["lam"].to_numpy(float) - selected["sol"].to_numpy(float))' in blind_src,
+        "feature_matrix_uses_sun_lon": 'float(e["sun_lon"]) for e in events' in blind_src,
+        "feature_matrix_uses_ecliptic_lat": 'float(e["ecl_lat"]) for e in events' in blind_src,
+        "angular_scale_2deg": 'sphere_scale = (180.0 / math.pi) / 2.0' in blind_src,
+        "vg_scale_2kms": 'float(e["vg"]) for e in events], dtype=np.float64) / 2.0' in blind_src,
+        "sol_scale_4deg": 'float(base.wrap180(float(e["sol"]) - center_sol)) for e in events], dtype=np.float64) / 4.0' in blind_src,
+        "family_link_radius_1_5": bool(re.search(r"^FAMILY_LINK_RADIUS\s*=\s*1\.5\s*$", wrapper_src, re.M)),
     }
     assert all(source_gates.values()), source_gates
 
@@ -94,47 +111,56 @@ def main() -> int:
     ra_desc = by_name["RADIANT_RA"].get("description", "")
     dec_desc = by_name["RADIANT_DEC"].get("description", "")
     vinf_desc = by_name["VINF"].get("description", "")
+    lma_desc = by_name["LMA"].get("description", "")
     label_gates = {
         "ra_is_observed_radiant_b1950": "observed radiant" in ra_desc.lower() and "b1950" in ra_desc.lower(),
-        "dec_is_observed_radiant_b1950": "observed radiant" in dec_desc.lower() and "b1950" in dec_desc.lower(),
+        "dec_is_observed_radiant_b1950": "observed" in dec_desc.lower() and "radiant" in dec_desc.lower() and "b1950" in dec_desc.lower(),
         "vinf_is_top_of_atmosphere": "top of the atmosphere" in vinf_desc.lower(),
+        "lma_is_lambda_minus_apex": "lambda minus the apex" in lma_desc.lower(),
     }
     assert all(label_gates.values()), label_gates
 
-    non_orbital = EXPECTED_FIELDS - ORBITAL_FIELDS
-    # The official non-orbital interface contains time, IDs, one angular elongation,
-    # VINF, and observed RA/DEC, but no site/position/height or native geocentric fields.
-    native_geocentric_fields = {
-        name for name in non_orbital
-        if re.search(r"(^|_)(VG|V_G|GEOCENTRIC|LAMG|BETG)($|_)", name, re.I)
-    }
-    event_state_fields = {
-        name for name in non_orbital
-        if re.search(r"SITE|STATION|LATITUDE|LONGITUDE|HEIGHT|ALTITUDE|POSITION|RANGE|ZENITH", name, re.I)
-    }
+    non_orbital_names = EXPECTED_FIELDS - ORBITAL_FIELDS
+    non_orbital_fields = [by_name[name] for name in sorted(non_orbital_names)]
+    native_geocentric_fields = [
+        f["name"] for f in non_orbital_fields
+        if "geocentric" in field_text(f)
+    ]
+    event_site_position_height_fields = [
+        f["name"] for f in non_orbital_fields
+        if any(token in field_text(f) for token in (
+            "observatory", "observer location", "station latitude", "station longitude",
+            "geographic latitude", "geographic longitude", "meteor height", "meteor position",
+            "trajectory position", "local zenith", "range to meteor",
+        ))
+    ]
 
-    compatibility = bool(native_geocentric_fields or event_state_fields)
-    # Even if an unrelated token matched, the exact required state must be source-proven.
-    # With the frozen 14-field schema it is not.
-    exact_recovery_available = False
-    verdict = "PASS_HARVARD_1968_1969_V8_INTERFACE_COMPATIBILITY" if exact_recovery_available else "FAIL_HARVARD_1968_1969_V8_INTERFACE_COMPATIBILITY"
+    exact_recovery_available = bool(native_geocentric_fields) or bool(event_site_position_height_fields)
+    # A generic time, observed radiant, VINF, or lambda-minus-apex quantity is not the
+    # event-specific observer/meteor state required for an exact apparent->geocentric radiant reduction.
+    verdict = (
+        "PASS_HARVARD_1968_1969_V8_INTERFACE_COMPATIBILITY"
+        if exact_recovery_available
+        else "FAIL_HARVARD_1968_1969_V8_INTERFACE_COMPATIBILITY"
+    )
 
     result = {
         "verdict": verdict,
-        "fixed4_source_sha256": fixed4_sha,
+        "wrapper_source_sha256": wrapper_sha,
+        "blind_catalogue_source_sha256": blind_sha,
         "fixed4_source_gates": source_gates,
         "harvard_label_gates": label_gates,
         "harvard_field_names": sorted(EXPECTED_FIELDS),
         "harvard_orbital_fields_reserved_post_ranking": sorted(ORBITAL_FIELDS),
-        "native_geocentric_nonorbital_fields": sorted(native_geocentric_fields),
-        "event_site_position_height_fields": sorted(event_state_fields),
-        "schema_has_any_candidate_state_token": compatibility,
+        "native_geocentric_nonorbital_fields": native_geocentric_fields,
+        "event_site_position_height_fields": event_site_position_height_fields,
         "exact_nonorbital_geocentric_recovery_available": exact_recovery_available,
-        "failure_reason": (
-            "Frozen v8 requires geocentric ecliptic radiant longitude/latitude and geocentric velocity in its discovery metric. "
-            "The official Harvard non-orbital interface provides only B1950 observed radiant and VINF at the top of the atmosphere, plus observation time/ID/LMA, with no event-specific site/meteor-position/height state. "
-            "Recovering exact geocentric discovery coordinates would therefore require orbital-element inversion or an assumed/learned apparent-to-geocentric correction, neither of which is permitted for an external validation of the frozen v8 method."
+        "failure_reason": None if exact_recovery_available else (
+            "Frozen v8 ingests geocentric ecliptic longitude/latitude and geocentric velocity, then uses sun-centered longitude = wrap180(lambda_g - solar_longitude), latitude, and Vg in its frozen discovery geometry. "
+            "The official Harvard non-orbital interface provides B1950 observed radiant, VINF at the top of the atmosphere, LMA=lambda-minus-apex, observation time, and orbit number, but no native geocentric field or event-specific site/meteor-position/height state. "
+            "Exact geocentric discovery coordinates therefore cannot be recovered from the non-orbital interface alone. Doing so would require orbital-element inversion or an assumed/learned apparent-to-geocentric correction, both prohibited for a frozen-v8 external validation."
         ),
+        "prior_checker_failure_run_preserved": 31226997818,
         "harvard_event_table_opened": False,
         "harvard_event_values_inspected": False,
         "orbital_elements_used_for_discovery": False,
@@ -142,7 +168,7 @@ def main() -> int:
         "v8_modified": False,
         "orbittrace_target_information_access": False,
         "claim_boundary": (
-            "Pre-event-data interface compatibility only. This FAIL does not measure v8 performance. Harvard 1968-1969 remains scientifically fresh but cannot supply the exact frozen v8 discovery coordinates without prohibited adaptation."
+            "Pre-event-data interface compatibility only. A FAIL does not measure v8 performance. Harvard 1968-1969 remains scientifically fresh but cannot supply the exact frozen v8 discovery coordinates without prohibited adaptation."
         ),
     }
     (args.output / "harvard_1968_1969_v8_interface_adjudication.json").write_text(
@@ -150,15 +176,12 @@ def main() -> int:
     )
     print(json.dumps(result, indent=2, sort_keys=True))
 
-    # Remove extracted source tree so artifact contains adjudication result/provenance only.
     for path in sorted(fixed4_dir.rglob("*"), reverse=True):
         if path.is_file() or path.is_symlink():
             path.unlink()
         elif path.is_dir():
             path.rmdir()
     fixed4_dir.rmdir()
-
-    # FAIL is the expected scientific adjudication outcome, not an infrastructure failure.
     return 0
 
 
