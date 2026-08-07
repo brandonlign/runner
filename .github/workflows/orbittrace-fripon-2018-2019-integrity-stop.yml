@@ -1,0 +1,82 @@
+name: OrbitTrace FRIPON 2018-2019 integrity stop
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fripon-2018-2019-integrity-stop
+    paths:
+      - 'orbittrace_fripon_2018_2019_integrity_stop/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  record:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen integrity-stop parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fripon-2018-2019-integrity-stop
+
+      - name: Enforce immutable stop record
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_fripon_2018_2019_integrity_stop/PROTOCOL.md)" = "9aae8332ff1bee033d53a72895ad3133c18b8c68"
+          test "$(git hash-object orbittrace_fripon_2018_2019_integrity_stop/record_stop.py)" = "55410faa57f8719df6d24fe28803a51e7b58fd50"
+          python -m py_compile orbittrace_fripon_2018_2019_integrity_stop/record_stop.py
+
+      - name: Fetch immutable pre-incident repository-freshness artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012594819/zip" -o input/freshness.zip
+          echo "94f855cf860a7c48991937afeedbaf2a71905a2f1478a26e66cc50b890a3e928  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+
+      - name: Record terminal FRIPON integrity verdict
+        run: |
+          set -euo pipefail
+          python orbittrace_fripon_2018_2019_integrity_stop/record_stop.py \
+            --freshness-json input/freshness/fripon_2018_2019_repo_freshness_audit.json \
+            --output output
+
+      - name: Enforce stop boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/fripon_2018_2019_integrity_stop.json').read_text())
+          assert r['verdict']=='FAIL_FRIPON_2018_2019_EXTERNAL_INTEGRITY_PREPROTOCOL_EXPOSURE'
+          assert r['alternate_FRIPON_year_pair_authorized'] is False
+          assert r['reserved_FRIPON_scientific_protocol_frozen_before_exposure'] is False
+          assert r['v8_scientific_evaluation_performed_on_FRIPON'] is False
+          assert r['v8_method_changed'] is False
+          assert r['numeric_exposed_values_copied_into_repository'] is False
+          assert r['exposed_values_used_for_method_or_parser_decisions'] is False
+          assert r['orbittrace_target_information_access'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/integrity_stop_commit.txt
+          sha256sum orbittrace_fripon_2018_2019_integrity_stop/PROTOCOL.md orbittrace_fripon_2018_2019_integrity_stop/record_stop.py > output/source_sha256.txt
+          sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload terminal integrity artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fripon-2018-2019-integrity-stop
+          path: output
+          if-no-files-found: error
+          retention-days: 90
