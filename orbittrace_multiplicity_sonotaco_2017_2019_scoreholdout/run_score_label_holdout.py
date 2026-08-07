@@ -32,6 +32,8 @@ REPLACEMENTS = [
      'parser_modules = {\n        2017: load_module(args.parser_2017, "orbittrace_frozen_sonotaco_2017_parser"),\n        2019: load_module(args.parser_2019, "orbittrace_frozen_sonotaco_2019_parser"),\n    }'),
     ('# FIRST ACCESS TO THE FRESH SONOTACO 2015/2017 ARCHIVES.',
      '# FIRST SCIENTIFIC LABEL/SCORE ACCESS FOR THE LOCKED SONOTACO 2017/2019 HOLDOUT.'),
+    ('"# OrbitTrace SonotaCo 2015/2017 external validation\\n\\n"',
+     '"# OrbitTrace SonotaCo 2017/2019 locked score/label holdout\\n\\n"'),
     ('"Fresh repo-history-unexposed SonotaCo 2015/2017 target-excluded external catalogue-ranking validation. "',
      '"Prospectively locked score/label-unseen SonotaCo 2017/2019 target-excluded external catalogue-ranking evaluation. "'),
     ('"# OrbitTrace multiplicity — fresh SonotaCo 2015/2017 external validation",',
@@ -58,7 +60,6 @@ def main() -> int:
         patched = patched.replace(old, new)
         applied.append({'old': old, 'new': new})
 
-    # Scientific constants/gates must remain byte-identical textually.
     required_unchanged = [
         'MIN_SUPPORTED_BINS = 24',
         'MIN_SCAN_EVENTS = 1000',
@@ -88,7 +89,6 @@ def main() -> int:
             raise RuntimeError(f'frozen scientific token changed/missing: {token}')
 
     if '2015' in patched or '015a' in patched:
-        # No old panel identifier may survive into execution.
         raise RuntimeError('old 2015 panel identifier survived guarded transform')
 
     out = Path('/tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py')
