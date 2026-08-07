@@ -1,0 +1,102 @@
+name: OrbitTrace AMOR LS-only parser diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-amor-ls-format-diagnostic
+    paths:
+      - 'orbittrace_amor_ls_format_diagnostic/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen LS diagnostic parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-amor-ls-format-diagnostic
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install transport dependency
+        run: python -m pip install requests==2.32.5
+
+      - name: Enforce diagnostic boundary and frozen structure prerequisite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/structure output
+          test "$(git hash-object orbittrace_amor_ls_format_diagnostic/diagnose_ls.py)" = "433335c8b8159be58addee6fee55a0aeca751344"
+          python -m py_compile orbittrace_amor_ls_format_diagnostic/diagnose_ls.py
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009809682/zip" -o input/structure.zip
+          echo "9f3646a37e519b2de121b0e4083cc92b795ec72f09e3f0ce0fafc48c2aed12dc  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('input/structure/amor_1990_1999_structure_audit.json').read_text())
+          assert s['verdict']=='PASS_AMOR_1990_1999_STRUCTURE_AUDIT'
+          assert s['selected_years']==[1996,1998]
+          assert s['scientific_token_conversion_performed'] is False
+          assert s['target_information_access'] is False
+          by={int(a['year']):a for a in s['archives']}
+          for y in (1996,1998):
+              m=by[y]['members'][0]
+              assert m['delimiter_class']=='whitespace'
+              assert m['header_tokens']==['DB','IC','Yr','Mn','Day','LS','RA','dRA','DECL','dDECL','Vg','Vh','q','e','a','i','arg','nod']
+          PY
+          rm -rf output/*
+          echo PASS_AMOR_LS_DIAGNOSTIC_GUARDS
+
+      - name: Diagnose LS encoding only
+        run: |
+          set -euo pipefail
+          python orbittrace_amor_ls_format_diagnostic/diagnose_ls.py \
+            --structure-json input/structure/amor_1990_1999_structure_audit.json \
+            --output output
+
+      - name: Enforce LS-only boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/amor_ls_format_diagnostic.json').read_text())
+          assert r['verdict']=='PASS_AMOR_LS_FORMAT_DIAGNOSTIC'
+          assert r['selected_years']==[1996,1998]
+          assert r['fields_accessed']==['LS']
+          assert r['date_radiant_speed_orbit_access'] is False
+          assert r['detector_family_ranking_access'] is False
+          assert r['target_information_access'] is False
+          assert all(x['fields_accessed']==['LS'] and x['other_scientific_fields_interpreted'] is False for x in r['results'])
+          print('ORBITTRACE_AMOR_LS_DIAGNOSTIC_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_AMOR_LS_DIAGNOSTIC_END')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          sha256sum orbittrace_amor_ls_format_diagnostic/diagnose_ls.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - name: Upload diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-amor-ls-format-diagnostic
+          path: output
+          if-no-files-found: error
+          retention-days: 90
