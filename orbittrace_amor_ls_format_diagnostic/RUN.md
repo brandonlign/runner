@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen LS-only AMOR parser diagnostic. No field other than LS, detector result, family, ranking, target information, or scientific-method rule may be accessed or changed.
