@@ -1,0 +1,319 @@
+name: OrbitTrace anchor pooling v6 two-year development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-anchor-pooling-base
+    paths:
+      - orbittrace_anchor_pooling_v6/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-anchor-pooling-v6-development
+  cancel-in-progress: false
+
+jobs:
+  score-2025:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-anchor-pooling-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact frozen 2025 benchmark
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 99957b021a4c816d423f0bb6a5780fb9e7a54bfe --depth=1
+          rm -rf /tmp/frozen2025
+          git worktree add --detach /tmp/frozen2025 99957b021a4c816d423f0bb6a5780fb9e7a54bfe
+          test "$(git -C /tmp/frozen2025 rev-parse HEAD)" = "99957b021a4c816d423f0bb6a5780fb9e7a54bfe"
+          test "$(git -C /tmp/frozen2025 hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git -C /tmp/frozen2025 hash-object orbittrace_literature_comparison/build_wavelet_episode_runner.py)" = "be8f3c79237e4f0a2d9625e816b2b4f806029ec5"
+          test "$(git -C /tmp/frozen2025 hash-object orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py)" = "a10b8689791f647713689e3870901f633b6cc493"
+
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/frozen2025/real_shower_meta_stage0/requirements.txt
+
+      - name: Audit v6 before data access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_anchor_pooling_v6
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python -m py_compile \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_anchor_pooling_v6/anchor_pooling_v6.py \
+            orbittrace_anchor_pooling_v6/build_anchor_pooling_runner.py \
+            orbittrace_anchor_pooling_v6/select_candidate.py
+          python - <<'PY'
+          import anchor_pooling_v6 as v6
+          assert all(v6.self_test().values())
+          assert len(v6.METHOD_ORDER) == 6
+          assert v6.TOP_ANCHORS == 4
+          print('PASS_V6_2025_SOURCE_AUDIT', v6.METHOD_ORDER)
+          PY
+          sha256sum \
+            orbittrace_anchor_pooling_v6/PROTOCOL.md \
+            orbittrace_anchor_pooling_v6/anchor_pooling_v6.py \
+            orbittrace_anchor_pooling_v6/build_anchor_pooling_runner.py \
+            orbittrace_anchor_pooling_v6/select_candidate.py \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            | tee output/v6_source_sha256.txt
+          git rev-parse HEAD | tee output/v6_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Build exact v6 2025 runner
+        env:
+          PYTHONPATH: /tmp/frozen2025/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_anchor_pooling_v6
+        run: |
+          set -euo pipefail
+          python /tmp/frozen2025/orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            --base /tmp/frozen2025/orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            --output /tmp/run_2025_wavelet.py
+          python orbittrace_anchor_pooling_v6/build_anchor_pooling_runner.py \
+            --base /tmp/run_2025_wavelet.py \
+            --output /tmp/run_2025_v6.py
+          python -m py_compile /tmp/run_2025_v6.py
+          sha256sum /tmp/run_2025_wavelet.py /tmp/run_2025_v6.py | tee output/adapted_runner_sha256.txt
+
+      - name: Retrieve exact mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Score complete v6 family on 2025
+        env:
+          PYTHONPATH: /tmp/frozen2025/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_anchor_pooling_v6
+        run: |
+          set -euo pipefail
+          python /tmp/run_2025_v6.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/frozen2025/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/frozen2025/mondrian_clique_development/source_parts_v2 \
+            --adapter-parts /tmp/frozen2025/sonotaco_mondrian_development/source_parts \
+            --candidate-payload /tmp/frozen2025/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2025_LITERATURE_COMPARISON.md
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum input/audit.json input/025a.zip >> output/v6_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v6 2025 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-2025
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  score-2023:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-anchor-pooling-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact validated 2023 benchmark
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 9ccefb50063f7f9e760beb5d8a5e362e0e2d2279 --depth=1
+          rm -rf /tmp/w2023
+          git worktree add --detach /tmp/w2023 9ccefb50063f7f9e760beb5d8a5e362e0e2d2279
+          test "$(git -C /tmp/w2023 rev-parse HEAD)" = "9ccefb50063f7f9e760beb5d8a5e362e0e2d2279"
+          test "$(git -C /tmp/w2023 hash-object orbittrace_literature_comparison/build_wavelet_2023_runner.py)" = "169c4d03ffcb179951197a0f93c4bc5d63354748"
+          test "$(git -C /tmp/w2023 hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/w2023/real_shower_meta_stage0/requirements.txt
+
+      - name: Audit v6 before 2023 access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_anchor_pooling_v6
+        run: |
+          set -euo pipefail
+          mkdir -p input/repaired output
+          python -m py_compile \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_anchor_pooling_v6/anchor_pooling_v6.py \
+            orbittrace_anchor_pooling_v6/build_anchor_pooling_runner.py \
+            orbittrace_anchor_pooling_v6/select_candidate.py
+          python - <<'PY'
+          import anchor_pooling_v6 as v6
+          assert all(v6.self_test().values())
+          assert len(v6.METHOD_ORDER) == 6
+          assert v6.TOP_ANCHORS == 4
+          print('PASS_V6_2023_SOURCE_AUDIT', v6.METHOD_ORDER)
+          PY
+          git diff --exit-code
+          git diff --cached --exit-code
+          sha256sum \
+            orbittrace_anchor_pooling_v6/PROTOCOL.md \
+            orbittrace_anchor_pooling_v6/anchor_pooling_v6.py \
+            orbittrace_anchor_pooling_v6/build_anchor_pooling_runner.py \
+            orbittrace_anchor_pooling_v6/select_candidate.py \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            | tee output/v6_source_sha256.txt
+          git rev-parse HEAD | tee output/v6_commit.txt
+
+      - name: Reconstruct exact v6 2023 runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: /tmp:/tmp/w2023/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_anchor_pooling_v6
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_literature_comparison/literature_comparators.py?ref=eddcf9bb432b92e4f9707d0b2ce58ca21b4faf34" --jq .content | tr -d '\n' | base64 -d > /tmp/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  /tmp/literature_comparators.py' | sha256sum -c -
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          root = Path('/tmp/w2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts')
+          names = ('part00.b64','part01_sub00.b64','part01_sub01.b64','part01_sub02.b64','part01_sub03.b64','part02.b64')
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          assert digest == '582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747', digest
+          Path('/tmp/run_2023_base.py').write_bytes(source)
+          compile(source, 'run_2023_base.py', 'exec')
+          print('PASS_EXACT_2023_BASE_RUNNER', digest)
+          PY
+          python /tmp/w2023/orbittrace_literature_comparison/build_wavelet_2023_runner.py --base /tmp/run_2023_base.py --output /tmp/run_2023_wavelet.py
+          python orbittrace_anchor_pooling_v6/build_anchor_pooling_runner.py --base /tmp/run_2023_wavelet.py --output /tmp/run_2023_v6.py
+          python -m py_compile /tmp/run_2023_v6.py
+          sha256sum /tmp/run_2023_wavelet.py /tmp/run_2023_v6.py | tee output/adapted_runner_sha256.txt
+
+      - name: Retrieve exact repaired 2023 parser and confirmation source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 --repo "$GITHUB_REPOSITORY" --name sonotaco-2023-confirmation-source-repair-v2 --dir input/repaired
+          echo '9619dfc0b339b39d287833778769f12a643e2b0157fdcd6115cd9c40be528322  input/repaired/audit_sonotaco_2023_v2.py' | sha256sum -c -
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo '882c21f2ac48689ab7a0d7a990496f7e055ab571b10c6f00bb63d8a18f8f7b3f  input/repaired/sonotaco_2023_confirmation_source_repair_v2.json' | sha256sum -c -
+
+      - name: Retrieve exact mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact SonotaCo 2023 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Score complete v6 family on 2023
+        env:
+          PYTHONPATH: /tmp:/tmp/w2023/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_anchor_pooling_v6
+        run: |
+          set -euo pipefail
+          python /tmp/run_2023_v6.py \
+            --archive input/023a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/w2023/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/w2023/mondrian_clique_development/source_parts_v2 \
+            --confirmation-source input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --freeze /tmp/w2023/orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2023_LITERATURE_TRANSFER.md
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum input/audit.json input/023a.zip input/repaired/* >> output/v6_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v6 2023 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-2023
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  select:
+    needs: [score-2025, score-2023]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-anchor-pooling-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install selector dependency
+        run: python -m pip install numpy==2.1.3
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v6-2025
+          path: input/2025
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v6-2023
+          path: input/2023
+      - name: Select only among two-year-feasible candidates
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_anchor_pooling_v6
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_anchor_pooling_v6/select_candidate.py \
+            --result-2025 input/2025/sonotaco_2025_literature_comparison.json \
+            --result-2023 input/2023/sonotaco_2023_literature_transfer.json \
+            --output output
+          cat output/V6_SELECTION_RESULT.md
+          sha256sum input/2025/sonotaco_2025_literature_comparison.json input/2023/sonotaco_2023_literature_transfer.json \
+            > output/v6_result_inputs_sha256.txt
+      - name: Upload v6 selection
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-selection
+          path: output
+          if-no-files-found: error
+          retention-days: 90
