@@ -1,0 +1,84 @@
+name: OrbitTrace corrected SonotaCo 2015-2017 freshness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-sonotaco-2015-2017-freshness-audit-corrected
+    paths:
+      - 'orbittrace_sonotaco_2015_2017_freshness_audit_corrected/**'
+      - '.github/workflows/orbittrace-sonotaco-2015-2017-freshness-audit-corrected.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out full repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch every branch for provenance scan
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          git rev-list --all --count
+
+      - name: Run corrected exposure-aware freshness audit
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_sonotaco_2015_2017_freshness_audit_corrected/audit_history.py
+
+      - name: Enforce correction boundary and positive control
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('output/corrected_sonotaco_2015_2017_freshness_audit.json').read_text())
+          assert r['candidate_years'] == [2015, 2017]
+          assert r['positive_control_year'] == 2016
+          assert r['positive_control_detected'] is True
+          assert r['catalogue_access'] is False
+          assert r['scientific_score_access'] is False
+          assert r['shower_label_access'] is False
+          assert r['excluded_interval_access'] is False
+          assert r['target_information_access'] is False
+          assert r['verdict'] in {
+              'PASS_CORRECTED_SONOTACO_2015_2017_REPO_FRESHNESS_AUDIT',
+              'FAIL_CORRECTED_SONOTACO_2015_2017_REPO_FRESHNESS_AUDIT',
+          }
+          # The previously identified self-reference must remain visible as an
+          # ignored provenance-audit hit rather than disappearing from the record.
+          ignored_2017 = r['years']['2017']['ignored_provenance_audit_hits']
+          ignored_text = json.dumps(ignored_2017, sort_keys=True)
+          assert 'd638126c051ba73a7eb043c5eca2984a5c9db6c9' in ignored_text
+          assert 'orbittrace_sonotaco_2017_2019_freshness_audit/audit_history.py' in ignored_text
+          print('ORBITTRACE_CORRECTED_SONOTACO_2015_2017_FRESHNESS_RESULT_BEGIN')
+          print(json.dumps(r, indent=2, sort_keys=True))
+          print('ORBITTRACE_CORRECTED_SONOTACO_2015_2017_FRESHNESS_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/audit_commit.txt
+          git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin | sort > output/remote_ref_snapshot.txt
+          sha256sum \
+            orbittrace_sonotaco_2015_2017_freshness_audit_corrected/CORRECTION.md \
+            orbittrace_sonotaco_2015_2017_freshness_audit_corrected/audit_history.py \
+            > output/audit_source_sha256.txt
+
+      - name: Upload corrected freshness artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-corrected-sonotaco-2015-2017-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
