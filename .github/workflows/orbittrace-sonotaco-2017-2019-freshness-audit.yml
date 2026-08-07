@@ -1,0 +1,70 @@
+name: OrbitTrace SonotaCo 2017-2019 freshness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-sonotaco-2017-2019-freshness-audit
+    paths:
+      - 'orbittrace_sonotaco_2017_2019_freshness_audit/**'
+      - '.github/workflows/orbittrace-sonotaco-2017-2019-freshness-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out audit branch with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all repository branches for provenance scan
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          git rev-list --all --count
+
+      - name: Scan full repository history without archive access
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_sonotaco_2017_2019_freshness_audit/audit_history.py
+
+      - name: Enforce freshness result boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('output/sonotaco_2017_2019_freshness_audit.json').read_text())
+          assert r['catalogue_access'] is False
+          assert r['scientific_score_access'] is False
+          assert r['target_information_access'] is False
+          assert r['verdict'] in {
+              'PASS_SONOTACO_2017_2019_REPO_FRESHNESS_AUDIT',
+              'FAIL_SONOTACO_2017_2019_REPO_FRESHNESS_AUDIT',
+          }
+          print('ORBITTRACE_SONOTACO_2017_2019_FRESHNESS_RESULT_BEGIN')
+          print(json.dumps(r, indent=2, sort_keys=True))
+          print('ORBITTRACE_SONOTACO_2017_2019_FRESHNESS_RESULT_END')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/audit_commit.txt
+          git for-each-ref --format='%(refname:short) %(objectname)' refs/remotes/origin | sort > output/remote_ref_snapshot.txt
+          sha256sum orbittrace_sonotaco_2017_2019_freshness_audit/audit_history.py > output/audit_source_sha256.txt
+
+      - name: Upload freshness audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2017-2019-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
