@@ -1,0 +1,212 @@
+name: OrbitTrace wavelet catalogue v3 block-runtime development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-wavelet-catalogue-v3-block-execution-base
+    paths:
+      - orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_EXECUTION_REQUEST.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-wavelet-catalogue-v3-block-runtime-development
+  cancel-in-progress: true
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      PYTHONPATH: orbittrace_wavelet_catalogue_v3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-wavelet-catalogue-v3-block-execution
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Verify frozen scientific source and block implementation before catalogue access
+        run: |
+          set -euo pipefail
+          mkdir -p input/fixed4 output
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/block_exact_rescore.py)" = "addff0e3f18164b17422b974c656452ac0a51d24"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/run_block_runtime.py)" = "4cd268c62bffb151a914534d58ae6e5b0f80f8f1"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_PROTOCOL.md)" = "3ba3101ac1ec8d4a07ca4e9bc73b54173cf77c6a"
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python -m py_compile \
+            /tmp/run_wavelet_catalogue_v3_development.py \
+            orbittrace_wavelet_catalogue_v3/block_exact_rescore.py \
+            orbittrace_wavelet_catalogue_v3/run_block_runtime.py
+          python - <<'PY'
+          import importlib.util
+          import json
+          import types
+          from pathlib import Path
+          import numpy as np
+          import block_exact_rescore as block
+
+          freeze = json.loads(Path('orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_EQUIVALENCE_FREEZE.json').read_text())
+          assert freeze['verdict'] == 'PASS_BLOCK_EXACT_RESCORE_EQUIVALENCE'
+          assert freeze['workflow_run'] == 31184676837
+          assert freeze['job_id'] == 92886142797
+          assert freeze['evaluated_implementation_commit'] == '1030da330f732a2738d8968294ed47f65fc20e86'
+          assert freeze['checks']['max_wavelet_abs_diff'] == 0.0
+          assert freeze['checks']['max_fixed4_abs_diff'] == 0.0
+          assert freeze['checks']['fixed4_nearest_three_identical'] is True
+
+          spec = importlib.util.spec_from_file_location(
+              'frozen_catalogue_runtime',
+              '/tmp/run_wavelet_catalogue_v3_development.py',
+          )
+          runtime = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(runtime)
+          support = runtime.load_support_module(
+              Path('orbittrace_fixed4_support_wrapper_development/source_parts')
+          )
+          checks = block.self_test(runtime, support)
+          required = (
+              'scalar_block_wavelet_exact',
+              'scalar_block_fixed4_within_tolerance',
+              'scalar_block_membership_equal',
+              'fixed4_nearest_three_equal',
+              'wrap180_vectorization_equal',
+          )
+          assert all(bool(checks[name]) for name in required), checks
+
+          source_args = types.SimpleNamespace(
+              support_source_parts=Path('orbittrace_fixed4_support_wrapper_development/source_parts'),
+              candidate_payload=Path('sonotaco_fixed4_final_development/candidate.py.gz.b64'),
+              baseline_payload=Path('real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64'),
+              scorer_parts=Path('mondrian_clique_development/source_parts_v2'),
+              fixed4_baseline_json=Path('input/fixed4/unused.json'),
+              output=Path('output'),
+          )
+          _candidate, base, _scorer = support.load_sources(source_args)
+          probe = np.asarray([
+              -1080.0, -720.0, -540.0, -360.0, -180.0, -0.0,
+              180.0, 360.0, 540.0, 720.0, 1080.0,
+              -359.9, -180.1, -179.9, 179.9, 180.1, 359.9,
+          ], dtype=np.float64)
+          scalar = np.asarray([float(base.wrap180(float(value))) for value in probe])
+          vector = block._wrap180_array(probe)
+          assert np.array_equal(scalar, vector), (scalar.tolist(), vector.tolist())
+          print('PASS_BLOCK_RUNTIME_PRECATALOGUE_GUARD', json.dumps(checks, sort_keys=True))
+          PY
+
+      - name: Retrieve exact frozen fixed4 development baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31106001133 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-fixed4-support-normalized-wrapper-development \
+            --dir input/fixed4
+          test -f input/fixed4/orbittrace_fixed4_support_wrapper_development.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('input/fixed4/orbittrace_fixed4_support_wrapper_development.json').read_text())
+          assert result['verdict'] == 'FAIL_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT'
+          baseline = result['development']['panel_evaluations']['development']['metrics']['persistence']
+          assert baseline['recovered_at_100'] == 61
+          assert baseline['qualified_matches'] == 90
+          assert abs(baseline['top100_dominant_precision'] - 0.6809376504699393) < 1e-15
+          print('PASS_FIXED4_DEVELOPMENT_BASELINE_GUARD')
+          PY
+
+      - name: Run exact frozen target-excluded catalogue development with block runtime
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/run_block_runtime.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --fixed4-baseline-json input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            --output output
+          cat output/WAVELET_CATALOGUE_V3_DEVELOPMENT.md
+
+      - name: Enforce and expose complete development result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          result_path = Path('output/wavelet_catalogue_v3_development.json')
+          result = json.loads(result_path.read_text())
+          allowed = {
+              'PASS_WAVELET_CATALOGUE_V3_DEVELOPMENT',
+              'FAIL_WAVELET_CATALOGUE_V3_DEVELOPMENT',
+          }
+          if result.get('verdict') not in allowed:
+              raise SystemExit(f"invalid verdict: {result.get('verdict')}")
+          config = result['configuration']
+          assert config['years'] == [2022, 2023]
+          assert config['blind_exclusion'] == [20.0, 55.0]
+          assert config['rescue_alpha'] == 1.0 / 129.0
+          assert config['rescue_queue'] == 'fixed4 p <= 1/129; never inserted into wavelet ranking'
+          summary = {
+              'verdict': result['verdict'],
+              'evaluation': {key: value for key, value in result['evaluation'].items() if key != 'per_label'},
+              'fixed4_baseline': result['fixed4_development_baseline'],
+              'gates': result['gates'],
+              'counts': {
+                  'anchor_count': result['anchor_count'],
+                  'component_count': result['component_count'],
+                  'family_count': result['family_count'],
+              },
+          }
+          print('ORBITTRACE_BLOCK_RESULT_SUMMARY_BEGIN')
+          print(json.dumps(summary, indent=2))
+          print('ORBITTRACE_BLOCK_RESULT_SUMMARY_END')
+          for path in sorted(Path('output').glob('*')):
+              if path.is_file():
+                  print('OUTPUT_SHA256', hashlib.sha256(path.read_bytes()).hexdigest(), path.name, path.stat().st_size)
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_wavelet_catalogue_v3/PROTOCOL.md \
+            orbittrace_wavelet_catalogue_v3/audit_development_source.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_wavelet_catalogue_v3/block_exact_rescore.py \
+            orbittrace_wavelet_catalogue_v3/run_block_runtime.py \
+            orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_PROTOCOL.md \
+            orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_EQUIVALENCE_FREEZE.json \
+            orbittrace_wavelet_catalogue_v3/source_parts/part00.b64 \
+            orbittrace_wavelet_catalogue_v3/source_parts/part01.b64 \
+            orbittrace_wavelet_catalogue_v3/source_parts/part02.b64 \
+            orbittrace_wavelet_catalogue_v3/source_parts/part03.b64 \
+            input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            > output/block_runtime_source_and_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/block_runtime_execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-wavelet-catalogue-v3-block-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
