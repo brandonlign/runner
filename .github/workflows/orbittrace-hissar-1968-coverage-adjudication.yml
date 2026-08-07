@@ -1,9 +1,9 @@
-name: OrbitTrace Hissar 1968 matched-coverage eligibility adjudication
+name: OrbitTrace Hissar 1968 matched-coverage eligibility adjudication selector fix
 
 on:
   pull_request:
     branches:
-      - agent/orbittrace-hissar-1968-coverage-adjudication
+      - agent/orbittrace-hissar-1968-coverage-adjudication-selector-fix
     paths:
       - 'orbittrace_hissar_1968_coverage_adjudication/RUN.md'
   workflow_dispatch:
@@ -15,17 +15,17 @@ jobs:
   adjudicate:
     runs-on: ubuntu-22.04
     steps:
-      - name: Check out frozen coverage-adjudication parent
+      - name: Check out frozen selector-fix parent
         uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-hissar-1968-coverage-adjudication
+          ref: agent/orbittrace-hissar-1968-coverage-adjudication-selector-fix
           fetch-depth: 1
 
-      - name: Enforce frozen protocol, adjudicator, v6 rule, and amended Hissar protocol
+      - name: Enforce frozen protocol, selector-only checker fix, v6 rule, and amended Hissar protocol
         run: |
           set -euo pipefail
           test "$(git hash-object orbittrace_hissar_1968_coverage_adjudication/PROTOCOL.md)" = "ed793d70832d0513bfc0674e5844f2423716140e"
-          test "$(git hash-object orbittrace_hissar_1968_coverage_adjudication/adjudicate.py)" = "7890fba77978c088afbf7fe996ffd87faf852c37"
+          test "$(git hash-object orbittrace_hissar_1968_coverage_adjudication/adjudicate.py)" = "2e711f9ceb006d60ea557baa2a1265e70ac4b4fb"
           test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
           test "$(git hash-object orbittrace_v8_hissar_1968_1969_external/PROTOCOL.md)" = "d9e8f30cc97b6088feb7a2f98a6e9e6fa0673757"
           python -m py_compile orbittrace_hissar_1968_coverage_adjudication/adjudicate.py
@@ -53,6 +53,7 @@ jobs:
           if p.exists():
               r=json.loads(p.read_text())
               assert r['verdict']=='FAIL_HISSAR_1968_COVERAGE_ELIGIBILITY'
+              assert r['prior_metadata_checker_failure_run_preserved']==31228464278
               assert r['required_scannable_bins_per_year']==24
               assert r['fixed_bin_width_deg']==10.0
               assert r['max_possible_distinct_10deg_bins_intersected'] < 24
@@ -86,7 +87,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-hissar-1968-coverage-adjudication
+          name: orbittrace-hissar-1968-coverage-adjudication-selector-fix
           path: output
           if-no-files-found: error
           retention-days: 90
