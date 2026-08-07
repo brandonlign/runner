@@ -3,7 +3,7 @@ name: OrbitTrace UKMON 2020-2021 full-history freshness audit
 on:
   pull_request:
     branches:
-      - agent/orbittrace-ukmon-2020-2021-freshness-audit
+      - agent/orbittrace-ukmon-2020-2021-freshness-audit-ere-fix
     paths:
       - 'orbittrace_ukmon_2020_2021_freshness_audit/RUN.md'
   workflow_dispatch:
@@ -18,13 +18,13 @@ jobs:
       - name: Check out frozen audit parent
         uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-ukmon-2020-2021-freshness-audit
+          ref: agent/orbittrace-ukmon-2020-2021-freshness-audit-ere-fix
           fetch-depth: 1
 
       - name: Enforce source and fetch complete remote branch history
         run: |
           set -euo pipefail
-          test "$(git hash-object orbittrace_ukmon_2020_2021_freshness_audit/audit_history.py)" = "6bb749d586766ab1d33c0936c460c6a921af760b"
+          test "$(git hash-object orbittrace_ukmon_2020_2021_freshness_audit/audit_history.py)" = "cc49ba04a8cfdd208ad66a188a4929f9997f456e"
           python -m py_compile orbittrace_ukmon_2020_2021_freshness_audit/audit_history.py
           git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
           git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
