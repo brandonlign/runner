@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import csv,gzip,io,json,zipfile
+          import csv,gzip,io,json,re,zipfile
           from pathlib import Path
 
           interpretation=Path('orbittrace_literature_matched_v8/HDBSCAN_2023_BLIND_RESULT_INTERPRETATION.md').read_text()
@@ -77,20 +77,22 @@ jobs:
                   ids.add(event_id)
           assert len(ids)==26460
           wanted={int(x.split(':',1)[1]) for x in ids}
-          seen=set()
-          forbidden=0
+          seen=set(); forbidden=0
+          def norm(value): return re.sub(r'[^a-z0-9]+','',value.strip().lower())
           with zipfile.ZipFile('input/archive/023a.zip') as zf:
               members=[n for n in zf.namelist() if n.endswith('_S.csv')]
               assert len(members)==1
               with zf.open(members[0]) as raw:
-                  reader=csv.DictReader(io.TextIOWrapper(raw,encoding='utf-8-sig',newline=''))
+                  reader=csv.reader(io.TextIOWrapper(raw,encoding='utf-8-sig',newline=''))
+                  header=next(reader)
+                  index={norm(name):i for i,name in enumerate(header)}
+                  assert 'soldeg' in index
+                  sol_index=index['soldeg']
                   for idx,row in enumerate(reader):
-                      if idx not in wanted:
-                          continue
+                      if idx not in wanted: continue
                       seen.add(idx)
-                      sol=float(row['sol(deg)'])%360.0
-                      if 20.0 <= sol <= 55.0:
-                          forbidden += 1
+                      sol=float(row[sol_index])%360.0
+                      if 20.0 <= sol <= 55.0: forbidden += 1
           assert seen==wanted
           assert forbidden==0
           audit={
