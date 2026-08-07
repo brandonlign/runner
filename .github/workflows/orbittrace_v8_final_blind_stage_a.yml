@@ -54,6 +54,7 @@ jobs:
             orbittrace_v8_final_blind_discovery/run_stage_a.py \
             orbittrace_v8_final_blind_discovery/run_stage_b.py \
             orbittrace_v8_final_blind_discovery/authorize_stage_a.py \
+            orbittrace_v8_final_blind_discovery/seal_stage_a.py \
             orbittrace_v8_final_blind_discovery/audit_sources.py \
             input/v3/multi_anchor_energy_v3.py \
             /tmp/run_wavelet_catalogue_v3_development.py
@@ -90,9 +91,16 @@ jobs:
             --scorer-parts mondrian_clique_development/source_parts_v2 \
             --source-audit-json output/v8_final_blind_source_audit.json \
             --freeze-manifest output/FREEZE_MANIFEST.json \
-            --authorization-json output/stage_a_authorization.json \
             --output stage_a_output
           cat stage_a_output/STAGE_A_BLIND_DISCOVERY.md
+
+      - name: Attach authorization provenance after ranking freeze
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_final_blind_discovery/seal_stage_a.py \
+            --stage-a-freeze stage_a_output/stage_a_freeze.json \
+            --authorization-json output/stage_a_authorization.json \
+            --freeze-manifest output/FREEZE_MANIFEST.json
 
       - name: Record immutable execution provenance
         if: always()
