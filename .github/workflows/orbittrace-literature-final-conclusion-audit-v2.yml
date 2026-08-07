@@ -1,0 +1,89 @@
+name: OrbitTrace final literature conclusion audit v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_literature_matched_v8/FINAL_CONCLUSION_AUDIT_CORRECTION.md'
+      - '.github/workflows/orbittrace-literature-final-conclusion-audit-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit-v2:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+
+      - name: Pin already-audited final conclusion bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.md)" = "2fbe1edc3739caa27657b21cbd5c28e60b80ba66"
+          test "$(git hash-object orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json)" = "175b8deefbe786da0da1564517b98263cdff01b7"
+
+      - name: Require substantive stages from detailed audit to have passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/${GITHUB_REPOSITORY}/actions/runs/31227913108/jobs > /tmp/jobs.json
+          python - <<'PY'
+          import json
+          jobs=json.load(open('/tmp/jobs.json'))['jobs']
+          assert len(jobs)==1
+          steps={s['name']:s['conclusion'] for s in jobs[0]['steps']}
+          assert steps['Download authoritative benchmark artifacts']=='success'
+          assert steps['Verify frozen numeric conclusion against artifacts']=='success'
+          assert steps['Verify strict HDBSCAN exact-row limitation from preserved failed run']=='success'
+          assert steps['Enforce final claim boundary']=='failure'
+          print('PASS_PRIOR_SUBSTANTIVE_FINAL_AUDIT_STAGES')
+          PY
+
+      - name: Verify explicit frozen claim boundary and wording-only correction
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          correction=Path('orbittrace_literature_matched_v8/FINAL_CONCLUSION_AUDIT_CORRECTION.md').read_text()
+          md=Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.md').read_text()
+          f=json.loads(Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json').read_text())
+          assert '31227913108' in correction
+          assert 'The OrbitTrace target, its coordinates, members, identity, excluded-interval contents, and final target result were not accessed.' in md
+          assert f['orbittrace_target_accessed'] is False
+          assert f['excluded_interval_contents_accessed'] is False
+          assert f['v8_retuned_after_comparison'] is False
+          assert f['answers']['v8_beats_hdbscan_sparse']=='NOT_ESTABLISHED'
+          assert f['answers']['v8_beats_full_sugar_sparse']=='NO'
+          assert f['answers']['general_state_of_the_art_sparse_discovery_claim']=='NOT_SUPPORTED'
+          assert 'not scientifically supported' in md
+          assert 'canonical preregistered blind-safe HDBSCAN-2023 rerun `31226945294`' in md
+          out={
+            'verdict':'PASS_FROZEN_FINAL_LITERATURE_CONCLUSION_AUDIT_V2',
+            'detailed_audit_run':31227913108,
+            'numeric_artifact_audit_passed':True,
+            'hdbscan_limitation_log_audit_passed':True,
+            'prior_final_failure_classification':'wording_only_literal_guard',
+            'frozen_markdown_blob':'2fbe1edc3739caa27657b21cbd5c28e60b80ba66',
+            'frozen_json_blob':'175b8deefbe786da0da1564517b98263cdff01b7',
+            'orbittrace_target_access':False,
+            'excluded_interval_contents_access':False,
+            'v8_retuning':False,
+            'state_of_the_art_claim_supported':False
+          }
+          Path('final_conclusion_audit_v2.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-literature-conclusion-audit-v2
+          path: final_conclusion_audit_v2.json
+          if-no-files-found: error
+          retention-days: 90
