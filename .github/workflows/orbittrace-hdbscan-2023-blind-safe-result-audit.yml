@@ -1,0 +1,94 @@
+name: OrbitTrace HDBSCAN 2023 blind-safe result audit
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-pooled-year-centroid-v8]
+    paths:
+      - 'orbittrace_literature_matched_v8/EXACT_ROW_CORRECTION_2.md'
+      - '.github/workflows/orbittrace-hdbscan-2023-blind-safe-result-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+      - name: Retrieve preserved blind-safe HDBSCAN output
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/result output_hdb23_audit input
+          gh run download 31226968008 --repo "$GITHUB_REPOSITORY" --name orbittrace-hdbscan-2023-blind-safe-benchmark --dir input/result
+          test -f input/result/sonotaco_2023_hdbscan_transfer.json
+          test -f input/result/full_catalogue_assignments.jsonl.gz
+          curl --fail --location --retry 3 --output input/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+      - name: Enforce preregistered legacy-gate classification and blind membership
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,gzip,io,json,hashlib,zipfile
+          from pathlib import Path
+          correction=Path('orbittrace_literature_matched_v8/EXACT_ROW_CORRECTION_2.md').read_text()
+          assert '31226968008' in correction and '2,237' in correction and 'delta >= 0.10' in correction
+          r=json.loads(Path('input/result/sonotaco_2023_hdbscan_transfer.json').read_text())
+          assert r['verdict']=='FAIL_SONOTACO_2023_HDBSCAN_ONE_SHOT_TRANSFER'
+          gates=r['gates']
+          permitted_false={'exact_row_count','all_rows_parsed'}
+          assert {k for k,v in gates.items() if not v}==permitted_false, gates
+          assert r['parser_audit']['total_rows']==44850
+          assert r['parser_audit']['parsed_rows']==44850
+          assert 47087-r['parser_audit']['parsed_rows']==2237
+          assert r['primary']['cluster_summary']['cluster_count']>0
+          assert r['full_catalogue_coverage_audit']['cluster_summary']['cluster_count']>0
+
+          assignment=Path('input/result/full_catalogue_assignments.jsonl.gz')
+          ids=[]
+          with gzip.open(assignment,'rt',encoding='utf-8') as fh:
+              for line in fh:
+                  row=json.loads(line)
+                  event_id=str(row.get('event_id',row.get('id')))
+                  assert event_id.startswith('SNM2023:')
+                  ids.append(event_id)
+          assert len(ids)==len(set(ids))>0
+          wanted={int(x.split(':',1)[1]) for x in ids}
+          forbidden=0
+          with zipfile.ZipFile('input/023a.zip') as zf:
+              members=[n for n in zf.namelist() if n.endswith('_S.csv')]
+              assert len(members)==1
+              with zf.open(members[0]) as raw:
+                  reader=csv.DictReader(io.TextIOWrapper(raw,encoding='utf-8-sig',newline=''))
+                  for idx,row in enumerate(reader):
+                      if idx not in wanted: continue
+                      sol=float(row['sol(deg)'])%360.0
+                      if 20.0 <= sol <= 55.0: forbidden += 1
+          assert forbidden==0
+          digest=hashlib.sha256(assignment.read_bytes()).hexdigest()
+          out={
+              'verdict':'PASS_HDBSCAN_2023_BLIND_SAFE_ASSIGNMENT_AUDIT',
+              'source_run':31226968008,
+              'artifact_assignment_sha256':digest,
+              'assignment_rows':len(ids),
+              'removed_raw_rows':2237,
+              'forbidden_interval_rows':forbidden,
+              'permitted_false_legacy_gates':sorted(permitted_false),
+              'all_other_gates_true':True,
+              'label_fields_read_for_membership_audit':False,
+              'orbittrace_target_access':False,
+          }
+          Path('output_hdb23_audit/hdbscan_2023_blind_safe_assignment_audit.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-hdbscan-2023-blind-safe-result-audit
+          path: output_hdb23_audit
+          if-no-files-found: error
+          retention-days: 90
