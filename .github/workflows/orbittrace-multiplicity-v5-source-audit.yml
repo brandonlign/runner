@@ -1,0 +1,48 @@
+name: OrbitTrace multiplicity v5 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-v5-source-audit
+    paths:
+      - 'orbittrace_multiplicity_v5_source_audit/**'
+      - '.github/workflows/orbittrace-multiplicity-v5-source-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Decode and inspect frozen support source only
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_v5_source_audit/audit_support_source.py
+
+      - name: Enforce no-data audit boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/support_source_audit.json').read_text())
+          assert result['verdict'] == 'PASS_MULTIPLICITY_V5_SUPPORT_SOURCE_AUDIT'
+          assert result['catalogue_access'] is False
+          assert result['target_information_access'] is False
+          assert result['support_sha256'] == 'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiplicity-v5-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
