@@ -1,0 +1,171 @@
+name: OrbitTrace HDBSCAN 2023 blind-safe benchmark
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-pooled-year-centroid-v8]
+    paths:
+      - 'orbittrace_literature_matched_v8/EXACT_ROW_CORRECTION_1.md'
+      - '.github/workflows/orbittrace-hdbscan-2023-blind-safe-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_COMMIT: 001a5827df2f397207646941fb764b2df41736ec
+
+jobs:
+  blind-safe-transfer:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+
+      - name: Install exact published-method dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+          python -m pip install hdbscan==0.8.44
+
+      - name: Reconstruct frozen 2023 HDBSCAN runner and apply only preregistered blind insertion
+        run: |
+          set -euo pipefail
+          mkdir -p input/frozen input/parts output_hdb23_blind
+          git fetch --no-tags --depth=1 origin "$SOURCE_COMMIT"
+          for name in SONOTACO_2025_HDBSCAN_FREEZE.json SONOTACO_2023_HEADER_REPAIR.json SONOTACO_2023_FIELDNAME_REPAIR.json; do
+            git show "$SOURCE_COMMIT:orbittrace_hdbscan_freeze/$name" > "input/frozen/$name"
+          done
+          for name in part00_sub00.b64 part00_sub01a.b64 part00_sub01b.b64 part00_sub01c.b64 part00_sub01d0.b64 part00_sub01d1.b64 part00_sub01d2.b64 part00_sub01d3.b64 part00_sub02.b64 part00_sub03.b64 part00_sub04.b64 part00_sub05.b64; do
+            git show "$SOURCE_COMMIT:orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/$name" > "input/parts/$name"
+          done
+          python - <<'PY'
+          import base64,gzip,hashlib,json
+          from pathlib import Path
+
+          correction=Path('orbittrace_literature_matched_v8/EXACT_ROW_CORRECTION_1.md').read_text()
+          assert '31226439736' in correction
+          assert 'if 20.0 <= sol <= 55.0:' in correction
+          assert 'delta >= 0.10' in correction
+
+          freeze=json.loads(Path('input/frozen/SONOTACO_2025_HDBSCAN_FREEZE.json').read_text())
+          config=freeze['configuration']
+          assert config['hdbscan_version']=='0.8.44'
+          assert config['minimum_cluster_size']==100
+          assert config['minimum_samples'] is None
+          assert config['cluster_selection_method']=='eom'
+          assert config['metric']=='euclidean'
+          assert freeze['transfer_rules']['post_result_parameter_changes']=='prohibited'
+
+          names=['part00_sub00.b64','part00_sub01a.b64','part00_sub01b.b64','part00_sub01c.b64','part00_sub01d0.b64','part00_sub01d1.b64','part00_sub01d2.b64','part00_sub01d3.b64','part00_sub02.b64','part00_sub03.b64','part00_sub04.b64','part00_sub05.b64']
+          encoded=''.join(''.join(Path('input/parts',name).read_text().split()) for name in names)
+          original=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(original).hexdigest()=='2e770252f68f40c7ebab8f072aef18b88246091e40a98673db69d09f7bb1d41b'
+
+          # Previously frozen parser-only repairs from the successful 2023 transfer.
+          width_old=b'EXPECTED_FIELDS = 43'
+          width_new=b'EXPECTED_FIELDS = 46'
+          header_old=b'    header = [field.strip() for field in (reader.fieldnames or [])]\n'
+          header_new=header_old+b'    reader.fieldnames = header\n'
+          assert original.count(width_old)==1 and original.count(header_old)==1
+          repaired=original.replace(width_old,width_new).replace(header_old,header_new)
+          assert hashlib.sha256(repaired).hexdigest()=='13e5c488fcfa551236ab31c8685e600e747a4a61fd17a2cae78719f50b231c3a'
+
+          # New comparison-only repair: solar longitude is the only field inspected before exclusion.
+          needle=b'            sol = parse_float(raw["sol(deg)"]) % 360.0\n            ra = parse_float(raw["ra(deg)"]) % 360.0\n'
+          replacement=(
+              b'            sol = parse_float(raw["sol(deg)"]) % 360.0\n'
+              b'            if 20.0 <= sol <= 55.0:\n'
+              b'                continue\n'
+              b'            ra = parse_float(raw["ra(deg)"]) % 360.0\n'
+          )
+          assert repaired.count(needle)==1
+          blinded=repaired.replace(needle,replacement)
+          text=blinded.decode()
+          sol_pos=text.index('sol = parse_float(raw["sol(deg)"])')
+          blind_pos=text.index('if 20.0 <= sol <= 55.0:')
+          ra_pos=text.index('ra = parse_float(raw["ra(deg)"])')
+          label_pos=text.index('label = canonical_label(raw["Shower"])')
+          assert sol_pos < blind_pos < ra_pos < label_pos
+          Path('/tmp/run_sonotaco_2023_hdbscan_blind_safe.py').write_bytes(blinded)
+          Path('output_hdb23_blind/patched_runner_sha256.txt').write_text(hashlib.sha256(blinded).hexdigest()+'\n')
+          compile(blinded,'run_sonotaco_2023_hdbscan_blind_safe.py','exec')
+          print('PASS_HDBSCAN_2023_BLIND_PATCH_SOURCE_ONLY',hashlib.sha256(blinded).hexdigest())
+          PY
+
+      - name: Download exact SonotaCo 2023 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Execute frozen HDBSCAN with pre-label blind exclusion
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2023_hdbscan_blind_safe.py \
+            --archive input/023a.zip \
+            --freeze input/frozen/SONOTACO_2025_HDBSCAN_FREEZE.json \
+            --core-dist-jobs 4 \
+            --output output_hdb23_blind
+          cat output_hdb23_blind/SONOTACO_2023_HDBSCAN_TRANSFER.md
+
+      - name: Verify emitted assignment universe is blind-safe without reading shower labels
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,gzip,io,json,zipfile
+          from pathlib import Path
+          assignment=Path('output_hdb23_blind/full_catalogue_assignments.jsonl.gz')
+          assert assignment.exists()
+          ids=set()
+          with gzip.open(assignment,'rt',encoding='utf-8') as fh:
+              for line in fh:
+                  row=json.loads(line)
+                  event_id=str(row.get('event_id',row.get('id')))
+                  assert event_id.startswith('SNM2023:') and event_id not in ids
+                  ids.add(event_id)
+          wanted={int(x.split(':',1)[1]) for x in ids}
+          forbidden=0
+          with zipfile.ZipFile('input/023a.zip') as zf:
+              members=[n for n in zf.namelist() if n.endswith('_S.csv')]
+              assert len(members)==1
+              with zf.open(members[0]) as raw:
+                  reader=csv.DictReader(io.TextIOWrapper(raw,encoding='utf-8-sig',newline=''))
+                  for idx,row in enumerate(reader):
+                      if idx not in wanted: continue
+                      sol=float(row['sol(deg)'])%360.0
+                      if 20.0 <= sol <= 55.0: forbidden += 1
+          assert forbidden==0, f'blind interval leaked into assignment universe: count={forbidden}'
+          Path('output_hdb23_blind/blind_membership_audit.json').write_text(json.dumps({'assignment_rows':len(ids),'forbidden_interval_rows':forbidden},indent=2)+'\n')
+          print('PASS_HDBSCAN_2023_ASSIGNMENT_BLIND_MEMBERSHIP',len(ids))
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output_hdb23_blind/benchmark_branch_commit.txt
+          sha256sum \
+            orbittrace_literature_matched_v8/EXACT_ROW_CORRECTION_1.md \
+            input/frozen/*.json input/parts/*.b64 input/023a.zip \
+            output_hdb23_blind/full_catalogue_assignments.jsonl.gz \
+            > output_hdb23_blind/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output_hdb23_blind/python_version.txt
+          python -m pip freeze > output_hdb23_blind/environment.txt
+
+      - name: Upload blind-safe HDBSCAN 2023 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-hdbscan-2023-blind-safe-benchmark
+          path: output_hdb23_blind
+          if-no-files-found: error
+          retention-days: 90
