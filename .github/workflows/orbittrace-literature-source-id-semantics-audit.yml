@@ -39,6 +39,11 @@ jobs:
               source=gzip.decompress(base64.b64decode(encoded,validate=True))
               Path(out).write_bytes(source)
               return hashlib.sha256(source).hexdigest()
+          def decode_local(parts, out):
+              encoded=b''.join(b''.join(Path(p).read_bytes().split()) for p in parts)
+              source=gzip.decompress(base64.b64decode(encoded,validate=True))
+              Path(out).write_bytes(source)
+              return hashlib.sha256(source).hexdigest()
 
           h25=[f'orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part{i:02d}.b64' for i in range(5)]
           h23root='orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/'
@@ -67,6 +72,11 @@ jobs:
                   raise RuntimeError(f'{name} source mismatch {sha}')
               hashes[name]=sha
 
+          adapter_sha=decode_local(['sonotaco_mondrian_development/source_parts/part00.b64'],'decoded/sonotaco_2025_adapter.py')
+          if adapter_sha!='5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518':
+              raise RuntimeError(f'2025 adapter source mismatch {adapter_sha}')
+          hashes['sonotaco_2025_adapter.py']=adapter_sha
+
           patterns=re.compile(r'(BLIND|blind|20\.0|55\.0|event_id|SNM|enumerate\(|row_index|row_idx|source_labels|shower.*token|token.*shower|sol.*<=|<=.*sol)')
           report={}
           for path in sorted(Path('decoded').glob('*.py')):
@@ -85,6 +95,17 @@ jobs:
                   'has_blind_word':bool(re.search('blind',text,re.I)),
                   'contexts':contexts,
               }
+          # Safe source-only excerpts needed to freeze the one allowed parser repair.
+          h23=Path('decoded/hdbscan_2023.py').read_text().splitlines()
+          adapter=Path('decoded/sonotaco_2025_adapter.py').read_text().splitlines()
+          report['hdbscan_2023_repair_excerpt']=[f'{i}: {h23[i-1]}' for i in range(118,min(162,len(h23)+1))]
+          blind_lines=[i for i,line in enumerate(adapter,1) if 'BLIND' in line or '20.0' in line or '55.0' in line]
+          excerpt=[]
+          for center in blind_lines:
+              for i in range(max(1,center-4),min(len(adapter),center+5)+1):
+                  item=f'{i}: {adapter[i-1]}'
+                  if item not in excerpt: excerpt.append(item)
+          report['sonotaco_2025_adapter_blind_excerpt']=excerpt
           Path('audit/id_semantics.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           print(json.dumps(report,indent=2,sort_keys=True))
           PY
