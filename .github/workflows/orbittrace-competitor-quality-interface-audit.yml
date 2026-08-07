@@ -1,0 +1,68 @@
+name: OrbitTrace competitor quality-interface source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_literature_matched_v8/extract_competitor_quality_interfaces.py'
+      - '.github/workflows/orbittrace-competitor-quality-interface-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+      - name: Decode exact frozen comparator sources only
+        run: |
+          set -euo pipefail
+          mkdir -p decoded_quality
+          git fetch --no-tags --depth=1 origin \
+            15e63a8acf6303a4bf62e119c3dc8a121a488d1c \
+            001a5827df2f397207646941fb764b2df41736ec \
+            6594cc992841cf8d37572f9877c35580009095bd \
+            871c2fc2e7307f5ae1e5532b9d04274cccf0b59b
+          python - <<'PY'
+          import base64,gzip,hashlib,subprocess
+          from pathlib import Path
+          def show(c,p): return subprocess.check_output(['git','show',f'{c}:{p}'])
+          def decode(c,paths,out,expected):
+              enc=b''.join(b''.join(show(c,p).split()) for p in paths)
+              src=gzip.decompress(base64.b64decode(enc,validate=True))
+              got=hashlib.sha256(src).hexdigest()
+              assert got==expected,(out,got)
+              Path('decoded_quality/'+out).write_bytes(src)
+          decode('15e63a8acf6303a4bf62e119c3dc8a121a488d1c',
+                 [f'orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part{i:02d}.b64' for i in range(5)],
+                 'hdbscan_2025.py','a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2')
+          root='orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts/'
+          names=['part00_sub00.b64','part00_sub01a.b64','part00_sub01b.b64','part00_sub01c.b64','part00_sub01d0.b64','part00_sub01d1.b64','part00_sub01d2.b64','part00_sub01d3.b64','part00_sub02.b64','part00_sub03.b64','part00_sub04.b64','part00_sub05.b64']
+          decode('001a5827df2f397207646941fb764b2df41736ec',[root+n for n in names],
+                 'hdbscan_2023.py','2e770252f68f40c7ebab8f072aef18b88246091e40a98673db69d09f7bb1d41b')
+          decode('6594cc992841cf8d37572f9877c35580009095bd',
+                 [f'orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part{i:02d}.b64' for i in range(4)],
+                 'sugar_2025.py','adbeb8a8737079f8cd63568d8684733dce09f724305ef9605f22423a57fda936')
+          decode('871c2fc2e7307f5ae1e5532b9d04274cccf0b59b',
+                 [f'orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts/part{i:02d}.b64' for i in range(4)],
+                 'sugar_2023.py','2013ffc91cc299da1635ddd0cc728b460aebf030671ea0a83b7ddce4632a39a8')
+          decode('6594cc992841cf8d37572f9877c35580009095bd',
+                 [f'orbittrace_literature_comparison/sugar_uncertainty_core_parts/part{i:02d}.b64' for i in range(3)],
+                 'sugar_core.py','5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb')
+          PY
+      - name: Extract interfaces without catalogue access
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_literature_matched_v8/extract_competitor_quality_interfaces.py
+          python orbittrace_literature_matched_v8/extract_competitor_quality_interfaces.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-competitor-quality-interface-source-audit
+          path: output_quality_interface
+          if-no-files-found: error
+          retention-days: 90
