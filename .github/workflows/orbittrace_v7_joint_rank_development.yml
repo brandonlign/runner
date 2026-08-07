@@ -1,0 +1,146 @@
+name: OrbitTrace v7 joint-rank rescue development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v7-joint-rank-base
+    paths:
+      - orbittrace_joint_rank_v7/PROTOCOL.md
+      - orbittrace_joint_rank_v7/select_joint_rank.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v7-joint-rank
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install frozen selector dependency
+        run: python -m pip install numpy==2.1.3
+
+      - name: Freeze and audit v7 selector before development records are opened
+        run: |
+          set -euo pipefail
+          mkdir -p input/2025 input/2023 input/2024 input/2018 output
+          python -m py_compile orbittrace_joint_rank_v7/select_joint_rank.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          path = Path('orbittrace_joint_rank_v7/select_joint_rank.py')
+          spec = importlib.util.spec_from_file_location('v7selector', path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert module.DENOMINATOR == 513
+          assert module.PRIMARY_RANKS == tuple(range(1, 27))
+          assert module.FIXED4_RANKS == tuple(range(1, 27))
+          assert module.PRODUCT_BUDGETS == tuple(range(32, 257, 8))
+          assert len(module.PRIMARY_RANKS) * len(module.FIXED4_RANKS) * len(module.PRODUCT_BUDGETS) == 19604
+          assert module.DEVELOPMENT_YEARS == (2025, 2023, 2024, 2018)
+          assert module.FPR_CAP == 0.055
+          assert module.SECTOR_FPR_CAP == 0.08
+          assert module.RECALL_TOLERANCE == 0.03
+          protocol = Path('orbittrace_joint_rank_v7/PROTOCOL.md').read_text()
+          for phrase in (
+              '19,604',
+              'rank_v3 * rank_fixed4 <= B',
+              '2025, 2023, 2024, and 2018',
+              'SonotaCo 2017',
+              'No 2017',
+          ):
+              assert phrase in protocol, phrase
+          print('PASS_V7_SELECTOR_SOURCE_AUDIT')
+          PY
+          sha256sum orbittrace_joint_rank_v7/PROTOCOL.md orbittrace_joint_rank_v7/select_joint_rank.py \
+            | tee output/v7_source_sha256.txt
+          git rev-parse HEAD | tee output/v7_source_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact 2025 and 2023 high-resolution development records
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31151459055 --repo "$GITHUB_REPOSITORY" --name orbittrace-v5-highres-2025 --dir input/2025
+          gh run download 31151459055 --repo "$GITHUB_REPOSITORY" --name orbittrace-v5-highres-2023 --dir input/2023
+          echo 'b2a1f1a6564e9681f4774611e94a62c59061f24cf7f178edeb7d36691db667da  input/2025/sonotaco_2025_literature_comparison.json' | sha256sum -c -
+          echo 'a549c04967a14f092d8a55b587c3299af28589db876942e624fc3483926fcc43  input/2025/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo '5bb5752ab49e8d7680e89bc5846f6acc749e81881b767685668ef9aa9b599d34  input/2025/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo '2869ce2eb004cfeef641790d656c98e92fac8514083170f0a220a0f6d8fbfcad  input/2023/sonotaco_2023_literature_transfer.json' | sha256sum -c -
+          echo 'cb3011f933cc8df1bf38007717c7e8487a7edca4150a4c8b34d583f6d1ea9f5b  input/2023/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo 'bd73c67c6b0f39051c20d75156d292a0bf1b6eb979c84690faec9ecf58f81f26  input/2023/positive_literature_records.jsonl.gz' | sha256sum -c -
+
+      - name: Retrieve exact frozen 2024 failed-prospective records
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31153711851 --repo "$GITHUB_REPOSITORY" --name orbittrace-v5-sonotaco-2024-prospective --dir input/2024
+          echo 'ac49bbf1eb009295a5ee0a22794cd9042c7c7db248f1db6cb63c81471b6d071c  input/2024/SONOTACO_2024_V5_PROSPECTIVE_RESULT.json' | sha256sum -c -
+          echo '20ec4a161f2f0a285df7df60019009a5da349dcc27ecf6242c8fe4538d984a92  input/2024/negative_records.jsonl.gz' | sha256sum -c -
+          echo 'c9474c8dc84a2d2ebb9f3e205dc142e38053c5c2f51247eb29f973c7966cc753  input/2024/positive_records.jsonl.gz' | sha256sum -c -
+
+      - name: Retrieve exact frozen 2018 failed-prospective records
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin agent/orbittrace-v6-2018-prospective --depth=1
+          git show origin/agent/orbittrace-v6-2018-prospective:orbittrace_corroborated_rescue_v6/FROZEN_SONOTACO_2018_PROSPECTIVE_RESULT.json \
+            > input/2018/frozen_result.json
+          gh run download 31155550264 --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-sonotaco-2018-prospective --dir input/2018/artifact
+          cmp input/2018/frozen_result.json input/2018/artifact/SONOTACO_2018_V6_PROSPECTIVE_RESULT.json
+          python - <<'PY'
+          import json
+          result = json.load(open('input/2018/frozen_result.json'))
+          assert result['verdict'] == 'FAIL_V6_SONOTACO_2018_PROSPECTIVE_VALIDATION'
+          assert result['classification'].startswith('single preregistered prospective validation')
+          print('PASS_FROZEN_2018_FAILURE_GUARD')
+          PY
+
+      - name: Execute complete preregistered v7 joint-rank grid
+        run: |
+          set -euo pipefail
+          python orbittrace_joint_rank_v7/select_joint_rank.py \
+            --year2025 input/2025 \
+            --year2023 input/2023 \
+            --year2024 input/2024 \
+            --year2018 input/2018/artifact \
+            --output output
+          cat output/V7_DEVELOPMENT_SELECTION.md
+          python - <<'PY'
+          import json
+          result = json.load(open('output/V7_DEVELOPMENT_SELECTION.json'))
+          assert result['configuration']['grid_rules'] == 19604
+          assert result['configuration']['development_years'] == [2025, 2023, 2024, 2018]
+          assert result['configuration']['denominator'] == 513
+          print('V7_DEVELOPMENT_VERDICT', result['verdict'], 'FEASIBLE', result['feasible_rules'])
+          PY
+
+      - name: Record immutable development provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum input/2025/* input/2023/* input/2024/* input/2018/frozen_result.json input/2018/artifact/* \
+            >> output/v7_source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v7-joint-rank-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
