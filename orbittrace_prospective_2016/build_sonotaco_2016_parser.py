@@ -3,6 +3,7 @@
 
 This is transport adaptation only. It changes year/archive/member identifiers and
 expected transport constants; parsing/filtering/label mapping logic remains intact.
+The prospective eligibility gates are frozen separately before this parser is run.
 """
 from __future__ import annotations
 
