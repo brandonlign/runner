@@ -1,0 +1,100 @@
+name: OrbitTrace multiplicity v5 holdout diagnostics
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-v5-holdout-diagnostics
+    paths:
+      - 'orbittrace_multiplicity_v5_holdout_diagnostics/**'
+      - '.github/workflows/orbittrace-multiplicity-v5-holdout-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact diagnostic dependency
+        run: |
+          set -euo pipefail
+          python -m pip install numpy==2.1.3
+
+      - name: Download exact frozen v5 holdout artifact only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download 31195683802 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-sparse-support-multiplicity-v5-holdout-retry \
+            --dir input
+          test -f input/multiplicity_v5_holdout.json
+          test -f input/multiplicity_v5_evaluation.json.gz
+
+      - name: Run frozen artifact-only diagnostics
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_v5_holdout_diagnostics/run_diagnostics.py \
+            --artifact-dir input \
+            --output output
+          cat output/MULTIPLICITY_V5_HOLDOUT_DIAGNOSTICS.md
+
+      - name: Enforce diagnosis and blindness boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('output/multiplicity_v5_holdout_diagnostics.json').read_text())
+          assert r['source_run'] == 31195683802
+          assert r['holdout_verdict_preserved'] == 'INCONCLUSIVE_MULTIPLICITY_V5_HOLDOUT_POWER'
+          assert r['family_count'] == 92
+          assert r['qualified_matches'] == 56
+          assert r['failed_validity_gates'] == ['at_least_100_recurrent_families']
+          assert r['blindness'] == {
+              'artifact_only': True,
+              'catalogue_access': False,
+              'excluded_interval_access': False,
+              'orbittrace_target_access': False,
+          }
+          assert r['verdict'] in {
+              'DIAGNOSIS_V5_TOP100_SATURATED_BUT_RANK_SIGNAL_PRESENT',
+              'DIAGNOSIS_V5_TOP100_SATURATED_OR_RANK_SIGNAL_MIXED',
+          }
+          print('ORBITTRACE_MULTIPLICITY_V5_DIAGNOSTICS_RESULT_BEGIN')
+          print(json.dumps(r, indent=2, sort_keys=True))
+          print('ORBITTRACE_MULTIPLICITY_V5_DIAGNOSTICS_RESULT_END')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          sha256sum \
+            orbittrace_multiplicity_v5_holdout_diagnostics/PROTOCOL.md \
+            orbittrace_multiplicity_v5_holdout_diagnostics/run_diagnostics.py \
+            input/multiplicity_v5_holdout.json \
+            input/multiplicity_v5_rankings.json \
+            input/multiplicity_v5_family_scores.json.gz \
+            input/multiplicity_v5_families.json.gz \
+            input/multiplicity_v5_evaluation.json.gz \
+            > output/source_and_artifact_file_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-multiplicity-v5-holdout-diagnostics
+          path: output
+          if-no-files-found: error
+          retention-days: 90
