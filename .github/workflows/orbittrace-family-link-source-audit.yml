@@ -1,0 +1,66 @@
+name: OrbitTrace fixed4 family-link source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-family-link-source-audit
+    paths:
+      - 'orbittrace_family_link_source_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen source-audit parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-family-link-source-audit
+
+      - name: Enforce immutable audit source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_family_link_source_audit/audit_family_link.py)" = "135b64b6080e9f98880e6ba16a6461eab33b6ec5"
+          test "$(python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          root=Path('orbittrace_fixed4_support_wrapper_development/source_parts')
+          encoded=''.join(''.join(p.read_text(encoding='ascii').split()) for p in sorted(root.glob('part*.b64')))
+          print(hashlib.sha256(gzip.decompress(base64.b64decode(encoded,validate=True))).hexdigest())
+          PY
+          )" = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
+
+      - name: Audit family-link source only
+        run: |
+          set -euo pipefail
+          python orbittrace_family_link_source_audit/audit_family_link.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/family_link_source_audit.json').read_text())
+          assert r['verdict']=='PASS_FAMILY_LINK_SOURCE_AUDIT'
+          assert r['support_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert r['catalogue_access'] is False
+          assert r['scientific_value_access'] is False
+          assert r['target_information_access'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_family_link_source_audit/audit_family_link.py > output/audit_source_sha256.txt
+
+      - name: Upload source-audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-family-link-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
