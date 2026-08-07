@@ -15,13 +15,18 @@ jobs:
         with:
           ref: agent/orbittrace-hissar-1968-1969-structure-audit
           fetch-depth: 1
+      - name: Install fixed documentation parser dependency
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          command -v pdftotext
       - name: Enforce frozen source
         run: |
           set -euo pipefail
           test "$(git hash-object orbittrace_hissar_1968_1969_structure_audit/PROTOCOL.md)" = "139367bd4a5c2edbefb432084491052d45256fcd"
           test "$(git hash-object orbittrace_hissar_1968_1969_structure_audit/audit_structure.py)" = "fbd40dc82a5c763ba66796e85aad7964f10300e3"
           python -m py_compile orbittrace_hissar_1968_1969_structure_audit/audit_structure.py
-          command -v pdftotext
       - name: Fetch immutable freshness adjudication
         env: {GH_TOKEN: '${{ github.token }}'}
         run: |
@@ -48,7 +53,7 @@ jobs:
       - name: Record provenance
         if: always()
         run: |
-          set +e; mkdir -p output; git rev-parse HEAD > output/structure_commit.txt; sha256sum orbittrace_hissar_1968_1969_structure_audit/PROTOCOL.md orbittrace_hissar_1968_1969_structure_audit/audit_structure.py > output/source_sha256.txt; sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true; python --version > output/python_version.txt
+          set +e; mkdir -p output; git rev-parse HEAD > output/structure_commit.txt; sha256sum orbittrace_hissar_1968_1969_structure_audit/PROTOCOL.md orbittrace_hissar_1968_1969_structure_audit/audit_structure.py > output/source_sha256.txt; sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true; dpkg-query -W -f='${Package} ${Version}\n' poppler-utils 2>/dev/null > output/poppler_version.txt || true; python --version > output/python_version.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
