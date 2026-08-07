@@ -1,9 +1,9 @@
-name: OrbitTrace Harvard 1968-1969 v8 interface adjudication source fix
+name: OrbitTrace Harvard 1968-1969 v8 interface adjudication label whitespace fix
 
 on:
   pull_request:
     branches:
-      - agent/orbittrace-harvard-1968-1969-v8-interface-adjudication-source-fix
+      - agent/orbittrace-harvard-1968-1969-v8-interface-adjudication-label-whitespace-fix
     paths:
       - 'orbittrace_harvard_1968_1969_v8_interface_adjudication/RUN.md'
   workflow_dispatch:
@@ -16,17 +16,17 @@ jobs:
   adjudicate:
     runs-on: ubuntu-22.04
     steps:
-      - name: Check out frozen source-fix parent
+      - name: Check out frozen label-whitespace-fix parent
         uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-harvard-1968-1969-v8-interface-adjudication-source-fix
+          ref: agent/orbittrace-harvard-1968-1969-v8-interface-adjudication-label-whitespace-fix
           fetch-depth: 1
 
-      - name: Enforce corrected checker source only
+      - name: Enforce whitespace-only checker correction
         run: |
           set -euo pipefail
           test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/PROTOCOL.md)" = "82426a76f91cde9f1890606c9f1c8384a8d72401"
-          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py)" = "c206e9fbe9b0e03a3ade7cbe3e4ab57245812567"
+          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py)" = "e4435f5f4b14001514e578d19e4fd9969f1bf537"
           python -m py_compile orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py
 
       - name: Fetch immutable Harvard structure artifact
@@ -57,7 +57,7 @@ jobs:
           unzip -l input/fixed4-source.zip | grep -F 'run_fixed4_support_wrapper_development.py'
           unzip -l input/fixed4-source.zip | grep -F 'run_fixed4_blind_catalogue.py'
 
-      - name: Adjudicate exact v8/Harvard interface without event data
+      - name: Adjudicate exact v8 Harvard interface without event data
         run: |
           set -euo pipefail
           python orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py \
@@ -80,7 +80,7 @@ jobs:
           assert r['native_geocentric_nonorbital_fields']==[]
           assert r['event_site_position_height_fields']==[]
           assert r['exact_nonorbital_geocentric_recovery_available'] is False
-          assert r['prior_checker_failure_run_preserved']==31226997818
+          assert r['prior_checker_failure_runs_preserved']==[31226997818,31227229710]
           assert r['harvard_event_table_opened'] is False
           assert r['harvard_event_values_inspected'] is False
           assert r['orbital_elements_used_for_discovery'] is False
@@ -104,7 +104,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-harvard-1968-1969-v8-interface-adjudication-source-fix
+          name: orbittrace-harvard-1968-1969-v8-interface-adjudication-label-whitespace-fix
           path: output
           if-no-files-found: error
           retention-days: 90
