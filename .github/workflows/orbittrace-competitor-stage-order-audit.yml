@@ -22,6 +22,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Retrieve exact frozen comparator sources without data access
+        run: |
+          set -euo pipefail
+          mkdir -p orbittrace_literature_comparison/hdbscan_catalogue_runner_parts
+          mkdir -p orbittrace_literature_comparison/sugar_uncertainty_core_parts
+          mkdir -p orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts
+
+          git fetch --no-tags --depth=1 origin 15e63a8acf6303a4bf62e119c3dc8a121a488d1c
+          for i in 00 01 02 03 04; do
+            git show 15e63a8acf6303a4bf62e119c3dc8a121a488d1c:orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part${i}.b64 \
+              > orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part${i}.b64
+          done
+
+          git fetch --no-tags --depth=1 origin 6594cc992841cf8d37572f9877c35580009095bd
+          for i in 00 01 02; do
+            git show 6594cc992841cf8d37572f9877c35580009095bd:orbittrace_literature_comparison/sugar_uncertainty_core_parts/part${i}.b64 \
+              > orbittrace_literature_comparison/sugar_uncertainty_core_parts/part${i}.b64
+          done
+          for i in 00 01 02 03; do
+            git show 6594cc992841cf8d37572f9877c35580009095bd:orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part${i}.b64 \
+              > orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part${i}.b64
+          done
       - name: Run source-only audit
         run: |
           set -euo pipefail
