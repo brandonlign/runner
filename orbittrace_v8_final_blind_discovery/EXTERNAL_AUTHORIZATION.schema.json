@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orbittrace-v8-final-discovery-authorization-v1",
+  "title": "OrbitTrace v8 final discovery authorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "decision",
+    "method_commit",
+    "v8_development_artifact_sha256",
+    "freeze_commit",
+    "freeze_manifest_sha256",
+    "external_validation",
+    "sealed_withheld_reference_artifact_sha256",
+    "withheld_reference_schema"
+  ],
+  "properties": {
+    "schema": {"const": "orbittrace-v8-final-discovery-authorization-v1"},
+    "decision": {"const": "AUTHORIZE_FINAL_GMN_BLIND_DISCOVERY"},
+    "method_commit": {"const": "c9d6c44704013ba0c9430100e98a29a56b453304"},
+    "v8_development_artifact_sha256": {"const": "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e"},
+    "freeze_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "freeze_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "external_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "artifact_sha256", "verdict"],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "verdict": {"type": "string", "minLength": 1}
+      }
+    },
+    "sealed_withheld_reference_artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "withheld_reference_schema": {"const": "orbittrace-withheld-reference-v1"}
+  }
+}
