@@ -1,0 +1,61 @@
+name: OrbitTrace SonotaCo 2019 source-only parser transport
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sonotaco-2019-parser-transport
+    paths:
+      - 'orbittrace_sonotaco_2019_parser_transport/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  transport:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch immutable 2017 parser source artifact only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/source output
+          gh run download 31199214174 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2015-2017-parser-transport --dir input/source
+          test ! -e input/archives
+      - name: Build and verify 2019 parser without catalogue access
+        run: |
+          set -euo pipefail
+          python orbittrace_sonotaco_2019_parser_transport/build_parser.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/sonotaco_2019_parser_transport.json').read_text())
+          assert r['verdict']=='PASS_SONOTACO_2019_SOURCE_ONLY_PARSER_TRANSPORT'
+          assert r['catalogue_access'] is False
+          assert r['shower_label_access'] is False
+          assert r['scientific_score_access'] is False
+          assert r['target_information_access'] is False
+          assert r['year']==2019
+          assert r['member']=='019a/_U2_20190101_S.csv'
+          assert r['function_args']==['archive','audit_path','base']
+          assert r['blind_interval_removed_before_label_access'] is True
+          assert r['parser_integrity_gates_unchanged'] is True
+          assert r['year_only_line_changes'] is True
+          PY
+      - name: Record provenance
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > output/transport_commit.txt
+          sha256sum orbittrace_sonotaco_2019_parser_transport/build_parser.py > output/transport_builder_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2019-parser-transport
+          path: output
+          if-no-files-found: error
+          retention-days: 90
