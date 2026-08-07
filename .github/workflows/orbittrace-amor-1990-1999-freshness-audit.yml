@@ -1,0 +1,72 @@
+name: OrbitTrace AMOR 1990-1999 full-history freshness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-amor-1990-1999-freshness-audit
+    paths:
+      - 'orbittrace_amor_1990_1999_freshness_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen audit parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-amor-1990-1999-freshness-audit
+          fetch-depth: 1
+
+      - name: Enforce audit source and fetch complete remote branch history
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_amor_1990_1999_freshness_audit/audit_history.py)" = "3649c2ab45d4274baf802761a9f4ddd6aaf41b2b"
+          python -m py_compile orbittrace_amor_1990_1999_freshness_audit/audit_history.py
+          git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          echo "remote refs: $(git for-each-ref --format='%(refname)' refs/remotes/origin | grep -v '/HEAD$' | wc -l)"
+
+      - name: Run zero-data AMOR full-history audit
+        run: |
+          set -euo pipefail
+          python orbittrace_amor_1990_1999_freshness_audit/audit_history.py
+
+      - name: Enforce audit boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/amor_1990_1999_repo_freshness_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['catalogue_access_this_audit'] is False
+              assert r['scientific_value_access_this_audit'] is False
+              assert r['label_access_this_audit'] is False
+              assert r['target_information_access'] is False
+              assert r['positive_controls']['saamer_2020_2021_spent_detected'] is True
+              assert r['positive_controls']['sonotaco_2023_spent_detected'] is True
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_amor_1990_1999_freshness_audit/audit_history.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-amor-1990-1999-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
