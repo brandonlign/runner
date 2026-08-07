@@ -1,0 +1,101 @@
+name: OrbitTrace label-free v6 terminal SAAMER synthesis
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-label-free-v6-terminal-saamer-synthesis
+    paths:
+      - 'orbittrace_label_free_v6_terminal_saamer_synthesis/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  synthesize:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen synthesis parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-label-free-v6-terminal-saamer-synthesis
+
+      - name: Enforce source and exact artifact guards
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/panel1 input/panel2 output
+          test "$(git hash-object orbittrace_label_free_v6_terminal_saamer_synthesis/PROTOCOL.md)" = "135097924f3fa95145c53c16522af6531bd7c10b"
+          test "$(git hash-object orbittrace_label_free_v6_terminal_saamer_synthesis/synthesize.py)" = "6c3195b9051088ae7b77b56d1a2868b4849c882f"
+
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9006709213/zip" \
+            -o input/panel1.zip
+          echo "e96e736b4e1d541fb4334d57bf20692404920e616857b783c88d1acba17a77f0  input/panel1.zip" | sha256sum -c -
+          unzip -q input/panel1.zip -d input/panel1
+
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9007437717/zip" \
+            -o input/panel2.zip
+          echo "0e4482d750d8dea93ef56205180b4d456aaedc4adb6dc04d9239a35ab32cab50  input/panel2.zip" | sha256sum -c -
+          unzip -q input/panel2.zip -d input/panel2
+
+          test -f input/panel1/saamer_external_validation.json
+          test -f input/panel2/saamer_2022_2023_external_validation.json
+          python -m py_compile orbittrace_label_free_v6_terminal_saamer_synthesis/synthesize.py
+          echo PASS_TERMINAL_SAAMER_SYNTHESIS_ARTIFACT_GUARDS
+
+      - name: Run artifact-only terminal synthesis
+        run: |
+          set -euo pipefail
+          python orbittrace_label_free_v6_terminal_saamer_synthesis/synthesize.py \
+            --panel-2020-2021 input/panel1/saamer_external_validation.json \
+            --panel-2022-2023 input/panel2/saamer_2022_2023_external_validation.json \
+            --output output
+          cat output/TERMINAL_SAAMER_SYNTHESIS.md
+
+      - name: Enforce terminal interpretation boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/terminal_saamer_synthesis.json').read_text())
+          assert r['verdict']=='TERMINAL_EXTERNAL_VALIDATION_INCONCLUSIVE_POWER_LIMITED'
+          assert r['authorizes_target_reveal'] is False
+          assert r['pooling_or_new_pass_statistic_used'] is False
+          assert r['reranking_performed'] is False
+          assert r['catalogue_access'] is False
+          assert r['target_information_access'] is False
+          assert r['cross_panel_facts']['both_panels_below_N100'] is True
+          assert r['cross_panel_facts']['registered_topk_equals_N_in_both_panels'] is True
+          print('ORBITTRACE_TERMINAL_SAAMER_SYNTHESIS_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_TERMINAL_SAAMER_SYNTHESIS_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/synthesis_commit.txt
+          sha256sum \
+            orbittrace_label_free_v6_terminal_saamer_synthesis/PROTOCOL.md \
+            orbittrace_label_free_v6_terminal_saamer_synthesis/synthesize.py \
+            input/panel1.zip input/panel2.zip > output/input_and_source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload terminal synthesis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-label-free-v6-terminal-saamer-synthesis
+          path: output
+          if-no-files-found: error
+          retention-days: 90
