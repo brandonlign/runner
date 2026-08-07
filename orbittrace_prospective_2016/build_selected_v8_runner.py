@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Add only the frozen +0.50 v8 winner to a runner that already contains v3."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser()
+    p.add_argument("--base", required=True, type=Path)
+    p.add_argument("--output", required=True, type=Path)
+    return p.parse_args()
+
+
+def rep(source: str, old: str, new: str, label: str) -> str:
+    count = source.count(old)
+    if count != 1:
+        raise RuntimeError(f"{label}: expected one target, found {count}")
+    return source.replace(old, new)
+
+
+def main() -> None:
+    args = parse_args()
+    source = args.base.read_text()
+    source = rep(
+        source,
+        "import multi_anchor_energy_v3 as v3\n",
+        "import multi_anchor_energy_v3 as v3\nimport selected_v8_method as selected_v8\n",
+        "selected v8 import",
+    )
+    source = rep(
+        source,
+        '    "orbittrace_multi_anchor_wavelet_energy_v3",\n)\n',
+        '    "orbittrace_multi_anchor_wavelet_energy_v3",\n)\nBASE_METHODS = METHODS\nMETHODS = BASE_METHODS + (selected_v8.METHOD_ID,)\n',
+        "method registry",
+    )
+    source = rep(
+        source,
+        '    if set(scores) != set(METHODS) or not all(np.isfinite(value) for value in scores.values()):\n',
+        '    if set(scores) != set(BASE_METHODS) or not all(np.isfinite(value) for value in scores.values()):\n',
+        "score audit",
+    )
+    source = rep(
+        source,
+        '    calibration: dict[str, dict[int, np.ndarray]] = {method: {} for method in METHODS}\n    for method in METHODS:\n',
+        '    calibration: dict[str, dict[int, np.ndarray]] = {method: {} for method in BASE_METHODS}\n    for method in BASE_METHODS:\n',
+        "base calibration registry",
+    )
+    source = rep(
+        source,
+        '            calibration[method][bin_index] = values\n\n    for row in negative_rows:\n',
+        '            calibration[method][bin_index] = values\n\n'
+        '    selected_v8_null = {\n'
+        '        bin_index: selected_v8.calibration_statistics(\n'
+        '            calibration[selected_v8.PRIMARY][bin_index],\n'
+        '            calibration[selected_v8.SPARSE][bin_index],\n'
+        '        )\n'
+        '        for bin_index in supported_bins\n'
+        '    }\n\n'
+        '    for row in negative_rows:\n',
+        "selected v8 null calibration",
+    )
+
+    old_p = '''        row["p"] = {
+            method: literature.conservative_rank_pvalue(row["scores"][method], calibration[method][row["bin"]])
+            for method in METHODS
+        }
+'''
+    new_p = '''        row["p"] = {
+            method: literature.conservative_rank_pvalue(row["scores"][method], calibration[method][row["bin"]])
+            for method in BASE_METHODS
+        }
+        selected_statistic = selected_v8.target_statistic(
+            row["scores"][selected_v8.PRIMARY],
+            row["scores"][selected_v8.SPARSE],
+            calibration[selected_v8.PRIMARY][row["bin"]],
+            calibration[selected_v8.SPARSE][row["bin"]],
+        )
+        row["scores"][selected_v8.METHOD_ID] = selected_statistic
+        row["p"][selected_v8.METHOD_ID] = selected_v8.final_pvalue(
+            selected_statistic, selected_v8_null[row["bin"]]
+        )
+'''
+    if source.count(old_p) != 2:
+        raise RuntimeError(f"target p blocks: expected two, found {source.count(old_p)}")
+    source = source.replace(old_p, new_p, 2)
+
+    gate_2025 = '''        "multi_anchor_energy_v3_rules_frozen": (
+            v3.METHOD_ID == "orbittrace_multi_anchor_wavelet_energy_v3"
+            and v3.ANGULAR_PROBE_DEG == wavelet.ANGULAR_PROBE_DEG == 4.0
+            and v3.SPEED_PROBE_FRACTION == wavelet.SPEED_PROBE_FRACTION == 0.10
+            and v3.TRUNCATION_RADIUS == wavelet.TRUNCATION_RADIUS == 4.0
+            and v3.KERNEL_DIMENSION == wavelet.KERNEL_DIMENSION == 3.0
+            and v3.TOP_ANCHORS == 4
+            and all(v3.self_test().values())
+        ),
+'''
+    gate_2023 = '''        "wavelet_parameters_unchanged": (
+            wavelet.ANGULAR_PROBE_DEG == 4.0
+            and wavelet.SPEED_PROBE_FRACTION == 0.10
+            and wavelet.TRUNCATION_RADIUS == 4.0
+            and wavelet.KERNEL_DIMENSION == 3.0
+            and all(wavelet.self_test().values())
+        ),
+'''
+    addition = '        "selected_v8_rule_frozen": all(selected_v8.self_test().values()),\n'
+    if gate_2025 in source:
+        source = rep(source, gate_2025, gate_2025 + addition, "2025 selected v8 gate")
+    elif gate_2023 in source:
+        source = rep(source, gate_2023, gate_2023 + addition, "2023 selected v8 gate")
+    else:
+        raise RuntimeError("recognized v3/wavelet integrity gate missing")
+
+    markers = (
+        '        "orbittrace_multi_anchor_wavelet_energy_v3": "new OrbitTrace method development",\n',
+        '        "orbittrace_multi_anchor_wavelet_energy_v3": "frozen OrbitTrace v3 transfer",\n',
+    )
+    for marker in markers:
+        if marker in source:
+            source = rep(
+                source,
+                marker,
+                marker + '        "orbittrace_v3_fixed4_offset_pos050_v8": "frozen two-year-selected OrbitTrace v8 prospective method",\n',
+                "selected v8 classification",
+            )
+            break
+    else:
+        raise RuntimeError("v3 classification marker missing")
+
+    compile(source, str(args.output), "exec")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(source)
+    print("PASS_BUILD_SELECTED_V8_RUNNER", hashlib.sha256(source.encode()).hexdigest())
+
+
+if __name__ == "__main__":
+    main()
