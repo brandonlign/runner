@@ -65,15 +65,15 @@ def main()->int:
         r'AMOR[^\n]{0,100}199[0-9]|199[0-9][^\n]{0,100}AMOR',
         r'radio_offline[^\n]{0,100}AMOR|AMOR[^\n]{0,100}radio_offline',
     ])
-    archive_token=re.compile(r'AMOR[_-]?199[0-9]|iaumdc[^\s"\']*AMOR|AMOR[^\s"\']*\.zip|radio_offline[^\n]{0,100}AMOR',re.I)
+    archive_token=re.compile(r"AMOR[_-]?199[0-9]|iaumdc[^\s\"']*AMOR|AMOR[^\s\"']*\.zip|radio_offline[^\n]{0,100}AMOR",re.I)
     scientific_token=re.compile(r'archive|download|parser|parse|row|meteor|catalog|data|result|score|cluster|family|component|radiant|\bLS\b|\bRA\b|\bDEC\b|\bVg\b|\bq\b|\be\b|\bi\b|\barg\b|\bnod\b|orbit',re.I)
     bibliographic_token=re.compile(r'citation|reference|paper|Baggaley|radar facility|Meteoroids|published',re.I)
     suspicious=[]; provenance=[]
     for hit in hits:
         text=hit['text']
         path=hit['path'].lower()
-        looks_like_science_path=any(x in path for x in ('amor','external','validation','result','parser','catalog','data'))
-        if archive_token.search(text) or (scientific_token.search(text) and not bibliographic_token.search(text)) or looks_like_science_path:
+        looks_like_amor_data_path='amor' in path and any(x in path for x in ('parser','catalog','data','result','external','validation','audit'))
+        if archive_token.search(text) or (scientific_token.search(text) and not bibliographic_token.search(text)) or looks_like_amor_data_path:
             hit['classification']='potential_data_or_scientific_exposure'; suspicious.append(hit)
         else:
             hit['classification']='bibliographic_or_general_reference_only'; provenance.append(hit)
