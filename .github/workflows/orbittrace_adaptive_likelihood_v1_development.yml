@@ -1,0 +1,147 @@
+name: OrbitTrace adaptive likelihood v1 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-adaptive-method-base-snapshot
+    paths:
+      - .github/workflows/orbittrace_adaptive_likelihood_v1_development.yml
+      - orbittrace_adaptive_likelihood_v1/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-adaptive-likelihood-v1-development
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-adaptive-recurrent-likelihood-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact frozen predecessor benchmark
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 99957b021a4c816d423f0bb6a5780fb9e7a54bfe --depth=1
+          rm -rf /tmp/orbittrace-frozen
+          git worktree add --detach /tmp/orbittrace-frozen 99957b021a4c816d423f0bb6a5780fb9e7a54bfe
+          test "$(git -C /tmp/orbittrace-frozen rev-parse HEAD)" = "99957b021a4c816d423f0bb6a5780fb9e7a54bfe"
+          test "$(git -C /tmp/orbittrace-frozen hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git -C /tmp/orbittrace-frozen hash-object orbittrace_literature_comparison/build_wavelet_episode_runner.py)" = "be8f3c79237e4f0a2d9625e816b2b4f806029ec5"
+          test "$(git -C /tmp/orbittrace-frozen hash-object orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py)" = "a10b8689791f647713689e3870901f633b6cc493"
+
+      - name: Install frozen benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/orbittrace-frozen/real_shower_meta_stage0/requirements.txt
+
+      - name: Freeze and audit adaptive v1 before data access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_adaptive_likelihood_v1
+        run: |
+          set -euo pipefail
+          mkdir -p output input
+          python -m py_compile \
+            orbittrace_adaptive_likelihood_v1/adaptive_likelihood_v1.py \
+            orbittrace_adaptive_likelihood_v1/build_adaptive_runner.py \
+            orbittrace_adaptive_likelihood_v1/evaluate_development.py
+          python - <<'PY'
+          import adaptive_likelihood_v1 as adaptive
+          tests = adaptive.self_test()
+          assert tests and all(tests.values()), tests
+          assert adaptive.METHOD_ID == 'orbittrace_adaptive_local_likelihood_v1'
+          assert adaptive.SCALE_BANK == ((2.0, 0.050), (3.0, 0.075), (4.0, 0.100), (6.0, 0.150))
+          print('PASS_ADAPTIVE_LIKELIHOOD_V1_SOURCE_AUDIT', tests)
+          PY
+          sha256sum \
+            orbittrace_adaptive_likelihood_v1/PROTOCOL.md \
+            orbittrace_adaptive_likelihood_v1/adaptive_likelihood_v1.py \
+            orbittrace_adaptive_likelihood_v1/build_adaptive_runner.py \
+            orbittrace_adaptive_likelihood_v1/evaluate_development.py \
+            | tee output/adaptive_v1_source_sha256.txt
+          git rev-parse HEAD | tee output/adaptive_v1_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Build frozen wavelet and adaptive benchmark runners
+        env:
+          PYTHONPATH: /tmp/orbittrace-frozen/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_adaptive_likelihood_v1
+        run: |
+          set -euo pipefail
+          python /tmp/orbittrace-frozen/orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            --base /tmp/orbittrace-frozen/orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            --output /tmp/run_wavelet_episode_comparison.py
+          python orbittrace_adaptive_likelihood_v1/build_adaptive_runner.py \
+            --base /tmp/run_wavelet_episode_comparison.py \
+            --output /tmp/run_adaptive_likelihood_v1.py
+          python -m py_compile /tmp/run_wavelet_episode_comparison.py /tmp/run_adaptive_likelihood_v1.py
+          sha256sum /tmp/run_wavelet_episode_comparison.py /tmp/run_adaptive_likelihood_v1.py \
+            | tee output/adapted_runner_sha256.txt
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute adaptive likelihood v1 development benchmark
+        env:
+          PYTHONPATH: /tmp/orbittrace-frozen/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_adaptive_likelihood_v1
+        run: |
+          set -euo pipefail
+          python /tmp/run_adaptive_likelihood_v1.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/orbittrace-frozen/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/orbittrace-frozen/mondrian_clique_development/source_parts_v2 \
+            --adapter-parts /tmp/orbittrace-frozen/sonotaco_mondrian_development/source_parts \
+            --candidate-payload /tmp/orbittrace-frozen/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --workers 4 \
+            --output output
+          python orbittrace_adaptive_likelihood_v1/evaluate_development.py \
+            --input output/sonotaco_2025_literature_comparison.json \
+            --output output
+          cat output/DEVELOPMENT_RESULT.md
+
+      - name: Record environment and immutable inputs
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum input/audit.json input/025a.zip >> output/adaptive_v1_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload adaptive likelihood v1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-adaptive-likelihood-v1-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
