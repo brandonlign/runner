@@ -1,0 +1,1 @@
+Execution-only trigger for the corrected staged parser diagnostic. Range-invalid LS rows must be discarded before any other field; 20°–55° must then be removed before Yr/Mn/RA/DECL/Vg syntax inspection. No orbit, detector, family, ranking, target information, or method/gate change is permitted.
