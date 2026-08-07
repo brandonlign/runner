@@ -1,0 +1,134 @@
+name: OrbitTrace SonotaCo 2015-2017 parser transport
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sonotaco-2015-2017-parser-transport
+    paths:
+      - 'orbittrace_sonotaco_2015_2017_parser_transport/**'
+      - '.github/workflows/orbittrace-sonotaco-2015-2017-parser-transport.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  transport:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Retrieve exact source-only prerequisite evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness input/source_audit input/ancestor output
+          gh run download 31198545147 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-corrected-sonotaco-2015-2017-freshness-audit \
+            --dir input/freshness
+          gh run download 31198923927 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-sonotaco-parser-source-audit \
+            --dir input/source_audit
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/ancestor
+          test -f input/freshness/corrected_sonotaco_2015_2017_freshness_audit.json
+          test -f input/source_audit/sonotaco_2023_parser_source_audit.json
+          test -f input/ancestor/run_sonotaco_2023_fixed4_confirmation.py
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/ancestor/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+
+      - name: Enforce freshness and ancestor-source boundaries
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          freshness = json.loads(Path('input/freshness/corrected_sonotaco_2015_2017_freshness_audit.json').read_text())
+          assert freshness['verdict'] == 'PASS_CORRECTED_SONOTACO_2015_2017_REPO_FRESHNESS_AUDIT'
+          assert freshness['candidate_years'] == [2015, 2017]
+          assert freshness['positive_control_year'] == 2016
+          assert freshness['positive_control_detected'] is True
+          assert freshness['years']['2015']['prior_actual_access_found'] is False
+          assert freshness['years']['2017']['prior_actual_access_found'] is False
+          for key in ('catalogue_access','scientific_score_access','shower_label_access','excluded_interval_access','target_information_access'):
+              assert freshness[key] is False
+
+          audit = json.loads(Path('input/source_audit/sonotaco_2023_parser_source_audit.json').read_text())
+          assert audit['verdict'] == 'PASS_SONOTACO_2023_PARSER_SOURCE_AUDIT'
+          assert audit['source_sha256'] == 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6'
+          assert audit['constants']['BLIND_SOLAR_MIN'] == 20.0
+          assert audit['constants']['BLIND_SOLAR_MAX'] == 55.0
+          assert audit['constants']['RAW_HEADER_WIDTH'] == 46
+          assert audit['constants']['EFFECTIVE_HEADER_WIDTH'] == 45
+          assert audit['constants']['AUDIT_SHA256'] == 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          assert audit['catalogue_access'] is False
+          assert audit['scientific_score_access'] is False
+          assert audit['shower_label_data_access'] is False
+          assert audit['target_information_access'] is False
+          print('PASS_SONOTACO_PARSER_TRANSPORT_PREREQUISITES')
+          PY
+
+      - name: Build deterministic 2015 and 2017 parser sources without archive access
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_sonotaco_2015_2017_parser_transport/build_transport.py
+          python orbittrace_sonotaco_2015_2017_parser_transport/build_transport.py \
+            --source-2023 input/ancestor/run_sonotaco_2023_fixed4_confirmation.py \
+            --output output
+          python -m py_compile \
+            output/run_sonotaco_2015_transport_parser.py \
+            output/run_sonotaco_2017_transport_parser.py
+
+      - name: Enforce source-only transport result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('output/sonotaco_2015_2017_parser_transport.json').read_text())
+          assert r['verdict'] == 'PASS_SONOTACO_2015_2017_SOURCE_ONLY_PARSER_TRANSPORT'
+          assert r['ancestor_source_sha256'] == 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6'
+          assert set(r['years']) == {'2015','2017'}
+          assert r['years']['2015']['member'] == '015a/_U2_20150101_S.csv'
+          assert r['years']['2017']['member'] == '017a/_U2_20170101_S.csv'
+          for year in ('2015','2017'):
+              assert all(r['years'][year]['gates'].values())
+              assert len(r['years'][year]['source_sha256']) == 64
+          assert not any(r['prohibited_access'].values())
+          print('ORBITTRACE_SONOTACO_2015_2017_PARSER_TRANSPORT_RESULT_BEGIN')
+          print(json.dumps(r, indent=2, sort_keys=True))
+          print('ORBITTRACE_SONOTACO_2015_2017_PARSER_TRANSPORT_RESULT_END')
+          PY
+
+      - name: Record immutable transport provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/transport_commit.txt
+          sha256sum \
+            orbittrace_sonotaco_2015_2017_parser_transport/PARSER_TRANSPORT_PROTOCOL.md \
+            orbittrace_sonotaco_2015_2017_parser_transport/build_transport.py \
+            input/freshness/corrected_sonotaco_2015_2017_freshness_audit.json \
+            input/source_audit/sonotaco_2023_parser_source_audit.json \
+            input/ancestor/run_sonotaco_2023_fixed4_confirmation.py \
+            output/run_sonotaco_2015_transport_parser.py \
+            output/run_sonotaco_2017_transport_parser.py \
+            > output/transport_source_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sonotaco-2015-2017-parser-transport
+          path: output
+          if-no-files-found: error
+          retention-days: 90
