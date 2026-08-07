@@ -48,6 +48,7 @@ jobs:
 
           python -m py_compile \
             orbittrace_literature_matched_v8/build_sonotaco_2025_parser.py \
+            orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
             orbittrace_literature_matched_v8/run_matched_benchmark.py \
             orbittrace_literature_matched_v8/run.py \
             orbittrace_pooled_year_centroid_v8/run_development.py
@@ -74,8 +75,10 @@ jobs:
           assert freeze['dsh']['catalogue_discovery_ranking_claim'] is False
           protocol=Path('orbittrace_literature_matched_v8/PROTOCOL.md').read_text()
           gates=Path('orbittrace_literature_matched_v8/DECISION_GATES.md').read_text()
+          correction=Path('orbittrace_literature_matched_v8/IMPLEMENTATION_CORRECTION_1.md').read_text()
           assert 'No final OrbitTrace target reveal' in protocol
           assert 'delta >= 0.10' in gates
+          assert '31225912469' in correction
           print('PASS_MATCHED_COMPARATOR_PREDATA_FREEZE')
           PY
 
@@ -99,12 +102,17 @@ jobs:
           echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/parser/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
           echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
 
-          python orbittrace_literature_matched_v8/build_sonotaco_2025_parser.py \
-            --source-2023 input/parser/run_sonotaco_2023_fixed4_confirmation.py \
-            --output input/parser/run_sonotaco_2025_matched_parser.py
+          python - <<'PY'
+          from orbittrace_literature_matched_v8 import sonotaco_2025_native_adapter_wrapper as wrapper
+          assert wrapper.YEAR == 2025
+          assert wrapper.MEMBER == '025a/_U2_20250101_S.csv'
+          assert wrapper.BLIND_SOLAR_MIN == 20.0 and wrapper.BLIND_SOLAR_MAX == 55.0
+          assert wrapper.ADAPTER_SOURCE_SHA256 == '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518'
+          print('PASS_NATIVE_2025_ADAPTER_SOURCE_GUARD')
+          PY
           python -m py_compile \
             input/parser/run_sonotaco_2023_fixed4_confirmation.py \
-            input/parser/run_sonotaco_2025_matched_parser.py \
+            orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
             input/v3/multi_anchor_energy_v3.py
 
           rm -rf output/*
@@ -131,7 +139,7 @@ jobs:
             --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             --scorer-parts mondrian_clique_development/source_parts_v2 \
             --parser-2023 input/parser/run_sonotaco_2023_fixed4_confirmation.py \
-            --parser-2025 input/parser/run_sonotaco_2025_matched_parser.py \
+            --parser-2025 orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
             --mapping-audit input/mapping/audit.json \
             --archive-2023 input/archives/023a.zip \
             --archive-2025 input/archives/025a.zip \
@@ -171,14 +179,15 @@ jobs:
             orbittrace_literature_matched_v8/PROTOCOL.md \
             orbittrace_literature_matched_v8/DECISION_GATES.md \
             orbittrace_literature_matched_v8/COMPETITOR_FREEZE.json \
+            orbittrace_literature_matched_v8/IMPLEMENTATION_CORRECTION_1.md \
             orbittrace_literature_matched_v8/build_sonotaco_2025_parser.py \
+            orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
             orbittrace_literature_matched_v8/run_matched_benchmark.py \
             orbittrace_literature_matched_v8/run.py \
             orbittrace_pooled_year_centroid_v8/run_development.py \
             orbittrace_label_free_sparse_support_v6/run_development.py \
             input/v3/multi_anchor_energy_v3.py \
             input/parser/run_sonotaco_2023_fixed4_confirmation.py \
-            input/parser/run_sonotaco_2025_matched_parser.py \
             input/mapping/audit.json \
             input/archives/023a.zip \
             input/archives/025a.zip \
