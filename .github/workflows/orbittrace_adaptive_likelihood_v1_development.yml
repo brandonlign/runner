@@ -3,7 +3,7 @@ name: OrbitTrace adaptive likelihood v1 development
 on:
   pull_request:
     branches:
-      - agent/orbittrace-wavelet-catalogue-v3-development
+      - agent/orbittrace-adaptive-method-base-snapshot
     paths:
       - .github/workflows/orbittrace_adaptive_likelihood_v1_development.yml
       - orbittrace_adaptive_likelihood_v1/**
@@ -72,7 +72,8 @@ jobs:
             orbittrace_adaptive_likelihood_v1/evaluate_development.py \
             | tee output/adaptive_v1_source_sha256.txt
           git rev-parse HEAD | tee output/adaptive_v1_commit.txt
-          test -z "$(git status --porcelain)" || { git status --porcelain; exit 1; }
+          git diff --exit-code
+          git diff --cached --exit-code
 
       - name: Build frozen wavelet and adaptive benchmark runners
         env:
