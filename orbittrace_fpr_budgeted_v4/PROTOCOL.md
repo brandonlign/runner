@@ -56,7 +56,7 @@ SonotaCo 2023 is a transfer corpus, not a new prospective validation corpus. Its
 
 Before the 2023 archive is opened by the v4 workflow, the workflow must verify:
 
-- the exact previously successful 2023 benchmark source commit `9ccefb50063f7f9e760beb5d8a5e362e0e2d2279`;
+- the exact source commit used by the successful prior 2023 transfer, `e23c7859bbcaf57b72be67c6ec834c496671c90d` (workflow `31105278114`);
 - the exact frozen v3 source and its self-tests;
 - the exact frozen v4 decision module and `(3/129, 4/129)` thresholds;
 - the exact validated 2023 parser/confirmation source, GMN-MDC mapping audit, and archive hash.
