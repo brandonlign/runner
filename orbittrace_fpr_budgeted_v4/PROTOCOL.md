@@ -42,6 +42,39 @@ Among feasible pairs, the selector chooses the pair with the **lowest pooled FPR
 
 The complete 36-pair table is preserved. If no pair is feasible, v4 fails. If a pair is selected, that exact integer pair is frozen before any transfer year is evaluated.
 
+## Frozen development selection
+
+Workflow `31146852225` selected the exact reporting rule:
+
+`(p_v3 <= 3/129) OR (p_fixed4 <= 4/129)`.
+
+The integer thresholds `(3,4)` are frozen and cannot be changed from transfer or validation outcomes. Continuous-ranking AUROC remains the frozen v3 score; v4 is only the decision layer.
+
+## SonotaCo 2023 unchanged-transfer protocol
+
+SonotaCo 2023 is a transfer corpus, not a new prospective validation corpus. Its prior fixed4 and Brown-family benchmark results were already exposed before v4 development, but the **v3 score and v4 combined decision are executed with no 2023-specific tuning**.
+
+Before the 2023 archive is opened by the v4 workflow, the workflow must verify:
+
+- the exact previously successful 2023 benchmark source commit `9ccefb50063f7f9e760beb5d8a5e362e0e2d2279`;
+- the exact frozen v3 source and its self-tests;
+- the exact frozen v4 decision module and `(3/129, 4/129)` thresholds;
+- the exact validated 2023 parser/confirmation source, GMN-MDC mapping audit, and archive hash.
+
+The 2023 transfer is a full pass only if all of the following hold without threshold reselection:
+
+- every upstream 2023 benchmark integrity gate passes;
+- v3 weak-stream AUROC is at least the Brown-family wavelet AUROC on the same 2023 benchmark;
+- pooled v4 held-out-negative FPR <= 0.055;
+- worst reporting-sector v4 FPR <= 0.08;
+- v4 k=4 recall >= nominal-alpha=.05 fixed4 k=4 recall on the same benchmark;
+- v4 k=6 recall >= nominal-alpha=.05 Brown-family k=6 recall minus 0.03;
+- v4 k=8 recall >= nominal-alpha=.05 Brown-family k=8 recall minus 0.03;
+- v4 k=12 recall >= nominal-alpha=.05 Brown-family k=12 recall minus 0.03;
+- all v3 and fixed4 empirical p-values used by the decision remain on the exact denominator-129 calibration grid.
+
+A failed transfer is preserved as a failure and does not authorize any change to v3 or the frozen v4 thresholds.
+
 ## Ranking claim boundary
 
 Continuous-ranking AUROC remains exactly the frozen v3 AUROC. The threshold selector may not change or re-evaluate the ranking score itself.
