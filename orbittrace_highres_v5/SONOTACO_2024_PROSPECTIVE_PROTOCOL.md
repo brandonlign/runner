@@ -8,6 +8,8 @@ The only 2024 information already exposed is transport/schema metadata and the s
 
 This protocol authorizes **one scientific execution** of the frozen v5 architecture on that predeclared 2024 universe. A failed result must be preserved and cannot be followed by same-corpus retuning.
 
+The first workflow attempt stopped in the pre-data source audit because the prospective branch did not contain the frozen Brown comparator file. The repair vendors the exact byte-identical frozen comparator with Git blob SHA `493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8`; no scientific method, parameter, gate, data, or 2024 result changed or was exposed by that repair.
+
 ## Frozen v5 architecture
 
 No scientific parameter changes from the passing 2025+2023 development freeze:
