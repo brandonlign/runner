@@ -36,13 +36,13 @@ The v8 family graph, pooled year centroids, multiplicity scores, and ranking wer
 
 The preregistered material-advantage threshold was `delta >= 0.10` in both years.
 
-**Result:** v8 fails the 4-9 superiority gate and fails the broader 4-24 superiority gate. Its numerical advantage in the 4-9 bin is only +0.019 in 2023 and +0.006 in 2025, far below the frozen material threshold. Full Sugar materially outperforms v8 in the 10-24 bin in both years and dominates overall and at larger shower sizes.
+**Result:** v8 fails the 4-9 superiority gate and the broader 4-24 superiority gate. Its numerical advantage in 4-9 is only +0.019 in 2023 and +0.006 in 2025, far below the frozen material threshold. Full Sugar materially outperforms v8 in 10-24 in both years and strongly dominates overall and at larger shower sizes.
 
 ### Purity / false-positive burden
 
 On the same exact-row Sugar panel:
 
-- v8: 43 returned recurrent families; mean dominant-known-label precision 0.737906; 0.767442 of returned families have dominant-known-label precision >=0.5.
+- v8: 43 returned recurrent families; mean dominant-known-label precision 0.737906; fraction with dominant-known-label precision >=0.5 = 0.767442.
 - Sugar 2023: 64 returned clusters; mean dominant-known-label precision 0.890505; fraction >=0.5 = 0.953125.
 - Sugar 2025: 49 returned clusters; mean dominant-known-label precision 0.890344; fraction >=0.5 = 0.959184.
 
@@ -56,22 +56,22 @@ These diagnostics show that v8 can rank some known recurrent structure, but they
 
 ## v8 vs catalogue HDBSCAN
 
-### Same-survey/year comparison
+### Blind-safe same-survey/year comparison
 
-Authoritative matched-survey workflow: `31226030807`.
+The v8 same-survey execution is workflow `31226030807`. For HDBSCAN 2023, the earlier transfer was subsequently found not to exclude the blind interval before label access, so its 2023 performance values are **not** used in this final freeze. They are replaced by the canonical preregistered blind-safe HDBSCAN-2023 rerun `31226945294`, which inserted only the 20°–55° exclusion immediately after solar-longitude parsing and before RA/Dec/quality/orbit/label access. The canonical assignment universe was independently verified as 26,460 unique rows with zero excluded-interval rows and no label access by the verifier. HDBSCAN 2025 was already blind-safe and remains workflow `31071589912`.
 
-This comparison used the same SonotaCo years and blind-label universe, while each published method retained its own frozen quality cuts. It is therefore weaker than exact-row matching.
+This comparison is still weaker than exact-row matching because v8 and HDBSCAN retain their own frozen method-specific quality cuts, but all performance values used here are target-excluded/blind-safe.
 
-Mean-F1 deltas v8-HDBSCAN were:
+Mean-F1 deltas v8-HDBSCAN are:
 
-- 2023: 4-9 +0.100000; 10-24 +0.060913; 25-49 +0.089933; 50-99 -0.121747; 100+ -0.508750.
+- 2023: 4-9 +0.100000; 10-24 +0.059794; 25-49 +0.089933; 50-99 -0.121600; 100+ -0.480845.
 - 2025: 4-9 +0.000000; 10-24 +0.057971; 25-49 +0.084544; 50-99 -0.242036; 100+ -0.562213.
 
 The preregistered 4-9 superiority gate required a material `>=0.10` advantage in **both** years. It therefore fails: 2025 is a tie at the reported mean-F1 endpoint. HDBSCAN is substantially stronger for large showers and becomes better already in the 50-99 bin on these reports.
 
 ### Strict exact-row comparison
 
-A blind-safe canonical HDBSCAN-2023 assignment was produced and independently verified: 26,460 unique quality-filtered rows, every ID resolved, zero rows in the excluded interval, and no labels read by the verifier.
+A blind-safe canonical HDBSCAN-2023 assignment was independently verified: 26,460 unique quality-filtered rows, every ID resolved, zero rows in the excluded interval, and no labels read by the verifier.
 
 Final strict exact-row workflow `31227299751` then ran frozen v8 on HDBSCAN's exact event universes:
 
@@ -82,7 +82,7 @@ Before common shower-label access, multiplicity scoring stopped because one vali
 
 This is a genuine method/input compatibility limit. Reducing the episode size, dropping the family, widening the window, borrowing off-panel rows, or altering HDBSCAN quality cuts would change the frozen methods after exposure and is prohibited.
 
-**Result:** strict full-v8 exact-row superiority over catalogue HDBSCAN is not established. The comparison is technically infeasible under the frozen methods on this SonotaCo pair. The weaker same-survey result also does not satisfy the preregistered sparse superiority gate.
+**Result:** strict full-v8 exact-row superiority over catalogue HDBSCAN is not established. The comparison is technically infeasible under the frozen methods on this SonotaCo pair. The blind-safe same-survey result also does not satisfy the preregistered sparse superiority gate.
 
 ## D_SH and nearest-orbit methods
 
@@ -104,7 +104,7 @@ These are not a hardware-normalized runtime study and the workflows do not perfo
 
 ### Does v8 beat HDBSCAN for sparse-stream discovery?
 
-**Not established.** On the same-survey/year benchmark v8 is better numerically for several <50-member bins but fails the preregistered 4-9 superiority gate because the 2025 4-9 result is a tie. The strict exact-row comparison cannot be completed without violating frozen v8 because HDBSCAN's filtered rows are locally too sparse for the fixed 128-event scoring episode. HDBSCAN is clearly stronger for 50+ member showers on the available matched-survey evidence.
+**Not established.** On the blind-safe same-survey/year benchmark v8 is better numerically for several <50-member bins but fails the preregistered 4-9 superiority gate because the 2025 4-9 result is a tie. The strict exact-row comparison cannot be completed without violating frozen v8 because HDBSCAN's filtered rows are locally too sparse for the fixed 128-event scoring episode. HDBSCAN is clearly stronger for 50+ member showers on the available blind-safe same-survey evidence.
 
 ### Does v8 beat full Sugar in the sparse regime?
 
@@ -114,7 +114,7 @@ These are not a hardware-normalized runtime study and the workflows do not perfo
 
 - **v8:** useful label-free cross-year recurrent proposal/ranking architecture; computationally cheaper in the recorded runs; roughly competitive with Sugar/HDBSCAN only at the very lowest 4-9 annual-member endpoint on these SonotaCo years. Its annual recognition recall/F1 is weak beyond that extreme low-count bin, and its fixed 128-event scorer creates an exact-row compatibility limitation on sufficiently sparse filtered catalogues.
 - **Full Sugar:** strongest faithfully implemented comparator here for catalogue recognition. It materially dominates v8 for 10-24 and larger bins and has higher returned-cluster dominant-label purity on the exact matched panel, at substantially higher compute cost.
-- **Catalogue HDBSCAN:** structurally poor at the smallest annual showers under the published min-cluster-size-100 configuration, but strong for large showers. Available evidence does not support a consistent/material v8 sparse superiority claim, and strict exact-row comparison is blocked by v8's episode-size precondition.
+- **Catalogue HDBSCAN:** structurally poor at the smallest annual showers under the published min-cluster-size-100 configuration, but strong for large showers. Available blind-safe evidence does not support a consistent/material v8 sparse superiority claim, and strict exact-row comparison is blocked by v8's episode-size precondition.
 - **D_SH:** appropriate as targeted/association evidence, not a complete target-free catalogue discovery comparator in the form benchmarked here.
 - **CMOR wavelet:** no matched performance conclusion because the available catalogue failed the preregistered input-support requirement.
 
