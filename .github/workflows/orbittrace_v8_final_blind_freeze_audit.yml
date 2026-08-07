@@ -1,0 +1,59 @@
+name: OrbitTrace v8 final blind freeze audit
+
+on:
+  pull_request:
+    paths:
+      - 'orbittrace_v8_final_blind_discovery/**'
+      - '.github/workflows/orbittrace_v8_final_blind_*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-only-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Audit without catalogue or reference access
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_v8_final_blind_discovery/audit_sources.py
+          python -m py_compile \
+            orbittrace_v8_final_blind_discovery/audit_sources.py \
+            orbittrace_v8_final_blind_discovery/authorize_stage_a.py \
+            orbittrace_v8_final_blind_discovery/seal_stage_a.py \
+            orbittrace_v8_final_blind_discovery/run_stage_a.py \
+            orbittrace_v8_final_blind_discovery/run_stage_b.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit=json.loads(Path('output/v8_final_blind_source_audit.json').read_text())
+          manifest=json.loads(Path('output/FREEZE_MANIFEST.json').read_text())
+          assert audit['verdict']=='PASS_V8_FINAL_BLIND_SOURCE_AUDIT'
+          assert audit['catalogue_access'] is False
+          assert audit['target_region_data_access'] is False
+          assert audit['withheld_reference_access'] is False
+          assert manifest['catalogue_access'] is False
+          assert manifest['target_region_data_access'] is False
+          assert manifest['withheld_reference_access'] is False
+          print(json.dumps(audit,indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-final-blind-freeze-audit
+          path: |
+            output/v8_final_blind_source_audit.json
+            output/FREEZE_MANIFEST.json
+            output/wavelet_catalogue_v3_source_audit.json
+          if-no-files-found: error
+          retention-days: 90
