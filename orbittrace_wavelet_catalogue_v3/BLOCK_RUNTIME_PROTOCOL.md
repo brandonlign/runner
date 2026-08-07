@@ -12,4 +12,6 @@ Before any catalogue access, the block implementation must prove deterministic e
 
 The implementation may precompute immutable window arrays, use bounded anchor blocks, matrix multiplication/broadcasting, and stable partial selection. It must remain bounded-memory and deterministic.
 
+The equivalence audit uses the exact frozen catalogue dependency set. Environment/import failures that occur before the scalar-versus-block comparison are technical failures and do not constitute an equivalence verdict.
+
 No 2024–2026 catalogue and no OrbitTrace target information may enter runtime development. A runtime equivalence pass authorizes rerunning the already-frozen target-excluded 2022–2023 catalogue v3 development only; it does not alter the scientific method.
