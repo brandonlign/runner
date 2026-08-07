@@ -3,7 +3,9 @@
 ## Status
 Frozen before the first Hissar catalogue form submission and before any Hissar meteor-row scientific value is read.
 
-This is a one-shot external validation of the already-promoted **v8 pooled-year-centroid label-free sparse-support multiplicity** method. It is not a development grid. Nothing in the detector, family construction, pooling, scoring, ranking, power floors, or post-ranking validation rule may be changed after the first Hissar scientific row is returned.
+**Pre-access coverage-integrity amendment.** The first protocol commit accidentally omitted the already-frozen external coverage gate `MIN_SCANNABLE_BINS=24` per year even though the authoritative v6/AMOR/SAAMER implementation retains it. This amendment restores that exact pre-existing gate before any Hissar catalogue form submission or meteor-row access. No Hissar scientific value has been read, and no detector, family, scoring, ranking, power, or post-ranking criterion changes.
+
+This is a one-shot external validation of the already-promoted **v8 pooled-year-centroid label-free sparse-support multiplicity** method. It is not a development grid. Nothing in the detector, family construction, pooling, scoring, ranking, power floors, coverage floors, or post-ranking validation rule may be changed after the first Hissar scientific row is returned.
 
 ## Immutable prerequisites
 ### Promoted v8
@@ -50,7 +52,7 @@ Official Hissar documentation fixes:
 - `LS` solar longitude;
 - `RA`,`DEC` geocentric radiant;
 - `Vg` geocentric speed;
-- `q`,`e`,`i`,`arg`,`nod` orbital elements;
+- `q`,`e`,`i,arg,nod` orbital elements;
 - unique IAU MDC identification code `#IC`.
 
 ## Exact first and only catalogue request
@@ -131,6 +133,16 @@ No Hissar-specific detector adaptation is permitted. Reuse the frozen v6/v8 stac
 - comparator rankings: Brown, total-v3, and label-free structural persistence;
 - no threshold, radius, quartet cap, episode size, pooling statistic, multiplicity formula, ranking weight, RRF, density-cap, or endpoint search.
 
+## Frozen matched-coverage integrity gate
+Restore and enforce the exact existing external-application coverage floor from the frozen v6/AMOR/SAAMER evaluator:
+- `MIN_SCANNABLE_BINS = 24` **for each year**;
+- there are exactly 36 fixed 10° solar-longitude bins;
+- a bin is scannable only when its own 10° anchor bin contains at least the frozen minimum number of anchors and its frozen ±15° candidate pool contains at least the 128-neighbor audit requirement;
+- the count is evaluated after the blind interval and event-quality/density-normalization steps, exactly as in the frozen external evaluator;
+- if either 1968 or 1969 has fewer than 24 scannable bins, the panel fails matched external-coverage integrity and must not be interpreted as a powered v8 scientific test.
+
+This is not a Hissar-specific new floor. It is the pre-existing external integrity rule accidentally omitted from the first Hissar protocol commit and restored before any Hissar catalogue submission. It must not be relaxed because Hissar 1968 has short documented coverage.
+
 ## Frozen post-ranking orbital corroboration
 Only after every ranking is frozen:
 - convert `q,e,i,arg,nod` only for events belonging to recurrent families;
@@ -162,12 +174,12 @@ The Hissar external test passes scientifically only if all three are true:
 
 ## Verdict rules
 Apply in this order:
-1. `FAIL_V8_HISSAR_EXTERNAL_INTEGRITY` if any frozen source/artifact/interface/parser/blindness/ranking-order integrity gate fails;
+1. `FAIL_V8_HISSAR_EXTERNAL_INTEGRITY` if any frozen source/artifact/interface/parser/blindness/ranking-order gate fails **or either year has fewer than 24 scannable bins under the frozen external coverage rule**;
 2. `INCONCLUSIVE_V8_HISSAR_EXTERNAL_POWER` if integrity passes but `N < 100` or `Q < 30`;
 3. `PASS_V8_HISSAR_EXTERNAL_VALIDATION` if powered and all three scientific gates pass;
 4. `FAIL_V8_HISSAR_EXTERNAL_VALIDATION` if powered but one or more scientific gates fail.
 
-A power-inconclusive result is not a v8 failure. A powered scientific fail is a genuine external failure and must be preserved without tuning v8 to Hissar.
+A coverage-integrity failure is a panel/data-availability limitation, not evidence that v8 performs poorly. A power-inconclusive result is not a v8 failure. A powered scientific fail is a genuine external failure and must be preserved without tuning v8 to Hissar.
 
 ## Claim boundary
-This run evaluates frozen v8 on a genuinely fresh, independently documented Hissar panel. It does not reveal or inspect OrbitTrace target information. The 20°–55° interval is removed before radiant, speed, orbit, or identity/date scientific interpretation beyond LS itself. The objective is an honest powered external verdict; no result is forced.
+This protocol remains frozen before any Hissar scientific-row access. It does not reveal or inspect OrbitTrace target information. The 20°–55° interval would be removed before radiant, speed, orbit, or identity/date scientific interpretation beyond LS itself. The objective is an honest powered external verdict; no result is forced. If official pre-scientific metadata already proves that the immutable matched-coverage gate is impossible, Hissar must be rejected without burning the fresh event panel.
