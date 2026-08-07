@@ -1,0 +1,90 @@
+name: OrbitTrace v6 freeze completed 2018 result
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-v6-2018-prospective
+    paths:
+      - orbittrace_corroborated_rescue_v6/FREEZE_2018_RESULT_REQUEST.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-2018-prospective
+          fetch-depth: 0
+
+      - name: Retrieve exact completed scientific artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/v6-2018-result
+          mkdir -p /tmp/v6-2018-result
+          gh run download 31155550264 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-sonotaco-2018-prospective \
+            --dir /tmp/v6-2018-result
+          test -f /tmp/v6-2018-result/SONOTACO_2018_V6_PROSPECTIVE_RESULT.json
+          test -f /tmp/v6-2018-result/SONOTACO_2018_V6_PROSPECTIVE_RESULT.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/v6-2018-result/SONOTACO_2018_V6_PROSPECTIVE_RESULT.json')
+          result = json.loads(p.read_text())
+          assert result['verdict'] in {
+              'PASS_V6_SONOTACO_2018_PROSPECTIVE_VALIDATION',
+              'FAIL_V6_SONOTACO_2018_PROSPECTIVE_VALIDATION',
+          }
+          print('SCIENTIFIC_VERDICT', result['verdict'])
+          print('FAILED_GATES', [name for name, passed in result['gates'].items() if not passed])
+          PY
+
+      - name: Freeze exact result bytes with immutable provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p orbittrace_corroborated_rescue_v6
+          cp /tmp/v6-2018-result/SONOTACO_2018_V6_PROSPECTIVE_RESULT.json \
+            orbittrace_corroborated_rescue_v6/FROZEN_SONOTACO_2018_PROSPECTIVE_RESULT.json
+          {
+            echo '# OrbitTrace v6 — frozen SonotaCo 2018 prospective result'
+            echo
+            echo 'Authoritative scientific workflow: `31155550264`'
+            echo
+            echo 'Scientific job: `92794141790`'
+            echo
+            echo 'Artifact: `8985017321`'
+            echo
+            echo 'Scientific source commit: `d8258581af143308495bd97bedcc142abbbd951a`'
+            echo
+            echo 'The body below is copied verbatim from the completed scientific artifact; no metric, gate, threshold, or verdict is edited by this freeze step.'
+            echo
+            cat /tmp/v6-2018-result/SONOTACO_2018_V6_PROSPECTIVE_RESULT.md
+          } > orbittrace_corroborated_rescue_v6/FROZEN_SONOTACO_2018_PROSPECTIVE_RESULT.md
+          sha256sum \
+            /tmp/v6-2018-result/SONOTACO_2018_V6_PROSPECTIVE_RESULT.json \
+            /tmp/v6-2018-result/SONOTACO_2018_V6_PROSPECTIVE_RESULT.md \
+            > orbittrace_corroborated_rescue_v6/FROZEN_SONOTACO_2018_PROSPECTIVE_RESULT.sha256
+
+      - name: Commit frozen evidence only
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            orbittrace_corroborated_rescue_v6/FROZEN_SONOTACO_2018_PROSPECTIVE_RESULT.json \
+            orbittrace_corroborated_rescue_v6/FROZEN_SONOTACO_2018_PROSPECTIVE_RESULT.md \
+            orbittrace_corroborated_rescue_v6/FROZEN_SONOTACO_2018_PROSPECTIVE_RESULT.sha256
+          git diff --cached --quiet && exit 0
+          git commit -m 'Freeze completed SonotaCo 2018 v6 prospective result'
+          git push origin HEAD:agent/orbittrace-v6-2018-prospective
