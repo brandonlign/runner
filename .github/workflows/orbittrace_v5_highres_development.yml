@@ -1,0 +1,420 @@
+name: OrbitTrace v5 high-resolution development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-highres-calibration-base
+    paths:
+      - orbittrace_highres_v5/PROTOCOL.md
+      - orbittrace_highres_v5/build_highres_runner.py
+      - orbittrace_highres_v5/select_robust_thresholds.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v5-highres-development
+  cancel-in-progress: true
+
+jobs:
+  develop-2025:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v5-highres-calibration
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact frozen SonotaCo 2025 benchmark source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 99957b021a4c816d423f0bb6a5780fb9e7a54bfe --depth=1
+          rm -rf /tmp/orbittrace-2025
+          git worktree add --detach /tmp/orbittrace-2025 99957b021a4c816d423f0bb6a5780fb9e7a54bfe
+          test "$(git -C /tmp/orbittrace-2025 rev-parse HEAD)" = "99957b021a4c816d423f0bb6a5780fb9e7a54bfe"
+          test "$(git -C /tmp/orbittrace-2025 hash-object orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py)" = "a10b8689791f647713689e3870901f633b6cc493"
+          test "$(git -C /tmp/orbittrace-2025 hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git -C /tmp/orbittrace-2025 hash-object orbittrace_literature_comparison/build_wavelet_episode_runner.py)" = "be8f3c79237e4f0a2d9625e816b2b4f806029ec5"
+
+      - name: Install exact benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/orbittrace-2025/real_shower_meta_stage0/requirements.txt
+
+      - name: Audit frozen v3 and v5 source before 2025 data access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          mkdir -p input output/2025
+          python -m py_compile \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_multi_anchor_energy_v3/build_multi_anchor_runner.py \
+            orbittrace_highres_v5/build_highres_runner.py \
+            orbittrace_highres_v5/select_robust_thresholds.py
+          python - <<'PY'
+          import multi_anchor_energy_v3 as v3
+          assert all(v3.self_test().values()), v3.self_test()
+          assert v3.METHOD_ID == 'orbittrace_multi_anchor_wavelet_energy_v3'
+          assert v3.TOP_ANCHORS == 4
+          text = open('orbittrace_highres_v5/PROTOCOL.md').read()
+          assert 'CALIBRATION_NEGATIVES_PER_BIN = 512' in text
+          assert 'denominator **513**' in text
+          assert 'SonotaCo 2024' in text
+          print('PASS_PRE_2025_V5_SOURCE_AUDIT')
+          PY
+          sha256sum \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_highres_v5/PROTOCOL.md \
+            orbittrace_highres_v5/build_highres_runner.py \
+            orbittrace_highres_v5/select_robust_thresholds.py \
+            | tee output/2025/v5_source_sha256.txt
+          git rev-parse HEAD | tee output/2025/v5_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Build exact 2025 v3 runner and apply 512-null calibration
+        env:
+          PYTHONPATH: /tmp/orbittrace-2025/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          python /tmp/orbittrace-2025/orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            --base /tmp/orbittrace-2025/orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            --output /tmp/run_wavelet_2025.py
+          python orbittrace_multi_anchor_energy_v3/build_multi_anchor_runner.py \
+            --base /tmp/run_wavelet_2025.py \
+            --output /tmp/run_v3_2025.py
+          python orbittrace_highres_v5/build_highres_runner.py \
+            --base /tmp/run_v3_2025.py \
+            --output /tmp/run_v5_2025.py
+          python -m py_compile /tmp/run_v5_2025.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_v5_2025.py').read_text()
+          assert 'scorer.CALIBRATION_NEGATIVES_PER_BIN = 512' in source
+          assert 'high_resolution_calibration_exact_512' in source
+          assert 'orbittrace_multi_anchor_wavelet_energy_v3' in source
+          print('PASS_V5_2025_ADAPTED_RUNNER_AUDIT')
+          PY
+          sha256sum /tmp/run_wavelet_2025.py /tmp/run_v3_2025.py /tmp/run_v5_2025.py \
+            | tee output/2025/adapted_runner_sha256.txt
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute SonotaCo 2025 high-resolution development
+        env:
+          PYTHONPATH: /tmp/orbittrace-2025/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          python /tmp/run_v5_2025.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/orbittrace-2025/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/orbittrace-2025/mondrian_clique_development/source_parts_v2 \
+            --adapter-parts /tmp/orbittrace-2025/sonotaco_mondrian_development/source_parts \
+            --candidate-payload /tmp/orbittrace-2025/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --workers 4 \
+            --output output/2025
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('output/2025/sonotaco_2025_literature_comparison.json')
+          result = json.loads(path.read_text())
+          assert result['verdict'] == 'PASS_SONOTACO_2025_LITERATURE_COMPARISON'
+          assert result['configuration']['calibration_per_bin'] == 512
+          assert result['gates']['high_resolution_calibration_exact_512'] is True
+          assert result['metrics']['orbittrace_multi_anchor_wavelet_energy_v3']['weak_auc'] >= result['metrics']['brown2010_wavelet_episode_core']['weak_auc']
+          print('PASS_V5_2025_HIGHRES_DEVELOPMENT')
+          PY
+
+      - name: Record 2025 immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          python --version > output/2025/python_version.txt
+          python -m pip freeze > output/2025/environment.txt
+          sha256sum input/audit.json input/025a.zip >> output/2025/v5_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload 2025 high-resolution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v5-highres-2025
+          path: output/2025
+          if-no-files-found: error
+          retention-days: 90
+
+  develop-2023:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v5-highres-calibration
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact successful SonotaCo 2023 benchmark source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin e23c7859bbcaf57b72be67c6ec834c496671c90d --depth=1
+          rm -rf /tmp/orbittrace-2023
+          git worktree add --detach /tmp/orbittrace-2023 e23c7859bbcaf57b72be67c6ec834c496671c90d
+          test "$(git -C /tmp/orbittrace-2023 rev-parse HEAD)" = "e23c7859bbcaf57b72be67c6ec834c496671c90d"
+          test "$(git -C /tmp/orbittrace-2023 hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git -C /tmp/orbittrace-2023 hash-object orbittrace_literature_comparison/build_wavelet_2023_runner.py)" = "169c4d03ffcb179951197a0f93c4bc5d63354748"
+
+      - name: Install exact benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/orbittrace-2023/real_shower_meta_stage0/requirements.txt
+
+      - name: Audit frozen v3 and v5 source before 2023 data access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          mkdir -p input/repaired output/2023
+          python -m py_compile \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_fpr_budgeted_v4/build_v3_2023_runner.py \
+            orbittrace_highres_v5/build_highres_runner.py \
+            orbittrace_highres_v5/select_robust_thresholds.py
+          python - <<'PY'
+          import multi_anchor_energy_v3 as v3
+          assert all(v3.self_test().values()), v3.self_test()
+          text = open('orbittrace_highres_v5/PROTOCOL.md').read()
+          assert 'SonotaCo 2023 is development evidence for v5' in text
+          assert 'No 2024 data may be opened during this stage.' in text
+          print('PASS_PRE_2023_V5_SOURCE_AUDIT')
+          PY
+          sha256sum \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_highres_v5/PROTOCOL.md \
+            orbittrace_highres_v5/build_highres_runner.py \
+            orbittrace_highres_v5/select_robust_thresholds.py \
+            | tee output/2023/v5_source_sha256.txt
+          git rev-parse HEAD | tee output/2023/v5_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Reconstruct exact 2023 v3 runner and apply 512-null calibration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: /tmp:/tmp/orbittrace-2023/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          gh api \
+            "repos/$GITHUB_REPOSITORY/contents/orbittrace_literature_comparison/literature_comparators.py?ref=eddcf9bb432b92e4f9707d0b2ce58ca21b4faf34" \
+            --jq .content | tr -d '\n' | base64 -d > /tmp/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  /tmp/literature_comparators.py' | sha256sum -c -
+          echo '0e3af3c5f2b8f2265f5f67cbbd3e43616e3ccc7ca7cd3b5ebfe01f920fbb18ca  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part00.b64' | sha256sum -c -
+          echo 'ccfbed79a2c50f0e9768badb58700696ce6401961d1e85f412d3962211d2b8f1  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub00.b64' | sha256sum -c -
+          echo '2904c359c237671e4a20d3d18606f7a4ca91b472d1298c8c5d8c5c6d4753c5aa  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub01.b64' | sha256sum -c -
+          echo '721719076fd28015b2ff7ff0d299b69b77e3bd774fc9adf1705cbfce52702a3c  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub02.b64' | sha256sum -c -
+          echo '8bfbfd7e5deb22d64c1687767b9c7a10ecb28573c6b4dac01548e7d9102a54d1  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub03.b64' | sha256sum -c -
+          echo 'a1c0da4f5a52ff9495b578e6becd4e58bb902b3b38251ffd04cb1fbc31f463e0  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part02.b64' | sha256sum -c -
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+          root = Path('/tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts')
+          names = ('part00.b64','part01_sub00.b64','part01_sub01.b64','part01_sub02.b64','part01_sub03.b64','part02.b64')
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          assert digest == '582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747', digest
+          Path('/tmp/run_sonotaco_2023_literature_comparison.py').write_bytes(source)
+          compile(source, 'run_sonotaco_2023_literature_comparison.py', 'exec')
+          print('PASS_RECONSTRUCT_V5_2023_BASE', digest)
+          PY
+          python /tmp/orbittrace-2023/orbittrace_literature_comparison/build_wavelet_2023_runner.py \
+            --base /tmp/run_sonotaco_2023_literature_comparison.py \
+            --output /tmp/run_wavelet_2023.py
+          python orbittrace_fpr_budgeted_v4/build_v3_2023_runner.py \
+            --base /tmp/run_wavelet_2023.py \
+            --output /tmp/run_v3_2023.py
+          python orbittrace_highres_v5/build_highres_runner.py \
+            --base /tmp/run_v3_2023.py \
+            --output /tmp/run_v5_2023.py
+          python -m py_compile /tmp/run_v5_2023.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_v5_2023.py').read_text()
+          assert 'scorer.CALIBRATION_NEGATIVES_PER_BIN = 512' in source
+          assert 'high_resolution_calibration_exact_512' in source
+          assert 'orbittrace_multi_anchor_wavelet_energy_v3' in source
+          print('PASS_V5_2023_ADAPTED_RUNNER_AUDIT')
+          PY
+          sha256sum /tmp/run_wavelet_2023.py /tmp/run_v3_2023.py /tmp/run_v5_2023.py \
+            | tee output/2023/adapted_runner_sha256.txt
+
+      - name: Retrieve exact repaired 2023 parser and confirmation source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo '9619dfc0b339b39d287833778769f12a643e2b0157fdcd6115cd9c40be528322  input/repaired/audit_sonotaco_2023_v2.py' | sha256sum -c -
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo '882c21f2ac48689ab7a0d7a990496f7e055ab571b10c6f00bb63d8a18f8f7b3f  input/repaired/sonotaco_2023_confirmation_source_repair_v2.json' | sha256sum -c -
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact SonotaCo 2023 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Execute SonotaCo 2023 high-resolution development
+        env:
+          PYTHONPATH: /tmp:/tmp/orbittrace-2023/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          python /tmp/run_v5_2023.py \
+            --archive input/023a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/orbittrace-2023/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/orbittrace-2023/mondrian_clique_development/source_parts_v2 \
+            --confirmation-source input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --freeze /tmp/orbittrace-2023/orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json \
+            --workers 4 \
+            --output output/2023
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('output/2023/sonotaco_2023_literature_transfer.json')
+          result = json.loads(path.read_text())
+          assert result['verdict'] == 'PASS_SONOTACO_2023_LITERATURE_TRANSFER'
+          assert result['configuration']['calibration_per_bin'] == 512
+          assert result['gates']['high_resolution_calibration_exact_512'] is True
+          assert result['metrics']['orbittrace_multi_anchor_wavelet_energy_v3']['weak_auc'] >= result['metrics']['brown2010_wavelet_episode_core']['weak_auc']
+          print('PASS_V5_2023_HIGHRES_DEVELOPMENT')
+          PY
+
+      - name: Record 2023 immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          python --version > output/2023/python_version.txt
+          python -m pip freeze > output/2023/environment.txt
+          sha256sum input/audit.json input/023a.zip input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            >> output/2023/v5_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload 2023 high-resolution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v5-highres-2023
+          path: output/2023
+          if-no-files-found: error
+          retention-days: 90
+
+  select:
+    runs-on: ubuntu-latest
+    needs: [develop-2025, develop-2023]
+    if: ${{ always() && needs.develop-2025.result == 'success' && needs.develop-2023.result == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v5-highres-calibration
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact same-run development artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-v5-highres-*
+          path: input
+
+      - name: Normalize same-run artifact layout
+        run: |
+          set -euo pipefail
+          rm -rf input/2025 input/2023
+          mv input/orbittrace-v5-highres-2025 input/2025
+          mv input/orbittrace-v5-highres-2023 input/2023
+          test -f input/2025/negative_literature_records.jsonl.gz
+          test -f input/2023/negative_literature_records.jsonl.gz
+
+      - name: Execute frozen cross-year robust selector
+        run: |
+          set -euo pipefail
+          mkdir -p output/selection
+          python -m py_compile orbittrace_highres_v5/select_robust_thresholds.py
+          python orbittrace_highres_v5/select_robust_thresholds.py \
+            --year2025 input/2025 \
+            --year2023 input/2023 \
+            --output output/selection
+          cat output/selection/V5_DEVELOPMENT_SELECTION.md
+          python - <<'PY'
+          import json
+          result = json.load(open('output/selection/V5_DEVELOPMENT_SELECTION.json'))
+          assert result['configuration']['calibration_per_bin'] == 512
+          assert result['configuration']['denominator'] == 513
+          assert result['configuration']['grid_pairs'] == 676
+          print('V5_SELECTOR_VERDICT', result['verdict'], 'FEASIBLE', result['feasible_pairs'])
+          PY
+
+      - name: Record selection provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output/selection
+          sha256sum \
+            orbittrace_highres_v5/PROTOCOL.md \
+            orbittrace_highres_v5/build_highres_runner.py \
+            orbittrace_highres_v5/select_robust_thresholds.py \
+            > output/selection/v5_selector_source_sha256.txt
+          git rev-parse HEAD > output/selection/v5_selector_commit.txt
+
+      - name: Upload v5 high-resolution selection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v5-highres-selection
+          path: output/selection
+          if-no-files-found: error
+          retention-days: 90
