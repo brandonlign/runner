@@ -1,0 +1,219 @@
+name: OrbitTrace v5 SonotaCo 2020 transfer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-corroborated-base
+    paths:
+      - .github/workflows/orbittrace_v5_sonotaco_2020_transfer.yml
+      - orbittrace_corroborated_rescue_v5/**
+      - orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v5-sonotaco-2020-transfer
+  cancel-in-progress: true
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-corroborated-rescue-v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact successful SonotaCo 2020 benchmark source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 70defb3d84e2124dd0e33f279955723e5e2bd756 --depth=1
+          rm -rf /tmp/orbittrace-2020
+          git worktree add --detach /tmp/orbittrace-2020 70defb3d84e2124dd0e33f279955723e5e2bd756
+          test "$(git -C /tmp/orbittrace-2020 rev-parse HEAD)" = "70defb3d84e2124dd0e33f279955723e5e2bd756"
+          test "$(git -C /tmp/orbittrace-2020 hash-object orbittrace_dual_channel_rescue/dual_channel_minimum_rescue.py)" = "4688b7234941d13112cec5269ee0030a37458c0e"
+          test "$(git -C /tmp/orbittrace-2020 hash-object orbittrace_dual_channel_rescue/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json)" = "f93c75f80326b50de474173789c4989d6378e33f"
+          test "$(git -C /tmp/orbittrace-2020 hash-object orbittrace_dual_channel_rescue/run_sonotaco_2020_dual_channel_validation.py.gz.b64)" = "d9ee70466829fef4dd3b55fe455b51e33647a5b9"
+          test "$(git -C /tmp/orbittrace-2020 hash-object orbittrace_dual_channel_rescue/build_sonotaco_2020_confirmation_source.py)" = "ad14adaed3258c076db47d83d69fa930ab0d3f61"
+          test "$(git -C /tmp/orbittrace-2020 hash-object orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py)" = "7060e28af642d18513cfa1acb4e452840f30daf9"
+
+      - name: Install exact benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/orbittrace-2020/real_shower_meta_stage0/requirements.txt
+
+      - name: Audit frozen v3 and v5 before 2020 v3 score access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_corroborated_rescue_v5
+        run: |
+          set -euo pipefail
+          mkdir -p input/source-audit input/repaired output/benchmark output/transfer
+          test "$(git hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          python -m py_compile \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_corroborated_rescue_v5/decision_v5.py \
+            orbittrace_corroborated_rescue_v5/build_v3_2020_runner.py \
+            orbittrace_corroborated_rescue_v5/evaluate_2020_transfer.py
+          python - <<'PY'
+          import multi_anchor_energy_v3 as v3
+          import decision_v5 as v5
+          assert all(v3.self_test().values()), v3.self_test()
+          assert all(v5.self_test().values()), v5.self_test()
+          assert v5.V3_PRIMARY_MAX_RANK == 4
+          assert v5.FIXED4_SPARSE_MAX_RANK == 3
+          assert v5.V3_CORROBORATION_MAX_RANK == 40
+          assert v5.CALIBRATION_DENOMINATOR == 129
+          frozen = open('orbittrace_corroborated_rescue_v5/FROZEN_SELECTION.md').read()
+          assert 'Workflow: `31147868124`' in frozen
+          assert 'Artifact: `8982153140`' in frozen
+          assert 'a = 4' in frozen and 'b = 3' in frozen and 'c = 40' in frozen
+          protocol = open('orbittrace_corroborated_rescue_v5/PROTOCOL.md').read()
+          assert 'SonotaCo 2020 post-selection transfer' in protocol
+          assert 'v3 weak-stream AUROC is at least the Brown-family' in protocol
+          print('PASS_PRE_2020_V5_FREEZE_AUDIT')
+          PY
+          sha256sum \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_corroborated_rescue_v5/decision_v5.py \
+            orbittrace_corroborated_rescue_v5/FROZEN_SELECTION.md \
+            orbittrace_corroborated_rescue_v5/PROTOCOL.md \
+            orbittrace_corroborated_rescue_v5/build_v3_2020_runner.py \
+            orbittrace_corroborated_rescue_v5/evaluate_2020_transfer.py \
+            | tee output/v5_2020_source_sha256.txt
+          git rev-parse HEAD | tee output/v5_2020_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact audited 2020 scientific runner artifact and add frozen v3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: input/source-audit:/tmp/orbittrace-2020/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8972146681/zip" \
+            -o input/source-audit.zip
+          echo 'd9088e6804c271e7e33cd6dc54f3d784cc9fe3a0453aa858d13a71da2a68dc5f  input/source-audit.zip' | sha256sum -c -
+          unzip -q input/source-audit.zip -d input/source-audit
+          echo 'db310cbe83a4653e3cf4479e60e5d0554ae9b5474e47c55d5bbfcb714970f0c7  input/source-audit/run_sonotaco_2020_dual_channel_validation.py' | sha256sum -c -
+          echo 'fee7836b866cff82e9b06654c8a6d605dffd32ad58325dbcfa8543b433e1646c  input/source-audit/dual_channel_minimum_rescue.py' | sha256sum -c -
+          echo '39bb775dc409a07839205af9829dbe3f6190ca3222a9d362987f79e05a64ad6c  input/source-audit/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('input/source-audit/sonotaco_2020_dual_channel_runner_source_audit.json').read_text())
+          assert audit['verdict'] == 'PASS_SONOTACO_2020_DUAL_CHANNEL_RUNNER_SOURCE_AUDIT'
+          assert audit['runner_sha256'] == 'db310cbe83a4653e3cf4479e60e5d0554ae9b5474e47c55d5bbfcb714970f0c7'
+          assert audit['archive_accessed'] is False
+          assert audit['scores_computed'] is False
+          print('PASS_EXACT_2020_RUNNER_ARTIFACT_GUARD')
+          PY
+          python orbittrace_corroborated_rescue_v5/build_v3_2020_runner.py \
+            --base input/source-audit/run_sonotaco_2020_dual_channel_validation.py \
+            --output /tmp/run_sonotaco_2020_v3_transfer.py
+          python -m py_compile /tmp/run_sonotaco_2020_v3_transfer.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_sonotaco_2020_v3_transfer.py').read_text()
+          assert 'V3_ID = "orbittrace_multi_anchor_wavelet_energy_v3"' in source
+          assert 'v3.multi_anchor_energy_episode_score(episode)' in source
+          assert 'v3_rules_unchanged' in source
+          assert 'COMPONENT_METHODS = (FIXED4_ID, WAVELET_ID, V3_ID)' in source
+          print('PASS_ADAPTED_2020_V3_RUNNER_AUDIT')
+          PY
+          sha256sum input/source-audit/run_sonotaco_2020_dual_channel_validation.py /tmp/run_sonotaco_2020_v3_transfer.py \
+            | tee output/adapted_2020_runner_sha256.txt
+
+      - name: Retrieve exact validated parser source and mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+          python /tmp/orbittrace-2020/orbittrace_dual_channel_rescue/build_sonotaco_2020_confirmation_source.py \
+            --source-2023 input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --output /tmp/run_sonotaco_2020_confirmation.py
+          echo '159e9be79fe9886ccdc2928a95bba9bca1131802c15dea85557c3e0321c82c5a  /tmp/run_sonotaco_2020_confirmation.py' | sha256sum -c -
+          python -m py_compile /tmp/run_sonotaco_2020_confirmation.py
+
+      - name: Download exact SonotaCo 2020 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/020a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/020a.zip
+          echo '429c3a4556236c037051ecba2d5ecbe921a0a6865cac47df6f47ba2d44f43abc  input/020a.zip' | sha256sum -c -
+
+      - name: Execute exact 2020 benchmark extended only with frozen v3
+        env:
+          PYTHONPATH: input/source-audit:/tmp/orbittrace-2020/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          python /tmp/orbittrace-2020/orbittrace_dual_channel_rescue/run_with_numpy_json_serializer.py \
+            /tmp/run_sonotaco_2020_v3_transfer.py \
+            --archive input/020a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/orbittrace-2020/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/orbittrace-2020/mondrian_clique_development/source_parts_v2 \
+            --confirmation-source /tmp/run_sonotaco_2020_confirmation.py \
+            --protocol input/source-audit/SONOTACO_2020_DUAL_CHANNEL_VALIDATION_PROTOCOL.json \
+            --eligibility-freeze /tmp/orbittrace-2020/orbittrace_literature_freeze/SONOTACO_2020_LABEL_ELIGIBILITY_RESULT.json \
+            --workers 4 \
+            --output output/benchmark
+          cat output/benchmark/SONOTACO_2020_DUAL_CHANNEL_VALIDATION.md
+
+      - name: Apply frozen v5 decision without reselection
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_corroborated_rescue_v5
+        run: |
+          set -euo pipefail
+          python orbittrace_corroborated_rescue_v5/evaluate_2020_transfer.py \
+            --benchmark output/benchmark/sonotaco_2020_dual_channel_validation.json \
+            --negative-records output/benchmark/negative_dual_channel_records.jsonl.gz \
+            --positive-records output/benchmark/positive_dual_channel_records.jsonl.gz \
+            --output output/transfer
+          cat output/transfer/V5_SONOTACO_2020_TRANSFER.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum \
+            input/source-audit.zip \
+            input/audit.json input/020a.zip \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            /tmp/run_sonotaco_2020_confirmation.py \
+            /tmp/run_sonotaco_2020_v3_transfer.py \
+            >> output/v5_2020_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v5 2020 transfer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v5-sonotaco-2020-transfer
+          path: output
+          if-no-files-found: error
+          retention-days: 90

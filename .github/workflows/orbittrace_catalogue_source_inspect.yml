@@ -1,0 +1,38 @@
+name: OrbitTrace catalogue source inspect
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-corroborated-base
+    paths:
+      - .github/workflows/orbittrace_catalogue_source_inspect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-corroborated-rescue-v5
+      - name: Decode exact frozen catalogue runner
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cat orbittrace_wavelet_catalogue_v3/source_parts/part*.b64 \
+            | base64 --decode \
+            | gzip --decompress \
+            > output/run_wavelet_catalogue_v3_development.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  output/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          python -m py_compile output/run_wavelet_catalogue_v3_development.py
+          sha256sum output/run_wavelet_catalogue_v3_development.py > output/source_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-catalogue-source-inspect
+          path: output
+          if-no-files-found: error
+          retention-days: 30
