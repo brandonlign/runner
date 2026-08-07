@@ -1,0 +1,92 @@
+name: OrbitTrace Hissar v8 pre-access coverage eligibility
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hissar-v8-coverage-eligibility
+    paths:
+      - 'orbittrace_hissar_v8_coverage_eligibility/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen coverage-eligibility parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hissar-v8-coverage-eligibility
+          fetch-depth: 1
+
+      - name: Enforce frozen sources and unchanged v8 floor
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_hissar_v8_coverage_eligibility/PROTOCOL.md)" = "3dc31552b72a7a622a826287857d95911aae367a"
+          test "$(git hash-object orbittrace_hissar_v8_coverage_eligibility/adjudicate.py)" = "b16c76d394a25b019d9622f1f8546b2d15b7f6e2"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/PROTOCOL.md)" = "8b0a1dc8565a702af6188d42dcebe6b1b71002b6"
+          grep -Fq 'MIN_SCANNABLE_BINS = 24' orbittrace_hissar_v8_coverage_eligibility/adjudicate.py
+          python -m py_compile orbittrace_hissar_v8_coverage_eligibility/adjudicate.py
+
+      - name: Fetch immutable passed Hissar structure artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/structure output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012889079/zip" -o input/structure.zip
+          echo "ab150ddcfd2b279c43efa4dfe53ec659ce9d65d9f5a58bcf84b5b4fe3cc56e11  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+          test -f input/structure/hissar_1968_1969_structure_audit.json
+
+      - name: Adjudicate frozen coverage gate without catalogue access
+        run: |
+          set -euo pipefail
+          python orbittrace_hissar_v8_coverage_eligibility/adjudicate.py \
+            --structure-json input/structure/hissar_1968_1969_structure_audit.json \
+            --output output
+
+      - name: Enforce no-science terminal boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/hissar_v8_coverage_eligibility.json').read_text())
+          assert r['verdict']=='INCONCLUSIVE_V8_HISSAR_1968_1969_EXTERNAL_POWER_COVERAGE'
+          assert r['frozen_min_scannable_bins_per_year']==24
+          assert r['maximum_possible_1968_fixed_10deg_bins_intersected'] < 24
+          assert r['coverage_gate_mathematically_possible'] is False
+          assert r['catalogue_form_submitted'] is False
+          assert r['result_endpoint_contacted'] is False
+          assert r['scientific_record_access'] is False
+          assert r['scientific_values_inspected'] is False
+          assert r['source_labels_inspected'] is False
+          assert r['v8_method_changed'] is False
+          assert r['coverage_floor_lowered'] is False
+          assert r['year_panels_redefined'] is False
+          assert r['orbittrace_target_information_access'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/coverage_eligibility_commit.txt
+          sha256sum orbittrace_hissar_v8_coverage_eligibility/PROTOCOL.md orbittrace_hissar_v8_coverage_eligibility/adjudicate.py orbittrace_pooled_year_centroid_v8/PROTOCOL.md > output/source_sha256.txt
+          sha256sum input/structure.zip > output/structure_artifact_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload Hissar coverage eligibility artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-hissar-v8-coverage-eligibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90
