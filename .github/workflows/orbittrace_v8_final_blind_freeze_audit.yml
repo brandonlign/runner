@@ -15,7 +15,10 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact freeze source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -34,11 +37,14 @@ jobs:
             orbittrace_v8_final_blind_discovery/run_stage_a.py \
             orbittrace_v8_final_blind_discovery/run_stage_b.py
           python - <<'PY'
-          import json
+          import json, os, subprocess
           from pathlib import Path
           audit=json.loads(Path('output/v8_final_blind_source_audit.json').read_text())
           manifest=json.loads(Path('output/FREEZE_MANIFEST.json').read_text())
+          head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
           assert audit['verdict']=='PASS_V8_FINAL_BLIND_SOURCE_AUDIT'
+          assert audit['freeze_commit']==head
+          assert manifest['freeze_commit']==head
           assert audit['catalogue_access'] is False
           assert audit['target_region_data_access'] is False
           assert audit['withheld_reference_access'] is False
