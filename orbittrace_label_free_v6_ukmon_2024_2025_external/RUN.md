@@ -1,0 +1,1 @@
+Execute the frozen UKMON 2024/2025 external validation from parent commit `594eb02edbf9e94d17e4204c79a650308d91b766`. This trigger changes no scientific code, transport rule, density normalization, power gate, scientific gate, or blindness rule.
