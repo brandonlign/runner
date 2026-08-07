@@ -1,0 +1,168 @@
+name: OrbitTrace multiplicity SonotaCo postaccess fixed-protocol repair
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-sonotaco-2015-2017-external
+    paths:
+      - 'orbittrace_multiplicity_sonotaco_2015_2017_external/POSTACCESS_RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: orbittrace_wavelet_catalogue_v3:orbittrace_sparse_support_multiplicity_v5:input/v3
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen repaired-evaluation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-multiplicity-sonotaco-2015-2017-external
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen science and exact repair wrapper
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/freshness input/parser_audit input/parser_transport input/mapping input/invocation_audit input/prior_failure input/archives output
+          test "$(git hash-object orbittrace_multiplicity_sonotaco_2015_2017_external/PROTOCOL.md)" = "12de3db7d8aad0f9ad7facb67fb2e6f5b30f09d7"
+          test "$(git hash-object orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation.py)" = "a4128e0620dcf1242fe90bb6758c96d46caf0119"
+          test "$(git hash-object orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation_integrityrepair.py)" = "e7aa178a30830add7cecb4cdcf6cda9a6f5c4de1"
+          test -f orbittrace_multiplicity_sonotaco_2015_2017_external/POST_ACCESS_INTEGRITY_REPAIR.md
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('output/wavelet_catalogue_v3_source_audit.json').read_text())
+          assert a['support_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert a['held_out_catalogues_loaded'] is False and a['target_information_present'] is False
+          PY
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          python -m py_compile input/v3/multi_anchor_energy_v3.py orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py orbittrace_sparse_support_multiplicity_v5/run_holdout.py orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation.py orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation_integrityrepair.py
+          rm -rf output/*
+          echo PASS_POSTACCESS_REPAIR_FROZEN_SOURCE_GUARDS
+
+      - name: Enforce immutable prerequisites, source-only diagnosis, and prior integrity failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31198545147 --repo "$GITHUB_REPOSITORY" --name orbittrace-corrected-sonotaco-2015-2017-freshness-audit --dir input/freshness
+          gh run download 31198923927 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-parser-source-audit --dir input/parser_audit
+          gh run download 31199214174 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2015-2017-parser-transport --dir input/parser_transport
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input/mapping
+          gh run download 31201845405 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-postaccess-invocation-audit --dir input/invocation_audit
+          gh run download 31201558916 --repo "$GITHUB_REPOSITORY" --name orbittrace-multiplicity-sonotaco-2015-2017-external-retry4 --dir input/prior_failure
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          inv=json.loads(Path('input/invocation_audit/postaccess_invocation_bug_audit.json').read_text())
+          assert inv['verdict']=='PASS_POSTACCESS_INVOCATION_BUG_SOURCE_AUDIT'
+          assert inv['catalogue_access'] is False and inv['archive_content_access'] is False
+          assert inv['mechanical_repair_lines']==1 and inv['scientific_method_change'] is False
+          assert inv['corrected_call']=='parsed = function(archive_path, mapping_audit, base)'
+          prior=json.loads(Path('input/prior_failure/multiplicity_sonotaco_external.json').read_text())
+          assert prior['verdict']=='FAIL_MULTIPLICITY_SONOTACO_EXTERNAL_INTEGRITY'
+          assert prior['stage']=='parser_transport' and prior['scientific_ranking_result_available'] is False
+          assert prior['orbittrace_target_access'] is False
+          src={int(x['year']):x for x in prior['archive_sources']}
+          assert src[2015]['sha256']=='7af10e671b92b9e8568ca37f027cfacfd1e6ec002f7dbacf690a7f7da05d8aa5'
+          assert src[2017]['sha256']=='1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf'
+          f=json.loads(Path('input/freshness/corrected_sonotaco_2015_2017_freshness_audit.json').read_text())
+          assert f['verdict']=='PASS_CORRECTED_SONOTACO_2015_2017_REPO_FRESHNESS_AUDIT'
+          p=json.loads(Path('input/parser_audit/sonotaco_2023_parser_source_audit.json').read_text())
+          assert p['verdict']=='PASS_SONOTACO_2023_PARSER_SOURCE_AUDIT'
+          t=json.loads(Path('input/parser_transport/sonotaco_2015_2017_parser_transport.json').read_text())
+          assert t['verdict']=='PASS_SONOTACO_2015_2017_SOURCE_ONLY_PARSER_TRANSPORT'
+          for year in ('2015','2017'):
+              path=Path(f'input/parser_transport/run_sonotaco_{year}_transport_parser.py')
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==t['years'][year]['source_sha256']
+          assert hashlib.sha256(Path('input/mapping/audit.json').read_bytes()).hexdigest()=='f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          print('PASS_POSTACCESS_REPAIR_PREREQUISITES')
+          PY
+
+      - name: Run unchanged fixed-protocol external evaluation after raw-archive exposure
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation_integrityrepair.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --parser-2015 input/parser_transport/run_sonotaco_2015_transport_parser.py \
+            --parser-2017 input/parser_transport/run_sonotaco_2017_transport_parser.py \
+            --mapping-audit input/mapping/audit.json \
+            --archive-dir input/archives \
+            --output output
+          cat output/MULTIPLICITY_SONOTACO_EXTERNAL.md
+
+      - name: Enforce frozen result integrity, identical exposed archive bytes, and claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/multiplicity_sonotaco_external.json').read_text())
+          allowed={'PASS_MULTIPLICITY_SONOTACO_EXTERNAL_VALIDATION','FAIL_MULTIPLICITY_SONOTACO_EXTERNAL_VALIDATION','INCONCLUSIVE_MULTIPLICITY_SONOTACO_EXTERNAL_POWER','FAIL_MULTIPLICITY_SONOTACO_EXTERNAL_INTEGRITY'}
+          assert r['verdict'] in allowed and r['orbittrace_target_access'] is False
+          src={int(x['year']):x for x in r['archive_sources']}
+          assert src[2015]['sha256']=='7af10e671b92b9e8568ca37f027cfacfd1e6ec002f7dbacf690a7f7da05d8aa5'
+          assert src[2017]['sha256']=='1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf'
+          if r.get('scientific_ranking_result_available') is not False:
+              c=r['configuration']
+              assert c['years']==[2015,2017] and c['blind_exclusion']==[20.0,55.0]
+              assert c['development_family_count']==197 and c['development_top_k']==100
+              assert c['scaled_k_formula']=='ceil(100*N/197)' and c['k']==(100*c['family_count']+196)//197
+              assert c['no_multiplicity_pvalue'] and c['no_rrf'] and c['no_threshold_search'] and c['no_weight_search'] and c['no_endpoint_search']
+          context={
+            'classification':'fixed-protocol external evaluation completed after raw-archive transport exposure',
+            'pristine_first_pass_prospective':False,
+            'prior_integrity_failure_run':31201558916,
+            'source_only_invocation_audit_run':31201845405,
+            'scientific_method_changed_after_exposure':False,
+            'orbittrace_target_access':False,
+            'result_verdict':r['verdict'],
+          }
+          Path('output/POST_ACCESS_EVALUATION_CONTEXT.json').write_text(json.dumps(context,indent=2,sort_keys=True)+'\n')
+          print('ORBITTRACE_POSTACCESS_FIXED_PROTOCOL_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_POSTACCESS_FIXED_PROTOCOL_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/postaccess_repair_commit.txt
+          sha256sum orbittrace_multiplicity_sonotaco_2015_2017_external/PROTOCOL.md orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation.py orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation_integrityrepair.py orbittrace_multiplicity_sonotaco_2015_2017_external/POST_ACCESS_INTEGRITY_REPAIR.md input/invocation_audit/postaccess_invocation_bug_audit.json input/prior_failure/multiplicity_sonotaco_external.json input/archives/sonotaco_2015.zip input/archives/sonotaco_2017.zip > output/postaccess_repair_source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload repaired fixed-protocol result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiplicity-sonotaco-postaccess-fixed-protocol
+          path: output
+          if-no-files-found: error
+          retention-days: 90
