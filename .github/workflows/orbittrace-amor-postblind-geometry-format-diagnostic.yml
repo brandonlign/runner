@@ -1,0 +1,115 @@
+name: OrbitTrace AMOR post-blind geometry-token diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-amor-postblind-geometry-format-diagnostic
+    paths:
+      - 'orbittrace_amor_postblind_geometry_format_diagnostic/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen diagnostic parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-amor-postblind-geometry-format-diagnostic
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install transport dependency
+        run: python -m pip install requests==2.32.5
+
+      - name: Enforce staged diagnostic prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/structure input/ls output
+          test "$(git hash-object orbittrace_amor_postblind_geometry_format_diagnostic/diagnose_geometry_tokens.py)" = "48f16e91848416192cc6cc80d2db29f83c9dbf3c"
+          python -m py_compile orbittrace_amor_postblind_geometry_format_diagnostic/diagnose_geometry_tokens.py
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009809682/zip" -o input/structure.zip
+          echo "9f3646a37e519b2de121b0e4083cc92b795ec72f09e3f0ce0fafc48c2aed12dc  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9010277742/zip" -o input/ls.zip
+          echo "21e0df956dd74ec22d9019469f67fe55fb9c79e27f86f0c7f3adce66e798195a  input/ls.zip" | sha256sum -c -
+          unzip -q input/ls.zip -d input/ls
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('input/structure/amor_1990_1999_structure_audit.json').read_text())
+          assert s['verdict']=='PASS_AMOR_1990_1999_STRUCTURE_AUDIT'
+          assert s['selected_years']==[1996,1998]
+          assert s['scientific_token_conversion_performed'] is False
+          assert s['target_information_access'] is False
+          l=json.loads(Path('input/ls/amor_ls_format_diagnostic.json').read_text())
+          assert l['verdict']=='PASS_AMOR_LS_FORMAT_DIAGNOSTIC'
+          assert l['selected_years']==[1996,1998]
+          assert l['fields_accessed']==['LS']
+          assert l['date_radiant_speed_orbit_access'] is False
+          assert l['detector_family_ranking_access'] is False
+          assert l['target_information_access'] is False
+          PY
+          rm -rf output/*
+          echo PASS_AMOR_POSTBLIND_FORMAT_DIAGNOSTIC_GUARDS
+
+      - name: Diagnose permitted post-blind token syntax
+        run: |
+          set -euo pipefail
+          python orbittrace_amor_postblind_geometry_format_diagnostic/diagnose_geometry_tokens.py \
+            --structure-json input/structure/amor_1990_1999_structure_audit.json \
+            --ls-json input/ls/amor_ls_format_diagnostic.json \
+            --output output
+
+      - name: Enforce post-blind diagnostic boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/amor_postblind_geometry_format_diagnostic.json').read_text())
+          assert r['verdict']=='PASS_AMOR_POSTBLIND_GEOMETRY_FORMAT_DIAGNOSTIC'
+          assert r['selected_years']==[1996,1998]
+          assert r['ls_decoder']=='strict decimal core plus exactly one terminal comma'
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['postblind_fields_syntax_inspected']==['Yr','Mn','RA','DECL','Vg']
+          assert r['orbit_fields_accessed'] is False
+          assert r['detector_family_ranking_access'] is False
+          assert r['target_information_access'] is False
+          assert all(x['ls_decode_fail']==0 for x in r['results'])
+          assert all(x['blind_removed_before_geometry_or_date_syntax']>0 for x in r['results'])
+          print('ORBITTRACE_AMOR_POSTBLIND_FORMAT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_AMOR_POSTBLIND_FORMAT_END')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          sha256sum orbittrace_amor_postblind_geometry_format_diagnostic/diagnose_geometry_tokens.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - name: Upload diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-amor-postblind-geometry-format-diagnostic
+          path: output
+          if-no-files-found: error
+          retention-days: 90
