@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Bounded-memory block exact rescoring for frozen OrbitTrace catalogue v3.
+"""Bounded-memory fixed4 block acceleration for frozen catalogue-v3 rescoring.
 
-This module changes only implementation. Scientific geometry, event selection,
-stable tie handling, wavelet/fixed4 scores, thresholds, and component logic stay
-in the frozen catalogue runner.
+The frozen wavelet rescoring code path is intentionally preserved per anchor.
+Only fixed4's repeated Python construction of an N-event distance vector is
+replaced by the algebraically identical NumPy block calculation.
 """
 from __future__ import annotations
 
@@ -57,39 +57,13 @@ def _fixed4_distance_block(
     return squared
 
 
-def _wavelet_r2_block(
-    runtime: Any,
-    anchor_indices: np.ndarray,
-    vectors: np.ndarray,
-    speeds: np.ndarray,
-) -> np.ndarray:
-    """Vectorize the frozen exact wavelet radius for many anchors."""
-    anchor_indices = np.asarray(anchor_indices, dtype=np.int64)
-    anchor_vectors = vectors[anchor_indices]
-
-    # Explicit three-term dot product keeps operation order deterministic and
-    # agrees with the frozen scalar/vector implementation within its existing
-    # 2e-13 equivalence tolerance.
-    r2 = (
-        anchor_vectors[:, 0, None] * vectors[None, :, 0]
-        + anchor_vectors[:, 1, None] * vectors[None, :, 1]
-        + anchor_vectors[:, 2, None] * vectors[None, :, 2]
-    )
-    np.clip(r2, -1.0, 1.0, out=r2)
-    np.arccos(r2, out=r2)
-    r2 /= math.radians(runtime.wavelet.ANGULAR_PROBE_DEG)
-    np.square(r2, out=r2)
-
-    fractional = speeds[None, :] - speeds[anchor_indices, None]
-    fractional /= runtime.wavelet.SPEED_PROBE_FRACTION * speeds[anchor_indices, None]
-    np.square(fractional, out=fractional)
-    r2 += fractional
-    np.maximum(r2, 0.0, out=r2)
-    r2[np.arange(len(anchor_indices)), anchor_indices] = np.inf
-    return r2
-
-
 def make_exact_rescore_window(runtime: Any, block_size: int = DEFAULT_BLOCK_SIZE) -> Callable[..., list[dict[str, Any]]]:
+    """Return a drop-in replacement for the frozen `exact_rescore_window`.
+
+    Wavelet operations below intentionally mirror the frozen grouped function
+    statement-for-statement. Fixed4 nearest-three search is the only O(N)
+    calculation moved into bounded NumPy blocks.
+    """
     if int(block_size) <= 0:
         raise ValueError("block_size must be positive")
     block_size = int(block_size)
@@ -109,13 +83,17 @@ def make_exact_rescore_window(runtime: Any, block_size: int = DEFAULT_BLOCK_SIZE
         if len(id_to_index) != len(window_events):
             raise RuntimeError("duplicate event ids in exact rescore window")
 
+        vectors = runtime.wavelet.radiant_unit_vectors(
+            [float(event["sun_lon"]) for event in window_events],
+            [float(event["ecl_lat"]) for event in window_events],
+        )
         sols = np.asarray([float(event["sol"]) for event in window_events], dtype=np.float64)
         sun_lons = np.asarray([float(event["sun_lon"]) for event in window_events], dtype=np.float64)
         ecl_lats = np.asarray([float(event["ecl_lat"]) for event in window_events], dtype=np.float64)
         speeds = np.asarray([float(event["vg"]) for event in window_events], dtype=np.float64)
         if np.any(speeds <= 0.0):
             raise RuntimeError("non-positive speed")
-        vectors = runtime.wavelet.radiant_unit_vectors(sun_lons, ecl_lats)
+        angular_scale = math.radians(runtime.wavelet.ANGULAR_PROBE_DEG)
 
         rescored: list[dict[str, Any]] = []
         completed = 0
@@ -127,14 +105,25 @@ def make_exact_rescore_window(runtime: Any, block_size: int = DEFAULT_BLOCK_SIZE
             except KeyError as exc:
                 raise RuntimeError(f"anchor absent from exact rescore window: {exc.args[0]}") from exc
 
-            wavelet_r2 = _wavelet_r2_block(runtime, anchor_indices, vectors, speeds)
-            fixed4_distances = _fixed4_distance_block(anchor_indices, sols, sun_lons, ecl_lats, speeds)
+            fixed4_distances = _fixed4_distance_block(
+                anchor_indices, sols, sun_lons, ecl_lats, speeds
+            )
 
-            for row_index, (record, anchor_id, anchor_index) in enumerate(zip(block, anchor_ids, anchor_indices)):
+            for row_index, (record, anchor_id, anchor_index) in enumerate(
+                zip(block, anchor_ids, anchor_indices)
+            ):
                 anchor = event_lookup[anchor_id]
 
-                nearest = runtime.stable_smallest_indices(wavelet_r2[row_index], runtime.EPISODE_SIZE - 1)
-                selected_r2 = wavelet_r2[row_index, nearest]
+                # Frozen wavelet grouped implementation, preserved exactly.
+                cosine = np.clip(vectors @ vectors[int(anchor_index)], -1.0, 1.0)
+                angular = np.arccos(cosine) / angular_scale
+                fractional = (speeds - speeds[int(anchor_index)]) / (
+                    runtime.wavelet.SPEED_PROBE_FRACTION * speeds[int(anchor_index)]
+                )
+                r2 = np.maximum(angular * angular + fractional * fractional, 0.0)
+                r2[int(anchor_index)] = np.inf
+                nearest = runtime.stable_smallest_indices(r2, runtime.EPISODE_SIZE - 1)
+                selected_r2 = r2[nearest]
                 weights = (runtime.wavelet.KERNEL_DIMENSION - selected_r2) * np.exp(-0.5 * selected_r2)
                 weights = np.where(
                     selected_r2 <= runtime.wavelet.TRUNCATION_RADIUS ** 2,
@@ -147,9 +136,8 @@ def make_exact_rescore_window(runtime: Any, block_size: int = DEFAULT_BLOCK_SIZE
 
                 fixed4_order = runtime.stable_smallest_indices(fixed4_distances[row_index], 3)
                 quartet = [anchor] + [window_events[int(index)] for index in fixed4_order]
-                # Keep the frozen support implementation as the final authority
-                # for the 4-event score; only the O(N) nearest-neighbour search
-                # is vectorized here.
+                # Final four-event score remains delegated to the frozen support
+                # implementation; only nearest-three search was vectorized.
                 fixed4_score = float(support.quartet_score(quartet, base))
 
                 exact = dict(record)
@@ -168,24 +156,15 @@ def make_exact_rescore_window(runtime: Any, block_size: int = DEFAULT_BLOCK_SIZE
                     f"block exact window {center:.1f}: {completed:,}/{len(records):,} anchors",
                     flush=True,
                 )
-
-            del wavelet_r2, fixed4_distances
+            del fixed4_distances
 
         return rescored
 
     return exact_rescore_window
 
 
-def self_test(runtime: Any, support: Any) -> dict[str, Any]:
-    """Compare block rescoring directly with the frozen grouped implementation."""
+def _synthetic_panel(runtime: Any) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], list[dict[str, Any]]]:
     rng = np.random.default_rng(20260807)
-
-    class MockBase:
-        @staticmethod
-        def wrap180(value: float) -> float:
-            return float((value + 180.0) % 360.0 - 180.0)
-
-    base = MockBase
     events = [
         {
             "id": f"BLOCK-{index:04d}",
@@ -196,7 +175,6 @@ def self_test(runtime: Any, support: Any) -> dict[str, Any]:
         }
         for index in range(256)
     ]
-    # Explicit wrap-boundary cases exercise the vectorized circular difference.
     edge = [
         (359.9, 179.9, 10.0, 40.0),
         (0.1, -179.9, 10.0, 40.0),
@@ -205,7 +183,6 @@ def self_test(runtime: Any, support: Any) -> dict[str, Any]:
     ]
     for index, (sol, lon, lat, speed) in enumerate(edge):
         events[index].update(sol=sol, sun_lon=lon, ecl_lat=lat, vg=speed)
-
     lookup = {str(event["id"]): event for event in events}
     chosen = rng.choice(len(events), size=64, replace=False)
     records = [
@@ -226,10 +203,20 @@ def self_test(runtime: Any, support: Any) -> dict[str, Any]:
         }
         for index in chosen
     ]
+    return events, lookup, records
 
-    scalar = runtime.exact_rescore_window(records, events, lookup, support, base)
-    block_fn = make_exact_rescore_window(runtime, block_size=16)
-    blocked = block_fn(records, events, lookup, support, base)
+
+def self_test(runtime: Any, support: Any) -> dict[str, Any]:
+    """Compare the block implementation directly with the frozen grouped one."""
+
+    class MockBase:
+        @staticmethod
+        def wrap180(value: float) -> float:
+            return float((value + 180.0) % 360.0 - 180.0)
+
+    events, lookup, records = _synthetic_panel(runtime)
+    scalar = runtime.exact_rescore_window(records, events, lookup, support, MockBase)
+    blocked = make_exact_rescore_window(runtime, block_size=16)(records, events, lookup, support, MockBase)
 
     wavelet_diffs = [
         abs(float(left["wavelet_score"]) - float(right["wavelet_score"]))
@@ -240,50 +227,64 @@ def self_test(runtime: Any, support: Any) -> dict[str, Any]:
         for left, right in zip(scalar, blocked)
     ]
 
-    # Compare the vectorized fixed4 nearest-three selection itself against the
-    # frozen support function, not just the resulting quartet score.
     sols = np.asarray([float(event["sol"]) for event in events], dtype=np.float64)
     lons = np.asarray([float(event["sun_lon"]) for event in events], dtype=np.float64)
     lats = np.asarray([float(event["ecl_lat"]) for event in events], dtype=np.float64)
     speeds = np.asarray([float(event["vg"]) for event in events], dtype=np.float64)
-    anchor_indices = np.asarray(chosen, dtype=np.int64)
+    id_to_index = {str(event["id"]): index for index, event in enumerate(events)}
+    anchor_indices = np.asarray([id_to_index[str(record["anchor_id"])] for record in records], dtype=np.int64)
     fixed_block = _fixed4_distance_block(anchor_indices, sols, lons, lats, speeds)
     fixed4_nearest_equal = True
+    max_fixed4_distance_diff = 0.0
     for row_index, anchor_index in enumerate(anchor_indices):
         anchor = events[int(anchor_index)]
-        scalar_distances = np.asarray(support.exact_anchor_distances(anchor, events, base), dtype=np.float64).copy()
+        scalar_distances = np.asarray(
+            support.exact_anchor_distances(anchor, events, MockBase), dtype=np.float64
+        ).copy()
         scalar_distances[int(anchor_index)] = np.inf
+        finite = np.isfinite(scalar_distances)
+        max_fixed4_distance_diff = max(
+            max_fixed4_distance_diff,
+            float(np.max(np.abs(scalar_distances[finite] - fixed_block[row_index, finite]))),
+        )
         left = runtime.stable_smallest_indices(scalar_distances, 3)
         right = runtime.stable_smallest_indices(fixed_block[row_index], 3)
         if left.tolist() != right.tolist():
             fixed4_nearest_equal = False
             break
 
-    wrap_values = np.asarray([-1080.0, -720.0, -540.0, -360.0, -180.0, -0.0, 180.0, 360.0, 540.0, 720.0, 1080.0])
+    wrap_values = np.asarray(
+        [-1080.0, -720.0, -540.0, -360.0, -180.0, -0.0, 180.0, 360.0, 540.0, 720.0, 1080.0],
+        dtype=np.float64,
+    )
     vector_wrap = _wrap180_array(wrap_values)
-    scalar_wrap = np.asarray([base.wrap180(float(value)) for value in wrap_values])
+    scalar_wrap = np.asarray([MockBase.wrap180(float(value)) for value in wrap_values])
 
     return {
         "scalar_block_wavelet_within_tolerance": bool(max(wavelet_diffs, default=0.0) <= EQUIVALENCE_TOLERANCE),
+        "scalar_block_wavelet_exact": bool(max(wavelet_diffs, default=0.0) == 0.0),
         "scalar_block_fixed4_within_tolerance": bool(max(fixed4_diffs, default=0.0) <= EQUIVALENCE_TOLERANCE),
-        "scalar_block_membership_equal": bool(all(left["member_ids"] == right["member_ids"] for left, right in zip(scalar, blocked))),
+        "scalar_block_membership_equal": bool(
+            all(left["member_ids"] == right["member_ids"] for left, right in zip(scalar, blocked))
+        ),
         "fixed4_nearest_three_equal": bool(fixed4_nearest_equal),
         "wrap180_vectorization_equal": bool(np.array_equal(vector_wrap, scalar_wrap)),
         "max_wavelet_abs_diff": float(max(wavelet_diffs, default=0.0)),
         "max_fixed4_abs_diff": float(max(fixed4_diffs, default=0.0)),
+        "max_fixed4_distance_abs_diff": float(max_fixed4_distance_diff),
         "block_size": 16,
     }
 
 
 def benchmark(runtime: Any, support: Any) -> dict[str, float]:
-    """Small synthetic benchmark; informative only, never a scientific gate."""
-    rng = np.random.default_rng(20260807)
+    """Small informative benchmark; speed is not a scientific pass/fail gate."""
 
     class MockBase:
         @staticmethod
         def wrap180(value: float) -> float:
             return float((value + 180.0) % 360.0 - 180.0)
 
+    rng = np.random.default_rng(20260808)
     events = [
         {
             "id": f"BENCH-{index:05d}",
@@ -319,7 +320,9 @@ def benchmark(runtime: Any, support: Any) -> dict[str, float]:
     runtime.exact_rescore_window(records, events, lookup, support, MockBase)
     scalar_seconds = time.perf_counter() - start
     start = time.perf_counter()
-    make_exact_rescore_window(runtime, block_size=DEFAULT_BLOCK_SIZE)(records, events, lookup, support, MockBase)
+    make_exact_rescore_window(runtime, block_size=DEFAULT_BLOCK_SIZE)(
+        records, events, lookup, support, MockBase
+    )
     block_seconds = time.perf_counter() - start
     return {
         "scalar_seconds": float(scalar_seconds),
