@@ -108,6 +108,7 @@ def self_test() -> dict[str, bool]:
     null = calibration_statistics(v3, fixed4)
     primary_stat, primary_p = score_and_pvalue(9.0, 0.5, v3, fixed4)
     sparse_stat, sparse_p = score_and_pvalue(0.5, 9.0, v3, fixed4)
+    weak_stat, weak_p = score_and_pvalue(-1.0, -1.0, v3, fixed4)
     equal = statistic_from_pvalues(0.1, 0.1)
     sparse_better = statistic_from_pvalues(0.1, 0.05)
     perm = np.asarray([7, 1, 5, 3, 0, 6, 4, 2])
@@ -118,8 +119,8 @@ def self_test() -> dict[str, bool]:
         "margin_inherited": MARGIN == 0.25,
         "reporting_alpha_frozen": REPORTING_ALPHA == 0.05,
         "null_finite": bool(np.all(np.isfinite(null))),
-        "primary_signal_increases_statistic": primary_stat > equal and primary_p <= 1.0,
-        "sparse_signal_increases_statistic": sparse_stat > equal and sparse_p <= 1.0,
+        "primary_signal_increases_statistic": primary_stat > weak_stat and primary_p <= weak_p,
+        "sparse_signal_increases_statistic": sparse_stat > weak_stat and sparse_p <= weak_p,
         "v3_primary_at_equal_p": math.isclose(equal, -math.log(0.1), abs_tol=1e-12, rel_tol=0.0),
         "fixed4_requires_margin": sparse_better > -math.log(0.1),
         "paired_permutation_invariant": np.allclose(np.sort(null), np.sort(permuted), atol=0.0, rtol=0.0),
