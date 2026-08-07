@@ -6,6 +6,8 @@ import argparse
 import hashlib
 from pathlib import Path
 
+import evidence_offset_v8 as v8
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
