@@ -1,0 +1,150 @@
+name: OrbitTrace multi-anchor energy v3 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multi-anchor-energy-v3-base
+    paths:
+      - orbittrace_multi_anchor_energy_v3/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-multi-anchor-energy-v3-development
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-multi-anchor-energy-v3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact frozen predecessor benchmark
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 99957b021a4c816d423f0bb6a5780fb9e7a54bfe --depth=1
+          rm -rf /tmp/orbittrace-frozen
+          git worktree add --detach /tmp/orbittrace-frozen 99957b021a4c816d423f0bb6a5780fb9e7a54bfe
+          test "$(git -C /tmp/orbittrace-frozen rev-parse HEAD)" = "99957b021a4c816d423f0bb6a5780fb9e7a54bfe"
+          test "$(git -C /tmp/orbittrace-frozen hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git -C /tmp/orbittrace-frozen hash-object orbittrace_literature_comparison/build_wavelet_episode_runner.py)" = "be8f3c79237e4f0a2d9625e816b2b4f806029ec5"
+          test "$(git -C /tmp/orbittrace-frozen hash-object orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py)" = "a10b8689791f647713689e3870901f633b6cc493"
+
+      - name: Install frozen benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/orbittrace-frozen/real_shower_meta_stage0/requirements.txt
+
+      - name: Freeze and audit v3 before data access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          mkdir -p output input
+          python -m py_compile \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_multi_anchor_energy_v3/build_multi_anchor_runner.py \
+            orbittrace_multi_anchor_energy_v3/evaluate_development.py
+          python - <<'PY'
+          import multi_anchor_energy_v3 as v3
+          tests = v3.self_test()
+          assert tests and all(tests.values()), tests
+          assert v3.METHOD_ID == 'orbittrace_multi_anchor_wavelet_energy_v3'
+          assert v3.ANGULAR_PROBE_DEG == 4.0
+          assert v3.SPEED_PROBE_FRACTION == 0.10
+          assert v3.TRUNCATION_RADIUS == 4.0
+          assert v3.KERNEL_DIMENSION == 3.0
+          assert v3.TOP_ANCHORS == 4
+          print('PASS_MULTI_ANCHOR_ENERGY_V3_SOURCE_AUDIT', tests)
+          PY
+          sha256sum \
+            orbittrace_multi_anchor_energy_v3/PROTOCOL.md \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_multi_anchor_energy_v3/build_multi_anchor_runner.py \
+            orbittrace_multi_anchor_energy_v3/evaluate_development.py \
+            | tee output/v3_source_sha256.txt
+          git rev-parse HEAD | tee output/v3_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Build frozen wavelet and v3 benchmark runners
+        env:
+          PYTHONPATH: /tmp/orbittrace-frozen/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          python /tmp/orbittrace-frozen/orbittrace_literature_comparison/build_wavelet_episode_runner.py \
+            --base /tmp/orbittrace-frozen/orbittrace_literature_comparison/run_sonotaco_2025_literature_comparison.py \
+            --output /tmp/run_wavelet_episode_comparison.py
+          python orbittrace_multi_anchor_energy_v3/build_multi_anchor_runner.py \
+            --base /tmp/run_wavelet_episode_comparison.py \
+            --output /tmp/run_multi_anchor_energy_v3.py
+          python -m py_compile /tmp/run_wavelet_episode_comparison.py /tmp/run_multi_anchor_energy_v3.py
+          sha256sum /tmp/run_wavelet_episode_comparison.py /tmp/run_multi_anchor_energy_v3.py \
+            | tee output/adapted_runner_sha256.txt
+
+      - name: Retrieve exact frozen GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+
+      - name: Execute multi-anchor energy v3 development benchmark
+        env:
+          PYTHONPATH: /tmp/orbittrace-frozen/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          python /tmp/run_multi_anchor_energy_v3.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/orbittrace-frozen/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/orbittrace-frozen/mondrian_clique_development/source_parts_v2 \
+            --adapter-parts /tmp/orbittrace-frozen/sonotaco_mondrian_development/source_parts \
+            --candidate-payload /tmp/orbittrace-frozen/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --workers 4 \
+            --output output
+          python orbittrace_multi_anchor_energy_v3/evaluate_development.py \
+            --input output/sonotaco_2025_literature_comparison.json \
+            --output output
+          cat output/V3_DEVELOPMENT_RESULT.md
+
+      - name: Record environment and immutable inputs
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum input/audit.json input/025a.zip >> output/v3_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v3 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multi-anchor-energy-v3-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
