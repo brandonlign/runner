@@ -1,0 +1,171 @@
+name: OrbitTrace exact-support-contact v11 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-exact-support-contact-v11
+    paths:
+      - 'orbittrace_exact_support_contact_v11/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen v11 development parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-exact-support-contact-v11
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen v11 and passed-v8 sources before development access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v8 output
+          test "$(git hash-object orbittrace_exact_support_contact_v11/PROTOCOL.md)" = "491cec23d221ba1bdd9c928f21c84f7751f02406"
+          test "$(git hash-object orbittrace_exact_support_contact_v11/run_development.py)" = "c229a0d92b0532153a8c1363d43c159c025bdee3"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/PROTOCOL.md)" = "8b0a1dc8565a702af6188d42dcebe6b1b71002b6"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = "f248df78e1258b132b41aecca6a985a5eb782654"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/wavelet_catalogue_v3_source_audit.json').read_text())
+          assert r['verdict']=='PASS_WAVELET_CATALOGUE_V3_SOURCE_AUDIT'
+          assert r['support_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert r['development_years']==[2022,2023]
+          assert r['held_out_catalogues_loaded'] is False
+          assert r['target_information_present'] is False
+          assert r['labels_enter_candidate_generation'] is False
+          PY
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip" | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v=json.loads(Path('input/v8/pooled_year_centroid_v8_development.json').read_text())
+          assert v['verdict']=='PASS_POOLED_YEAR_CENTROID_V8_DEVELOPMENT'
+          assert v['family_count']==226
+          assert v['qualified_known_showers']==95
+          assert v['metrics']['multiplicity']['recovered_at_100']==58
+          assert v['metrics']['label_free_persistence']['recovered_at_100']==59
+          assert abs(v['metrics']['multiplicity']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert abs(v['metrics']['multiplicity']['mrr']-0.045531138942766655)<1e-12
+          assert all(v['integrity_gates'].values()) and all(v['scientific_gates'].values())
+          PY
+
+          python -m py_compile \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_exact_support_contact_v11/run_development.py
+          rm -rf output/*
+          echo PASS_EXACT_SUPPORT_CONTACT_V11_PREDATA_GUARDS
+
+      - name: Run one-shot target-excluded exact-support-contact v11 development
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_exact_support_contact_v11/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+          cat output/EXACT_SUPPORT_CONTACT_V11_DEVELOPMENT.md
+
+      - name: Enforce frozen result integrity and claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/exact_support_contact_v11_development.json').read_text())
+          assert r['verdict'] in {'PASS_EXACT_SUPPORT_CONTACT_V11_DEVELOPMENT','FAIL_EXACT_SUPPORT_CONTACT_V11_DEVELOPMENT'}
+          c=r['configuration']
+          assert c['years']==[2022,2023]
+          assert c['blind_exclusion']==[20.0,55.0]
+          assert c['link_radius']==1.5
+          assert c['family_link_rule']=='exists actual cross-year member-event pair with exact frozen distance <=1.5'
+          assert c['connected_family_closure'] is True
+          assert c['same_year_components_allowed_via_cross_year_paths'] is True
+          assert c['episode_size']==128 and c['top_k']==100
+          assert c['no_radius_search'] and c['no_contact_count_threshold'] and c['no_overlap_fraction'] and c['no_quantile']
+          assert c['no_weight_search'] and c['no_family_variant_search'] and c['no_source_labels_in_method']
+          assert r['predecessor_v8']['family_count']==226
+          assert r['predecessor_v8']['multiplicity_recovered_at_100']==58
+          assert r['predecessor_v8']['persistence_recovered_at_100']==59
+          a=r['adjacency_audit']
+          assert a['no_approximate_neighbor_search'] is True
+          assert a['prefilter_is_necessary_condition_only'] is True
+          assert a['every_prefilter_candidate_exactly_checked'] is True
+          assert a['every_component_edge_has_exact_member_pair_witness'] is True
+          assert a['adjacency_symmetric_difference']>0
+          assert r['edge_witness_sha256_before_label_use']
+          assert len(r['ranking_sha256_before_label_use'])==4
+          assert 'No OrbitTrace target information' in r['claim_boundary']
+          print('ORBITTRACE_EXACT_SUPPORT_CONTACT_V11_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_EXACT_SUPPORT_CONTACT_V11_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/development_commit.txt
+          sha256sum \
+            orbittrace_exact_support_contact_v11/PROTOCOL.md \
+            orbittrace_exact_support_contact_v11/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload v11 development artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-exact-support-contact-v11-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
