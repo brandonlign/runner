@@ -1,0 +1,196 @@
+name: OrbitTrace v8 matched literature benchmark
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_literature_matched_v8/**'
+      - '.github/workflows/orbittrace-v8-literature-matched-sonotaco.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: orbittrace_wavelet_catalogue_v3:orbittrace_sparse_support_multiplicity_v5:input/v3:.
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - name: Check out isolated comparison branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install frozen scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce v8, protocol, parser-source, and comparator freeze before catalogue access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/parser input/mapping input/archives output
+
+          python -m py_compile \
+            orbittrace_literature_matched_v8/build_sonotaco_2025_parser.py \
+            orbittrace_literature_matched_v8/run_matched_benchmark.py \
+            orbittrace_literature_matched_v8/run.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit=json.loads(Path('output/wavelet_catalogue_v3_source_audit.json').read_text())
+          assert audit['verdict']=='PASS_WAVELET_CATALOGUE_V3_SOURCE_AUDIT'
+          assert audit['support_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert audit['target_information_present'] is False
+          freeze=json.loads(Path('orbittrace_literature_matched_v8/COMPETITOR_FREEZE.json').read_text())
+          assert freeze['status']=='frozen_before_v8_sonotaco_matched_execution'
+          assert freeze['benchmark_years']==[2023,2025]
+          assert freeze['blind_exclusion_deg']==[20.0,55.0]
+          assert freeze['hdbscan']['2025']['workflow_run']==31071589912
+          assert freeze['hdbscan']['2023']['workflow_run']==31076062060
+          assert freeze['sugar_uncertainty']['2025']['workflow_run']==31075178517
+          assert freeze['sugar_uncertainty']['2023']['workflow_run']==31076789635
+          assert freeze['sugar_uncertainty']['configuration']['clone_iterations']==1000
+          assert freeze['cmor_wavelet']['performance_claim_allowed'] is False
+          assert freeze['dsh']['catalogue_discovery_ranking_claim'] is False
+          protocol=Path('orbittrace_literature_matched_v8/PROTOCOL.md').read_text()
+          gates=Path('orbittrace_literature_matched_v8/DECISION_GATES.md').read_text()
+          assert 'No final OrbitTrace target reveal' in protocol
+          assert 'delta >= 0.10' in gates
+          print('PASS_MATCHED_COMPARATOR_PREDATA_FREEZE')
+          PY
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = "f248df78e1258b132b41aecca6a985a5eb782654"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/parser
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input/mapping
+
+          test -f input/parser/run_sonotaco_2023_fixed4_confirmation.py
+          test -f input/mapping/audit.json
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/parser/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
+
+          python orbittrace_literature_matched_v8/build_sonotaco_2025_parser.py \
+            --source-2023 input/parser/run_sonotaco_2023_fixed4_confirmation.py \
+            --output input/parser/run_sonotaco_2025_matched_parser.py
+          python -m py_compile \
+            input/parser/run_sonotaco_2023_fixed4_confirmation.py \
+            input/parser/run_sonotaco_2025_matched_parser.py \
+            input/v3/multi_anchor_energy_v3.py
+
+          rm -rf output/*
+          echo PASS_V8_MATCHED_SOURCE_AND_PROTOCOL_GUARDS
+
+      - name: Download exact already-exposed SonotaCo benchmark archives
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/archives/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          curl --fail --location --retry 3 \
+            --output input/archives/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/archives/023a.zip' | sha256sum -c -
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/archives/025a.zip' | sha256sum -c -
+
+      - name: Execute frozen v8 on matched SonotaCo survey years
+        run: |
+          set -euo pipefail
+          python orbittrace_literature_matched_v8/run.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --parser-2023 input/parser/run_sonotaco_2023_fixed4_confirmation.py \
+            --parser-2025 input/parser/run_sonotaco_2025_matched_parser.py \
+            --mapping-audit input/mapping/audit.json \
+            --archive-2023 input/archives/023a.zip \
+            --archive-2025 input/archives/025a.zip \
+            --competitor-freeze orbittrace_literature_matched_v8/COMPETITOR_FREEZE.json \
+            --output output
+          cat output/V8_LITERATURE_MATCHED_SONOTACO.md
+
+      - name: Enforce result integrity and blind claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v8_literature_matched_sonotaco.json').read_text())
+          assert r['verdict'] in {'PASS_V8_LITERATURE_MATCHED_SONOTACO_EXECUTION','FAIL_V8_LITERATURE_MATCHED_SONOTACO_INTEGRITY'}
+          assert r['configuration']['years']==[2023,2025]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['v8_source_commit']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert r['configuration']['family_link_radius']==1.5
+          assert r['configuration']['episode_size']==128
+          assert r['configuration']['no_v8_parameter_change'] is True
+          assert r['configuration']['labels_first_used_after_rank_freeze'] is True
+          assert 'No OrbitTrace target coordinates' in r['claim_boundary']
+          assert 'not yet identical event-row filtering' in r['claim_boundary']
+          print('ORBITTRACE_V8_MATCHED_LITERATURE_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_V8_MATCHED_LITERATURE_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/benchmark_commit.txt
+          sha256sum \
+            orbittrace_literature_matched_v8/PROTOCOL.md \
+            orbittrace_literature_matched_v8/DECISION_GATES.md \
+            orbittrace_literature_matched_v8/COMPETITOR_FREEZE.json \
+            orbittrace_literature_matched_v8/build_sonotaco_2025_parser.py \
+            orbittrace_literature_matched_v8/run_matched_benchmark.py \
+            orbittrace_literature_matched_v8/run.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            input/v3/multi_anchor_energy_v3.py \
+            input/parser/run_sonotaco_2023_fixed4_confirmation.py \
+            input/parser/run_sonotaco_2025_matched_parser.py \
+            input/mapping/audit.json \
+            input/archives/023a.zip \
+            input/archives/025a.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload matched benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-literature-matched-sonotaco
+          path: output
+          if-no-files-found: error
+          retention-days: 90
