@@ -1,0 +1,107 @@
+name: OrbitTrace Harvard 1968-1969 v8 interface adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-harvard-1968-1969-v8-interface-adjudication
+    paths:
+      - 'orbittrace_harvard_1968_1969_v8_interface_adjudication/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen adjudication parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-harvard-1968-1969-v8-interface-adjudication
+          fetch-depth: 1
+
+      - name: Enforce frozen adjudication source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/PROTOCOL.md)" = "38bb11b8ffa1d2a8c25a9e34989d6d3c01dc37f8"
+          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py)" = "a785b76ffe786840d94517914b8d935c6a6b2d3c"
+          python -m py_compile orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py
+
+      - name: Fetch immutable Harvard structure artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/structure input/fixed4 output
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9012222394/zip" \
+            -o input/structure.zip
+          echo "b87b47593a60c1ce3ee8e568a0760e87ce9f7527fb5683d11171fb2af10f2f7c  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+          test -f input/structure/harvard_1968_1969_structure_audit.json
+
+      - name: Fetch immutable frozen fixed4 source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8972724498/zip" \
+            -o input/fixed4-source.zip
+          unzip -l input/fixed4-source.zip | grep -F 'run_fixed4_support_wrapper_development.py'
+
+      - name: Adjudicate exact v8/Harvard interface without event data
+        run: |
+          set -euo pipefail
+          python orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py \
+            --structure-json input/structure/harvard_1968_1969_structure_audit.json \
+            --fixed4-artifact input/fixed4-source.zip \
+            --output output
+
+      - name: Enforce no-data no-adaptation boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/harvard_1968_1969_v8_interface_adjudication.json').read_text())
+          assert r['verdict']=='FAIL_HARVARD_1968_1969_V8_INTERFACE_COMPATIBILITY'
+          assert r['fixed4_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert all(r['fixed4_source_gates'].values())
+          assert all(r['harvard_label_gates'].values())
+          assert r['native_geocentric_nonorbital_fields']==[]
+          assert r['event_site_position_height_fields']==[]
+          assert r['exact_nonorbital_geocentric_recovery_available'] is False
+          assert r['harvard_event_table_opened'] is False
+          assert r['harvard_event_values_inspected'] is False
+          assert r['orbital_elements_used_for_discovery'] is False
+          assert r['approximate_transform_introduced'] is False
+          assert r['v8_modified'] is False
+          assert r['orbittrace_target_information_access'] is False
+          PY
+          test ! -e output/fixed4_source
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/adjudication_commit.txt
+          sha256sum orbittrace_harvard_1968_1969_v8_interface_adjudication/PROTOCOL.md orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py > output/source_sha256.txt
+          sha256sum input/structure.zip > output/structure_artifact_sha256.txt 2>/dev/null || true
+          sha256sum input/fixed4-source.zip > output/fixed4_artifact_download_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload adjudication artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-harvard-1968-1969-v8-interface-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
