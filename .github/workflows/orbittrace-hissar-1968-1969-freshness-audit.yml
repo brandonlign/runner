@@ -1,0 +1,75 @@
+name: OrbitTrace Hissar 1968-1969 full-history freshness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hissar-1968-1969-freshness-audit
+    paths:
+      - 'orbittrace_hissar_1968_1969_freshness_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen Hissar freshness parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hissar-1968-1969-freshness-audit
+          fetch-depth: 1
+
+      - name: Enforce source and fetch complete remote branch history
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_hissar_1968_1969_freshness_audit/PROTOCOL.md)" = "92c3d3597280f5dfa9357fd25419f8522fc6ae72"
+          test "$(git hash-object orbittrace_hissar_1968_1969_freshness_audit/audit_history.py)" = "901fea0ef009b4376c2e7a6e93ea00a1836c13b3"
+          python -m py_compile orbittrace_hissar_1968_1969_freshness_audit/audit_history.py
+          git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          echo "remote refs: $(git for-each-ref --format='%(refname)' refs/remotes/origin | grep -v '/HEAD$' | wc -l)"
+
+      - name: Run conservative zero-data Hissar full-history audit
+        run: |
+          set -euo pipefail
+          python orbittrace_hissar_1968_1969_freshness_audit/audit_history.py
+
+      - name: Enforce zero-data boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/hissar_1968_1969_repo_freshness_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['iau_mdc_contacted'] is False
+              assert r['catalogue_form_submitted'] is False
+              assert r['scientific_record_access'] is False
+              assert r['source_label_access'] is False
+              assert r['orbittrace_target_information_access'] is False
+              assert r['positive_controls']['amor_history_detected'] is True
+              assert r['positive_controls']['ukmon_history_detected'] is True
+              assert r['positive_controls']['harvard_history_detected'] is True
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_hissar_1968_1969_freshness_audit/PROTOCOL.md orbittrace_hissar_1968_1969_freshness_audit/audit_history.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - name: Upload Hissar freshness artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-hissar-1968-1969-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
