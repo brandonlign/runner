@@ -1,0 +1,68 @@
+name: OrbitTrace multiplicity CAMSv3 2017-2018 structure-only transport audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-camsv3-2017-2018-structural-audit
+    paths:
+      - 'orbittrace_multiplicity_camsv3_2017_2018_structural_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install transport dependency only
+        run: python -m pip install requests==2.32.5
+      - name: Fetch immutable prior structural and freshness evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/prior input/freshness output
+          gh run download 30880443173 --repo "$GITHUB_REPOSITORY" --name camsv3-independent-feasibility-v2 --dir input/prior
+          gh run download 31204903047 --repo "$GITHUB_REPOSITORY" --name orbittrace-multiplicity-camsv3-2017-2018-freshness-audit-corrected --dir input/freshness
+          test -f input/prior/camsv3_structural_feasibility_v2.json
+          test -f input/freshness/camsv3_2017_2018_repo_freshness_audit.json
+      - name: Inspect only 2017-2018 archive structure
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_camsv3_2017_2018_structural_audit/audit_structure.py \
+            --prior-structural-json input/prior/camsv3_structural_feasibility_v2.json \
+            --freshness-json input/freshness/camsv3_2017_2018_repo_freshness_audit.json \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/camsv3_2017_2018_structural_audit.json').read_text())
+          assert r['verdict']=='PASS_CAMSV3_2017_2018_STRUCTURAL_TRANSPORT_AUDIT'
+          assert r['scientific_values_read'] is False
+          assert r['label_values_read'] is False
+          assert r['target_information_access'] is False
+          assert r['excluded_target_interval_values_read'] is False
+          assert [x['year'] for x in r['years']]==[2017,2018]
+          assert all(x['header_count']==63 for x in r['years'])
+          assert all(all(x['gates'].values()) for x in r['years'])
+          PY
+      - name: Record immutable structural provenance
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum \
+            orbittrace_multiplicity_camsv3_2017_2018_structural_audit/audit_structure.py \
+            input/prior/camsv3_structural_feasibility_v2.json \
+            input/freshness/camsv3_2017_2018_repo_freshness_audit.json > output/source_evidence_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiplicity-camsv3-2017-2018-structural-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
