@@ -1,0 +1,1 @@
+Execution-only trigger for the source-proven numeric transport correction. No selected panel, scientific source, parser width/range/blind rule, detector/family/centroid rule, threshold, radius, cap, ranking, D_SH rule, power/scientific gate, endpoint, or target information may change.
