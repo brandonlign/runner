@@ -1,0 +1,92 @@
+name: OrbitTrace Hissar 1968 matched-coverage eligibility adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-hissar-1968-coverage-adjudication
+    paths:
+      - 'orbittrace_hissar_1968_coverage_adjudication/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen coverage-adjudication parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-hissar-1968-coverage-adjudication
+          fetch-depth: 1
+
+      - name: Enforce frozen protocol, adjudicator, v6 rule, and amended Hissar protocol
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_hissar_1968_coverage_adjudication/PROTOCOL.md)" = "ed793d70832d0513bfc0674e5844f2423716140e"
+          test "$(git hash-object orbittrace_hissar_1968_coverage_adjudication/adjudicate.py)" = "7890fba77978c088afbf7fe996ffd87faf852c37"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+          test "$(git hash-object orbittrace_v8_hissar_1968_1969_external/PROTOCOL.md)" = "d9e8f30cc97b6088feb7a2f98a6e9e6fa0673757"
+          python -m py_compile orbittrace_hissar_1968_coverage_adjudication/adjudicate.py
+          grep -Fq 'MIN_SCANNABLE_BINS=24' orbittrace_label_free_sparse_support_v6/run_development.py
+          grep -Fq 'MIN_SCANNABLE_BINS = 24' orbittrace_v8_hissar_1968_1969_external/PROTOCOL.md
+
+      - name: Run pre-scientific matched-coverage adjudication
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_hissar_1968_coverage_adjudication/adjudicate.py \
+            --v6-source orbittrace_label_free_sparse_support_v6/run_development.py \
+            --output output
+
+      - name: Enforce expected zero-row boundary and coverage conclusion
+        if: always()
+        run: |
+          set -euo pipefail
+          test ! -e output/iau_radio.html
+          test ! -e output/jpl_approx_pos.html
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/hissar_1968_coverage_eligibility.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['verdict']=='FAIL_HISSAR_1968_COVERAGE_ELIGIBILITY'
+              assert r['required_scannable_bins_per_year']==24
+              assert r['fixed_bin_width_deg']==10.0
+              assert r['max_possible_distinct_10deg_bins_intersected'] < 24
+              assert r['jpl_model_max_solar_longitude_rate_deg_per_day'] < 1.1
+              assert r['frozen_loose_rate_envelope_deg_per_day']==1.1
+              assert all(r['source_gates'].values())
+              assert all(r['jpl_gates'].values())
+              assert r['hissar_catalogue_form_submitted'] is False
+              assert r['hissar_result_or_download_endpoint_contacted'] is False
+              assert r['hissar_meteor_row_access'] is False
+              assert r['scientific_event_values_inspected'] is False
+              assert r['source_or_shower_labels_inspected'] is False
+              assert r['excluded_interval_contents_accessed'] is False
+              assert r['orbittrace_target_information_access'] is False
+              assert r['v8_modified'] is False
+              assert r['coverage_floor_lowered'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/adjudication_commit.txt
+          sha256sum orbittrace_hissar_1968_coverage_adjudication/PROTOCOL.md orbittrace_hissar_1968_coverage_adjudication/adjudicate.py > output/source_sha256.txt
+          git hash-object orbittrace_label_free_sparse_support_v6/run_development.py > output/v6_blob_sha.txt
+          git hash-object orbittrace_v8_hissar_1968_1969_external/PROTOCOL.md > output/hissar_protocol_blob_sha.txt
+          python --version > output/python_version.txt
+
+      - name: Upload coverage-adjudication artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-hissar-1968-coverage-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
