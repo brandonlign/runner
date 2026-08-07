@@ -1,0 +1,107 @@
+name: OrbitTrace FRIPON 2018-2019 full-history freshness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fripon-2018-2019-freshness-audit
+    paths:
+      - 'orbittrace_fripon_2018_2019_freshness_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen FRIPON freshness parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fripon-2018-2019-freshness-audit
+          fetch-depth: 1
+
+      - name: Enforce frozen source and fetch complete remote branch history
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_fripon_2018_2019_freshness_audit/PROTOCOL.md)" = "f35fa68b2f65411c62130f07159fbd5a7b3d5d9d"
+          test "$(git hash-object orbittrace_fripon_2018_2019_freshness_audit/audit_history.py)" = "45695c2995410ea33b7de72f6ef37665a573211d"
+          python -m py_compile orbittrace_fripon_2018_2019_freshness_audit/audit_history.py
+          git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          echo "remote refs: $(git for-each-ref --format='%(refname)' refs/remotes/origin | grep -v '/HEAD$' | wc -l)"
+
+      - name: Fetch and enforce Harvard fallback prerequisite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/harvard output
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012522244/zip" \
+            -o input/harvard.zip
+          echo "7d9e68ec6f5f9790613869316839f9b6e5cb29c3a0c17f360dd244b0d6531c67  input/harvard.zip" | sha256sum -c -
+          unzip -q input/harvard.zip -d input/harvard
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/harvard/harvard_1968_1969_recurrence_eligibility.json').read_text())
+          assert r['verdict']=='FAIL_HARVARD_1968_1969_V8_RECURRENCE_ELIGIBILITY'
+          assert r['metadata_transport_sufficient'] is True
+          assert r['har6869_table_downloaded'] is False
+          assert r['har6869_table_opened'] is False
+          assert r['scientific_event_values_inspected'] is False
+          assert r['source_or_shower_labels_inspected'] is False
+          assert r['method_evaluation_performed'] is False
+          assert r['orbittrace_target_information_access'] is False
+          PY
+
+      - name: Run zero-data FRIPON full-history audit
+        run: |
+          set -euo pipefail
+          python orbittrace_fripon_2018_2019_freshness_audit/audit_history.py
+
+      - name: Enforce zero-data boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/fripon_2018_2019_repo_freshness_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['reserved_years']==[2018,2019]
+              assert r['positive_controls']['spent_AMOR_external_ref_detected'] is True
+              assert r['positive_controls']['spent_UKMON_external_ref_detected'] is True
+              assert r['catalogue_access_this_audit'] is False
+              assert r['fripon_web_or_api_contacted'] is False
+              assert r['scientific_value_access_this_audit'] is False
+              assert r['event_identifier_access_this_audit'] is False
+              assert r['label_access_this_audit'] is False
+              assert r['orbittrace_target_information_access'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum \
+            orbittrace_fripon_2018_2019_freshness_audit/PROTOCOL.md \
+            orbittrace_fripon_2018_2019_freshness_audit/audit_history.py > output/source_sha256.txt
+          sha256sum input/harvard.zip > output/harvard_artifact_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload FRIPON freshness artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fripon-2018-2019-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
