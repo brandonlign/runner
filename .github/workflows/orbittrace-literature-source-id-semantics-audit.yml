@@ -1,0 +1,132 @@
+name: OrbitTrace literature source ID semantics audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - '.github/workflows/orbittrace-literature-source-id-semantics-audit.yml'
+      - 'orbittrace_literature_matched_v8/SOURCE_ID_SEMANTICS_AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+          fetch-depth: 1
+
+      - name: Fetch exact frozen comparator source commits
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin \
+            a15737166cc9e1917f2e3d1b63cc42096008ae2e \
+            64747179b397d780010c0e608a4307cf780f657f \
+            b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd \
+            b328684f0614675067311a3c4cd00480de954f1a
+
+      - name: Decode exact frozen runner sources without opening survey data
+        run: |
+          set -euo pipefail
+          mkdir -p decoded audit
+          python - <<'PY'
+          import base64, gzip, hashlib, subprocess
+          from pathlib import Path
+
+          def show(commit, path):
+              return subprocess.check_output(['git','show',f'{commit}:{path}'])
+
+          def decode_single(commit, path, out):
+              payload=b''.join(show(commit,path).split())
+              src=gzip.decompress(base64.b64decode(payload, validate=True))
+              Path(out).write_bytes(src)
+              return hashlib.sha256(src).hexdigest()
+
+          def decode_parts(commit, root, out):
+              names=subprocess.check_output(['git','ls-tree','-r','--name-only',commit,root],text=True).splitlines()
+              names=sorted(x for x in names if x.endswith('.b64'))
+              if not names:
+                  raise RuntimeError((commit,root))
+              payload=b''.join(b''.join(show(commit,name).split()) for name in names)
+              src=gzip.decompress(base64.b64decode(payload, validate=True))
+              Path(out).write_bytes(src)
+              return hashlib.sha256(src).hexdigest(), names
+
+          records={}
+          records['hdbscan_2025']={
+              'sha256': decode_single(
+                  'a15737166cc9e1917f2e3d1b63cc42096008ae2e',
+                  'orbittrace_literature_comparison/run_sonotaco_2025_hdbscan_catalogue.py.gz.b64',
+                  'decoded/hdbscan_2025.py'),
+          }
+          sha,names=decode_parts(
+              '64747179b397d780010c0e608a4307cf780f657f',
+              'orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts',
+              'decoded/hdbscan_2023_original.py')
+          records['hdbscan_2023']={'sha256':sha,'parts':names}
+          sha,names=decode_parts(
+              'b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd',
+              'orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts',
+              'decoded/sugar_2025.py')
+          records['sugar_2025']={'sha256':sha,'parts':names}
+          sha,names=decode_parts(
+              'b328684f0614675067311a3c4cd00480de954f1a',
+              'orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts',
+              'decoded/sugar_2023.py')
+          records['sugar_2023']={'sha256':sha,'parts':names}
+
+          import json
+          Path('audit/source_hashes.json').write_text(json.dumps(records,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(records,indent=2,sort_keys=True))
+          PY
+
+      - name: Extract only source-code semantics relevant to blindness and event IDs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast, json, re
+          from pathlib import Path
+
+          patterns=re.compile(r'(BLIND|blind|20\.0|55\.0|event_id|SNM|enumerate\(|row_index|row_idx|source_labels|shower.*token|token.*shower|sol.*<=|<=.*sol)')
+          report={}
+          for path in sorted(Path('decoded').glob('*.py')):
+              text=path.read_text()
+              lines=text.splitlines()
+              hits=[]
+              for i,line in enumerate(lines,1):
+                  if patterns.search(line):
+                      lo=max(1,i-2); hi=min(len(lines),i+2)
+                      hits.append({
+                          'line':i,
+                          'context':[f'{j}: {lines[j-1]}' for j in range(lo,hi+1)],
+                      })
+              # Static source only: no catalogue data involved.
+              report[path.name]={
+                  'line_count':len(lines),
+                  'has_20_55_literals':('20.0' in text and '55.0' in text),
+                  'has_blind_word':bool(re.search(r'blind',text,re.I)),
+                  'snm_occurrences':text.count('SNM'),
+                  'event_id_occurrences':text.count('event_id'),
+                  'hits':hits,
+              }
+          Path('audit/id_semantics.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          for name,entry in report.items():
+              print('\n###',name)
+              print('has_20_55_literals',entry['has_20_55_literals'],'has_blind_word',entry['has_blind_word'])
+              for hit in entry['hits']:
+                  for line in hit['context']:
+                      print(line)
+                  print('---')
+          PY
+
+      - name: Upload source-only audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-literature-source-id-semantics-audit
+          path: audit
+          retention-days: 90
