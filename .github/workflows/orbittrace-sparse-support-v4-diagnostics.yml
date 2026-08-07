@@ -1,0 +1,113 @@
+name: OrbitTrace sparse-support v4 diagnostics
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-sparse-support-v4-diagnostics
+    paths:
+      - 'orbittrace_sparse_support_v4_diagnostics/**'
+      - '.github/workflows/orbittrace-sparse-support-v4-diagnostics.yml'
+  pull_request:
+    branches:
+      - agent/orbittrace-sparse-support-v4
+      - agent/orbittrace-sparse-support-v4-diagnostics
+    paths:
+      - 'orbittrace_sparse_support_v4_diagnostics/**'
+      - '.github/workflows/orbittrace-sparse-support-v4-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out diagnostic branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact diagnostic dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.1.3 scipy==1.14.1
+
+      - name: Download exact exposed development artifacts only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v4 input/fixed4 output
+          gh run download 31190719956 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-sparse-support-v4-development \
+            --dir input/v4
+          gh run download 31106001133 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-fixed4-support-normalized-wrapper-development \
+            --dir input/fixed4
+
+      - name: Run artifact-only structural diagnostics
+        run: |
+          set -euo pipefail
+          python orbittrace_sparse_support_v4_diagnostics/run_diagnostics.py \
+            --v4-dir input/v4 \
+            --fixed4-json input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            --output output
+          cat output/SPARSE_SUPPORT_V4_DIAGNOSTICS.md
+
+      - name: Enforce complete diagnostic result and blindness boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path('output/sparse_support_v4_diagnostics.json').read_text())
+          assert result['verdict'] in {
+              'DIAGNOSIS_CALIBRATION_SATURATION_AND_V3_BROWN_COLLINEARITY',
+              'DIAGNOSIS_MIXED_OR_INCOMPLETE',
+          }
+          assert result['source_runs'] == {'v4': 31190719956, 'fixed4': 31106001133}
+          assert result['blindness'] == {
+              'catalogue_access': False,
+              'later_year_access': False,
+              'orbittrace_target_access': False,
+              'artifact_only': True,
+          }
+          assert result['v4_failed_gates'] == ['rrf_recovered_at_100_at_least_fixed4_61']
+          print('ORBITTRACE_SPARSE_SUPPORT_V4_DIAGNOSTICS_RESULT_BEGIN')
+          print(json.dumps(result, indent=2, sort_keys=True))
+          print('ORBITTRACE_SPARSE_SUPPORT_V4_DIAGNOSTICS_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          sha256sum \
+            orbittrace_sparse_support_v4_diagnostics/PROTOCOL.md \
+            orbittrace_sparse_support_v4_diagnostics/run_diagnostics.py \
+            input/v4/sparse_support_v4_development.json \
+            input/v4/sparse_support_v4_rankings.json \
+            input/v4/sparse_support_v4_family_scores.json.gz \
+            input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            > output/diagnostic_source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sparse-support-v4-diagnostics
+          path: output
+          if-no-files-found: error
+          retention-days: 90
