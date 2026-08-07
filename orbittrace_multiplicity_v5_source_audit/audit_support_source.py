@@ -14,6 +14,8 @@ FUNCTIONS = (
     "parse_catalogue",
     "scan_year",
     "component_records",
+    "family_scores",
+    "rank_families",
     "build_families",
     "evaluate_panel",
     "evaluate_families",
@@ -65,9 +67,10 @@ def main() -> None:
     selected_constants = {
         key: constants.get(key)
         for key in (
-            "YEARS", "BLIND_LOW", "BLIND_HIGH", "MONTH_KEYS", "MIN_FAMILY_YEARS",
-            "FAMILY_LINK_RADIUS", "WINDOW_SIZE", "WINDOW_WIDTH_DEG", "WINDOW_STEP_DEG",
-            "MIN_COMPONENT_EVENTS", "MIN_COMPONENT_ANCHORS"
+            "YEARS", "BLIND_LOW", "BLIND_HIGH", "MONTH_KEYS", "CORPUS", "RANKING_VARIANTS",
+            "MIN_FAMILY_YEARS", "FAMILY_LINK_RADIUS", "CALIBRATION_PER_BIN",
+            "MIN_ANCHOR_COUNT", "MAX_QUARTETS_PER_BIN", "SHORTLIST_K", "AUDIT_SHORTLIST_K",
+            "MIN_COMPONENT_EVENTS", "MIN_COMPONENT_QUARTETS"
         )
     }
     funcs = {}
@@ -88,6 +91,7 @@ def main() -> None:
         raise RuntimeError(f"runtime source digest changed: {runtime_digest}")
     runtime_text = runtime_source.decode("utf-8")
     runtime_tree = ast.parse(runtime_text)
+    runtime_constants = literal_assignments(runtime_tree)
     loader_source = function_source(runtime_text, runtime_tree, "load_support_module")
 
     result = {
@@ -95,6 +99,10 @@ def main() -> None:
         "support_sha256": digest,
         "runtime_sha256": runtime_digest,
         "constants": selected_constants,
+        "runtime_constants": {
+            key: runtime_constants.get(key)
+            for key in ("YEARS", "MONTH_KEYS", "CORPUS")
+        },
         "functions": funcs,
         "catalogue_access": False,
         "target_information_access": False,
