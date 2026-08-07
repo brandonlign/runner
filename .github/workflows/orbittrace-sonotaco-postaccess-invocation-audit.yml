@@ -1,0 +1,51 @@
+name: OrbitTrace SonotaCo postaccess invocation source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-sonotaco-2015-2017-external
+    paths:
+      - 'orbittrace_multiplicity_sonotaco_2015_2017_external/AUDIT_RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-multiplicity-sonotaco-2015-2017-external
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Fetch immutable parser transport source only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/parser_transport output
+          gh run download 31199214174 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2015-2017-parser-transport --dir input/parser_transport
+          test ! -e input/archives
+      - name: Audit invocation mismatch without catalogue access
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_sonotaco_2015_2017_external/audit_postaccess_invocation_bug.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/postaccess_invocation_bug_audit.json').read_text())
+          assert r['verdict']=='PASS_POSTACCESS_INVOCATION_BUG_SOURCE_AUDIT'
+          assert r['catalogue_access'] is False and r['archive_content_access'] is False
+          assert r['target_information_access'] is False and r['scientific_method_change'] is False
+          assert r['mechanical_repair_lines']==1
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-postaccess-invocation-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
