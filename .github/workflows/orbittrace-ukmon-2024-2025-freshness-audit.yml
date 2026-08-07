@@ -1,0 +1,63 @@
+name: OrbitTrace UKMON 2024-2025 full-history freshness audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-ukmon-2024-2025-freshness-audit
+    paths:
+      - 'orbittrace_ukmon_2024_2025_freshness_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen audit parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-ukmon-2024-2025-freshness-audit
+          fetch-depth: 1
+      - name: Fetch complete remote branch history
+        run: |
+          set -euo pipefail
+          git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+      - name: Run zero-data UKMON freshness audit
+        run: |
+          set -euo pipefail
+          python orbittrace_ukmon_2024_2025_freshness_audit/audit_history.py
+      - name: Enforce zero-data boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/ukmon_2024_2025_repo_freshness_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['catalogue_access_this_audit'] is False
+              assert r['scientific_value_access_this_audit'] is False
+              assert r['target_information_access'] is False
+              assert r['positive_controls']['spent_saamer_detected'] is True
+              assert r['positive_controls']['spent_sonotaco_detected'] is True
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_ukmon_2024_2025_freshness_audit/audit_history.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-ukmon-2024-2025-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
