@@ -1,0 +1,169 @@
+name: OrbitTrace mutual-nearest recurrence v8 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-mutual-nearest-recurrence-v8
+    paths:
+      - 'orbittrace_mutual_nearest_recurrence_v8/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen v8 development branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-mutual-nearest-recurrence-v8
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen source and predecessor evidence before development access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v6 input/v7 output
+          test "$(git hash-object orbittrace_mutual_nearest_recurrence_v8/PROTOCOL.md)" = "64f03d729629430b4574c334c7bba76445b3e3ad"
+          test "$(git hash-object orbittrace_mutual_nearest_recurrence_v8/run_development.py)" = "4274c641c6fee2bfffdb51daba5f78c0927f1647"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/PROTOCOL.md)" = "95feefca6670933795bcc65dd5d9a101a8c4e540"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/wavelet_catalogue_v3_source_audit.json').read_text())
+          assert r['verdict']=='PASS_WAVELET_CATALOGUE_V3_SOURCE_AUDIT'
+          assert r['support_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert r['development_years']==[2022,2023]
+          assert r['held_out_catalogues_loaded'] is False
+          assert r['target_information_present'] is False
+          assert r['labels_enter_candidate_generation'] is False
+          PY
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo "3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip" | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9008416578/zip" -o input/v7.zip
+          echo "98d6d4c729d2366eaf454b9f74c2d158493cd98fcdb5283b0bdb6a06889aac88  input/v7.zip" | sha256sum -c -
+          unzip -q input/v7.zip -d input/v7
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v6=json.loads(Path('input/v6/label_free_sparse_support_v6_development.json').read_text())
+          assert v6['verdict']=='PASS_LABEL_FREE_SPARSE_SUPPORT_V6_DEVELOPMENT'
+          assert all(v6['integrity_gates'].values()) and all(v6['scientific_gates'].values())
+          v7=json.loads(Path('input/v7/one_to_one_family_v7_development.json').read_text())
+          assert v7['verdict']=='FAIL_ONE_TO_ONE_FAMILY_V7_DEVELOPMENT'
+          assert all(v7['integrity_gates'].values())
+          assert v7['family_count']==533
+          assert v7['matching']['assignment_cardinality']==v7['matching']['independent_maximum_cardinality']==533
+          assert v7['metrics']['multiplicity']['recovered_at_100']==2
+          assert v7['metrics']['one_to_one_persistence']['recovered_at_100']==44
+          PY
+
+          python -m py_compile \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_mutual_nearest_recurrence_v8/run_development.py
+          rm -rf output/*
+          echo PASS_MUTUAL_NEAREST_V8_PREDATA_GUARDS
+
+      - name: Run one-shot target-excluded v8 development
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_mutual_nearest_recurrence_v8/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v6-result-json input/v6/label_free_sparse_support_v6_development.json \
+            --v7-result-json input/v7/one_to_one_family_v7_development.json \
+            --output output
+          cat output/MUTUAL_NEAREST_RECURRENCE_V8_DEVELOPMENT.md
+
+      - name: Enforce result integrity and claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/mutual_nearest_recurrence_v8_development.json').read_text())
+          assert r['verdict'] in {'PASS_MUTUAL_NEAREST_RECURRENCE_V8_DEVELOPMENT','FAIL_MUTUAL_NEAREST_RECURRENCE_V8_DEVELOPMENT'}
+          c=r['configuration']
+          assert c['years']==[2022,2023]
+          assert c['blind_exclusion']==[20.0,55.0]
+          assert c['family_link_radius']==1.5
+          assert c['no_source_labels_in_proposal_association_or_ranking'] is True
+          assert c['no_calibration_threshold'] is True
+          assert c['no_threshold_search'] and c['no_radius_search'] and c['no_cap_search'] and c['no_weight_search']
+          assert c['no_matching_variant_search'] and c['no_ranking_variant_search'] and c['no_rrf']
+          assert r['association']['reciprocal_pair_count']==r['family_count']
+          assert r['association']['one_component_per_year'] is True
+          assert r['association']['component_reuse'] is False
+          assert r['association']['max_link_distance'] <= 1.5 + 1e-15
+          assert all(a['calibration_events_used']==0 for a in r['scan_audits'])
+          assert all(a['source_labels_used_for_proposals'] is False for a in r['scan_audits'])
+          assert all(a['score_threshold_applied'] is False for a in r['scan_audits'])
+          assert 'No OrbitTrace target information' in r['claim_boundary']
+          print('ORBITTRACE_MUTUAL_NEAREST_V8_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_MUTUAL_NEAREST_V8_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/development_commit.txt
+          sha256sum \
+            orbittrace_mutual_nearest_recurrence_v8/PROTOCOL.md \
+            orbittrace_mutual_nearest_recurrence_v8/run_development.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload v8 development artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-mutual-nearest-recurrence-v8-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
