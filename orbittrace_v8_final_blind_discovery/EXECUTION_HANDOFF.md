@@ -1,23 +1,25 @@
 # Final v8 discovery execution handoff
 
-This file defines the only allowed operational inputs after this freeze. It does not authorize Stage A or Stage B.
+This file defines the only allowed operational inputs after this freeze. It does not authorize Stage A or Stage B. The target-containing workflows are deliberately **not directly dispatchable**. They can run only from execution-only child pull requests against `agent/orbittrace-v8-final-blind-discovery-freeze`, and each workflow rejects any child diff other than its single request JSON.
 
 ## A. Freeze-manifest preflight
 
-Run the source-only workflow `.github/workflows/orbittrace_v8_final_blind_freeze_audit.yml` on the exact final branch commit. It must produce:
+Open/maintain the freeze PR from `agent/orbittrace-v8-final-blind-discovery-freeze` against the exact v8 parent. The source-only workflow `.github/workflows/orbittrace_v8_final_blind_freeze_audit.yml` must pass on the exact final freeze commit and produce:
 
 - `PASS_V8_FINAL_BLIND_SOURCE_AUDIT`;
 - `FREEZE_MANIFEST.json`;
 - `v8_final_blind_source_audit.json`;
 - no catalogue access;
 - no target-region access;
-- no withheld-reference access.
+- no withheld-reference access;
+- no Stage A or Stage B execution request present on the freeze branch;
+- target workflows not directly dispatchable.
 
-The exact `freeze_commit` and SHA-256 of `FREEZE_MANIFEST.json` are inputs to the external authorization object below. A later source edit necessarily changes the manifest and invalidates the authorization.
+The exact `freeze_commit` and SHA-256 of `FREEZE_MANIFEST.json` are inputs to the external authorization object below. Any later freeze-branch source edit changes the manifest and invalidates the authorization.
 
 ## B. Withheld-reference bundle, prepared without Stage A access
 
-A separate reference custodian/process prepares one ZIP artifact containing exactly one file named `withheld_reference.json` with this schema:
+A separate reference custodian/process prepares one ZIP artifact containing exactly one file named `withheld_reference.json`. Its machine-readable schema is frozen at `WITHHELD_REFERENCE.schema.json` (`orbittrace-withheld-reference-v1`). The logical shape is:
 
 ```json
 {
@@ -32,17 +34,17 @@ Rules are frozen:
 
 - every event object has exactly `event_id` and `month_key`;
 - IDs are nonempty and unique;
-- every `month_key` must belong to the Stage A universe: all months in 2022-2025 plus January-July 2026;
-- the bundle contains the complete canonical withheld-reference member set within that exact Stage A month universe, not a hand-picked subset;
+- every `month_key` belongs to the Stage A universe: all months in 2022-2025 plus January-July 2026;
+- the bundle contains the complete canonical withheld-reference member set within that exact Stage A month universe, not a selected subset;
 - no coordinate, radiant, speed, orbit, activity, family rank, or detector score is included or needed;
 - the ZIP SHA-256 is computed before Stage A and sealed into the authorization object;
-- the authorization object must **not** include the reference artifact ID/URL/locator, so Stage A cannot retrieve it.
+- the authorization object must not include the reference artifact ID/URL/locator, so Stage A cannot retrieve it.
 
 ## C. External-validation authorization artifact
 
 Only the separate external-validation track may create the authorization artifact after it has independently decided that the frozen v8 method is authorized for final blind GMN application.
 
-The authorization ZIP contains exactly one `external_validation_authorization.json` with:
+The authorization ZIP contains exactly one `external_validation_authorization.json`. Its machine-readable schema is `EXTERNAL_AUTHORIZATION.schema.json` (`orbittrace-v8-final-discovery-authorization-v1`). It contains exactly:
 
 ```json
 {
@@ -64,28 +66,52 @@ The authorization ZIP contains exactly one `external_validation_authorization.js
 
 The authorization checker accepts only the exact `decision` string above. It does not reinterpret or tune the detector based on the external result. The external-validation track is responsible for issuing this object only when its own preregistered rules permit final application.
 
-## D. Stage A dispatch
+## D. Stage A execution-only child PR
 
-Dispatch `.github/workflows/orbittrace_v8_final_blind_stage_a.yml` on the exact `freeze_commit` and supply only:
+After authorization exists, create a child branch **from the exact frozen commit** and add exactly one new file:
 
-- `authorization_artifact_id`;
-- `authorization_artifact_sha256`.
+`orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json`
 
-The workflow verifies the code/source manifest and authorization before the first target-containing GMN access. It has no withheld-reference artifact locator. It then runs the frozen scanner and writes every family/rank. After `blind_families.json` has already been hashed, `seal_stage_a.py` attaches the opaque pre-sealed reference digest and external-validation provenance to `stage_a_freeze.json` without changing the ranking payload.
+The file must satisfy `STAGE_A_EXECUTION_REQUEST.schema.json` and contain only:
+
+```json
+{
+  "schema": "orbittrace-v8-stage-a-execution-request-v1",
+  "freeze_commit": "<exact frozen commit>",
+  "authorization_artifact_id": "<digits only>",
+  "authorization_artifact_sha256": "<64-hex authorization ZIP SHA-256>"
+}
+```
+
+Open that child PR with base `agent/orbittrace-v8-final-blind-discovery-freeze`. The Stage A workflow uses `pull_request_target`, verifies the child is same-repository, verifies the complete child diff is exactly that one request file, checks out the **base freeze SHA rather than child code**, regenerates the exact source manifest, verifies the authorization, and only then begins target-containing GMN access.
+
+The Stage A request schema deliberately has no withheld-reference artifact ID or locator. The workflow writes every family/rank. Only after `blind_families.json` is hashed does `seal_stage_a.py` attach the opaque pre-sealed reference digest and external-validation provenance to `stage_a_freeze.json`; the ranked-family payload itself is unchanged.
 
 Do not inspect or interpret Stage A families before preserving the uploaded Stage A artifact ID and ZIP digest.
 
-## E. Stage B dispatch
+## E. Stage B execution-only child PR
 
-Only after Stage A is immutable, dispatch `.github/workflows/orbittrace_v8_final_blind_stage_b.yml` on the same exact freeze commit and supply:
+Only after Stage A is immutable, create a fresh child branch **from the same exact frozen commit** and add exactly one new file:
 
-- `stage_a_artifact_id`;
-- `stage_a_artifact_sha256`;
-- `withheld_reference_artifact_id`;
-- `withheld_reference_artifact_sha256`.
+`orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json`
 
-Before reference download, Stage B verifies:
+The file must satisfy `STAGE_B_EXECUTION_REQUEST.schema.json` and contain only:
 
+```json
+{
+  "schema": "orbittrace-v8-stage-b-execution-request-v1",
+  "freeze_commit": "<same exact frozen commit>",
+  "stage_a_artifact_id": "<digits only>",
+  "stage_a_artifact_sha256": "<64-hex Stage A ZIP SHA-256>",
+  "withheld_reference_artifact_id": "<digits only>",
+  "withheld_reference_artifact_sha256": "<64-hex pre-sealed reference ZIP SHA-256>"
+}
+```
+
+Open that child PR with base `agent/orbittrace-v8-final-blind-discovery-freeze`. Before reference download, Stage B verifies:
+
+- the child diff is exactly the one Stage B request file;
+- scientific code comes from the frozen base SHA, not the child;
 - Stage A ZIP digest;
 - Stage A inner ranked-family hash;
 - all Stage A integrity gates;
@@ -93,8 +119,8 @@ Before reference download, Stage B verifies:
 - current source-manifest digest equals Stage A's frozen manifest digest;
 - requested reference ZIP digest equals the opaque digest sealed before Stage A.
 
-Only after those checks pass does the workflow download the reference and apply the exact-ID full/partial/no-recovery rules in `PROTOCOL.md`.
+Only after those checks pass does the workflow retrieve the reference and apply the exact-ID full/partial/no-recovery rules in `PROTOCOL.md`.
 
 ## F. Prohibited recovery actions
 
-A failed authorization, source audit, Stage A integrity gate, artifact digest, or Stage B preflight is a failed/invalid execution. It does not permit changing scientific settings. The later session may correct a purely operational identifier/digest transcription error and rerun the same immutable commit, but it may not change input months, cuts, detector code, family semantics, score/ranking, reference membership rule, rank depth, or reveal threshold.
+A failed authorization, source audit, execution-only diff guard, Stage A integrity gate, artifact digest, or Stage B preflight is a failed/invalid execution. It does not permit changing scientific settings. A later session may correct a purely operational artifact ID/digest transcription error by replacing only the relevant execution-request child branch and rerunning the same immutable base commit, but it may not change input months, cuts, detector code, family semantics, score/ranking, reference membership rule, rank depth, or reveal threshold.
