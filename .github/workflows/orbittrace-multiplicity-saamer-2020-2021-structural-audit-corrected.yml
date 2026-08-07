@@ -1,0 +1,65 @@
+name: OrbitTrace multiplicity SAAMER 2020-2021 corrected structure-only audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-saamer-2020-2021-structural-audit
+    paths:
+      - 'orbittrace_multiplicity_saamer_2020_2021_structural_audit/RUN2.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install transport dependency only
+        run: python -m pip install requests==2.32.5
+      - name: Fetch immutable freshness evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness output
+          gh run download 31206214148 --repo "$GITHUB_REPOSITORY" --name orbittrace-multiplicity-saamer-2020-2021-freshness-audit-corrected --dir input/freshness
+      - name: Inspect extension-agnostic archive/table structure only
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_saamer_2020_2021_structural_audit/audit_structure_corrected.py \
+            --freshness-json input/freshness/saamer_2020_2021_repo_freshness_audit_corrected.json \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/saamer_2020_2021_structural_audit_corrected.json').read_text())
+          assert r['verdict']=='PASS_SAAMER_2020_2021_STRUCTURAL_TRANSPORT_AUDIT'
+          assert r['scientific_values_read'] is False
+          assert r['shower_label_values_read'] is False
+          assert r['target_information_access'] is False
+          assert r['excluded_target_interval_values_read'] is False
+          assert all(all(x['gates'].values()) for x in r['years'])
+          assert r['gates']['same_header'] is True and r['gates']['same_delimiter'] is True
+          assert not (Path('output')/'archives').exists()
+          PY
+      - name: Record correction provenance
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum \
+            orbittrace_multiplicity_saamer_2020_2021_structural_audit/audit_structure.py \
+            orbittrace_multiplicity_saamer_2020_2021_structural_audit/audit_structure_corrected.py \
+            orbittrace_multiplicity_saamer_2020_2021_structural_audit/AUDIT_CORRECTION.md \
+            input/freshness/saamer_2020_2021_repo_freshness_audit_corrected.json > output/source_evidence_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiplicity-saamer-2020-2021-structural-audit-corrected
+          path: output
+          if-no-files-found: error
+          retention-days: 90
