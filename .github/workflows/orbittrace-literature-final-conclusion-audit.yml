@@ -22,12 +22,12 @@ jobs:
         with:
           ref: agent/orbittrace-v8-literature-matched-sonotaco
 
-      - name: Download authoritative successful benchmark artifacts
+      - name: Download authoritative benchmark artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p input/sugar input/matched output_final_audit
+          mkdir -p input/sugar input/matched input/hdb23 output_final_audit
           gh run download 31227437130 \
             --repo "$GITHUB_REPOSITORY" \
             --name orbittrace-v8-sugar-exact-row \
@@ -36,8 +36,14 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --name orbittrace-v8-literature-matched-sonotaco \
             --dir input/matched
+          gh run download 31226945294 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-hdbscan-2023-blind-safe-benchmark \
+            --dir input/hdb23
           test -f input/sugar/v8_sugar_exact_row.json
           test -f input/matched/v8_literature_matched_sonotaco.json
+          test -f input/hdb23/sonotaco_2023_hdbscan_transfer.json
+          echo '098b7230c73a51c44c8de72dfe184fb4829ffb44e5b3744f7e522e7ea7e8edd4  input/hdb23/sonotaco_2023_hdbscan_transfer.json' | sha256sum -c -
 
       - name: Verify frozen numeric conclusion against artifacts
         run: |
@@ -49,7 +55,10 @@ jobs:
           freeze=json.loads(Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json').read_text())
           sugar=json.loads(Path('input/sugar/v8_sugar_exact_row.json').read_text())
           matched=json.loads(Path('input/matched/v8_literature_matched_sonotaco.json').read_text())
+          hdb23=json.loads(Path('input/hdb23/sonotaco_2023_hdbscan_transfer.json').read_text())
+          competitor=json.loads(Path('orbittrace_literature_matched_v8/COMPETITOR_FREEZE.json').read_text())
 
+          assert freeze['schema_version']==2
           assert freeze['status']=='FROZEN_FINAL_LITERATURE_COMPARISON_CONCLUSION'
           assert freeze['target_blind'] is True
           assert freeze['orbittrace_target_accessed'] is False
@@ -57,6 +66,7 @@ jobs:
           assert freeze['v8_retuned_after_comparison'] is False
           assert freeze['decision_thresholds']['material_mean_f1_delta']==0.1
 
+          # Exact-row Sugar is the strongest completed performance comparison.
           assert sugar['verdict']=='PASS_V8_SUGAR_EXACT_ROW_PAIRWISE'
           assert sugar['configuration']['no_v8_parameter_change'] is True
           assert sugar['configuration']['labels_loaded_only_after_v8_ranking_frozen'] is True
@@ -78,15 +88,27 @@ jobs:
           assert freeze['sugar_exact_row']['purity']['sugar_2023_mean_dominant_known_precision']==sugar['false_positive_burden']['sugar']['2023']['mean_dominant_known_precision']
           assert freeze['sugar_exact_row']['purity']['sugar_2025_mean_dominant_known_precision']==sugar['false_positive_burden']['sugar']['2025']['mean_dominant_known_precision']
 
+          # v8 values come from the blind-safe same-survey run. HDBSCAN-2023 values must
+          # come only from the later canonical blind-first rerun, never the original 2023 transfer.
           assert matched['verdict']=='PASS_V8_LITERATURE_MATCHED_SONOTACO_EXECUTION'
           assert matched['configuration']['no_v8_parameter_change'] is True
-          assert freeze['hdbscan']['same_survey_run']==31226030807
-          for year in ('2023','2025'):
-              for bin_name, delta in freeze['hdbscan']['same_survey_deltas_v8_minus_hdbscan'][year].items():
-                  assert delta==matched['comparisons']['hdbscan'][year][bin_name]['delta_v8_minus_competitor']
+          assert freeze['hdbscan']['v8_same_survey_run']==31226030807
+          assert freeze['hdbscan']['canonical_blind_safe_2023_run']==31226945294
+          assert freeze['hdbscan']['canonical_blind_safe_2023_artifact_id']==9012424187
+          false_gates=sorted(k for k,v in hdb23['gates'].items() if not v)
+          assert false_gates==['all_rows_parsed','exact_row_count']
+          assert hdb23['parser_audit']['parsed_rows']==44850
+          assert hdb23['full_catalogue_coverage_audit']['events']==26460
+          hdb23_means={k:v['mean_f1'] for k,v in hdb23['full_catalogue_coverage_audit']['size_strata'].items()}
+          hdb25_means=competitor['hdbscan']['2025']['coverage']['size_strata_mean_f1']
+          for bin_name, delta in freeze['hdbscan']['same_survey_deltas_v8_minus_hdbscan']['2023'].items():
+              expected=matched['annual_coverage']['2023'][bin_name]['mean_f1']-hdb23_means[bin_name]
+              assert delta==expected
+          for bin_name, delta in freeze['hdbscan']['same_survey_deltas_v8_minus_hdbscan']['2025'].items():
+              expected=matched['annual_coverage']['2025'][bin_name]['mean_f1']-hdb25_means[bin_name]
+              assert delta==expected
           assert freeze['hdbscan']['same_survey_sparse_gate_passed'] is False
 
-          competitor=json.loads(Path('orbittrace_literature_matched_v8/COMPETITOR_FREEZE.json').read_text())
           assert freeze['cmor_wavelet']['usable_bins']==competitor['cmor_wavelet']['usable_bins_ge300_radiants']==199
           assert freeze['cmor_wavelet']['total_bins']==competitor['cmor_wavelet']['total_bins']==324
           assert freeze['cmor_wavelet']['usable_fraction']==competitor['cmor_wavelet']['observed_fraction']
@@ -115,7 +137,7 @@ jobs:
           print('PASS_HDBSCAN_EXACT_ROW_LIMITATION_AUDIT')
           PY
 
-      - name: Enforce claim boundary
+      - name: Enforce final claim boundary
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -128,12 +150,14 @@ jobs:
           assert f['answers']['general_state_of_the_art_sparse_discovery_claim']=='NOT_SUPPORTED'
           assert 'state of the art for sparse meteor-stream discovery' in md
           assert 'not scientifically supported' in md
+          assert 'canonical preregistered blind-safe HDBSCAN-2023 rerun `31226945294`' in md
           assert 'do not retune v8' in f['final_conclusion']
           assert 'No OrbitTrace target' in md
           Path('output_final_audit/final_conclusion_audit.json').write_text(json.dumps({
             'verdict':'PASS_FROZEN_FINAL_LITERATURE_CONCLUSION_AUDIT',
             'sugar_exact_row_run':31227437130,
-            'hdbscan_same_survey_run':31226030807,
+            'v8_same_survey_run':31226030807,
+            'canonical_blind_safe_hdbscan_2023_run':31226945294,
             'hdbscan_exact_row_limitation_run':31227299751,
             'orbittrace_target_access':False,
             'excluded_interval_contents_access':False,
