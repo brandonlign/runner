@@ -1,0 +1,157 @@
+name: OrbitTrace v8 prospective 2016 eligibility audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-prospective-2016-audit-base
+    paths:
+      - orbittrace_prospective_2016/build_sonotaco_2016_parser.py
+      - orbittrace_prospective_2016/run_label_eligibility_audit.py
+      - orbittrace_method_freeze/SONOTACO_2016_STRUCTURE_AUDIT_RESULT.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v8-prospective-2016-eligibility-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-prospective-2016-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install frozen benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r real_shower_meta_stage0/requirements.txt
+
+      - name: Guard eligibility sources before prospective label access
+        run: |
+          set -euo pipefail
+          mkdir -p input/repaired output
+          python -m py_compile \
+            orbittrace_prospective_2016/build_sonotaco_2016_parser.py \
+            orbittrace_prospective_2016/run_label_eligibility_audit.py
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          structure=json.loads(Path('orbittrace_method_freeze/SONOTACO_2016_STRUCTURE_AUDIT_RESULT.json').read_text())
+          assert structure['verdict']=='PASS_SONOTACO_2016_ARCHIVE_STRUCTURE_AUDIT'
+          assert structure['archive']['sha256']=='f1fc4586d3efe71b9dc419261c9ad252c5d4f12e80439e94b56c86445520e530'
+          assert structure['annual_member']['sha256']=='6035614d6aa663f0ab0ed63e8e93f439d6e3969307085fc872eb2aaeff79be1f'
+          assert structure['annual_member']['total_nonblank_rows']==22943
+          source=Path('orbittrace_prospective_2016/run_label_eligibility_audit.py').read_text()
+          forbidden=(
+              'multi_anchor_energy_v3', 'evidence_offset_v8', 'roc_auc_score',
+              'wavelet_episode_score(', 'scores_for_episode(', 'candidate.scores_for_episode',
+              'conservative_rank_pvalue(', 'weak_auc', '"recall"', '"fpr"'
+          )
+          for token in forbidden:
+              assert token not in source, token
+          assert 'MIN_SUPPORTED_BINS = 24' in source
+          assert 'MIN_ELIGIBLE_SHOWERS = 20' in source
+          assert 'EXPECTED_K = (4, 6, 8, 12)' in source
+          print('PASS_2016_ELIGIBILITY_SOURCE_GUARD')
+          PY
+          sha256sum \
+            orbittrace_method_freeze/V8_TWO_YEAR_DEVELOPMENT_RESULT.json \
+            orbittrace_method_freeze/SONOTACO_2016_STRUCTURE_AUDIT_RESULT.json \
+            orbittrace_prospective_2016/build_sonotaco_2016_parser.py \
+            orbittrace_prospective_2016/run_label_eligibility_audit.py \
+            > output/eligibility_source_sha256.txt
+          git rev-parse HEAD > output/eligibility_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact validated repaired 2023 parser source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+
+      - name: Build and audit prospective 2016 parser before archive access
+        run: |
+          set -euo pipefail
+          python orbittrace_prospective_2016/build_sonotaco_2016_parser.py \
+            --source-2023 input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --output input/run_sonotaco_2016_parser.py \
+            | tee output/parser_build.txt
+          python -m py_compile input/run_sonotaco_2016_parser.py
+          sha256sum input/run_sonotaco_2016_parser.py | tee output/parser_sha256.txt
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('input/run_sonotaco_2016_parser.py').read_text()
+          assert 'YEAR = 2016' in source
+          assert 'sonotaco-2016-prospective' in source
+          assert 'f1fc4586d3efe71b9dc419261c9ad252c5d4f12e80439e94b56c86445520e530' in source
+          assert '6035614d6aa663f0ab0ed63e8e93f439d6e3969307085fc872eb2aaeff79be1f' in source
+          assert 'EXPECTED_ROWS = 22943' in source
+          assert 'parse_sonotaco_2016_events' in source
+          assert 'SNM2016:' in source
+          print('PASS_2016_PARSER_SOURCE_AUDIT')
+          PY
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen prospective 2016 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/016a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/016a.zip
+          echo 'f1fc4586d3efe71b9dc419261c9ad252c5d4f12e80439e94b56c86445520e530  input/016a.zip' | sha256sum -c -
+
+      - name: Run label and episode eligibility only
+        run: |
+          set -euo pipefail
+          python orbittrace_prospective_2016/run_label_eligibility_audit.py \
+            --archive input/016a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --parser-source input/run_sonotaco_2016_parser.py \
+            --output output
+          cat output/SONOTACO_2016_LABEL_ELIGIBILITY_RESULT.json
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum input/audit.json input/016a.zip input/run_sonotaco_2016_parser.py \
+            >> output/eligibility_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload detector-free 2016 eligibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-2016-label-eligibility-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
