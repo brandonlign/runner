@@ -1,0 +1,1 @@
+Execution-only trigger for frozen pooled-year-centroid v8 development. No scientific constant, pooling rule, family rule, threshold, radius, cap, weight, endpoint, blindness rule, or evaluation gate may change in this child.
