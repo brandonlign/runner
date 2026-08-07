@@ -35,14 +35,17 @@ def main() -> None:
     args = parse_args()
     source = args.base.read_text()
 
-    load_line = "    base, scorer, adapter, candidate = load_sources(args)\n"
+    # Both validated year runners construct the calibration task list only after
+    # their scorer module has been loaded. Patching immediately before that list
+    # is therefore independent of the year-specific source-loading signature.
+    calibration_tasks_line = "    calibration_tasks = [\n"
     source = replace_once(
         source,
-        load_line,
-        load_line
-        + "    if int(scorer.CALIBRATION_NEGATIVES_PER_BIN) != 128:\n"
-        + "        raise RuntimeError(f'unexpected predecessor calibration size: {scorer.CALIBRATION_NEGATIVES_PER_BIN}')\n"
-        + "    scorer.CALIBRATION_NEGATIVES_PER_BIN = 512\n",
+        calibration_tasks_line,
+        "    if int(scorer.CALIBRATION_NEGATIVES_PER_BIN) != 128:\n"
+        "        raise RuntimeError(f'unexpected predecessor calibration size: {scorer.CALIBRATION_NEGATIVES_PER_BIN}')\n"
+        "    scorer.CALIBRATION_NEGATIVES_PER_BIN = 512\n"
+        + calibration_tasks_line,
         "calibration override",
     )
 
