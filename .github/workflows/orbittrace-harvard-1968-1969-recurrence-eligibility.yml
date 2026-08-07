@@ -1,9 +1,9 @@
-name: OrbitTrace Harvard 1968-1969 recurrence eligibility
+name: OrbitTrace Harvard 1968-1969 recurrence eligibility NTRS API correction
 
 on:
   pull_request:
     branches:
-      - agent/orbittrace-harvard-1968-1969-recurrence-eligibility
+      - agent/orbittrace-harvard-recurrence-ntrs-api-correction
     paths:
       - 'orbittrace_harvard_1968_1969_recurrence_eligibility/RUN.md'
   workflow_dispatch:
@@ -16,10 +16,10 @@ jobs:
   adjudicate:
     runs-on: ubuntu-22.04
     steps:
-      - name: Check out frozen recurrence parent
+      - name: Check out frozen NTRS transport-correction parent
         uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-harvard-1968-1969-recurrence-eligibility
+          ref: agent/orbittrace-harvard-recurrence-ntrs-api-correction
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,11 +29,13 @@ jobs:
       - name: Install exact metadata dependency
         run: python -m pip install requests==2.32.5
 
-      - name: Enforce frozen source
+      - name: Enforce correction-only source
         run: |
           set -euo pipefail
-          test "$(git hash-object orbittrace_harvard_1968_1969_recurrence_eligibility/PROTOCOL.md)" = "6e2956b968e7de7c6b32d783edfc4c14934d9e23"
-          test "$(git hash-object orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py)" = "e1f1c304c9172f79fcdb695427fd2d0023bed82f"
+          test "$(git hash-object orbittrace_harvard_1968_1969_recurrence_eligibility/PROTOCOL.md)" = "25ad037f74bd08e48536e19176b949d3a893c6ce"
+          test "$(git hash-object orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py)" = "b4732f7980f7168669a3789148bc266a5fdef46c"
+          grep -Fq 'https://ntrs.nasa.gov/api/citations/19760042403' orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py
+          grep -Fq 'metadata_transport_sufficient = pds_gate and (ntrs_gate or mnras_gate)' orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py
           python -m py_compile orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py
 
       - name: Fetch immutable pre-scientific structure artifact
@@ -51,14 +53,14 @@ jobs:
           unzip -q input/structure.zip -d input/structure
           test -f input/structure/harvard_1968_1969_structure_audit.json
 
-      - name: Adjudicate temporal recurrence eligibility from public metadata only
+      - name: Retry adjudication with official NTRS API transport only
         run: |
           set -euo pipefail
           python orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py \
             --structure-json input/structure/harvard_1968_1969_structure_audit.json \
             --output output
 
-      - name: Enforce table remains unopened and decision boundary
+      - name: Enforce table remains unopened and correction boundary
         if: always()
         run: |
           set -euo pipefail
@@ -72,6 +74,8 @@ jobs:
                   'FAIL_HARVARD_1968_1969_V8_RECURRENCE_ELIGIBILITY',
                   'INCONCLUSIVE_HARVARD_1968_1969_RECURRENCE_METADATA_TRANSPORT',
               }
+              assert r['ntrs_transport_correction_only'] is True
+              assert r['prior_transport_run']==31226879496
               assert r['har6869_table_downloaded'] is False
               assert r['har6869_table_opened'] is False
               assert r['scientific_event_values_inspected'] is False
@@ -93,11 +97,11 @@ jobs:
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
 
-      - name: Upload recurrence-eligibility artifact
+      - name: Upload corrected recurrence-eligibility artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-harvard-1968-1969-recurrence-eligibility
+          name: orbittrace-harvard-recurrence-ntrs-api-correction
           path: output
           if-no-files-found: error
           retention-days: 90
