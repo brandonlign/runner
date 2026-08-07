@@ -48,6 +48,7 @@ def sha256_bytes(payload: bytes) -> str:
 def main() -> int:
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument('--original-runner', required=True, type=Path)
+    p.add_argument('--audit-only', action='store_true')
     known, rest = p.parse_known_args()
     source = known.original_runner.read_text()
 
@@ -104,6 +105,8 @@ def main() -> int:
         'target_information_access=false\n'
     )
     print('PASS_2017_2019_SCORE_LABEL_HOLDOUT_GUARDED_TRANSFORM', flush=True)
+    if known.audit_only:
+        return 0
     os.execv(sys.executable, [sys.executable, str(out), *rest])
     return 0
 
