@@ -1,0 +1,154 @@
+name: OrbitTrace rank-consensus v10 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-rank-consensus-v10
+    paths:
+      - 'orbittrace_rank_consensus_v10/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen v10 development parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-rank-consensus-v10
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen v10 and passed-v8 sources before development access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v8 output
+          test "$(git hash-object orbittrace_rank_consensus_v10/PROTOCOL.md)" = "1f369d3958348edfe8ec52cc7905e5d5c4a38b84"
+          test "$(git hash-object orbittrace_rank_consensus_v10/run_development.py)" = "57f1dcff3c640ce22c9a1623ef780d04fddaa68d"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/PROTOCOL.md)" = "8b0a1dc8565a702af6188d42dcebe6b1b71002b6"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = "f248df78e1258b132b41aecca6a985a5eb782654"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip" | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v=json.loads(Path('input/v8/pooled_year_centroid_v8_development.json').read_text())
+          assert v['verdict']=='PASS_POOLED_YEAR_CENTROID_V8_DEVELOPMENT'
+          assert v['family_count']==226
+          assert v['qualified_known_showers']==95
+          assert v['metrics']['multiplicity']['recovered_at_100']==58
+          assert v['metrics']['label_free_persistence']['recovered_at_100']==59
+          assert abs(v['metrics']['multiplicity']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert abs(v['metrics']['multiplicity']['mrr']-0.045531138942766655)<1e-12
+          assert all(v['integrity_gates'].values()) and all(v['scientific_gates'].values())
+          PY
+
+          python -m py_compile \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_rank_consensus_v10/run_development.py
+          rm -rf output/*
+          echo PASS_RANK_CONSENSUS_V10_PREDATA_GUARDS
+
+      - name: Run one-shot target-excluded v10 rank-consensus development
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_rank_consensus_v10/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+          cat output/RANK_CONSENSUS_V10_DEVELOPMENT.md
+
+      - name: Enforce frozen result integrity and claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/rank_consensus_v10_development.json').read_text())
+          assert r['verdict'] in {'PASS_RANK_CONSENSUS_V10_DEVELOPMENT','FAIL_RANK_CONSENSUS_V10_DEVELOPMENT'}
+          c=r['configuration']
+          assert c['years']==[2022,2023] and c['blind_exclusion']==[20.0,55.0]
+          assert c['family_count_expected']==226 and c['episode_size']==128 and c['top_k']==100
+          assert c['candidates']==['rank_product','rank_sum']
+          assert c['no_weight_search'] and c['no_threshold_search'] and c['no_family_change'] and c['no_score_change']
+          assert r['predecessor']['multiplicity_recovered_at_100']==58
+          assert r['predecessor']['persistence_recovered_at_100']==59
+          assert r['prelabel_ranking_sha256']
+          assert r['label_split_sha256']
+          assert r['selected_candidate'] in {'rank_product','rank_sum'}
+          assert r['integrity_gates']['all_rankings_frozen_before_label_evaluation'] is True
+          assert 'No OrbitTrace target information' in r['claim_boundary']
+          if not all(r['development_authorization'].values()):
+              assert r['validation_opened'] is False
+              assert r['validation_metrics'] is None
+              assert r['full_metrics'] is None
+          print('ORBITTRACE_RANK_CONSENSUS_V10_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_RANK_CONSENSUS_V10_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/development_commit.txt
+          sha256sum \
+            orbittrace_rank_consensus_v10/PROTOCOL.md \
+            orbittrace_rank_consensus_v10/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload v10 development artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rank-consensus-v10-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
