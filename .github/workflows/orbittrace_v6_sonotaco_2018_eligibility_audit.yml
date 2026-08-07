@@ -1,0 +1,189 @@
+name: OrbitTrace v6 SonotaCo 2018 eligibility audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-2018-eligibility-base
+    paths:
+      - orbittrace_corroborated_rescue_v6/SONOTACO_2018_ELIGIBILITY_AUDIT_REQUEST.md
+      - orbittrace_corroborated_rescue_v6/build_sonotaco_2018_confirmation_source.py
+      - orbittrace_corroborated_rescue_v6/run_sonotaco_2018_eligibility_audit.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-2018-eligibility
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install frozen benchmark dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify frozen v6 and score-free audit source before 2018 catalogue access
+        run: |
+          set -euo pipefail
+          mkdir -p input/transport input/repaired output
+          python -m py_compile \
+            orbittrace_corroborated_rescue_v6/decision_v6.py \
+            orbittrace_corroborated_rescue_v6/build_sonotaco_2018_confirmation_source.py \
+            orbittrace_corroborated_rescue_v6/run_sonotaco_2018_eligibility_audit.py
+          python - <<'PY'
+          import importlib.util, json
+          freeze = json.load(open('orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.json'))
+          assert freeze['verdict'] == 'PASS_V6_CORROBORATED_RESCUE_DEVELOPMENT'
+          assert freeze['reserved_validation_year'] == 2018
+          assert freeze['primary_v3_rank'] == 17
+          assert freeze['fixed4_rank'] == 15
+          assert freeze['corroboration_v3_rank'] == 122
+          spec = importlib.util.spec_from_file_location('decision_v6', 'orbittrace_corroborated_rescue_v6/decision_v6.py')
+          decision = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(decision)
+          assert all(decision.self_test().values()), decision.self_test()
+          request = open('orbittrace_corroborated_rescue_v6/SONOTACO_2018_ELIGIBILITY_AUDIT_REQUEST.md').read()
+          for phrase in ('fixed4 scoring', 'Brown-family wavelet', 'v3 multi-anchor scores', 'AUROC, recall, false-positive rates'):
+              assert phrase in request, phrase
+          print('PASS_PRE_2018_ELIGIBILITY_SOURCE_AUDIT')
+          PY
+          sha256sum \
+            orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.json \
+            orbittrace_corroborated_rescue_v6/decision_v6.py \
+            orbittrace_corroborated_rescue_v6/build_sonotaco_2018_confirmation_source.py \
+            orbittrace_corroborated_rescue_v6/run_sonotaco_2018_eligibility_audit.py \
+            orbittrace_corroborated_rescue_v6/SONOTACO_2018_ELIGIBILITY_AUDIT_REQUEST.md \
+            > output/eligibility_source_sha256.txt
+          git rev-parse HEAD > output/eligibility_source_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact 2018 transport audit and validated 2023 parser source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31154842808 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-sonotaco-2018-transport-audit \
+            --dir input/transport
+          python - <<'PY'
+          import json
+          audit = json.load(open('input/transport/SONOTACO_2018_TRANSPORT_AUDIT.json'))
+          expected = {
+              'verdict': 'PASS_SONOTACO_2018_TRANSPORT_AUDIT',
+              'scientific_scores_computed': False,
+              'labels_evaluated': False,
+              'method_performance_evaluated': False,
+              'archive_sha256': 'ace35a8842c7af730b08da5cf491377b02d3f962c8185fe2f542c68d28e4ab55',
+              'member': '018a/_U2_20180101_S.csv',
+              'member_sha256': '11d40ba865d56523c6c070f8afb9a0ddbd80c578fd163ef12b55daf0ab61d167',
+              'expected_data_rows': 29720,
+              'header_sha256': '5d495a46b0a6263c47cae0a2b25fea5cd313ea19a4a56aeb7aa6d5c71920f274',
+          }
+          for key, value in expected.items():
+              assert audit[key] == value, (key, audit[key], value)
+          print('PASS_EXACT_2018_TRANSPORT_AUDIT_GUARD')
+          PY
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+
+      - name: Build deterministic 2018 parser before archive access
+        run: |
+          set -euo pipefail
+          python orbittrace_corroborated_rescue_v6/build_sonotaco_2018_confirmation_source.py \
+            --source-2023 input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --output /tmp/run_sonotaco_2018_confirmation.py \
+            | tee output/parser_build.txt
+          python -m py_compile /tmp/run_sonotaco_2018_confirmation.py
+          sha256sum /tmp/run_sonotaco_2018_confirmation.py | tee output/sonotaco_2018_confirmation_source_sha256.txt
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_sonotaco_2018_confirmation.py').read_text()
+          assert 'YEAR = 2018' in source
+          assert 'CORPUS = "sonotaco-2018-v6-prospective-validation"' in source
+          assert 'ARCHIVE_SHA256 = "ace35a8842c7af730b08da5cf491377b02d3f962c8185fe2f542c68d28e4ab55"' in source
+          assert 'MEMBER = "018a/_U2_20180101_S.csv"' in source
+          assert 'MEMBER_SHA256 = "11d40ba865d56523c6c070f8afb9a0ddbd80c578fd163ef12b55daf0ab61d167"' in source
+          assert 'EXPECTED_ROWS = 29_720' in source
+          assert 'def parse_sonotaco_2018_events(' in source
+          assert 'SNM2018:' in source
+          print('PASS_2018_PARSER_SOURCE_AUDIT')
+          PY
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact audited SonotaCo 2018 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/018a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/018a.zip
+          echo 'ace35a8842c7af730b08da5cf491377b02d3f962c8185fe2f542c68d28e4ab55  input/018a.zip' | sha256sum -c -
+
+      - name: Execute score-free 2018 label and episode eligibility audit
+        run: |
+          set -euo pipefail
+          python orbittrace_corroborated_rescue_v6/run_sonotaco_2018_eligibility_audit.py \
+            --archive input/018a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --confirmation-source /tmp/run_sonotaco_2018_confirmation.py \
+            --output output
+          cat output/sonotaco_2018_v6_eligibility_audit.json
+          python - <<'PY'
+          import json
+          result = json.load(open('output/sonotaco_2018_v6_eligibility_audit.json'))
+          assert result['verdict'] == 'PASS_SONOTACO_2018_V6_ELIGIBILITY_AUDIT'
+          assert all(result['gates'].values())
+          assert not any(result['prohibited_access'].values())
+          assert result['benchmark_constants']['calibration_per_bin'] == 512
+          assert result['benchmark_constants']['calibration_denominator'] == 513
+          assert result['benchmark_constants']['primary_v3_max_rank'] == 17
+          assert result['benchmark_constants']['fixed4_max_rank'] == 15
+          assert result['benchmark_constants']['corroboration_v3_max_rank'] == 122
+          print('PASS_2018_ELIGIBILITY_RESULT_GUARD')
+          PY
+
+      - name: Record immutable eligibility provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            input/transport/SONOTACO_2018_TRANSPORT_AUDIT.json \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            /tmp/run_sonotaco_2018_confirmation.py \
+            input/audit.json input/018a.zip \
+            >> output/eligibility_source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-sonotaco-2018-eligibility-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
