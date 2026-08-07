@@ -18,6 +18,11 @@ EXPECTED = {
 FREEZE_PATHS = (
     "orbittrace_v8_final_blind_discovery/PROTOCOL.md",
     "orbittrace_v8_final_blind_discovery/SOURCE_AND_BRANCH_AUDIT.md",
+    "orbittrace_v8_final_blind_discovery/EXECUTION_HANDOFF.md",
+    "orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.schema.json",
+    "orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.schema.json",
+    "orbittrace_v8_final_blind_discovery/EXTERNAL_AUTHORIZATION.schema.json",
+    "orbittrace_v8_final_blind_discovery/WITHHELD_REFERENCE.schema.json",
     "orbittrace_v8_final_blind_discovery/audit_sources.py",
     "orbittrace_v8_final_blind_discovery/authorize_stage_a.py",
     "orbittrace_v8_final_blind_discovery/seal_stage_a.py",
@@ -31,6 +36,9 @@ SUPPORT_SOURCE_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e
 WAVELET_RUNTIME_SHA256 = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
 V8_PARENT_COMMIT = "c9d6c44704013ba0c9430100e98a29a56b453304"
 V8_DEVELOPMENT_ARTIFACT_SHA256 = "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e"
+FREEZE_BRANCH = "agent/orbittrace-v8-final-blind-discovery-freeze"
+STAGE_A_REQUEST = Path("orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json")
+STAGE_B_REQUEST = Path("orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json")
 
 
 def sha(path: Path) -> str:
@@ -56,6 +64,12 @@ def called_attributes(tree: ast.AST) -> set[str]:
     return {node.func.attr for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
 
 
+def load_json(path: str) -> dict[str, object]:
+    value = json.loads(Path(path).read_text())
+    require(isinstance(value, dict), f"JSON object required: {path}")
+    return value
+
+
 def main() -> int:
     output = Path("output")
     output.mkdir(parents=True, exist_ok=True)
@@ -77,11 +91,15 @@ def main() -> int:
     auth_path = Path("orbittrace_v8_final_blind_discovery/authorize_stage_a.py")
     seal_path = Path("orbittrace_v8_final_blind_discovery/seal_stage_a.py")
     protocol_path = Path("orbittrace_v8_final_blind_discovery/PROTOCOL.md")
+    stage_a_workflow_path = Path(".github/workflows/orbittrace_v8_final_blind_stage_a.yml")
+    stage_b_workflow_path = Path(".github/workflows/orbittrace_v8_final_blind_stage_b.yml")
     stage_a_text = stage_a_path.read_text()
     stage_b_text = stage_b_path.read_text()
     auth_text = auth_path.read_text()
     seal_text = seal_path.read_text()
     protocol_text = protocol_path.read_text()
+    stage_a_workflow = stage_a_workflow_path.read_text()
+    stage_b_workflow = stage_b_workflow_path.read_text()
     stage_a_tree = ast.parse(stage_a_text)
     stage_b_tree = ast.parse(stage_b_text)
 
@@ -111,6 +129,30 @@ def main() -> int:
         "exact stable GMN trajectory/event-ID equality", "STAGE A — BLIND DISCOVERY", "STAGE B — REVEAL",
     ]
     require(all(fragment in protocol_text for fragment in required_protocol), "protocol lost a frozen rule")
+
+    # Execution must remain dormant on this branch. A later run is enabled only by an
+    # execution-only child PR containing exactly one request JSON; workflows execute
+    # the frozen base commit under pull_request_target and never execute child code.
+    require("pull_request_target:" in stage_a_workflow and FREEZE_BRANCH in stage_a_workflow, "Stage A is not child-PR gated")
+    require("pull_request_target:" in stage_b_workflow and FREEZE_BRANCH in stage_b_workflow, "Stage B is not child-PR gated")
+    require("workflow_dispatch:" not in stage_a_workflow and "workflow_dispatch:" not in stage_b_workflow, "target workflows must not be directly dispatchable")
+    require(str(STAGE_A_REQUEST) in stage_a_workflow, "Stage A request path not frozen")
+    require(str(STAGE_B_REQUEST) in stage_b_workflow, "Stage B request path not frozen")
+    require("git diff --name-only" in stage_a_workflow and "git diff --name-only" in stage_b_workflow, "execution-only child diff guard missing")
+    require("github.event.pull_request.base.sha" in stage_a_workflow and "github.event.pull_request.base.sha" in stage_b_workflow, "workflows do not check out frozen base")
+    require(not STAGE_A_REQUEST.exists() and not STAGE_B_REQUEST.exists(), "an execution request exists on the freeze branch")
+
+    stage_a_schema = load_json("orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.schema.json")
+    stage_b_schema = load_json("orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.schema.json")
+    auth_schema = load_json("orbittrace_v8_final_blind_discovery/EXTERNAL_AUTHORIZATION.schema.json")
+    reference_schema = load_json("orbittrace_v8_final_blind_discovery/WITHHELD_REFERENCE.schema.json")
+    require(stage_a_schema.get("$id") == "orbittrace-v8-stage-a-execution-request-v1", "wrong Stage A request schema")
+    require(stage_b_schema.get("$id") == "orbittrace-v8-stage-b-execution-request-v1", "wrong Stage B request schema")
+    require(auth_schema.get("$id") == "orbittrace-v8-final-discovery-authorization-v1", "wrong authorization schema")
+    require(reference_schema.get("$id") == "orbittrace-withheld-reference-v1", "wrong reference schema")
+    require("withheld_reference_artifact_id" not in json.dumps(stage_a_schema, sort_keys=True), "Stage A request schema exposes reference locator")
+    require(auth_schema.get("additionalProperties") is False and reference_schema.get("additionalProperties") is False, "artifact schemas are not closed")
+
     for path in FREEZE_PATHS:
         require(Path(path).is_file(), f"freeze file missing: {path}")
 
@@ -129,6 +171,9 @@ def main() -> int:
         "target_region_data_access": False,
         "withheld_reference_access": False,
         "catalogue_access": False,
+        "stage_a_execution_request_present": False,
+        "stage_b_execution_request_present": False,
+        "target_workflows_directly_dispatchable": False,
     }
     manifest_path = output / "FREEZE_MANIFEST.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -151,6 +196,10 @@ def main() -> int:
         "target_region_data_access": False,
         "withheld_reference_access": False,
         "catalogue_access": False,
+        "stage_a_execution_request_present": False,
+        "stage_b_execution_request_present": False,
+        "target_workflows_directly_dispatchable": False,
+        "execution_only_child_pr_gate": True,
     }
     (output / "v8_final_blind_source_audit.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, indent=2, sort_keys=True))
