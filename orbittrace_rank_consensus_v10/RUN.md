@@ -1,0 +1,1 @@
+Execution-only trigger for frozen rank-consensus v10 parent `6bfd80c59803e57f56e9c23fa44c5823ece20109`. No scientific constant, family rule, physical score, fusion candidate, label split, selection rule, validation gate, blindness rule, or target information may change in this child.
