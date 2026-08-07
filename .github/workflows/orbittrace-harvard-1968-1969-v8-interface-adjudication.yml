@@ -1,9 +1,9 @@
-name: OrbitTrace Harvard 1968-1969 v8 interface adjudication
+name: OrbitTrace Harvard 1968-1969 v8 interface adjudication source fix
 
 on:
   pull_request:
     branches:
-      - agent/orbittrace-harvard-1968-1969-v8-interface-adjudication
+      - agent/orbittrace-harvard-1968-1969-v8-interface-adjudication-source-fix
     paths:
       - 'orbittrace_harvard_1968_1969_v8_interface_adjudication/RUN.md'
   workflow_dispatch:
@@ -16,17 +16,17 @@ jobs:
   adjudicate:
     runs-on: ubuntu-22.04
     steps:
-      - name: Check out frozen adjudication parent
+      - name: Check out frozen source-fix parent
         uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-harvard-1968-1969-v8-interface-adjudication
+          ref: agent/orbittrace-harvard-1968-1969-v8-interface-adjudication-source-fix
           fetch-depth: 1
 
-      - name: Enforce frozen adjudication source
+      - name: Enforce corrected checker source only
         run: |
           set -euo pipefail
-          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/PROTOCOL.md)" = "38bb11b8ffa1d2a8c25a9e34989d6d3c01dc37f8"
-          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py)" = "a785b76ffe786840d94517914b8d935c6a6b2d3c"
+          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/PROTOCOL.md)" = "82426a76f91cde9f1890606c9f1c8384a8d72401"
+          test "$(git hash-object orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py)" = "c206e9fbe9b0e03a3ade7cbe3e4ab57245812567"
           python -m py_compile orbittrace_harvard_1968_1969_v8_interface_adjudication/adjudicate.py
 
       - name: Fetch immutable Harvard structure artifact
@@ -55,6 +55,7 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8972724498/zip" \
             -o input/fixed4-source.zip
           unzip -l input/fixed4-source.zip | grep -F 'run_fixed4_support_wrapper_development.py'
+          unzip -l input/fixed4-source.zip | grep -F 'run_fixed4_blind_catalogue.py'
 
       - name: Adjudicate exact v8/Harvard interface without event data
         run: |
@@ -72,12 +73,14 @@ jobs:
           from pathlib import Path
           r=json.loads(Path('output/harvard_1968_1969_v8_interface_adjudication.json').read_text())
           assert r['verdict']=='FAIL_HARVARD_1968_1969_V8_INTERFACE_COMPATIBILITY'
-          assert r['fixed4_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert r['wrapper_source_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          assert r['blind_catalogue_source_sha256']=='48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5'
           assert all(r['fixed4_source_gates'].values())
           assert all(r['harvard_label_gates'].values())
           assert r['native_geocentric_nonorbital_fields']==[]
           assert r['event_site_position_height_fields']==[]
           assert r['exact_nonorbital_geocentric_recovery_available'] is False
+          assert r['prior_checker_failure_run_preserved']==31226997818
           assert r['harvard_event_table_opened'] is False
           assert r['harvard_event_values_inspected'] is False
           assert r['orbital_elements_used_for_discovery'] is False
@@ -101,7 +104,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-harvard-1968-1969-v8-interface-adjudication
+          name: orbittrace-harvard-1968-1969-v8-interface-adjudication-source-fix
           path: output
           if-no-files-found: error
           retention-days: 90
