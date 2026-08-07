@@ -1,0 +1,1 @@
+Execute the frozen SAAMER 2020–2021 external validation from parent commit `f2fc17463a456e85a83a724ff37eea5d948faa96`. No scientific source, gate, density rule, endpoint, or target-blindness rule is changed by this trigger.
