@@ -20,6 +20,12 @@ URLS={
 EXPECTED_LEGEND_SHA256='afb3f9f7a3b753234db8dbb7219d14095510265293485fc1e744f659a857f48b'
 EXPECTED_TOKEN_COUNT=16
 MONTHS=('jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec')
+# Frozen from the official IAU MDC catalogue coverage before either 2022/2023 archive is opened:
+# full calendar year 2022; SAAMER ends on 14 October 2023.
+EXPECTED_MONTHS={
+    2022:tuple(range(1,13)),
+    2023:tuple(range(1,11)),
+}
 EXPECTED_SCHEMA_FIELDS=('IC','Yr','Mn','Day','LS','HM','RA','DEC','Vg','Vh','q','e','a','i','arg','nod')
 
 
@@ -100,7 +106,7 @@ def inspect(year:int,path:Path)->dict:
             })
 
         found={month_key(n) for n in dat}
-        expected={(year,month) for month in range(1,13)}
+        expected={(year,month) for month in EXPECTED_MONTHS[year]}
         gates={
             'zip_crc':bad is None,
             'safe_paths':all(safe(n) for n in names),
@@ -108,8 +114,8 @@ def inspect(year:int,path:Path)->dict:
             'legend_exactly_matches_preexisting_2020_2021_schema_hash':legend_sha==EXPECTED_LEGEND_SHA256,
             'all_expected_schema_fields_present_in_legend':all(field_presence.values()),
             'no_unexpected_regular_members':not other,
-            'exact_12_nominal_year_month_members':found==expected,
-            'every_month_nonempty':len(monthly)==12 and all(row['rows']>0 for row in monthly),
+            'exact_source_defined_month_members':found==expected,
+            'every_expected_month_nonempty':len(monthly)==len(expected) and all(row['rows']>0 for row in monthly),
             'at_least_100000_total_rows':total_rows>=100000,
             'every_nonempty_meteor_row_exactly_16_whitespace_tokens':set(global_tokens)=={EXPECTED_TOKEN_COUNT},
         }
@@ -118,6 +124,7 @@ def inspect(year:int,path:Path)->dict:
             'url':URLS[year],
             'archive_sha256':archive_sha,
             'archive_bytes':path.stat().st_size,
+            'expected_months':list(EXPECTED_MONTHS[year]),
             'legend_member':legends[0],
             'legend_sha256':legend_sha,
             'legend_schema_field_presence':field_presence,
