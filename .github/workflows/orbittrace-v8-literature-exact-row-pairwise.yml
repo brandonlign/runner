@@ -1,0 +1,173 @@
+name: OrbitTrace v8 exact-row literature pairwise
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_literature_matched_v8/**'
+      - '.github/workflows/orbittrace-v8-literature-exact-row-pairwise.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: orbittrace_wavelet_catalogue_v3:orbittrace_sparse_support_multiplicity_v5:input/v3:.
+
+jobs:
+  exact-row-pairwise:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - name: Check out isolated comparison branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install frozen scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce exact-row preregistration and frozen v8 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/parser input/mapping input/archives input/competitors/{hdbscan2023,hdbscan2025,sugar2023,sugar2025} output_exact
+          python -m py_compile \
+            orbittrace_literature_matched_v8/run_exact_row_benchmark.py \
+            orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = "f248df78e1258b132b41aecca6a985a5eb782654"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_literature_matched_v8/EXACT_ROW_PROTOCOL.md').read_text()
+          assert '31226030807' in p
+          assert 'delta >= 0.10' in p
+          assert 'exactly the event IDs' in p
+          assert 'No OrbitTrace target coordinate' in p
+          broad=Path('orbittrace_literature_matched_v8/PROTOCOL.md').read_text()
+          assert 'No final OrbitTrace target reveal' in broad
+          print('PASS_EXACT_ROW_PREDATA_PROTOCOL_FREEZE')
+          PY
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+
+          gh run download 30920687116 --repo "$GITHUB_REPOSITORY" --name sonotaco-2023-confirmation-source-repair-v2 --dir input/parser
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input/mapping
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/parser/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
+          rm -rf output
+
+      - name: Download exact frozen competitor assignment artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31076062060 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2023-hdbscan-transfer-v2 --dir input/competitors/hdbscan2023
+          gh run download 31071589912 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2025-hdbscan-catalogue --dir input/competitors/hdbscan2025
+          gh run download 31076789635 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2023-sugar-uncertainty-transfer --dir input/competitors/sugar2023
+          gh run download 31075178517 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2025-sugar-uncertainty-catalogue --dir input/competitors/sugar2025
+
+          echo '7dbb920532f7dc429a6cd5961d80d480c5ff53c0122cf6e9ec04638c0730ed60  input/competitors/hdbscan2023/full_catalogue_assignments.jsonl.gz' | sha256sum -c -
+          echo '8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3  input/competitors/hdbscan2025/full_catalogue_assignments.jsonl.gz' | sha256sum -c -
+          echo '2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389  input/competitors/sugar2023/sugar_uncertainty_assignments.json.gz' | sha256sum -c -
+          echo '77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e  input/competitors/sugar2025/sugar_uncertainty_assignments.json.gz' | sha256sum -c -
+          echo PASS_EXACT_COMPETITOR_ASSIGNMENT_HASHES
+
+      - name: Download exact already-exposed SonotaCo archives
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/archives/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          curl --fail --location --retry 3 --output input/archives/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/archives/023a.zip' | sha256sum -c -
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/archives/025a.zip' | sha256sum -c -
+
+      - name: Execute exact-row pairwise benchmark
+        run: |
+          set -euo pipefail
+          python orbittrace_literature_matched_v8/run_exact_row_benchmark.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --parser-2023 input/parser/run_sonotaco_2023_fixed4_confirmation.py \
+            --parser-2025 orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
+            --mapping-audit input/mapping/audit.json \
+            --archive-2023 input/archives/023a.zip \
+            --archive-2025 input/archives/025a.zip \
+            --hdbscan-2023 input/competitors/hdbscan2023/full_catalogue_assignments.jsonl.gz \
+            --hdbscan-2025 input/competitors/hdbscan2025/full_catalogue_assignments.jsonl.gz \
+            --sugar-2023 input/competitors/sugar2023/sugar_uncertainty_assignments.json.gz \
+            --sugar-2025 input/competitors/sugar2025/sugar_uncertainty_assignments.json.gz \
+            --output output_exact
+          cat output_exact/V8_EXACT_ROW_PAIRWISE.md
+
+      - name: Enforce exact-row result integrity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output_exact/v8_exact_row_pairwise.json').read_text())
+          assert r['verdict'] in {'PASS_V8_EXACT_ROW_PAIRWISE_LITERATURE_BENCHMARK','FAIL_V8_EXACT_ROW_PAIRWISE_INTEGRITY'}
+          assert r['configuration']['v8_source_commit']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['no_v8_parameter_change'] is True
+          assert r['configuration']['labels_loaded_only_after_both_pairwise_rankings_frozen'] is True
+          assert r['panels']['hdbscan']['exact_event_rows']=={'2023':27778,'2025':19658}
+          assert r['panels']['sugar']['exact_event_rows']=={'2023':30414,'2025':23200}
+          assert all(r['integrity_gates'].values())
+          assert 'No OrbitTrace target information' in r['claim_boundary']
+          print('ORBITTRACE_EXACT_ROW_PAIRWISE_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_EXACT_ROW_PAIRWISE_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output_exact
+          git rev-parse HEAD > output_exact/benchmark_commit.txt
+          sha256sum \
+            orbittrace_literature_matched_v8/EXACT_ROW_PROTOCOL.md \
+            orbittrace_literature_matched_v8/PROTOCOL.md \
+            orbittrace_literature_matched_v8/DECISION_GATES.md \
+            orbittrace_literature_matched_v8/run_exact_row_benchmark.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            input/competitors/hdbscan2023/full_catalogue_assignments.jsonl.gz \
+            input/competitors/hdbscan2025/full_catalogue_assignments.jsonl.gz \
+            input/competitors/sugar2023/sugar_uncertainty_assignments.json.gz \
+            input/competitors/sugar2025/sugar_uncertainty_assignments.json.gz \
+            input/archives/023a.zip input/archives/025a.zip \
+            > output_exact/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output_exact/python_version.txt
+          python -m pip freeze > output_exact/environment.txt
+
+      - name: Upload exact-row evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-literature-exact-row-pairwise
+          path: output_exact
+          if-no-files-found: error
+          retention-days: 90
