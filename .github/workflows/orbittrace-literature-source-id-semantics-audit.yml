@@ -41,12 +41,6 @@ jobs:
           def show(commit, path):
               return subprocess.check_output(['git','show',f'{commit}:{path}'])
 
-          def decode_single(commit, path, out):
-              payload=b''.join(show(commit,path).split())
-              src=gzip.decompress(base64.b64decode(payload, validate=True))
-              Path(out).write_bytes(src)
-              return hashlib.sha256(src).hexdigest()
-
           def decode_parts(commit, root, out):
               names=subprocess.check_output(['git','ls-tree','-r','--name-only',commit,root],text=True).splitlines()
               names=sorted(x for x in names if x.endswith('.b64'))
@@ -57,28 +51,28 @@ jobs:
               Path(out).write_bytes(src)
               return hashlib.sha256(src).hexdigest(), names
 
-          records={}
-          records['hdbscan_2025']={
-              'sha256': decode_single(
-                  'a15737166cc9e1917f2e3d1b63cc42096008ae2e',
-                  'orbittrace_literature_comparison/run_sonotaco_2025_hdbscan_catalogue.py.gz.b64',
-                  'decoded/hdbscan_2025.py'),
-          }
-          sha,names=decode_parts(
+          specs={
+            'hdbscan_2025':(
+              'a15737166cc9e1917f2e3d1b63cc42096008ae2e',
+              'orbittrace_literature_comparison/hdbscan_catalogue_runner_parts',
+              'decoded/hdbscan_2025.py'),
+            'hdbscan_2023':(
               '64747179b397d780010c0e608a4307cf780f657f',
               'orbittrace_hdbscan_freeze/sonotaco_2023_runner_parts',
-              'decoded/hdbscan_2023_original.py')
-          records['hdbscan_2023']={'sha256':sha,'parts':names}
-          sha,names=decode_parts(
+              'decoded/hdbscan_2023_original.py'),
+            'sugar_2025':(
               'b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd',
               'orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts',
-              'decoded/sugar_2025.py')
-          records['sugar_2025']={'sha256':sha,'parts':names}
-          sha,names=decode_parts(
+              'decoded/sugar_2025.py'),
+            'sugar_2023':(
               'b328684f0614675067311a3c4cd00480de954f1a',
               'orbittrace_literature_freeze/sugar_uncertainty_2023_runner_parts',
-              'decoded/sugar_2023.py')
-          records['sugar_2023']={'sha256':sha,'parts':names}
+              'decoded/sugar_2023.py'),
+          }
+          records={}
+          for name,(commit,root,out) in specs.items():
+              sha,names=decode_parts(commit,root,out)
+              records[name]={'sha256':sha,'parts':names}
 
           import json
           Path('audit/source_hashes.json').write_text(json.dumps(records,indent=2,sort_keys=True)+'\n')
@@ -89,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import ast, json, re
+          import json, re
           from pathlib import Path
 
           patterns=re.compile(r'(BLIND|blind|20\.0|55\.0|event_id|SNM|enumerate\(|row_index|row_idx|source_labels|shower.*token|token.*shower|sol.*<=|<=.*sol)')
@@ -98,14 +92,15 @@ jobs:
               text=path.read_text()
               lines=text.splitlines()
               hits=[]
+              emitted=set()
               for i,line in enumerate(lines,1):
                   if patterns.search(line):
                       lo=max(1,i-2); hi=min(len(lines),i+2)
-                      hits.append({
-                          'line':i,
-                          'context':[f'{j}: {lines[j-1]}' for j in range(lo,hi+1)],
-                      })
-              # Static source only: no catalogue data involved.
+                      key=(lo,hi)
+                      if key in emitted:
+                          continue
+                      emitted.add(key)
+                      hits.append({'line':i,'context':[f'{j}: {lines[j-1]}' for j in range(lo,hi+1)]})
               report[path.name]={
                   'line_count':len(lines),
                   'has_20_55_literals':('20.0' in text and '55.0' in text),
