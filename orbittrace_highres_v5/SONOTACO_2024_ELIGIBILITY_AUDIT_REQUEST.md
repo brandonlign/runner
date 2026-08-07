@@ -20,3 +20,5 @@ Prohibited operations:
 - AUROC, recall, false-positive rates, threshold performance, or method comparisons.
 
 The frozen v5 architecture remains 512 calibration nulls/bin, denominator 513, v3 rank 20/513, fixed4 rank 10/513, OR decision. This audit may not change it.
+
+Any technical repair made before catalogue access must preserve this scope exactly; a scientific result is not authorized until a passing eligibility artifact is separately frozen.
