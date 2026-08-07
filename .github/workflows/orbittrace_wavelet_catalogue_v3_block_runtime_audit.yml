@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
     env:
       PYTHONPATH: orbittrace_wavelet_catalogue_v3
@@ -24,10 +24,15 @@ jobs:
         with:
           ref: agent/orbittrace-wavelet-catalogue-v3-block-runtime-v2
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install exact frozen runtime dependencies
         run: |
           set -euo pipefail
-          python -m pip install numpy==2.1.3 scikit-learn==1.5.2
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
 
       - name: Verify exact frozen source before implementation testing
         run: |
