@@ -1,0 +1,65 @@
+name: OrbitTrace multiplicity SonotaCo 2017-2019 transform audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-sonotaco-2017-2019-scoreholdout
+    paths:
+      - 'orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/AUDIT_RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen score-label holdout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-multiplicity-sonotaco-2017-2019-scoreholdout
+      - name: Fetch immutable original external runner source only
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          git fetch --no-tags --depth=1 origin agent/orbittrace-multiplicity-sonotaco-2015-2017-external
+          git show FETCH_HEAD:orbittrace_multiplicity_sonotaco_2015_2017_external/run_external_validation.py > input/original_runner.py
+          test "$(git hash-object input/original_runner.py)" = "a4128e0620dcf1242fe90bb6758c96d46caf0119"
+          test "$(git hash-object orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/PROTOCOL.md)" = "dd43862b82dc21815898399b188205cb1ab5a2ac"
+          test "$(git hash-object orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/run_score_label_holdout.py)" = "5ea84ca2ecd0e312c314141985b2bfecddbce22a"
+      - name: Audit guarded transform without parser catalogue label or score access
+        run: |
+          set -euo pipefail
+          test ! -e input/archives
+          test ! -e input/parsers
+          python orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/run_score_label_holdout.py \
+            --audit-only \
+            --original-runner input/original_runner.py
+          grep -Fx 'replacement_count=14' output/score_label_holdout_transform_audit.txt
+          grep -Fx 'scientific_gate_change=false' output/score_label_holdout_transform_audit.txt
+          grep -Fx 'target_information_access=false' output/score_label_holdout_transform_audit.txt
+          python -m py_compile /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py
+          ! grep -q '2015' /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py
+          ! grep -q '015a' /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py
+          grep -Fq 'YEARS = (2017, 2019)' /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py
+          grep -Fq 'm_recovery >= b_recovery + 1' /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py
+          grep -Fq 'm_recovery >= required_vs_fixed4' /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py
+          grep -Fq 'float(metrics["multiplicity"]["topk_dominant_precision"]) >= 0.50' /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py
+          sha256sum /tmp/orbittrace_sonotaco_2017_2019_scoreholdout.py > output/patched_runner_sha256.txt
+          echo PASS_2017_2019_TRANSFORM_SOURCE_ONLY_AUDIT
+      - name: Record provenance
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum \
+            orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/PROTOCOL.md \
+            orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout/run_score_label_holdout.py \
+            input/original_runner.py > output/source_sha256.txt
+      - name: Upload transform audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiplicity-sonotaco-2017-2019-transform-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
