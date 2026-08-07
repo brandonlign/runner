@@ -1,24 +1,11 @@
 name: OrbitTrace v8 final blind discovery Stage B
 
 on:
-  workflow_dispatch:
-    inputs:
-      stage_a_artifact_id:
-        description: Immutable Stage A artifact ID
-        required: true
-        type: string
-      stage_a_artifact_sha256:
-        description: Exact SHA-256 of Stage A artifact ZIP
-        required: true
-        type: string
-      withheld_reference_artifact_id:
-        description: Withheld-reference artifact ID (Stage B only)
-        required: true
-        type: string
-      withheld_reference_artifact_sha256:
-        description: Exact SHA-256 sealed before Stage A
-        required: true
-        type: string
+  pull_request_target:
+    branches:
+      - agent/orbittrace-v8-final-blind-discovery-freeze
+    paths:
+      - orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json
 
 permissions:
   contents: read
@@ -33,26 +20,69 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact frozen base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Verify execution-only child and parse request
+        id: request
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          test "$HEAD_REPO" = "$GITHUB_REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          git fetch --no-tags --depth=2 origin "$HEAD_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          test "$changed" = "orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json"
+          mkdir -p input
+          git show "$HEAD_SHA:orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json" > input/stage_b_execution_request.json
+          python - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          r=json.loads(Path('input/stage_b_execution_request.json').read_text())
+          expected={
+              'schema','freeze_commit','stage_a_artifact_id','stage_a_artifact_sha256',
+              'withheld_reference_artifact_id','withheld_reference_artifact_sha256'
+          }
+          assert set(r)==expected, set(r)
+          assert r['schema']=='orbittrace-v8-stage-b-execution-request-v1'
+          assert re.fullmatch(r'[0-9a-f]{40}',str(r['freeze_commit']))
+          for key in ('stage_a_artifact_id','withheld_reference_artifact_id'):
+              assert re.fullmatch(r'[0-9]+',str(r[key]))
+          for key in ('stage_a_artifact_sha256','withheld_reference_artifact_sha256'):
+              assert re.fullmatch(r'[0-9a-f]{64}',str(r[key]))
+          current=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert r['freeze_commit']==current, (r['freeze_commit'],current)
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as fh:
+              for key in sorted(expected-{'schema'}):
+                  fh.write(f"{key}={r[key]}\n")
+          print('PASS_STAGE_B_EXECUTION_ONLY_CHILD_REQUEST')
+          PY
+
       - name: Reproduce source-only freeze manifest
         run: |
           set -euo pipefail
-          mkdir -p input output
+          mkdir -p output
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           python orbittrace_v8_final_blind_discovery/audit_sources.py
+          test "$(python -c 'import json; print(json.load(open("output/FREEZE_MANIFEST.json"))["freeze_commit"])')" = "${{ steps.request.outputs.freeze_commit }}"
           python -m py_compile orbittrace_v8_final_blind_discovery/run_stage_b.py
 
       - name: Retrieve and verify immutable Stage A only
         env:
           GH_TOKEN: ${{ github.token }}
-          STAGE_A_ID: ${{ inputs.stage_a_artifact_id }}
-          STAGE_A_SHA: ${{ inputs.stage_a_artifact_sha256 }}
-          REQUESTED_REF_SHA: ${{ inputs.withheld_reference_artifact_sha256 }}
+          STAGE_A_ID: ${{ steps.request.outputs.stage_a_artifact_id }}
+          STAGE_A_SHA: ${{ steps.request.outputs.stage_a_artifact_sha256 }}
+          REQUESTED_REF_SHA: ${{ steps.request.outputs.withheld_reference_artifact_sha256 }}
         run: |
           set -euo pipefail
           curl --fail-with-body -L --retry 3 \
@@ -86,8 +116,8 @@ jobs:
       - name: Retrieve withheld reference only after Stage A preflight passed
         env:
           GH_TOKEN: ${{ github.token }}
-          REF_ID: ${{ inputs.withheld_reference_artifact_id }}
-          REF_SHA: ${{ inputs.withheld_reference_artifact_sha256 }}
+          REF_ID: ${{ steps.request.outputs.withheld_reference_artifact_id }}
+          REF_SHA: ${{ steps.request.outputs.withheld_reference_artifact_sha256 }}
         run: |
           set -euo pipefail
           test "$(python -c 'import json; print(json.load(open("output/stage_b_preflight.json"))["verdict"])')" = "PASS_STAGE_B_PREFLIGHT_BEFORE_REFERENCE_ACCESS"
@@ -114,7 +144,7 @@ jobs:
         run: |
           set +e
           git rev-parse HEAD > output/reveal_commit.txt
-          sha256sum input/stage-a.zip input/withheld-reference.zip output/FREEZE_MANIFEST.json > output/reveal_input_sha256.txt 2>/dev/null
+          sha256sum input/stage_b_execution_request.json input/stage-a.zip input/withheld-reference.zip output/FREEZE_MANIFEST.json > output/reveal_input_sha256.txt 2>/dev/null
           python --version > output/python_version.txt
 
       - name: Upload immutable Stage B reveal evidence
