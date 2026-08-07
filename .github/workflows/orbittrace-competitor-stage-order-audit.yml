@@ -1,0 +1,45 @@
+name: OrbitTrace competitor stage-order source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_literature_matched_v8/audit_competitor_stage_order.py'
+      - '.github/workflows/orbittrace-competitor-stage-order-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run source-only audit
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_literature_matched_v8/audit_competitor_stage_order.py
+          python orbittrace_literature_matched_v8/audit_competitor_stage_order.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output_stage_order/competitor_stage_order_audit.json').read_text())
+          assert r['verdict']=='PASS_SOURCE_ONLY_COMPETITOR_STAGE_ORDER_AUDIT'
+          assert r['data_accessed'] is False
+          assert r['orbittrace_target_accessed'] is False
+          assert r['excluded_interval_contents_accessed'] is False
+          print('PASS_COMPETITOR_STAGE_ORDER_SOURCE_ONLY')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-competitor-stage-order-source-audit
+          path: output_stage_order
+          if-no-files-found: error
+          retention-days: 90
