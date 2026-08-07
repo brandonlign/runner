@@ -34,10 +34,10 @@ jobs:
       - name: Retrieve exact validated SonotaCo 2023 benchmark source
         run: |
           set -euo pipefail
-          git fetch --no-tags origin 9ccefb50063f7f9e760beb5d8a5e362e0e2d2279 --depth=1
+          git fetch --no-tags origin e23c7859bbcaf57b72be67c6ec834c496671c90d --depth=1
           rm -rf /tmp/orbittrace-2023
-          git worktree add --detach /tmp/orbittrace-2023 9ccefb50063f7f9e760beb5d8a5e362e0e2d2279
-          test "$(git -C /tmp/orbittrace-2023 rev-parse HEAD)" = "9ccefb50063f7f9e760beb5d8a5e362e0e2d2279"
+          git worktree add --detach /tmp/orbittrace-2023 e23c7859bbcaf57b72be67c6ec834c496671c90d
+          test "$(git -C /tmp/orbittrace-2023 rev-parse HEAD)" = "e23c7859bbcaf57b72be67c6ec834c496671c90d"
           test "$(git -C /tmp/orbittrace-2023 hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
           test "$(git -C /tmp/orbittrace-2023 hash-object orbittrace_literature_comparison/build_wavelet_2023_runner.py)" = "169c4d03ffcb179951197a0f93c4bc5d63354748"
           test "$(git -C /tmp/orbittrace-2023 hash-object .github/workflows/orbittrace_sonotaco_2023_wavelet_episode_transfer.yml)" = "57091e1ec5606cf2c7bab1697264d248f9214509"
@@ -62,7 +62,6 @@ jobs:
             orbittrace_fpr_budgeted_v4/build_v3_2023_runner.py \
             orbittrace_fpr_budgeted_v4/evaluate_2023_transfer.py
           python - <<'PY'
-          import json
           import multi_anchor_energy_v3 as v3
           import decision_v4 as decision
           assert all(v3.self_test().values()), v3.self_test()
@@ -102,26 +101,25 @@ jobs:
             > /tmp/literature_comparators.py
           echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  /tmp/literature_comparators.py' | sha256sum -c -
 
+          echo '0e3af3c5f2b8f2265f5f67cbbd3e43616e3ccc7ca7cd3b5ebfe01f920fbb18ca  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part00.b64' | sha256sum -c -
+          echo 'ccfbed79a2c50f0e9768badb58700696ce6401961d1e85f412d3962211d2b8f1  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub00.b64' | sha256sum -c -
+          echo '2904c359c237671e4a20d3d18606f7a4ca91b472d1298c8c5d8c5c6d4753c5aa  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub01.b64' | sha256sum -c -
+          echo '721719076fd28015b2ff7ff0d299b69b77e3bd774fc9adf1705cbfce52702a3c  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub02.b64' | sha256sum -c -
+          echo '8bfbfd7e5deb22d64c1687767b9c7a10ecb28573c6b4dac01548e7d9102a54d1  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub03.b64' | sha256sum -c -
+          echo 'a1c0da4f5a52ff9495b578e6becd4e58bb902b3b38251ffd04cb1fbc31f463e0  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part02.b64' | sha256sum -c -
+
           python - <<'PY'
           import base64
           import gzip
           import hashlib
           from pathlib import Path
           root = Path('/tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts')
-          expected = {
-              'part00.b64': '0e3af3c5f2b8f2265f5f67cbbd3e43616e3ccc7ca7cd3b5ebfe01f920fbb18ca',
-              'part01_sub00.b64': 'ccfbed79a2c50f0e9768badb58700696ce6401961d1e85f412d3962211d2b8f1',
-              'part01_sub01.b64': '2904c359c237671e4a20d3d18606f7a4ca91b472d1298c8c5c6d4753c5aa',
-              'part01_sub02.b64': '721719076fd28015b2ff7ff0d299b69b77e3bd774fc9adf1705cbfce52702a3c',
-              'part01_sub03.b64': '8bfbfd7e5deb22d64c1687767b9c7a10ecb28573c6b4dac01548e7d9102a54d1',
-              'part02.b64': 'a1c0da4f5a52ff9495b578e6becd4e58bb902b3b38251ffd04cb1fbc31f463e0',
-          }
-          encoded = ''
-          for name, digest in expected.items():
-              data = (root / name).read_bytes()
-              if hashlib.sha256(data).hexdigest() != digest:
-                  raise RuntimeError(f'2023 runner part changed: {name}')
-              encoded += ''.join(data.decode().split())
+          names = (
+              'part00.b64',
+              'part01_sub00.b64', 'part01_sub01.b64', 'part01_sub02.b64', 'part01_sub03.b64',
+              'part02.b64',
+          )
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
           source = gzip.decompress(base64.b64decode(encoded, validate=True))
           digest = hashlib.sha256(source).hexdigest()
           if digest != '582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747':
