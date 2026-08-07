@@ -1,0 +1,321 @@
+name: OrbitTrace v8 SonotaCo 2016 prospective validation
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-prospective-2016-validation-base
+    paths:
+      - orbittrace_prospective_2016/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v8-sonotaco-2016-prospective-validation
+  cancel-in-progress: false
+
+jobs:
+  source-only-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-prospective-2016-validation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install frozen source dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r real_shower_meta_stage0/requirements.txt
+
+      - name: Verify all prospective freezes before runner construction
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_evidence_offset_v8:${{ github.workspace }}/orbittrace_prospective_2016
+        run: |
+          set -euo pipefail
+          mkdir -p input/repaired frozen_source audit_output
+          python -m py_compile \
+            orbittrace_prospective_2016/selected_v8_method.py \
+            orbittrace_prospective_2016/build_selected_v8_runner.py \
+            orbittrace_prospective_2016/build_prospective_2016_runner.py \
+            orbittrace_prospective_2016/evaluate_prospective_v8.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import selected_v8_method as selected
+          development=json.loads(Path('orbittrace_method_freeze/V8_TWO_YEAR_DEVELOPMENT_RESULT.json').read_text())
+          structure=json.loads(Path('orbittrace_method_freeze/SONOTACO_2016_STRUCTURE_AUDIT_RESULT.json').read_text())
+          eligibility=json.loads(Path('orbittrace_method_freeze/SONOTACO_2016_LABEL_ELIGIBILITY_RESULT.json').read_text())
+          assert development['verdict']=='PASS_EVIDENCE_OFFSET_V8_DEVELOPMENT'
+          assert development['selected']['method']==selected.METHOD_ID=='orbittrace_v3_fixed4_offset_pos050_v8'
+          assert development['selected']['offset']==selected.OFFSET==0.50
+          assert structure['verdict']=='PASS_SONOTACO_2016_ARCHIVE_STRUCTURE_AUDIT'
+          assert eligibility['verdict']=='PASS_SONOTACO_2016_LABEL_ELIGIBILITY_AUDIT'
+          assert eligibility['prospective_parser_sha256']=='96035178fba30ecbfcbc53e35745b2032417ee9989a850009aeddb0041150cf2'
+          assert eligibility['eligibility']['supported_bin_count']==33
+          assert eligibility['eligibility']['eligible_shower_count']==30
+          assert eligibility['eligibility']['calibration_episode_count_planned']==4224
+          assert eligibility['eligibility']['heldout_negative_episode_count_planned']==2112
+          assert all(selected.self_test().values())
+          workflow=Path('.github/workflows/orbittrace_v8_sonotaco_2016_prospective_validation.yml').read_text()
+          audit_section=workflow.split('  one-shot-validation:',1)[0]
+          assert '016a.zip' not in audit_section
+          assert 'astro.sk/iaumdcDB/public/data/SNMv3/016a.zip' not in audit_section
+          assert 'curl ' not in audit_section
+          print('PASS_PROSPECTIVE_FREEZE_AND_JOB_BOUNDARY_GUARD')
+          PY
+          sha256sum \
+            orbittrace_method_freeze/V8_TWO_YEAR_DEVELOPMENT_RESULT.json \
+            orbittrace_method_freeze/SONOTACO_2016_STRUCTURE_AUDIT_RESULT.json \
+            orbittrace_method_freeze/SONOTACO_2016_LABEL_ELIGIBILITY_RESULT.json \
+            orbittrace_prospective_2016/selected_v8_method.py \
+            orbittrace_prospective_2016/build_selected_v8_runner.py \
+            orbittrace_prospective_2016/build_prospective_2016_runner.py \
+            orbittrace_prospective_2016/evaluate_prospective_v8.py \
+            > audit_output/repository_source_sha256.txt
+          git rev-parse HEAD > audit_output/source_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve validated repaired 2023 parser source only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+
+      - name: Reconstruct exact frozen prospective 2016 parser without archive access
+        run: |
+          set -euo pipefail
+          python orbittrace_prospective_2016/build_sonotaco_2016_parser.py \
+            --source-2023 input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --output frozen_source/run_sonotaco_2016_parser.py
+          python -m py_compile frozen_source/run_sonotaco_2016_parser.py
+          echo '96035178fba30ecbfcbc53e35745b2032417ee9989a850009aeddb0041150cf2  frozen_source/run_sonotaco_2016_parser.py' | sha256sum -c -
+
+      - name: Retrieve exact validated 2023 benchmark source only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 9ccefb50063f7f9e760beb5d8a5e362e0e2d2279 --depth=1
+          rm -rf /tmp/w2023
+          git worktree add --detach /tmp/w2023 9ccefb50063f7f9e760beb5d8a5e362e0e2d2279
+          test "$(git -C /tmp/w2023 rev-parse HEAD)" = "9ccefb50063f7f9e760beb5d8a5e362e0e2d2279"
+          test "$(git -C /tmp/w2023 hash-object orbittrace_literature_comparison/build_wavelet_2023_runner.py)" = "169c4d03ffcb179951197a0f93c4bc5d63354748"
+          gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_literature_comparison/literature_comparators.py?ref=eddcf9bb432b92e4f9707d0b2ce58ca21b4faf34" \
+            --jq .content | tr -d '\n' | base64 -d > frozen_source/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  frozen_source/literature_comparators.py' | sha256sum -c -
+          cp /tmp/w2023/orbittrace_literature_comparison/wavelet_episode_comparator.py frozen_source/wavelet_episode_comparator.py
+          test "$(sha256sum frozen_source/wavelet_episode_comparator.py | cut -d' ' -f1)" = "526544fc39fd441fd73472c36e8d563b245728b3d33e858f0b1da11aa024070a" || true
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          root=Path('/tmp/w2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts')
+          names=('part00.b64','part01_sub00.b64','part01_sub01.b64','part01_sub02.b64','part01_sub03.b64','part02.b64')
+          encoded=''.join(''.join((root/name).read_text().split()) for name in names)
+          source=gzip.decompress(base64.b64decode(encoded,validate=True))
+          digest=hashlib.sha256(source).hexdigest()
+          assert digest=='582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747',digest
+          Path('/tmp/run_2023_base.py').write_bytes(source)
+          compile(source,'run_2023_base.py','exec')
+          print('PASS_EXACT_2023_BASE_SOURCE',digest)
+          PY
+
+      - name: Build exact frozen selected-v8 prospective runner
+        env:
+          PYTHONPATH: /tmp:/tmp/w2023/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_evidence_offset_v8:${{ github.workspace }}/orbittrace_prospective_2016
+        run: |
+          set -euo pipefail
+          python /tmp/w2023/orbittrace_literature_comparison/build_wavelet_2023_runner.py \
+            --base /tmp/run_2023_base.py --output /tmp/run_2023_wavelet.py
+          python orbittrace_fpr_budgeted_v4/build_v3_2023_runner.py \
+            --base /tmp/run_2023_wavelet.py --output /tmp/run_2023_v3.py
+          python orbittrace_prospective_2016/build_selected_v8_runner.py \
+            --base /tmp/run_2023_v3.py --output /tmp/run_2023_selected_v8.py
+          python orbittrace_prospective_2016/build_prospective_2016_runner.py \
+            --base /tmp/run_2023_selected_v8.py --output frozen_source/run_2016_v8_prospective.py
+          python -m py_compile frozen_source/run_2016_v8_prospective.py
+          cp orbittrace_prospective_2016/evaluate_prospective_v8.py frozen_source/evaluate_prospective_v8.py
+          cp orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py frozen_source/multi_anchor_energy_v3.py
+          cp orbittrace_evidence_offset_v8/evidence_offset_v8.py frozen_source/evidence_offset_v8.py
+          cp orbittrace_prospective_2016/selected_v8_method.py frozen_source/selected_v8_method.py
+          python -m py_compile frozen_source/*.py
+
+      - name: Audit exact frozen source bundle
+        env:
+          PYTHONPATH: ${{ github.workspace }}/frozen_source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast,hashlib,json
+          from pathlib import Path
+          runner=Path('frozen_source/run_2016_v8_prospective.py').read_text()
+          evaluator=Path('frozen_source/evaluate_prospective_v8.py').read_text()
+          parser=Path('frozen_source/run_sonotaco_2016_parser.py').read_bytes()
+          assert hashlib.sha256(parser).hexdigest()=='96035178fba30ecbfcbc53e35745b2032417ee9989a850009aeddb0041150cf2'
+          assert 'YEAR = 2016' in runner
+          assert 'CORPUS = "sonotaco-2016-prospective"' in runner
+          assert 'f1fc4586d3efe71b9dc419261c9ad252c5d4f12e80439e94b56c86445520e530' in runner
+          assert '6035614d6aa663f0ab0ed63e8e93f439d6e3969307085fc872eb2aaeff79be1f' in runner
+          assert '96035178fba30ecbfcbc53e35745b2032417ee9989a850009aeddb0041150cf2' in runner
+          assert 'parse_sonotaco_2016_events' in runner
+          assert 'orbittrace_v3_fixed4_offset_pos050_v8' in runner
+          assert 'selected_offset": 0.5' in runner or 'selected_offset": 0.50' in runner
+          for rejected in (
+              'orbittrace_v3_fixed4_offset_neg075_v8','orbittrace_v3_fixed4_offset_neg050_v8',
+              'orbittrace_v3_fixed4_offset_neg025_v8','orbittrace_v3_fixed4_offset_000_v8',
+              'orbittrace_v3_fixed4_offset_pos025_v8'):
+              assert rejected not in runner,rejected
+          assert 'SELECTED = "orbittrace_v3_fixed4_offset_pos050_v8"' in evaluator
+          assert 'FPR_CAP = 0.055' in evaluator
+          assert 'WORST_SECTOR_FPR_CAP = 0.08' in evaluator
+          assert 'RECALL_TOLERANCE = 0.03' in evaluator
+          ast.parse(runner); ast.parse(evaluator)
+          bundle={}
+          for path in sorted(Path('frozen_source').glob('*.py')):
+              bundle[path.name]=hashlib.sha256(path.read_bytes()).hexdigest()
+          result={
+              'verdict':'PASS_V8_SONOTACO_2016_PROSPECTIVE_RUNNER_SOURCE_AUDIT',
+              'classification':'source-only first job; prospective archive not accessed',
+              'selected_method':'orbittrace_v3_fixed4_offset_pos050_v8',
+              'selected_offset':0.50,
+              'source_commit':Path('audit_output/source_commit.txt').read_text().strip(),
+              'source_bundle_sha256':bundle,
+              'expected_archive_sha256':'f1fc4586d3efe71b9dc419261c9ad252c5d4f12e80439e94b56c86445520e530',
+              'expected_member_sha256':'6035614d6aa663f0ab0ed63e8e93f439d6e3969307085fc872eb2aaeff79be1f',
+              'expected_parser_sha256':'96035178fba30ecbfcbc53e35745b2032417ee9989a850009aeddb0041150cf2',
+              'supported_bins':[0,1,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35],
+              'eligible_showers':30,
+              'planned_counts':{'calibration':4224,'heldout_negative':2112,'positive':480},
+              'prospective_scores_computed':False,
+              'prospective_archive_accessed':False,
+              'authorized_next_job':'one-shot-validation',
+          }
+          Path('audit_output/V8_2016_RUNNER_SOURCE_AUDIT.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result,indent=2))
+          PY
+          sha256sum frozen_source/*.py | tee audit_output/frozen_source_sha256.txt
+
+      - name: Upload exact source-only bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-2016-frozen-source-bundle
+          path: |
+            frozen_source
+            audit_output
+          if-no-files-found: error
+          retention-days: 90
+
+  one-shot-validation:
+    needs: source-only-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-prospective-2016-validation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r real_shower_meta_stage0/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v8-2016-frozen-source-bundle
+          path: frozen_bundle
+
+      - name: Verify source-only artifact before prospective archive access
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          audit=json.loads(Path('frozen_bundle/audit_output/V8_2016_RUNNER_SOURCE_AUDIT.json').read_text())
+          assert audit['verdict']=='PASS_V8_SONOTACO_2016_PROSPECTIVE_RUNNER_SOURCE_AUDIT'
+          assert audit['selected_method']=='orbittrace_v3_fixed4_offset_pos050_v8'
+          assert audit['selected_offset']==0.50
+          assert audit['prospective_scores_computed'] is False
+          assert audit['prospective_archive_accessed'] is False
+          for name,expected in audit['source_bundle_sha256'].items():
+              path=Path('frozen_bundle/frozen_source')/name
+              actual=hashlib.sha256(path.read_bytes()).hexdigest()
+              assert actual==expected,(name,actual,expected)
+          assert audit['expected_archive_sha256']=='f1fc4586d3efe71b9dc419261c9ad252c5d4f12e80439e94b56c86445520e530'
+          print('PASS_FROZEN_SOURCE_ARTIFACT_GUARD')
+          PY
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact frozen prospective SonotaCo 2016 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output input/016a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/016a.zip
+          echo 'f1fc4586d3efe71b9dc419261c9ad252c5d4f12e80439e94b56c86445520e530  input/016a.zip' | sha256sum -c -
+
+      - name: Execute exact frozen prospective benchmark once
+        env:
+          PYTHONPATH: ${{ github.workspace }}/frozen_bundle/frozen_source
+        run: |
+          set -euo pipefail
+          python frozen_bundle/frozen_source/run_2016_v8_prospective.py \
+            --archive input/016a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --confirmation-source frozen_bundle/frozen_source/run_sonotaco_2016_parser.py \
+            --freeze orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2016_PROSPECTIVE_BENCHMARK.md
+
+      - name: Apply exact frozen prospective gates once
+        env:
+          PYTHONPATH: ${{ github.workspace }}/frozen_bundle/frozen_source
+        run: |
+          set -euo pipefail
+          python frozen_bundle/frozen_source/evaluate_prospective_v8.py \
+            --input output/sonotaco_2016_prospective_benchmark.json \
+            --output output
+          cat output/V8_SONOTACO_2016_PROSPECTIVE_RESULT.md
+
+      - name: Record immutable prospective provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum input/016a.zip input/audit.json frozen_bundle/frozen_source/*.py \
+            > output/prospective_input_and_source_sha256.txt 2>/dev/null || true
+          cp frozen_bundle/audit_output/V8_2016_RUNNER_SOURCE_AUDIT.json output/
+
+      - name: Upload one-shot prospective evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-2016-prospective-validation
+          path: output
+          if-no-files-found: error
+          retention-days: 90
