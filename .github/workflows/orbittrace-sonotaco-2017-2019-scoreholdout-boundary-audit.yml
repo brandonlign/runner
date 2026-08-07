@@ -1,0 +1,62 @@
+name: OrbitTrace SonotaCo 2017-2019 score-label holdout boundary audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiplicity-sonotaco-2017-2019-scoreholdout-audit
+    paths:
+      - 'orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out audit branch with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch authoritative refs and preserved integrity artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin \
+            '+refs/heads/agent/orbittrace-multiplicity-sonotaco-2015-2017-external:refs/remotes/origin/agent/orbittrace-multiplicity-sonotaco-2015-2017-external' \
+            '+refs/heads/agent/orbittrace-cmor-wavelet-multiyear-input-audit:refs/remotes/origin/agent/orbittrace-cmor-wavelet-multiyear-input-audit'
+          mkdir -p input/2017_failure output
+          gh run download 31202055364 --repo "$GITHUB_REPOSITORY" --name orbittrace-multiplicity-sonotaco-postaccess-fixed-protocol --dir input/2017_failure
+      - name: Audit score-label boundary without data access
+        run: |
+          set -euo pipefail
+          python orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout_audit/audit_score_label_boundary.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/sonotaco_2017_2019_score_label_boundary_audit.json').read_text())
+          assert r['verdict']=='PASS_SONOTACO_2017_2019_SCORE_LABEL_HOLDOUT_BOUNDARY_AUDIT'
+          assert r['catalogue_download_this_audit'] is False
+          assert r['scientific_score_access_this_audit'] is False
+          assert r['target_information_access'] is False
+          assert r['years']['2017']['parser_invoked_before_failure'] is False
+          assert r['years']['2017']['shower_labels_read_in_current_chain'] is False
+          assert r['years']['2019']['shower_labels_read_in_prior_input_audit'] is False
+          assert r['years']['2019']['wavelet_coefficients_computed_in_prior_input_audit'] is False
+          assert r['years']['2019']['candidate_values_accessed_in_prior_input_audit'] is False
+          PY
+      - name: Record audit provenance
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_multiplicity_sonotaco_2017_2019_scoreholdout_audit/audit_score_label_boundary.py > output/audit_source_sha256.txt
+      - name: Upload boundary audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sonotaco-2017-2019-score-label-boundary-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
