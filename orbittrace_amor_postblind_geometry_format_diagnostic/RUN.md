@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen staged AMOR parser diagnostic. LS must be decoded first and 20°–55° excluded before Yr/Mn/RA/DECL/Vg syntax inspection. No orbit, detector, family, ranking, target information, or scientific-method rule may be accessed or changed.
