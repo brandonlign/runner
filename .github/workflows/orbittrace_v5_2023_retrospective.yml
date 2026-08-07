@@ -1,0 +1,105 @@
+name: OrbitTrace v5 SonotaCo 2023 retrospective
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-corroborated-base
+    paths:
+      - .github/workflows/orbittrace_v5_2023_retrospective.yml
+      - orbittrace_corroborated_rescue_v5/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v5-sonotaco-2023-retrospective
+  cancel-in-progress: true
+
+jobs:
+  retrospective:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-corroborated-rescue-v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Audit frozen v5 decision before loading 2023 records
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_corroborated_rescue_v5
+        run: |
+          set -euo pipefail
+          mkdir -p input/v4 output
+          python -m py_compile \
+            orbittrace_corroborated_rescue_v5/decision_v5.py \
+            orbittrace_corroborated_rescue_v5/evaluate_2023_retrospective.py
+          python - <<'PY'
+          import decision_v5 as v5
+          assert all(v5.self_test().values()), v5.self_test()
+          assert v5.METHOD_ID == 'orbittrace_corroborated_sparse_rescue_v5'
+          assert v5.CALIBRATION_DENOMINATOR == 129
+          assert v5.V3_PRIMARY_MAX_RANK == 4
+          assert v5.FIXED4_SPARSE_MAX_RANK == 3
+          assert v5.V3_CORROBORATION_MAX_RANK == 40
+          text = open('orbittrace_corroborated_rescue_v5/FROZEN_SELECTION.md').read()
+          assert 'Workflow: `31147868124`' in text
+          assert 'Artifact: `8982153140`' in text
+          assert 'a = 4' in text and 'b = 3' in text and 'c = 40' in text
+          print('PASS_PRE_2023_V5_FREEZE_AUDIT')
+          PY
+          sha256sum \
+            orbittrace_corroborated_rescue_v5/FROZEN_SELECTION.md \
+            orbittrace_corroborated_rescue_v5/decision_v5.py \
+            orbittrace_corroborated_rescue_v5/evaluate_2023_retrospective.py \
+            | tee output/v5_2023_source_sha256.txt
+          git rev-parse HEAD | tee output/v5_2023_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact frozen v4 2023 record artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31147442432 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v4-sonotaco-2023-transfer \
+            --dir input/v4
+          echo '40ab9ebc014d1615420ca5a1f500e55c7bb48ad334962d9c0511b280c4ad141d  input/v4/benchmark/sonotaco_2023_literature_transfer.json' | sha256sum -c -
+          echo 'a0df4155d2637af2601aea70b949d59ac974fea5f8f54256a86cd6c95701472b  input/v4/benchmark/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo 'e2094d70358881b46bc477f04ad0785799eb05b8d23251eee1d2d43d0dc0c8d7  input/v4/benchmark/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo '36fb1a7c08679c410505bc1b9b919e2b7c3298a555c23acd7180f6930a81fc5b  input/v4/transfer/V4_SONOTACO_2023_TRANSFER.json' | sha256sum -c -
+
+      - name: Apply frozen v5 to 2023 retrospective records
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_corroborated_rescue_v5
+        run: |
+          set -euo pipefail
+          python orbittrace_corroborated_rescue_v5/evaluate_2023_retrospective.py \
+            --benchmark input/v4/benchmark/sonotaco_2023_literature_transfer.json \
+            --negative-records input/v4/benchmark/negative_literature_records.jsonl.gz \
+            --positive-records input/v4/benchmark/positive_literature_records.jsonl.gz \
+            --output output
+          cat output/V5_2023_RETROSPECTIVE.md
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          python --version > output/python_version.txt
+          sha256sum input/v4/benchmark/* input/v4/transfer/V4_SONOTACO_2023_TRANSFER.json >> output/v5_2023_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v5 retrospective evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v5-sonotaco-2023-retrospective
+          path: output
+          if-no-files-found: error
+          retention-days: 90
