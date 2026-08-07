@@ -1,0 +1,151 @@
+name: OrbitTrace final literature conclusion audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.md'
+      - 'orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json'
+      - '.github/workflows/orbittrace-literature-final-conclusion-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+
+      - name: Download authoritative successful benchmark artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/sugar input/matched output_final_audit
+          gh run download 31227437130 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v8-sugar-exact-row \
+            --dir input/sugar
+          gh run download 31226030807 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v8-literature-matched-sonotaco \
+            --dir input/matched
+          test -f input/sugar/v8_sugar_exact_row.json
+          test -f input/matched/v8_literature_matched_sonotaco.json
+
+      - name: Verify frozen numeric conclusion against artifacts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          freeze=json.loads(Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json').read_text())
+          sugar=json.loads(Path('input/sugar/v8_sugar_exact_row.json').read_text())
+          matched=json.loads(Path('input/matched/v8_literature_matched_sonotaco.json').read_text())
+
+          assert freeze['status']=='FROZEN_FINAL_LITERATURE_COMPARISON_CONCLUSION'
+          assert freeze['target_blind'] is True
+          assert freeze['orbittrace_target_accessed'] is False
+          assert freeze['excluded_interval_contents_accessed'] is False
+          assert freeze['v8_retuned_after_comparison'] is False
+          assert freeze['decision_thresholds']['material_mean_f1_delta']==0.1
+
+          assert sugar['verdict']=='PASS_V8_SUGAR_EXACT_ROW_PAIRWISE'
+          assert sugar['configuration']['no_v8_parameter_change'] is True
+          assert sugar['configuration']['labels_loaded_only_after_v8_ranking_frozen'] is True
+          assert sugar['exact_event_rows']=={'2023':30414,'2025':23200}
+          assert all(sugar['integrity_gates'].values())
+          assert freeze['sugar_exact_row']['rows']==sugar['exact_event_rows']
+          assert freeze['sugar_exact_row']['v8_family_count']==sugar['v8_family_count']==43
+          assert freeze['sugar_exact_row']['v8_runtime_seconds']==sugar['v8_runtime_seconds']
+          assert freeze['sugar_exact_row']['v8_beats_sugar_4_9'] is sugar['comparison']['preregistered_gate_v8_beats_4_9_both_years'] is False
+          assert freeze['sugar_exact_row']['v8_beats_sugar_4_24'] is sugar['comparison']['preregistered_gate_v8_beats_4_24_both_years'] is False
+          for year in ('2023','2025'):
+              for bin_name in ('4-9','10-24','25-49','50-99','100+','all'):
+                  c=sugar['comparison']['by_year_and_bin'][year][bin_name]
+                  f=freeze['sugar_exact_row']['mean_f1'][year][bin_name]
+                  assert f['v8']==c['v8']['mean_f1']
+                  assert f['sugar']==c['competitor']['mean_f1']
+                  assert f['delta']==c['delta_mean_f1_v8_minus_competitor']
+          assert freeze['sugar_exact_row']['purity']['v8_mean_dominant_known_precision']==sugar['false_positive_burden']['v8']['mean_dominant_known_precision']
+          assert freeze['sugar_exact_row']['purity']['sugar_2023_mean_dominant_known_precision']==sugar['false_positive_burden']['sugar']['2023']['mean_dominant_known_precision']
+          assert freeze['sugar_exact_row']['purity']['sugar_2025_mean_dominant_known_precision']==sugar['false_positive_burden']['sugar']['2025']['mean_dominant_known_precision']
+
+          assert matched['verdict']=='PASS_V8_LITERATURE_MATCHED_SONOTACO_EXECUTION'
+          assert matched['configuration']['no_v8_parameter_change'] is True
+          assert freeze['hdbscan']['same_survey_run']==31226030807
+          for year in ('2023','2025'):
+              for bin_name, delta in freeze['hdbscan']['same_survey_deltas_v8_minus_hdbscan'][year].items():
+                  assert delta==matched['comparisons']['hdbscan'][year][bin_name]['delta_v8_minus_competitor']
+          assert freeze['hdbscan']['same_survey_sparse_gate_passed'] is False
+
+          competitor=json.loads(Path('orbittrace_literature_matched_v8/COMPETITOR_FREEZE.json').read_text())
+          assert freeze['cmor_wavelet']['usable_bins']==competitor['cmor_wavelet']['usable_bins_ge300_radiants']==199
+          assert freeze['cmor_wavelet']['total_bins']==competitor['cmor_wavelet']['total_bins']==324
+          assert freeze['cmor_wavelet']['usable_fraction']==competitor['cmor_wavelet']['observed_fraction']
+          assert freeze['cmor_wavelet']['required_fraction']==competitor['cmor_wavelet']['required_fraction']==0.8
+          assert freeze['d_sh']['catalogue_discovery_superiority_claim_allowed'] is False
+          print('PASS_FINAL_LITERATURE_NUMERIC_CONCLUSION_AUDIT')
+          PY
+
+      - name: Verify strict HDBSCAN exact-row limitation from preserved failed run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run view 31227299751 --repo "$GITHUB_REPOSITORY" --log-failed > output_final_audit/hdbscan_exact_row_failed_log.txt
+          grep -F 'family G62b0b1b96a90 year 2025 has only 64 events in local window' output_final_audit/hdbscan_exact_row_failed_log.txt
+          grep -F 'hdbscan exact-row v8 2023: rows=26460 quartets=2410 components=413' output_final_audit/hdbscan_exact_row_failed_log.txt
+          grep -F 'hdbscan exact-row v8 2025: rows=19658 quartets=1859 components=327' output_final_audit/hdbscan_exact_row_failed_log.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=json.loads(Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json').read_text())
+          assert f['hdbscan']['strict_exact_row_run']==31227299751
+          assert f['hdbscan']['strict_exact_row_status']=='TECHNICALLY_INFEASIBLE_UNDER_FROZEN_METHODS'
+          assert '64' in f['hdbscan']['reason'] and '128' in f['hdbscan']['reason']
+          assert f['hdbscan']['performance_superiority_established'] is False
+          print('PASS_HDBSCAN_EXACT_ROW_LIMITATION_AUDIT')
+          PY
+
+      - name: Enforce claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=json.loads(Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.json').read_text())
+          md=Path('orbittrace_literature_matched_v8/FROZEN_LITERATURE_CONCLUSION.md').read_text()
+          assert f['answers']['v8_beats_hdbscan_sparse']=='NOT_ESTABLISHED'
+          assert f['answers']['v8_beats_full_sugar_sparse']=='NO'
+          assert f['answers']['general_state_of_the_art_sparse_discovery_claim']=='NOT_SUPPORTED'
+          assert 'state of the art for sparse meteor-stream discovery' in md
+          assert 'not scientifically supported' in md
+          assert 'do not retune v8' in f['final_conclusion']
+          assert 'No OrbitTrace target' in md
+          Path('output_final_audit/final_conclusion_audit.json').write_text(json.dumps({
+            'verdict':'PASS_FROZEN_FINAL_LITERATURE_CONCLUSION_AUDIT',
+            'sugar_exact_row_run':31227437130,
+            'hdbscan_same_survey_run':31226030807,
+            'hdbscan_exact_row_limitation_run':31227299751,
+            'orbittrace_target_access':False,
+            'excluded_interval_contents_access':False,
+            'v8_retuning':False,
+            'state_of_the_art_claim_supported':False
+          },indent=2,sort_keys=True)+'\n')
+          print('PASS_FROZEN_FINAL_LITERATURE_CONCLUSION_AUDIT')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-literature-conclusion-audit
+          path: output_final_audit
+          if-no-files-found: error
+          retention-days: 90
