@@ -1,0 +1,92 @@
+name: OrbitTrace AMOR LS anomaly diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-amor-ls-anomaly-diagnostic
+    paths:
+      - 'orbittrace_amor_ls_anomaly_diagnostic/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen anomaly diagnostic
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-amor-ls-anomaly-diagnostic
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install transport dependency
+        run: python -m pip install requests==2.32.5
+
+      - name: Enforce LS-only prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/structure input/ls output
+          test "$(git hash-object orbittrace_amor_ls_anomaly_diagnostic/diagnose_ls_anomalies.py)" = "cd4558a985f87959b28ed3c91b8ba20709919218"
+          python -m py_compile orbittrace_amor_ls_anomaly_diagnostic/diagnose_ls_anomalies.py
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009809682/zip" -o input/structure.zip
+          echo "9f3646a37e519b2de121b0e4083cc92b795ec72f09e3f0ce0fafc48c2aed12dc  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9010277742/zip" -o input/ls.zip
+          echo "21e0df956dd74ec22d9019469f67fe55fb9c79e27f86f0c7f3adce66e798195a  input/ls.zip" | sha256sum -c -
+          unzip -q input/ls.zip -d input/ls
+          rm -rf output/*
+          echo PASS_AMOR_LS_ANOMALY_GUARDS
+
+      - name: Identify only nonconforming LS tokens
+        run: |
+          set -euo pipefail
+          python orbittrace_amor_ls_anomaly_diagnostic/diagnose_ls_anomalies.py \
+            --structure-json input/structure/amor_1990_1999_structure_audit.json \
+            --ls-json input/ls/amor_ls_format_diagnostic.json \
+            --output output
+
+      - name: Enforce LS-only boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/amor_ls_anomaly_diagnostic.json').read_text())
+          assert r['verdict']=='PASS_AMOR_LS_ANOMALY_DIAGNOSTIC'
+          assert r['selected_years']==[1996,1998]
+          assert r['fields_accessed']==['LS']
+          assert r['date_radiant_speed_orbit_access'] is False
+          assert r['detector_family_ranking_access'] is False
+          assert r['target_information_access'] is False
+          print('ORBITTRACE_AMOR_LS_ANOMALY_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_AMOR_LS_ANOMALY_END')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          sha256sum orbittrace_amor_ls_anomaly_diagnostic/diagnose_ls_anomalies.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - name: Upload anomaly artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-amor-ls-anomaly-diagnostic
+          path: output
+          if-no-files-found: error
+          retention-days: 90
