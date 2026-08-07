@@ -1,0 +1,119 @@
+name: OrbitTrace UKMON 2020-2021 pre-scientific structure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-ukmon-2020-2021-structure-audit
+    paths:
+      - 'orbittrace_ukmon_2020_2021_structure_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen structure-audit parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-ukmon-2020-2021-structure-audit
+          fetch-depth: 1
+
+      - name: Set up exact transport dependency
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests==2.32.5
+
+      - name: Enforce frozen source and 2022-only parser provenance
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_ukmon_2020_2021_structure_audit/PROTOCOL.md)" = "a51b0e573b6c7a46eefacd81ceea9944a3145c15"
+          test "$(git hash-object orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py)" = "d29d4a64c4b7ad79ce7c4cf0923f3b1427819122"
+          python -m py_compile orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
+          git fetch --no-tags origin \
+            '+refs/heads/agent/orbittrace-ukmon-2022-interface-transport-correction:refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction'
+          test "$(git rev-parse refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction^{tree} >/dev/null; git show refs/remotes/origin/agent/orbittrace-ukmon-2022-interface-transport-correction:orbittrace_ukmon_2022_interface_development/audit_live_interface.py | git hash-object --stdin)" = "400d952ece88049b0ae37fafcad3b7a92afd4183"
+          grep -Fq 'DATES = ("20200814", "20210814")' orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
+          grep -Fq 'BASE = "https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval={}"' orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py
+
+      - name: Fetch and verify zero-data freshness adjudication prerequisite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness output
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9011943529/zip" \
+            -o input/freshness.zip
+          echo "d44e0673683045683ca78fd79642b4afa1b9495e3586aa6a3e4bd29a1445424a  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/freshness/ukmon_2020_2021_freshness_adjudication.json').read_text())
+          assert r['verdict']=='PASS_UKMON_2020_2021_ZERO_DATA_FRESHNESS_ADJUDICATION'
+          assert r['raw_audit_verdict_preserved']=='FAIL_UKMON_2020_2021_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          assert r['raw_hit_count']==1
+          assert r['additional_hits_forgiven']==0
+          assert r['meteor_api_contacted'] is False
+          assert r['scientific_value_access_this_adjudication'] is False
+          assert r['target_information_access'] is False
+          PY
+
+      - name: Run frozen pre-scientific structure audit
+        run: |
+          set -euo pipefail
+          python orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py \
+            --freshness-json input/freshness/ukmon_2020_2021_freshness_adjudication.json \
+            --output output
+
+      - name: Enforce pre-scientific boundary and frozen dates
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/ukmon_2020_2021_structure_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['dates']==['2020-08-14','2021-08-14']
+              assert r['scientific_field_values_inspected'] is False
+              assert r['orbname_values_inspected'] is False
+              assert r['source_label_values_inspected'] is False
+              assert r['raw_payload_persisted'] is False
+              assert r['method_evaluation_performed'] is False
+              assert r['orbittrace_target_information_access'] is False
+              for d in r['results']:
+                  assert d['exact_row_count_withheld'] is True
+                  assert d['scientific_field_values_inspected'] is False
+                  assert d['orbname_values_inspected'] is False
+                  assert d['source_label_values_inspected'] is False
+                  assert d['raw_payload_persisted'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/structure_audit_commit.txt
+          sha256sum orbittrace_ukmon_2020_2021_structure_audit/PROTOCOL.md orbittrace_ukmon_2020_2021_structure_audit/audit_structure.py > output/source_sha256.txt
+          sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload structure-audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-ukmon-2020-2021-structure-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
