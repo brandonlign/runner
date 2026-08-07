@@ -1,0 +1,99 @@
+name: OrbitTrace UKMON 2022 interface transport-correction retry
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-ukmon-2022-interface-transport-correction
+    paths:
+      - 'orbittrace_ukmon_2022_interface_development/RETRY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out corrected interface parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-ukmon-2022-interface-transport-correction
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact transport dependency
+        run: python -m pip install requests==2.32.5
+      - name: Enforce exact correction and reserved-year prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness input/interface output
+          test "$(git hash-object orbittrace_ukmon_2022_interface_development/PROTOCOL.md)" = "67d7f5c0f892677a32d4ff42a42b11d74d42e010"
+          test "$(git hash-object orbittrace_ukmon_2022_interface_development/audit_live_interface.py)" = "400d952ece88049b0ae37fafcad3b7a92afd4183"
+          grep -Fq "https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval=20220814" orbittrace_ukmon_2022_interface_development/audit_live_interface.py
+          ! grep -Fq "?reqtyp=summary&year=2022" orbittrace_ukmon_2022_interface_development/audit_live_interface.py
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9007677623/zip" -o input/freshness.zip
+          echo "fb2f8122066fa63e7128610256ea91a692de089c7a1f4539a560fd1b4bd86617  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9007813875/zip" -o input/interface.zip
+          echo "8baa3b63c5ae1492cb3e8898fa5accdb009ba8f673bd457af6869aa0aca9d960  input/interface.zip" | sha256sum -c -
+          unzip -q input/interface.zip -d input/interface
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=json.loads(Path('input/freshness/ukmon_2024_2025_repo_freshness_audit.json').read_text())
+          assert f['verdict']=='PASS_UKMON_2024_2025_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          assert f['potential_exposure_hit_count']==0
+          i=json.loads(Path('input/interface/ukmon_documented_interface_adjudication.json').read_text())
+          assert i['verdict']=='PASS_UKMON_DOCUMENTED_INTERFACE_ADJUDICATION'
+          assert i['meteor_api_contacted'] is False and i['reserved_2024_2025_access'] is False
+          PY
+          echo PASS_UKMON_2022_CORRECTED_INTERFACE_PREDATA_GUARDS
+      - name: Query only corrected documented 2022-08-14 summary endpoint
+        run: |
+          set -euo pipefail
+          python orbittrace_ukmon_2022_interface_development/audit_live_interface.py \
+            --interface-json input/interface/ukmon_documented_interface_adjudication.json \
+            --freshness-json input/freshness/ukmon_2024_2025_repo_freshness_audit.json \
+            --output output
+      - name: Enforce corrected interface boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/ukmon_2022_live_interface_development.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['url']=='https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval=20220814'
+              assert r['documented_example_date']=='2022-08-14'
+              assert r['reserved_2024_2025_access'] is False
+              assert r['orbittrace_target_information_access'] is False
+              assert r['method_evaluation_performed'] is False
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/interface_commit.txt
+          sha256sum orbittrace_ukmon_2022_interface_development/PROTOCOL.md orbittrace_ukmon_2022_interface_development/audit_live_interface.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+      - name: Upload corrected interface artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-ukmon-2022-interface-transport-correction
+          path: output
+          if-no-files-found: error
+          retention-days: 90

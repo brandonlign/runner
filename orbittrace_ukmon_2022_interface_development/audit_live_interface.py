@@ -4,7 +4,7 @@ import argparse,json,math
 from pathlib import Path
 import requests
 
-URL='https://api.ukmeteors.co.uk/?reqtyp=summary&year=2022&month=08&day=14'
+URL='https://api.ukmeteors.co.uk/matches?reqtyp=summary&reqval=20220814'
 REQUIRED=('orbname','_sol','_ra_t','_dc_t','_vg','_q','_e','_incl','_peri','_node')
 BLIND_LOW=20.0; BLIND_HIGH=55.0
 
