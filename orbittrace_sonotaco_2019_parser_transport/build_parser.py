@@ -75,6 +75,7 @@ def main() -> int:
         'member': member,
         'source_sha256': sha(out_parser.read_bytes()),
         'changed_line_count': len(changed),
+        'year_only_line_changes': True,
         'year_identifier_only_line_changes': True,
         'function_args': function_args,
         'blind_interval_removed_before_label_access': True,
