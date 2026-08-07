@@ -1,4 +1,4 @@
-name: OrbitTrace wavelet catalogue v3 block-runtime source audit
+name: OrbitTrace wavelet catalogue v3 block-runtime equivalence audit
 
 on:
   pull_request:
@@ -7,19 +7,77 @@ on:
     paths:
       - orbittrace_wavelet_catalogue_v3/inspect_fixed4_runtime_source.py
       - orbittrace_wavelet_catalogue_v3/block_exact_rescore.py
+      - orbittrace_wavelet_catalogue_v3/run_block_runtime.py
       - orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_PROTOCOL.md
 
 permissions:
   contents: read
 
 jobs:
-  inspect:
+  audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: orbittrace_wavelet_catalogue_v3
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-wavelet-catalogue-v3-block-runtime-v2
-      - name: Inspect exact frozen fixed4 runtime geometry only
+
+      - name: Install exact frozen runtime dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install numpy==2.1.3 scikit-learn==1.5.2
+
+      - name: Verify exact frozen source before implementation testing
         run: |
           set -euo pipefail
           python orbittrace_wavelet_catalogue_v3/inspect_fixed4_runtime_source.py
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python -m py_compile \
+            /tmp/run_wavelet_catalogue_v3_development.py \
+            orbittrace_wavelet_catalogue_v3/block_exact_rescore.py \
+            orbittrace_wavelet_catalogue_v3/run_block_runtime.py
+
+      - name: Prove scalar versus block exact-rescore equivalence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.util
+          import json
+          from pathlib import Path
+          import block_exact_rescore as block
+
+          spec = importlib.util.spec_from_file_location(
+              'frozen_catalogue_runtime',
+              '/tmp/run_wavelet_catalogue_v3_development.py',
+          )
+          runtime = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(runtime)
+          support = runtime.load_support_module(
+              Path('orbittrace_fixed4_support_wrapper_development/source_parts')
+          )
+          checks = block.self_test(runtime, support)
+          benchmark = block.benchmark(runtime, support)
+          print('BLOCK_EQUIVALENCE', json.dumps(checks, sort_keys=True))
+          print('BLOCK_BENCHMARK', json.dumps(benchmark, sort_keys=True))
+          required = (
+              'scalar_block_wavelet_within_tolerance',
+              'scalar_block_fixed4_within_tolerance',
+              'scalar_block_membership_equal',
+              'fixed4_nearest_three_equal',
+              'wrap180_vectorization_equal',
+          )
+          if not all(bool(checks[name]) for name in required):
+              raise SystemExit(f'block exact-rescore equivalence failed: {checks}')
+          print('PASS_BLOCK_EXACT_RESCORE_EQUIVALENCE')
+          PY
+
+      - name: Verify implementation-only protocol boundary
+        run: |
+          set -euo pipefail
+          grep -F 'implementation-only' orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_PROTOCOL.md
+          grep -F 'No 2024–2026 catalogue' orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_PROTOCOL.md
+          grep -F 'does not alter the scientific method' orbittrace_wavelet_catalogue_v3/BLOCK_RUNTIME_PROTOCOL.md
+          echo PASS_BLOCK_RUNTIME_PROTOCOL_BOUNDARY
