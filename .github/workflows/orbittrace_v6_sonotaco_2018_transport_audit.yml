@@ -1,0 +1,138 @@
+name: OrbitTrace v6 SonotaCo 2018 transport audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-2018-transport-base
+    paths:
+      - orbittrace_corroborated_rescue_v6/SONOTACO_2018_TRANSPORT_AUDIT_REQUEST.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-2018-transport
+
+      - name: Verify frozen v6 development before any 2018 access
+        run: |
+          set -euo pipefail
+          test -f orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.md
+          test -f orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.json
+          test -f orbittrace_corroborated_rescue_v6/decision_v6.py
+          grep -F 'PASS_V6_CORROBORATED_RESCUE_DEVELOPMENT' orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.md
+          grep -F '17/513' orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.md
+          grep -F '15/513' orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.md
+          grep -F '122/513' orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.md
+          grep -F 'SonotaCo 2018' orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.md
+          python - <<'PY'
+          import importlib.util, json
+          freeze = json.load(open('orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.json'))
+          assert freeze['verdict'] == 'PASS_V6_CORROBORATED_RESCUE_DEVELOPMENT'
+          assert freeze['workflow_run'] == 31154450523
+          assert freeze['primary_v3_rank'] == 17
+          assert freeze['fixed4_rank'] == 15
+          assert freeze['corroboration_v3_rank'] == 122
+          assert freeze['reserved_validation_year'] == 2018
+          spec = importlib.util.spec_from_file_location('decision_v6', 'orbittrace_corroborated_rescue_v6/decision_v6.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert all(module.self_test().values()), module.self_test()
+          print('PASS_PRE_2018_TRANSPORT_V6_FREEZE')
+          PY
+
+      - name: Download and audit SonotaCo 2018 transport structure only
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail --location --retry 3 \
+            --output input/018a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/018a.zip
+          python - <<'PY'
+          import csv
+          import hashlib
+          import json
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('input/018a.zip')
+          archive_bytes = archive.read_bytes()
+          archive_sha = hashlib.sha256(archive_bytes).hexdigest()
+          with zipfile.ZipFile(archive) as zf:
+              names = [info.filename for info in zf.infolist() if not info.is_dir()]
+              csv_names = [name for name in names if name.lower().endswith('.csv')]
+              s_names = [name for name in csv_names if name.endswith('_S.csv')]
+              if len(s_names) != 1:
+                  raise SystemExit(f'expected exactly one SonotaCo _S.csv member, found {s_names}')
+              member = s_names[0]
+              payload = zf.read(member)
+
+          member_sha = hashlib.sha256(payload).hexdigest()
+          text = payload.decode('utf-8-sig')
+          lines = text.splitlines()
+          if len(lines) < 2:
+              raise SystemExit('2018 transport member has no data rows')
+          header_line = lines[0]
+          header = next(csv.reader([header_line]))
+          data_rows = len(lines) - 1
+          if data_rows < 1000:
+              raise SystemExit(f'unexpectedly small 2018 transport corpus: {data_rows}')
+          if not member.startswith('018a/'):
+              raise SystemExit(f'unexpected member prefix: {member}')
+
+          result = {
+              'verdict': 'PASS_SONOTACO_2018_TRANSPORT_AUDIT',
+              'scientific_scores_computed': False,
+              'labels_evaluated': False,
+              'method_performance_evaluated': False,
+              'archive': '018a.zip',
+              'archive_sha256': archive_sha,
+              'member': member,
+              'member_sha256': member_sha,
+              'expected_data_rows': data_rows,
+              'header': header,
+              'header_sha256': hashlib.sha256(header_line.encode()).hexdigest(),
+              'file_count': len(names),
+              'csv_file_count': len(csv_names),
+              'all_members': names,
+          }
+          Path('output/SONOTACO_2018_TRANSPORT_AUDIT.json').write_text(json.dumps(result, indent=2) + '\n')
+          Path('output/SONOTACO_2018_TRANSPORT_AUDIT.md').write_text(
+              '# SonotaCo 2018 transport-only audit\n\n'
+              f"Verdict: **`{result['verdict']}`**\n\n"
+              f"Archive SHA-256: `{archive_sha}`\n\n"
+              f"Member: `{member}`\n\n"
+              f"Member SHA-256: `{member_sha}`\n\n"
+              f"Data rows: **{data_rows}**\n\n"
+              f"Columns: **{len(header)}**\n\n"
+              'No shower labels, detector scores, empirical p-values, recall, FPR, AUROC, or method-performance metrics were computed.\n'
+          )
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Record audit provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          git rev-parse HEAD > output/transport_audit_commit.txt
+          sha256sum \
+            orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.md \
+            orbittrace_corroborated_rescue_v6/FROZEN_DEVELOPMENT_RESULT.json \
+            orbittrace_corroborated_rescue_v6/decision_v6.py \
+            input/018a.zip \
+            > output/transport_audit_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-sonotaco-2018-transport-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
