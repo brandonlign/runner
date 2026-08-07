@@ -22,15 +22,18 @@ def main() -> int:
     assert sha(source_bytes) == EXPECTED_SOURCE_SHA
     source = source_bytes.decode('utf-8')
 
-    # Mechanical year transport only. Every changed line must contain the year token.
-    transported = source.replace('2017', '2019')
+    # Mechanical year transport only: four-digit year and SNMv3 two-digit member prefix.
+    transported = source.replace('2017', '2019').replace('017a', '019a')
     before = source.splitlines()
     after = transported.splitlines()
     assert len(before) == len(after)
     changed = [(i + 1, a, b) for i, (a, b) in enumerate(zip(before, after)) if a != b]
     assert changed
-    assert all('2017' in a and '2019' in b for _, a, b in changed)
-    assert all(a.replace('2017', '2019') == b for _, a, b in changed)
+    for _, a, b in changed:
+        expected = a.replace('2017', '2019').replace('017a', '019a')
+        assert expected == b
+        assert ('2017' in a) or ('017a' in a)
+        assert ('2019' in b) or ('019a' in b)
 
     out_parser = OUT / 'run_sonotaco_2019_transport_parser.py'
     out_parser.write_text(transported)
@@ -72,7 +75,7 @@ def main() -> int:
         'member': member,
         'source_sha256': sha(out_parser.read_bytes()),
         'changed_line_count': len(changed),
-        'year_only_line_changes': True,
+        'year_identifier_only_line_changes': True,
         'function_args': function_args,
         'blind_interval_removed_before_label_access': True,
         'parser_integrity_gates_unchanged': True,
