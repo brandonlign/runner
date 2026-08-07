@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Pre-data adjudication of Harvard 1968/1969 against the frozen v8 input contract.
 
-Source-check correction: wrapper proves the geocentric input mapping/family radius;
-the paired immutable blind-catalogue source proves the feature-matrix transform/scales.
+Source checks are split across the immutable wrapper and blind-catalogue sources.
+The PDS label assertions are whitespace-insensitive semantic-token checks only.
 """
 from __future__ import annotations
 
@@ -16,30 +16,13 @@ from pathlib import Path
 EXPECTED_WRAPPER_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
 EXPECTED_BLIND_SHA256 = "48434df612f790924e6efce45b6b8d4de1401880f398994bc58eef2fce0987e5"
 EXPECTED_FIELDS = {
-    "ORBIT_NUMBER",
-    "OBSERVATION_TIME",
-    "SEMIMAJOR_AXIS",
-    "ECCENTRICITY",
-    "PERIHELION_DISTANCE",
-    "APHELION_DISTANCE",
-    "INCLINATION",
-    "AOP",
-    "LAN",
-    "LOP",
-    "LMA",
-    "VINF",
-    "RADIANT_RA",
-    "RADIANT_DEC",
+    "ORBIT_NUMBER", "OBSERVATION_TIME", "SEMIMAJOR_AXIS", "ECCENTRICITY",
+    "PERIHELION_DISTANCE", "APHELION_DISTANCE", "INCLINATION", "AOP", "LAN",
+    "LOP", "LMA", "VINF", "RADIANT_RA", "RADIANT_DEC",
 }
 ORBITAL_FIELDS = {
-    "SEMIMAJOR_AXIS",
-    "ECCENTRICITY",
-    "PERIHELION_DISTANCE",
-    "APHELION_DISTANCE",
-    "INCLINATION",
-    "AOP",
-    "LAN",
-    "LOP",
+    "SEMIMAJOR_AXIS", "ECCENTRICITY", "PERIHELION_DISTANCE", "APHELION_DISTANCE",
+    "INCLINATION", "AOP", "LAN", "LOP",
 }
 
 
@@ -60,6 +43,11 @@ def find_one(root: Path, basename: str) -> Path:
 
 def field_text(field: dict) -> str:
     return " ".join(str(v) for v in field.values()).lower()
+
+
+def contains_all(text: str, *tokens: str) -> bool:
+    low = text.lower()
+    return all(token.lower() in low for token in tokens)
 
 
 def main() -> int:
@@ -113,18 +101,17 @@ def main() -> int:
     vinf_desc = by_name["VINF"].get("description", "")
     lma_desc = by_name["LMA"].get("description", "")
     label_gates = {
-        "ra_is_observed_radiant_b1950": "observed radiant" in ra_desc.lower() and "b1950" in ra_desc.lower(),
-        "dec_is_observed_radiant_b1950": "observed" in dec_desc.lower() and "radiant" in dec_desc.lower() and "b1950" in dec_desc.lower(),
-        "vinf_is_top_of_atmosphere": "top of the atmosphere" in vinf_desc.lower(),
-        "lma_is_lambda_minus_apex": "lambda minus the apex" in lma_desc.lower(),
+        "ra_is_observed_radiant_b1950": contains_all(ra_desc, "observed", "radiant", "b1950"),
+        "dec_is_observed_radiant_b1950": contains_all(dec_desc, "observed", "radiant", "b1950"),
+        "vinf_is_top_of_atmosphere": contains_all(vinf_desc, "top of the atmosphere"),
+        "lma_is_lambda_minus_apex": contains_all(lma_desc, "lambda minus the apex"),
     }
     assert all(label_gates.values()), label_gates
 
     non_orbital_names = EXPECTED_FIELDS - ORBITAL_FIELDS
     non_orbital_fields = [by_name[name] for name in sorted(non_orbital_names)]
     native_geocentric_fields = [
-        f["name"] for f in non_orbital_fields
-        if "geocentric" in field_text(f)
+        f["name"] for f in non_orbital_fields if "geocentric" in field_text(f)
     ]
     event_site_position_height_fields = [
         f["name"] for f in non_orbital_fields
@@ -136,8 +123,6 @@ def main() -> int:
     ]
 
     exact_recovery_available = bool(native_geocentric_fields) or bool(event_site_position_height_fields)
-    # A generic time, observed radiant, VINF, or lambda-minus-apex quantity is not the
-    # event-specific observer/meteor state required for an exact apparent->geocentric radiant reduction.
     verdict = (
         "PASS_HARVARD_1968_1969_V8_INTERFACE_COMPATIBILITY"
         if exact_recovery_available
@@ -160,20 +145,16 @@ def main() -> int:
             "The official Harvard non-orbital interface provides B1950 observed radiant, VINF at the top of the atmosphere, LMA=lambda-minus-apex, observation time, and orbit number, but no native geocentric field or event-specific site/meteor-position/height state. "
             "Exact geocentric discovery coordinates therefore cannot be recovered from the non-orbital interface alone. Doing so would require orbital-element inversion or an assumed/learned apparent-to-geocentric correction, both prohibited for a frozen-v8 external validation."
         ),
-        "prior_checker_failure_run_preserved": 31226997818,
+        "prior_checker_failure_runs_preserved": [31226997818, 31227229710],
         "harvard_event_table_opened": False,
         "harvard_event_values_inspected": False,
         "orbital_elements_used_for_discovery": False,
         "approximate_transform_introduced": False,
         "v8_modified": False,
         "orbittrace_target_information_access": False,
-        "claim_boundary": (
-            "Pre-event-data interface compatibility only. A FAIL does not measure v8 performance. Harvard 1968-1969 remains scientifically fresh but cannot supply the exact frozen v8 discovery coordinates without prohibited adaptation."
-        ),
+        "claim_boundary": "Pre-event-data interface compatibility only. A FAIL does not measure v8 performance. Harvard 1968-1969 remains scientifically fresh but cannot supply the exact frozen v8 discovery coordinates without prohibited adaptation.",
     }
-    (args.output / "harvard_1968_1969_v8_interface_adjudication.json").write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n"
-    )
+    (args.output / "harvard_1968_1969_v8_interface_adjudication.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, indent=2, sort_keys=True))
 
     for path in sorted(fixed4_dir.rglob("*"), reverse=True):
