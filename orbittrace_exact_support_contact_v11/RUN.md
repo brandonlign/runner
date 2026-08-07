@@ -1,0 +1,1 @@
+Execution-only trigger for frozen exact-support-contact v11 parent `658d490c43b3d05d3b9a704f0f012ca72c9fd572`. No scientific constant, recurrence rule, contact threshold, family semantics, pooled-centroid rule, physical score, promotion gate, blindness rule, or target information may change in this child.
