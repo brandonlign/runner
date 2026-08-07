@@ -1,0 +1,162 @@
+name: OrbitTrace sparse-support v4 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sparse-support-v4-base
+    paths:
+      - orbittrace_sparse_support_v4/PROTOCOL.md
+      - orbittrace_sparse_support_v4/run_development.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-sparse-support-v4-development
+  cancel-in-progress: true
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      PYTHONPATH: orbittrace_wavelet_catalogue_v3:orbittrace_sparse_support_v4:input/v3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sparse-support-v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Verify predecessor failure and exact frozen scientific sources before catalogue access
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/fixed4 output
+          grep -F 'FAIL_WAVELET_CATALOGUE_V3_DEVELOPMENT' orbittrace_wavelet_catalogue_v3/FROZEN_BLOCK_DEVELOPMENT_RESULT.md
+          grep -F '23' orbittrace_wavelet_catalogue_v3/FROZEN_BLOCK_DEVELOPMENT_RESULT.md
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | awk '{print $1}')" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          python -m py_compile \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_sparse_support_v4/run_development.py
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'input/v3')
+          sys.path.insert(0, 'orbittrace_wavelet_catalogue_v3')
+          import multi_anchor_energy_v3 as v3
+          import wavelet_episode_comparator as brown
+          assert all(v3.self_test().values()), v3.self_test()
+          assert all(brown.self_test().values()), brown.self_test()
+          print('PASS_SPARSE_SUPPORT_V4_FROZEN_SOURCE_GUARD')
+          PY
+
+      - name: Retrieve exact fixed4 baseline and expose development scaffold only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31106001133 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-fixed4-support-normalized-wrapper-development \
+            --dir input/fixed4
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path('input/fixed4/orbittrace_fixed4_support_wrapper_development.json')
+          payload = json.loads(source.read_text())
+          assert payload['verdict'] == 'FAIL_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT'
+          dev = payload['panel_results']['development']
+          metrics = payload['development']['panel_evaluations']['development']['metrics']['persistence']
+          assert dev['years'] == [2022, 2023]
+          assert dev['family_count'] == 197
+          assert metrics['recovered_at_100'] == 61
+          assert metrics['qualified_matches'] == 90
+          assert abs(metrics['top100_dominant_precision'] - 0.6809376504699393) < 1e-15
+          out = {
+              'source_run': 31106001133,
+              'years': dev['years'],
+              'families': dev['families'],
+              'rankings': {'persistence': dev['rankings']['persistence']},
+              'persistence_metrics': {k: v for k, v in metrics.items() if k != 'per_label'},
+          }
+          target = Path('input/fixed4_development_scaffold.json')
+          target.write_text(json.dumps(out, separators=(',', ':')) + '\n')
+          print('PASS_FIXED4_DEVELOPMENT_SCAFFOLD_GUARD', len(dev['families']))
+          PY
+          rm input/fixed4/orbittrace_fixed4_support_wrapper_development.json
+
+      - name: Run target-excluded sparse-support v4 development on 2022-2023 only
+        run: |
+          set -euo pipefail
+          python orbittrace_sparse_support_v4/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --fixed4-scaffold-json input/fixed4_development_scaffold.json \
+            --output output
+          cat output/SPARSE_SUPPORT_V4_DEVELOPMENT.md
+
+      - name: Enforce complete development result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sparse_support_v4_development.json').read_text())
+          assert result['verdict'] in {'PASS_SPARSE_SUPPORT_V4_DEVELOPMENT', 'FAIL_SPARSE_SUPPORT_V4_DEVELOPMENT'}
+          assert result['configuration']['years'] == [2022, 2023]
+          assert result['configuration']['calibration_per_bin'] == 512
+          assert result['configuration']['episode_size'] == 128
+          assert result['configuration']['rrf_k'] == 60
+          assert result['configuration']['candidate_scaffold'] == 'frozen fixed4 persistence families from 2022-2023 development only'
+          assert result['development_scaffold']['family_count'] == 197
+          print('ORBITTRACE_SPARSE_SUPPORT_V4_RESULT_BEGIN')
+          print(json.dumps({
+              'verdict': result['verdict'],
+              'metrics': result['metrics'],
+              'gates': result['gates'],
+              'calibration': result['calibration_summary'],
+          }, indent=2))
+          print('ORBITTRACE_SPARSE_SUPPORT_V4_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_sparse_support_v4/PROTOCOL.md \
+            orbittrace_sparse_support_v4/run_development.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            input/v3/multi_anchor_energy_v3.py \
+            input/fixed4_development_scaffold.json \
+            > output/sparse_support_v4_source_and_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/sparse_support_v4_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sparse-support-v4-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
