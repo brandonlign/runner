@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pre-scientific recurrence eligibility adjudication for Harvard 1968-1969.
 
-Only public metadata/literature HTML and the prior structure-audit JSON are read.
+Only public metadata/literature responses and the prior structure-audit JSON are read.
 The har6869 scientific table is never downloaded, opened, or decompressed.
 """
 from __future__ import annotations
@@ -17,7 +17,9 @@ from typing import Any
 import requests
 
 PDS_URL = "https://pds.nasa.gov/ds-view/pds/viewProfile.jsp?dsid=EAR-A-VARGBDET-5-METORB-V1.0"
-NTRS_URL = "https://ntrs.nasa.gov/citations/19760042403"
+# Transport-only correction after run 31226879496: use the official unauthenticated
+# NTRS GET /citations/{id} API rather than the browser-route HTML page that timed out.
+NTRS_URL = "https://ntrs.nasa.gov/api/citations/19760042403"
 MNRAS_URL = "https://academic.oup.com/mnras/article-abstract/353/2/422/1106062"
 URLS = (PDS_URL, NTRS_URL, MNRAS_URL)
 
@@ -122,6 +124,8 @@ def main() -> int:
         },
         "metadata_transport_sufficient": metadata_transport_sufficient,
         "public_sources": source_rows,
+        "ntrs_transport_correction_only": True,
+        "prior_transport_run": 31226879496,
         "recurrence_semantics": "two genuine repeated observing-year panels required; civil-year split of one synoptic observing cycle forbidden",
         "har6869_table_downloaded": False,
         "har6869_table_opened": False,
@@ -130,7 +134,7 @@ def main() -> int:
         "method_evaluation_performed": False,
         "orbittrace_target_information_access": False,
         "claim_boundary": (
-            "Public metadata/literature temporal-coverage adjudication only. When source transport succeeds, the Harvard 1968-1969 product is established as one synoptic-year observing program, so it cannot instantiate v8's two-independent-year recurrence test without an artificial civil-year split. No har6869 event record was downloaded or opened."
+            "Public metadata/literature temporal-coverage adjudication only. The NTRS browser-route timeout from run 31226879496 is preserved; this retry changes only that transport to NASA's official unauthenticated citation API. When source transport succeeds, the Harvard 1968-1969 product is established as one synoptic-year observing program, so it cannot instantiate v8's two-independent-year recurrence test without an artificial civil-year split. No har6869 event record was downloaded or opened."
         ),
     }
     (a.output / "harvard_1968_1969_recurrence_eligibility.json").write_text(
