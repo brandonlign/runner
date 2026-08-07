@@ -1,0 +1,25 @@
+name: OrbitTrace wavelet catalogue v3 block-runtime source inspection
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-wavelet-catalogue-v3-block-runtime
+    paths:
+      - orbittrace_wavelet_catalogue_v3/inspect_fixed4_runtime_source.py
+      - .github/workflows/orbittrace_wavelet_catalogue_v3_block_runtime_inspect.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-wavelet-catalogue-v3-block-runtime
+      - name: Inspect exact frozen fixed4 runtime geometry only
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/inspect_fixed4_runtime_source.py
