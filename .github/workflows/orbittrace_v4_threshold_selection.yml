@@ -1,0 +1,97 @@
+name: OrbitTrace v4 threshold selection
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v4-decision-base
+    paths:
+      - orbittrace_fpr_budgeted_v4/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v4-threshold-selection
+  cancel-in-progress: false
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fpr-budgeted-dual-channel-v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Audit selector before opening development records
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 output
+          python -m py_compile orbittrace_fpr_budgeted_v4/select_thresholds.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          path = Path('orbittrace_fpr_budgeted_v4/select_thresholds.py')
+          spec = importlib.util.spec_from_file_location('selector', path)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert module.DENOMINATOR == 129
+          assert module.RANKS == tuple(range(1, 7))
+          assert module.FPR_CAP == 0.055
+          assert module.RECALL_TOLERANCE == 0.03
+          assert module.V3 == 'orbittrace_multi_anchor_wavelet_energy_v3'
+          assert module.FIXED4 == 'orbittrace_fixed4'
+          assert module.WAVELET == 'brown2010_wavelet_episode_core'
+          print('PASS_V4_SELECTOR_SOURCE_AUDIT')
+          PY
+          sha256sum orbittrace_fpr_budgeted_v4/PROTOCOL.md orbittrace_fpr_budgeted_v4/select_thresholds.py \
+            | tee output/v4_selector_source_sha256.txt
+          git rev-parse HEAD | tee output/v4_selector_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Retrieve exact frozen v3 development evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31146579074 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-multi-anchor-energy-v3-development \
+            --dir input/v3
+          echo '712c5a012ecaa93d45ed11eb05de180ba4c7d08b8d0f9dad13245bb45b5e29cc  input/v3/sonotaco_2025_literature_comparison.json' | sha256sum -c -
+          echo '486427bc3eb37a9fb73187a78c9f63069887d3fd39a45ad8cddda2ed11266a81  input/v3/negative_literature_records.jsonl.gz' | sha256sum -c -
+          echo '6937ecf0293c8a415a4620eb9cfffa32cad2bb2ea241652b5a3bed2ad0da90e4  input/v3/positive_literature_records.jsonl.gz' | sha256sum -c -
+          echo '9fbc71a38d31dde8ecfc481e380f95ee4d443c96b5c4c241fbe7a2ac4443bab4  input/v3/V3_DEVELOPMENT_RESULT.json' | sha256sum -c -
+          test "$(tr -d '\r\n' < input/v3/v3_commit.txt)" = "34634faa13420af162298d5d0e17b77c93419ad8"
+
+      - name: Select finite-grid decision thresholds
+        run: |
+          set -euo pipefail
+          python orbittrace_fpr_budgeted_v4/select_thresholds.py \
+            --artifact-dir input/v3 \
+            --output output
+          cat output/V4_DEVELOPMENT_SELECTION.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          sha256sum input/v3/* >> output/v4_selector_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v4 selection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v4-threshold-selection
+          path: output
+          if-no-files-found: error
+          retention-days: 90
