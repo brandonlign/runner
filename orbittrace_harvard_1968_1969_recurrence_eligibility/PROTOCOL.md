@@ -5,6 +5,8 @@ Frozen after the Harvard zero-data freshness and pre-scientific structure audits
 
 This stage decides only whether the reserved Harvard product can instantiate v8's already-frozen cross-year recurrence semantics. It may use public catalogue/literature metadata and the structure-audit artifact; it may not inspect a scientific event record, radiant, speed, orbit value, source label, or OrbitTrace target information.
 
+The first metadata execution, run `31226879496`, is preserved as `INCONCLUSIVE_HARVARD_1968_1969_RECURRENCE_METADATA_TRANSPORT`: PDS succeeded, the NTRS browser route timed out, and Oxford/MNRAS returned HTTP 403. The current branch changes **only** the NTRS transport literal from the browser page to NASA NTRS's officially documented unauthenticated `GET /citations/{id}` API. The evidence phrases, PDS + (NTRS or MNRAS) sufficiency rule, recurrence semantics, decision rule, and no-event-data boundary are unchanged.
+
 ## Immutable prerequisites
 - Harvard freshness run `31226182783`, artifact `9012163636`, verdict `PASS_HARVARD_1968_1969_REPO_SCIENTIFIC_FRESHNESS_AUDIT`, zero exposure hits.
 - Harvard structure run `31226367693`, artifact `9012222394`, ZIP SHA-256 `b87b47593a60c1ce3ee8e568a0760e87ce9f7527fb5683d11171fb2af10f2f7c`, verdict `PASS_HARVARD_1968_1969_STRUCTURE_AUDIT`.
@@ -14,7 +16,7 @@ This stage decides only whether the reserved Harvard product can instantiate v8'
 ## Public metadata evidence fixed before event access
 Use only the following already-identified public sources:
 1. NASA PDS `Meteoroid Orbits V1.0` dataset profile (`EAR-A-VARGBDET-5-METORB-V1.0`), which identifies `har6869.tab` as the Harvard Radar Meteor Project 1968–1969 survey with 19,818 orbits.
-2. NASA NTRS record `19760042403` for Sekanina (1976), which describes the stream search as using a **synoptic-year sample** of 19,698 radio meteors observed by the Havana Radio Meteor Project.
+2. NASA NTRS record `19760042403` for Sekanina (1976), queried through `https://ntrs.nasa.gov/api/citations/19760042403`, which describes the stream search as using a **synoptic-year sample** of 19,698 radio meteors observed by the Havana Radio Meteor Project.
 3. Galligan & Baggaley (2004), MNRAS 353, 422, which describes the HRMP **synoptic year study**, refers to the **synoptic year 1969 data set**, and states that close to 2×10^4 orbits were reduced during this synoptic year.
 
 These sources are used only to adjudicate temporal panel structure. No event value is requested from any catalogue.
