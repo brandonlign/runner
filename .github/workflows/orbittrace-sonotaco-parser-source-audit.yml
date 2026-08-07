@@ -1,0 +1,79 @@
+name: OrbitTrace SonotaCo parser source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sonotaco-2015-2017-parser-source-audit
+    paths:
+      - 'orbittrace_sonotaco_parser_transport/**'
+      - '.github/workflows/orbittrace-sonotaco-parser-source-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download exact validated 2023 parser source artifact only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input
+          find input -maxdepth 2 -type f -print
+          test -f input/run_sonotaco_2023_fixed4_confirmation.py
+          test "$(sha256sum input/run_sonotaco_2023_fixed4_confirmation.py | cut -d' ' -f1)" = "bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6"
+
+      - name: Audit parser source without archive access
+        run: |
+          set -euo pipefail
+          python orbittrace_sonotaco_parser_transport/audit_2023_parser_source.py
+
+      - name: Enforce source-only boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('output/sonotaco_2023_parser_source_audit.json').read_text())
+          assert r['verdict'] == 'PASS_SONOTACO_2023_PARSER_SOURCE_AUDIT'
+          assert r['source_sha256'] == 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6'
+          assert r['catalogue_access'] is False
+          assert r['scientific_score_access'] is False
+          assert r['shower_label_data_access'] is False
+          assert r['target_information_access'] is False
+          print('ORBITTRACE_SONOTACO_PARSER_SOURCE_AUDIT_RESULT_BEGIN')
+          print(json.dumps(r, indent=2, sort_keys=True))
+          print('ORBITTRACE_SONOTACO_PARSER_SOURCE_AUDIT_RESULT_END')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum \
+            orbittrace_sonotaco_parser_transport/audit_2023_parser_source.py \
+            input/run_sonotaco_2023_fixed4_confirmation.py \
+            > output/source_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sonotaco-parser-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
