@@ -1,0 +1,71 @@
+name: OrbitTrace UKMON interface documentation adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-ukmon-interface-documentation-adjudication
+    paths:
+      - 'orbittrace_ukmon_interface_documentation_adjudication/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen adjudication parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-ukmon-interface-documentation-adjudication
+      - name: Fetch prior metadata artifact and API documentation page only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/prior output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9007746738/zip" -o input/prior.zip
+          echo "7a8930e13f5adc585d11a83a458d5b98cd24f4a846b79e6daa7bcc07952aa10f  input/prior.zip" | sha256sum -c -
+          unzip -q input/prior.zip -d input/prior
+          curl -L --fail --retry 3 "https://ukmeteornetwork.org/our-data-apis/" -o input/api_docs.html
+          test -s input/api_docs.html
+      - name: Run documentation-only adjudication
+        run: |
+          set -euo pipefail
+          python orbittrace_ukmon_interface_documentation_adjudication/adjudicate.py \
+            --dictionary-audit input/prior/ukmon_documentation_interface_audit.json \
+            --api-docs-html input/api_docs.html \
+            --output output
+      - name: Enforce no-meteor boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/ukmon_documented_interface_adjudication.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['meteor_api_contacted'] is False
+              assert r['meteor_record_access'] is False
+              assert r['reserved_2024_2025_access'] is False
+              assert r['target_information_access'] is False
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/adjudication_commit.txt
+          sha256sum orbittrace_ukmon_interface_documentation_adjudication/adjudicate.py input/api_docs.html > output/source_and_docs_sha256.txt 2>/dev/null || true
+      - name: Upload adjudication artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-ukmon-interface-documentation-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
