@@ -1,0 +1,103 @@
+name: OrbitTrace Harvard 1968-1969 recurrence eligibility
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-harvard-1968-1969-recurrence-eligibility
+    paths:
+      - 'orbittrace_harvard_1968_1969_recurrence_eligibility/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen recurrence parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-harvard-1968-1969-recurrence-eligibility
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact metadata dependency
+        run: python -m pip install requests==2.32.5
+
+      - name: Enforce frozen source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_harvard_1968_1969_recurrence_eligibility/PROTOCOL.md)" = "6e2956b968e7de7c6b32d783edfc4c14934d9e23"
+          test "$(git hash-object orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py)" = "e1f1c304c9172f79fcdb695427fd2d0023bed82f"
+          python -m py_compile orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py
+
+      - name: Fetch immutable pre-scientific structure artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/structure output
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012222394/zip" \
+            -o input/structure.zip
+          echo "b87b47593a60c1ce3ee8e568a0760e87ce9f7527fb5683d11171fb2af10f2f7c  input/structure.zip" | sha256sum -c -
+          unzip -q input/structure.zip -d input/structure
+          test -f input/structure/harvard_1968_1969_structure_audit.json
+
+      - name: Adjudicate temporal recurrence eligibility from public metadata only
+        run: |
+          set -euo pipefail
+          python orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py \
+            --structure-json input/structure/harvard_1968_1969_structure_audit.json \
+            --output output
+
+      - name: Enforce table remains unopened and decision boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/harvard_1968_1969_recurrence_eligibility.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['verdict'] in {
+                  'FAIL_HARVARD_1968_1969_V8_RECURRENCE_ELIGIBILITY',
+                  'INCONCLUSIVE_HARVARD_1968_1969_RECURRENCE_METADATA_TRANSPORT',
+              }
+              assert r['har6869_table_downloaded'] is False
+              assert r['har6869_table_opened'] is False
+              assert r['scientific_event_values_inspected'] is False
+              assert r['source_or_shower_labels_inspected'] is False
+              assert r['method_evaluation_performed'] is False
+              assert r['orbittrace_target_information_access'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/adjudication_commit.txt
+          sha256sum \
+            orbittrace_harvard_1968_1969_recurrence_eligibility/PROTOCOL.md \
+            orbittrace_harvard_1968_1969_recurrence_eligibility/adjudicate.py > output/source_sha256.txt
+          sha256sum input/structure.zip > output/structure_artifact_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload recurrence-eligibility artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-harvard-1968-1969-recurrence-eligibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90
