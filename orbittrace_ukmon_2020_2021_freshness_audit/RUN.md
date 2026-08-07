@@ -1,0 +1,1 @@
+Execution-only trigger for the zero-data full-history UKMON 2020/2021 freshness audit. No UKMON API or catalogue access, scientific value, label, detector result, or OrbitTrace target information may be accessed.
