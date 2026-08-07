@@ -13,7 +13,7 @@ SELF=(
     'orbittrace_ukmon_2020_2021_freshness_audit/',
     '.github/workflows/orbittrace-ukmon-2020-2021-freshness-audit',
 )
-UKMON_MARKER=re.compile(r'UKMON|UK Meteor (?:Observation|Network)|UK Meteor Network|ukmeteors\.co\.uk|api\.ukmeteors\.co\.uk|archive\.ukmeteors\.co\.uk|ukmda',re.I)
+UKMON_MARKER=re.compile(r'UKMON|UK Meteor (Observation|Network)|UK Meteor Network|ukmeteors\.co\.uk|api\.ukmeteors\.co\.uk|archive\.ukmeteors\.co\.uk|ukmda',re.I)
 YEAR_LITERAL=re.compile(r'(?<!\d)(2020|2021)(?!\d)')
 DATE_LITERAL=re.compile(r'(?<!\d)(2020|2021)\d{4}(?!\d)')
 RANGE=re.compile(r'range\(\s*(\d{4})\s*,\s*(\d{4})\s*\)')
