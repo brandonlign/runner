@@ -1,0 +1,122 @@
+name: OrbitTrace v5 SonotaCo 2024 transport audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v5-2024-transport-audit-base
+    paths:
+      - orbittrace_highres_v5/SONOTACO_2024_TRANSPORT_AUDIT_REQUEST.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v5-2024-transport-audit
+
+      - name: Verify v5 development freeze before any 2024 access
+        run: |
+          set -euo pipefail
+          test -f orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.md
+          test -f orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.json
+          test -f orbittrace_highres_v5/decision_v5.py
+          grep -F 'PASS_V5_HIGHRES_DEVELOPMENT' orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.md
+          grep -F '20/513' orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.md
+          grep -F '10/513' orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.md
+          grep -F 'No 2024 score or method-performance result was inspected before this development freeze was committed.' orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.md
+
+      - name: Download and audit SonotaCo 2024 transport structure only
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail --location --retry 3 \
+            --output input/024a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/024a.zip
+          python - <<'PY'
+          import csv
+          import hashlib
+          import io
+          import json
+          import zipfile
+          from pathlib import Path
+
+          archive = Path('input/024a.zip')
+          archive_bytes = archive.read_bytes()
+          archive_sha = hashlib.sha256(archive_bytes).hexdigest()
+
+          with zipfile.ZipFile(archive) as zf:
+              names = [info.filename for info in zf.infolist() if not info.is_dir()]
+              csv_names = [name for name in names if name.lower().endswith('.csv')]
+              s_names = [name for name in csv_names if name.endswith('_S.csv')]
+              if len(s_names) != 1:
+                  raise SystemExit(f'expected exactly one SonotaCo _S.csv member, found {s_names}')
+              member = s_names[0]
+              payload = zf.read(member)
+
+          member_sha = hashlib.sha256(payload).hexdigest()
+          text = payload.decode('utf-8-sig')
+          lines = text.splitlines()
+          if len(lines) < 2:
+              raise SystemExit('2024 transport member has no data rows')
+          header = next(csv.reader([lines[0]]))
+          data_rows = len(lines) - 1
+          if data_rows < 1000:
+              raise SystemExit(f'unexpectedly small 2024 transport corpus: {data_rows}')
+          if not member.startswith('024a/'):
+              raise SystemExit(f'unexpected member prefix: {member}')
+
+          result = {
+              'verdict': 'PASS_SONOTACO_2024_TRANSPORT_AUDIT',
+              'scientific_scores_computed': False,
+              'labels_evaluated': False,
+              'method_performance_evaluated': False,
+              'archive': '024a.zip',
+              'archive_sha256': archive_sha,
+              'member': member,
+              'member_sha256': member_sha,
+              'expected_data_rows': data_rows,
+              'header': header,
+              'header_sha256': hashlib.sha256(lines[0].encode()).hexdigest(),
+              'file_count': len(names),
+              'csv_file_count': len(csv_names),
+              'all_members': names,
+          }
+          Path('output/SONOTACO_2024_TRANSPORT_AUDIT.json').write_text(json.dumps(result, indent=2) + '\n')
+          Path('output/SONOTACO_2024_TRANSPORT_AUDIT.md').write_text(
+              '# SonotaCo 2024 transport-only audit\n\n'
+              f"Verdict: **`{result['verdict']}`**\n\n"
+              f"Archive SHA-256: `{archive_sha}`\n\n"
+              f"Member: `{member}`\n\n"
+              f"Member SHA-256: `{member_sha}`\n\n"
+              f"Data rows: **{data_rows}**\n\n"
+              f"Columns: **{len(header)}**\n\n"
+              'No shower scores, labels, thresholds, or method-performance metrics were computed.\n'
+          )
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Record audit provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          git rev-parse HEAD > output/transport_audit_commit.txt
+          sha256sum orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.md \
+            orbittrace_highres_v5/FROZEN_DEVELOPMENT_RESULT.json \
+            orbittrace_highres_v5/decision_v5.py \
+            input/024a.zip \
+            > output/transport_audit_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v5-sonotaco-2024-transport-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
