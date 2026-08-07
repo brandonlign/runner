@@ -6,7 +6,6 @@ import argparse
 import csv
 import gzip
 import json
-import math
 from pathlib import Path
 from typing import Any, Callable
 
@@ -20,6 +19,34 @@ FIXED4 = "orbittrace_fixed4"
 BROWN = "brown2010_wavelet_episode_core"
 YEARS = (2025, 2023)
 KS = (4, 6, 8, 12)
+
+# These are the exact predecessor metrics from the immutable 128-null
+# literature-comparison records. They are comparison targets, not quantities
+# allowed to move when v5 increases its own calibration resolution.
+FROZEN_REFERENCES: dict[int, dict[str, Any]] = {
+    2025: {
+        "fixed4_auc": 0.8132503733915442,
+        "fixed4_k4": 0.15441176470588236,
+        "brown_auc": 0.8285055721507353,
+        "brown_recall": {
+            "4": 0.08088235294117647,
+            "6": 0.5955882352941176,
+            "8": 0.8308823529411765,
+            "12": 0.9485294117647058,
+        },
+    },
+    2023: {
+        "fixed4_auc": 0.8116305008930771,
+        "fixed4_k4": 0.18902439024390244,
+        "brown_auc": 0.8319715832101502,
+        "brown_recall": {
+            "4": 0.13414634146341464,
+            "6": 0.5426829268292683,
+            "8": 0.7987804878048781,
+            "12": 0.9207317073170732,
+        },
+    },
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,10 +64,14 @@ def read_jsonl_gz(path: Path) -> list[dict[str, Any]]:
 
 def find_benchmark(directory: Path, year: int) -> Path:
     candidates = sorted(directory.glob(f"sonotaco_{year}_*.json"))
-    candidates = [p for p in candidates if "V" not in p.name.upper()]
+    candidates = [path for path in candidates if "V" not in path.name.upper()]
     if len(candidates) != 1:
         raise RuntimeError(f"expected one benchmark JSON for {year}, found {[p.name for p in candidates]}")
     return candidates[0]
+
+
+def close(value: float, expected: float, tolerance: float = 5e-12) -> bool:
+    return abs(float(value) - float(expected)) <= tolerance
 
 
 def load_year(directory: Path, year: int) -> dict[str, Any]:
@@ -56,8 +87,16 @@ def load_year(directory: Path, year: int) -> dict[str, Any]:
         raise RuntimeError(f"{year}: upstream benchmark integrity failure")
     if V3 not in benchmark["metrics"] or FIXED4 not in benchmark["metrics"] or BROWN not in benchmark["metrics"]:
         raise RuntimeError(f"{year}: missing required methods")
-    if float(benchmark["metrics"][V3]["weak_auc"]) + 1e-15 < float(benchmark["metrics"][BROWN]["weak_auc"]):
-        raise RuntimeError(f"{year}: v3 AUROC no longer reaches Brown")
+
+    metrics = benchmark["metrics"]
+    frozen = FROZEN_REFERENCES[year]
+    if not close(metrics[FIXED4]["weak_auc"], frozen["fixed4_auc"]):
+        raise RuntimeError(f"{year}: fixed4 continuous ranking changed")
+    if not close(metrics[BROWN]["weak_auc"], frozen["brown_auc"]):
+        raise RuntimeError(f"{year}: Brown continuous ranking changed")
+    if float(metrics[V3]["weak_auc"]) + 1e-15 < float(frozen["brown_auc"]):
+        raise RuntimeError(f"{year}: v3 AUROC no longer reaches frozen Brown")
+
     for row in negative + positive:
         for method in (V3, FIXED4):
             value = float(row["p"][method])
@@ -88,13 +127,15 @@ def metrics_for_rule(payload: dict[str, Any], detected: Callable[[dict[str, Any]
     }
 
 
-def references(payload: dict[str, Any]) -> dict[str, Any]:
+def references(payload: dict[str, Any], year: int) -> dict[str, Any]:
     metrics = payload["benchmark"]["metrics"]
+    frozen = FROZEN_REFERENCES[year]
     return {
         "v3_auc": float(metrics[V3]["weak_auc"]),
-        "brown_auc": float(metrics[BROWN]["weak_auc"]),
-        "fixed4_k4": float(metrics[FIXED4]["recall"]["0.05"]["4"]),
-        "brown_recall": {str(k): float(metrics[BROWN]["recall"]["0.05"][str(k)]) for k in KS},
+        "fixed4_auc": float(frozen["fixed4_auc"]),
+        "brown_auc": float(frozen["brown_auc"]),
+        "fixed4_k4": float(frozen["fixed4_k4"]),
+        "brown_recall": {str(k): float(frozen["brown_recall"][str(k)]) for k in KS},
     }
 
 
@@ -113,7 +154,7 @@ def evaluate_pair(payloads: dict[int, dict[str, Any]], r_v3: int, r_f4: int) -> 
     max_fpr = 0.0
     for year in YEARS:
         payload = payloads[year]
-        refs = references(payload)
+        refs = references(payload, year)
         measured = metrics_for_rule(
             payload,
             lambda row, tv=threshold_v3, tf=threshold_f4: (
@@ -127,13 +168,13 @@ def evaluate_pair(payloads: dict[int, dict[str, Any]], r_v3: int, r_f4: int) -> 
             "k12": measured["recall"]["12"] - (refs["brown_recall"]["12"] - RECALL_TOLERANCE),
         }
         gates = {
-            "v3_auc_at_least_brown": refs["v3_auc"] + 1e-15 >= refs["brown_auc"],
+            "v3_auc_at_least_frozen_brown": refs["v3_auc"] + 1e-15 >= refs["brown_auc"],
             "pooled_fpr_at_most_0055": measured["pooled_fpr"] <= FPR_CAP + 1e-15,
             "worst_sector_fpr_at_most_008": measured["worst_sector_fpr"] <= SECTOR_FPR_CAP + 1e-15,
-            "k4_at_least_fixed4": margins["k4"] >= -1e-15,
-            "k6_within_003_of_brown": margins["k6"] >= -1e-15,
-            "k8_within_003_of_brown": margins["k8"] >= -1e-15,
-            "k12_within_003_of_brown": margins["k12"] >= -1e-15,
+            "k4_at_least_frozen_fixed4": margins["k4"] >= -1e-15,
+            "k6_within_003_of_frozen_brown": margins["k6"] >= -1e-15,
+            "k8_within_003_of_frozen_brown": margins["k8"] >= -1e-15,
+            "k12_within_003_of_frozen_brown": margins["k12"] >= -1e-15,
         }
         feasible = feasible and all(gates.values())
         all_margins.extend(margins.values())
@@ -188,8 +229,10 @@ def main() -> None:
             "fpr_cap": FPR_CAP,
             "sector_fpr_cap": SECTOR_FPR_CAP,
             "recall_tolerance": RECALL_TOLERANCE,
+            "reference_metrics": "exact immutable 128-null predecessor records",
             "selector": "maximin recall margin; then minimum worst-year FPR; then maximum v3 rank; then minimum fixed4 rank",
         },
+        "frozen_references": FROZEN_REFERENCES,
         "feasible_pairs": len(feasible),
         "selected": selected,
         "grid": grid,
@@ -220,6 +263,8 @@ def main() -> None:
         "",
         f"Feasible pairs: **{len(feasible)}/{len(grid)}**",
         "",
+        "Reference recalls/AUROCs are the exact immutable 128-null predecessor metrics; they were not recalibrated to make the v5 gates easier.",
+        "",
     ]
     if selected is not None:
         lines.extend([
@@ -237,7 +282,7 @@ def main() -> None:
             lines.extend([
                 f"## {year}",
                 "",
-                f"- v3 AUROC: `{refs['v3_auc']:.6f}` vs Brown `{refs['brown_auc']:.6f}`",
+                f"- v3 AUROC: `{refs['v3_auc']:.6f}` vs frozen Brown `{refs['brown_auc']:.6f}`",
                 f"- pooled FPR: `{metric['pooled_fpr']:.6f}`; worst-sector FPR: `{metric['worst_sector_fpr']:.6f}`",
                 "- recall k=4/6/8/12: " + " / ".join(f"{metric['recall'][str(k)]:.6f}" for k in KS),
                 "",
