@@ -1,0 +1,108 @@
+name: OrbitTrace v3 factorization diagnostic
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-v3-factorization-diagnostic
+    paths:
+      - 'orbittrace_v3_factorization_diagnostic/**'
+      - '.github/workflows/orbittrace-v3-factorization-diagnostic.yml'
+  pull_request:
+    branches:
+      - agent/orbittrace-v3-factorization-diagnostic
+    paths:
+      - 'orbittrace_v3_factorization_diagnostic/**'
+      - '.github/workflows/orbittrace-v3-factorization-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact diagnostic dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.1.3 scipy==1.14.1
+
+      - name: Download frozen exposed artifacts only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v4 input/fixed4 output
+          gh run download 31190719956 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-sparse-support-v4-development \
+            --dir input/v4
+          gh run download 31106001133 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-fixed4-support-normalized-wrapper-development \
+            --dir input/fixed4
+
+      - name: Run exact v3 factorization diagnostic
+        run: |
+          set -euo pipefail
+          python orbittrace_v3_factorization_diagnostic/run_factorization.py \
+            --v4-dir input/v4 \
+            --fixed4-json input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            --output output
+          cat output/V3_FACTORIZATION_DIAGNOSTIC.md
+
+      - name: Enforce complete artifact-only result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/v3_factorization_diagnostic.json').read_text())
+          assert result['verdict'] in {
+              'NO_SUPPORT_FOR_V3_NON_BROWN_TERM_AS_INDEPENDENT_RANKING_SIGNAL',
+              'V3_NON_BROWN_TERM_RETAINS_EXPLORATORY_RANKING_SIGNAL',
+          }
+          assert result['blindness'] == {
+              'artifact_only': True,
+              'catalogue_access': False,
+              'later_year_access': False,
+              'orbittrace_target_access': False,
+          }
+          assert result['factorization'] == 'multiplicity=(v3_energy/brown_peak)^2'
+          print('ORBITTRACE_V3_FACTORIZATION_RESULT_BEGIN')
+          print(json.dumps(result, indent=2, sort_keys=True))
+          print('ORBITTRACE_V3_FACTORIZATION_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          sha256sum \
+            orbittrace_v3_factorization_diagnostic/PROTOCOL.md \
+            orbittrace_v3_factorization_diagnostic/run_factorization.py \
+            input/v4/sparse_support_v4_development.json \
+            input/v4/sparse_support_v4_rankings.json \
+            input/v4/sparse_support_v4_family_scores.json.gz \
+            input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v3-factorization-diagnostic
+          path: output
+          if-no-files-found: error
+          retention-days: 90
