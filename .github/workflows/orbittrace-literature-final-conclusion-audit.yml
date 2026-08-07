@@ -66,7 +66,6 @@ jobs:
           assert freeze['v8_retuned_after_comparison'] is False
           assert freeze['decision_thresholds']['material_mean_f1_delta']==0.1
 
-          # Exact-row Sugar is the strongest completed performance comparison.
           assert sugar['verdict']=='PASS_V8_SUGAR_EXACT_ROW_PAIRWISE'
           assert sugar['configuration']['no_v8_parameter_change'] is True
           assert sugar['configuration']['labels_loaded_only_after_v8_ranking_frozen'] is True
@@ -88,8 +87,6 @@ jobs:
           assert freeze['sugar_exact_row']['purity']['sugar_2023_mean_dominant_known_precision']==sugar['false_positive_burden']['sugar']['2023']['mean_dominant_known_precision']
           assert freeze['sugar_exact_row']['purity']['sugar_2025_mean_dominant_known_precision']==sugar['false_positive_burden']['sugar']['2025']['mean_dominant_known_precision']
 
-          # v8 values come from the blind-safe same-survey run. HDBSCAN-2023 values must
-          # come only from the later canonical blind-first rerun, never the original 2023 transfer.
           assert matched['verdict']=='PASS_V8_LITERATURE_MATCHED_SONOTACO_EXECUTION'
           assert matched['configuration']['no_v8_parameter_change'] is True
           assert freeze['hdbscan']['v8_same_survey_run']==31226030807
@@ -99,7 +96,7 @@ jobs:
           assert false_gates==['all_rows_parsed','exact_row_count']
           assert hdb23['parser_audit']['parsed_rows']==44850
           assert hdb23['full_catalogue_coverage_audit']['events']==26460
-          hdb23_means={k:v['mean_f1'] for k,v in hdb23['full_catalogue_coverage_audit']['size_strata'].items()}
+          hdb23_means={k:v['mean_f1'] for k,v in hdb23['full_catalogue_coverage_audit']['evaluation']['size_strata'].items()}
           hdb25_means=competitor['hdbscan']['2025']['coverage']['size_strata_mean_f1']
           for bin_name, delta in freeze['hdbscan']['same_survey_deltas_v8_minus_hdbscan']['2023'].items():
               expected=matched['annual_coverage']['2023'][bin_name]['mean_f1']-hdb23_means[bin_name]
