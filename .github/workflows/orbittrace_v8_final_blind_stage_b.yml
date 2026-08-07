@@ -52,6 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           STAGE_A_ID: ${{ inputs.stage_a_artifact_id }}
           STAGE_A_SHA: ${{ inputs.stage_a_artifact_sha256 }}
+          REQUESTED_REF_SHA: ${{ inputs.withheld_reference_artifact_sha256 }}
         run: |
           set -euo pipefail
           curl --fail-with-body -L --retry 3 \
@@ -63,8 +64,23 @@ jobs:
           echo "$STAGE_A_SHA  input/stage-a.zip" | sha256sum -c -
           python orbittrace_v8_final_blind_discovery/run_stage_b.py preflight \
             --stage-a-artifact input/stage-a.zip \
-            --freeze-manifest output/FREEZE_MANIFEST.json \
             --output output
+          python - <<'PY'
+          import hashlib, json, os, subprocess, zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('input/stage-a.zip') as zf:
+              names=[n for n in zf.namelist() if n.endswith('stage_a_freeze.json')]
+              assert len(names)==1, names
+              frozen=json.loads(zf.read(names[0]))
+          current_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          current_manifest=hashlib.sha256(Path('output/FREEZE_MANIFEST.json').read_bytes()).hexdigest()
+          assert current_commit==frozen['freeze_commit'], (current_commit,frozen['freeze_commit'])
+          assert current_manifest==frozen['freeze_manifest_sha256'], (current_manifest,frozen['freeze_manifest_sha256'])
+          assert os.environ['REQUESTED_REF_SHA']==frozen['sealed_withheld_reference_artifact_sha256']
+          assert frozen['authorization_attached_after_blind_ranking_freeze'] is True
+          assert frozen['withheld_reference_loaded'] is False
+          print('PASS_EXACT_FREEZE_AND_SEALED_REFERENCE_PREFLIGHT')
+          PY
           cat output/stage_b_preflight.json
 
       - name: Retrieve withheld reference only after Stage A preflight passed
