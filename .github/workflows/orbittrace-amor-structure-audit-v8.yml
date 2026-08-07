@@ -1,0 +1,125 @@
+name: OrbitTrace AMOR 1990-1999 structure-only audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-amor-structure-audit-v8
+    paths:
+      - 'orbittrace_amor_structure_audit_v8/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen AMOR structure-audit parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-amor-structure-audit-v8
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install transport-only dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install requests==2.32.5 beautifulsoup4==4.12.3
+
+      - name: Enforce frozen pre-AMOR prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness input/v8 output
+          test "$(git hash-object orbittrace_amor_structure_audit_v8/PROTOCOL.md)" = "590e391f92d93b3a266d54a89fc49fcbf6e6d640"
+          test "$(git hash-object orbittrace_amor_structure_audit_v8/audit_structure.py)" = "6c961d257f52ab933b2b2186b591d2f32e310891"
+          python -m py_compile orbittrace_amor_structure_audit_v8/audit_structure.py
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9007889315/zip" -o input/freshness.zip
+          echo "448d634bed027d1d92db5aa65110747dfa5ab85aa846e09f3293d5bfac0f9bd1  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip" | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=json.loads(Path('input/freshness/amor_1990_1999_repo_freshness_audit.json').read_text())
+          assert f['verdict']=='PASS_AMOR_1990_1999_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          assert f['potential_exposure_hit_count']==0
+          assert f['catalogue_access_this_audit'] is False
+          assert f['scientific_value_access_this_audit'] is False
+          assert f['target_information_access'] is False
+          v=json.loads(Path('input/v8/pooled_year_centroid_v8_development.json').read_text())
+          assert v['verdict']=='PASS_POOLED_YEAR_CENTROID_V8_DEVELOPMENT'
+          assert all(v['integrity_gates'].values()) and all(v['scientific_gates'].values())
+          assert v['family_count']==226
+          assert v['metrics']['multiplicity']['recovered_at_100']==58
+          assert v['metrics']['brown']['recovered_at_100']==55
+          assert v['metrics']['label_free_persistence']['recovered_at_100']==59
+          assert 'No OrbitTrace target information' in v['claim_boundary']
+          PY
+          rm -rf output/*
+          echo PASS_AMOR_STRUCTURE_PREDATA_GUARDS
+
+      - name: Run one-shot AMOR structure-only audit
+        env:
+          ALLOW_AMOR_STRUCTURE_AUDIT: '1'
+        run: |
+          set -euo pipefail
+          python orbittrace_amor_structure_audit_v8/audit_structure.py \
+            --freshness-json input/freshness/amor_1990_1999_repo_freshness_audit.json \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+          cat output/AMOR_1990_1999_STRUCTURE_AUDIT.md
+
+      - name: Enforce zero-scientific-value boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/amor_1990_1999_structure_audit.json').read_text())
+          assert r['verdict']=='PASS_AMOR_1990_1999_STRUCTURE_AUDIT'
+          assert r['years']==list(range(1990,2000))
+          assert len(r['archives'])==10
+          assert len(r['selected_years'])==2 and len(set(r['selected_years']))==2
+          assert r['scientific_value_interpretation'] is False
+          assert r['scientific_token_conversion_performed'] is False
+          assert r['data_row_content_persisted'] is False
+          assert r['detector_or_family_evaluation_performed'] is False
+          assert r['target_information_access'] is False
+          assert all(m.get('scientific_token_conversion_performed',False) is False for a in r['archives'] for m in a['members'] if m.get('text_like'))
+          assert all(m.get('data_row_content_persisted',False) is False for a in r['archives'] for m in a['members'] if m.get('text_like'))
+          print('ORBITTRACE_AMOR_STRUCTURE_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_AMOR_STRUCTURE_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_amor_structure_audit_v8/PROTOCOL.md orbittrace_amor_structure_audit_v8/audit_structure.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload AMOR structure artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-amor-1990-1999-structure-audit-v8
+          path: output
+          if-no-files-found: error
+          retention-days: 90
