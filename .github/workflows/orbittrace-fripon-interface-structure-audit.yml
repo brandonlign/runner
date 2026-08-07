@@ -1,0 +1,118 @@
+name: OrbitTrace FRIPON pre-scientific interface structure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fripon-interface-structure-audit
+    paths:
+      - 'orbittrace_fripon_interface_structure_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen FRIPON structure parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fripon-interface-structure-audit
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact transport dependency
+        run: python -m pip install requests==2.32.5
+
+      - name: Enforce frozen source and fixed non-reserved URLs
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_fripon_interface_structure_audit/PROTOCOL.md)" = "edfcd9110ede32d5f37b4f4c52ab59ac9545ae02"
+          test "$(git hash-object orbittrace_fripon_interface_structure_audit/audit_interface.py)" = "203303c1146ae660fa5d587a5a61ce4ce5d16238"
+          python -m py_compile orbittrace_fripon_interface_structure_audit/audit_interface.py
+          grep -Fq 'https://fireball.fripon.org/list_multiple.php' orbittrace_fripon_interface_structure_audit/audit_interface.py
+          grep -Fq 'https://fireball.fripon.org/list_pipeline.php' orbittrace_fripon_interface_structure_audit/audit_interface.py
+          grep -Fq 'https://fireball.fripon.org/displaymultiple.php?id=19701' orbittrace_fripon_interface_structure_audit/audit_interface.py
+          ! grep -Eq 'fireball\.fripon\.org[^"'"']*(2018|2019)' orbittrace_fripon_interface_structure_audit/audit_interface.py
+
+      - name: Fetch and verify immutable freshness prerequisite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freshness output
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012594819/zip" \
+            -o input/freshness.zip
+          echo "94f855cf860a7c48991937afeedbaf2a71905a2f1478a26e66cc50b890a3e928  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/freshness/fripon_2018_2019_repo_freshness_audit.json').read_text())
+          assert r['verdict']=='PASS_FRIPON_2018_2019_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          assert r['potential_exposure_hit_count']==0
+          assert all(r['positive_controls'].values())
+          assert r['catalogue_access_this_audit'] is False
+          assert r['fripon_web_or_api_contacted'] is False
+          assert r['scientific_value_access_this_audit'] is False
+          assert r['event_identifier_access_this_audit'] is False
+          assert r['orbittrace_target_information_access'] is False
+          PY
+
+      - name: Run frozen non-reserved interface structure audit
+        run: |
+          set -euo pipefail
+          python orbittrace_fripon_interface_structure_audit/audit_interface.py \
+            --freshness-json input/freshness/fripon_2018_2019_repo_freshness_audit.json \
+            --output output
+
+      - name: Enforce pre-scientific reserved-year boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/fripon_public_interface_structure_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['reserved_2018_2019_requested'] is False
+              assert r['reserved_event_identifier_access'] is False
+              assert r['scientific_numeric_values_parsed_or_reported'] is False
+              assert r['source_or_shower_label_values_inspected'] is False
+              assert r['v8_method_evaluation_performed'] is False
+              assert r['orbittrace_target_information_access'] is False
+              assert r['bulk_reserved_enumeration_transport_established'] is False
+              assert r['geocentric_geometry_equivalence_established'] is False
+              assert r['raw_html_persisted'] is False
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/structure_audit_commit.txt
+          sha256sum \
+            orbittrace_fripon_interface_structure_audit/PROTOCOL.md \
+            orbittrace_fripon_interface_structure_audit/audit_interface.py > output/source_sha256.txt
+          sha256sum input/freshness.zip > output/freshness_artifact_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload FRIPON interface structure artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fripon-interface-structure-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
