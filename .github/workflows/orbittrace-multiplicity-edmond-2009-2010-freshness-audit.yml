@@ -1,0 +1,42 @@
+name: OrbitTrace multiplicity EDMOND 2009-2010 repo freshness audit
+on:
+  pull_request:
+    branches: [agent/orbittrace-multiplicity-edmond-2009-2010-freshness-audit]
+    paths: ['orbittrace_multiplicity_edmond_2009_2010_freshness_audit/RUN.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Fetch all refs
+        run: git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+      - name: Run history-only audit
+        run: |
+          set -euo pipefail
+          test ! -e input
+          python orbittrace_multiplicity_edmond_2009_2010_freshness_audit/audit_history.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/edmond_2009_2010_repo_freshness_audit.json').read_text())
+          assert r['verdict']=='PASS_EDMOND_2009_2010_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          assert not r['targets']['2009']['potential_exposure_hits']
+          assert not r['targets']['2010']['potential_exposure_hits']
+          assert r['positive_control_2017_spent_detected'] is True
+          assert r['catalogue_access_this_audit'] is False and r['scientific_value_access_this_audit'] is False
+          assert r['label_access_this_audit'] is False and r['target_information_access'] is False
+          PY
+      - name: Record provenance
+        run: |
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_multiplicity_edmond_2009_2010_freshness_audit/audit_history.py > output/audit_source_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiplicity-edmond-2009-2010-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
