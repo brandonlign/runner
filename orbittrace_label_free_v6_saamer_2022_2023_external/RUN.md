@@ -1,0 +1,1 @@
+Execute the frozen final fresh SAAMER 2022/2023 external validation from parent commit `9d3c0f9bfa93ca0cd0de8cb198a7b74b98871c3a`. No scientific source, common-coverage rule, density cap, power gate, scientific gate, or blindness rule is changed by this trigger.
