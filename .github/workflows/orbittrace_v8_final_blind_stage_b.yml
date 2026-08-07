@@ -1,0 +1,111 @@
+name: OrbitTrace v8 final blind discovery Stage B
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage_a_artifact_id:
+        description: Immutable Stage A artifact ID
+        required: true
+        type: string
+      stage_a_artifact_sha256:
+        description: Exact SHA-256 of Stage A artifact ZIP
+        required: true
+        type: string
+      withheld_reference_artifact_id:
+        description: Withheld-reference artifact ID (Stage B only)
+        required: true
+        type: string
+      withheld_reference_artifact_sha256:
+        description: Exact SHA-256 sealed before Stage A
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v8-final-blind-stage-b
+  cancel-in-progress: false
+
+jobs:
+  reveal:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reproduce source-only freeze manifest
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_v8_final_blind_discovery/audit_sources.py
+          python -m py_compile orbittrace_v8_final_blind_discovery/run_stage_b.py
+
+      - name: Retrieve and verify immutable Stage A only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGE_A_ID: ${{ inputs.stage_a_artifact_id }}
+          STAGE_A_SHA: ${{ inputs.stage_a_artifact_sha256 }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$STAGE_A_ID/zip" \
+            -o input/stage-a.zip
+          echo "$STAGE_A_SHA  input/stage-a.zip" | sha256sum -c -
+          python orbittrace_v8_final_blind_discovery/run_stage_b.py preflight \
+            --stage-a-artifact input/stage-a.zip \
+            --freeze-manifest output/FREEZE_MANIFEST.json \
+            --output output
+          cat output/stage_b_preflight.json
+
+      - name: Retrieve withheld reference only after Stage A preflight passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_ID: ${{ inputs.withheld_reference_artifact_id }}
+          REF_SHA: ${{ inputs.withheld_reference_artifact_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$(python -c 'import json; print(json.load(open("output/stage_b_preflight.json"))["verdict"])')" = "PASS_STAGE_B_PREFLIGHT_BEFORE_REFERENCE_ACCESS"
+          curl --fail-with-body -L --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$REF_ID/zip" \
+            -o input/withheld-reference.zip
+          echo "$REF_SHA  input/withheld-reference.zip" | sha256sum -c -
+
+      - name: Run one-shot exact-ID reveal
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_final_blind_discovery/run_stage_b.py reveal \
+            --stage-a-artifact input/stage-a.zip \
+            --preflight-json output/stage_b_preflight.json \
+            --reference-artifact input/withheld-reference.zip \
+            --output output
+          cat output/STAGE_B_REVEAL.md
+
+      - name: Record reveal provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/reveal_commit.txt
+          sha256sum input/stage-a.zip input/withheld-reference.zip output/FREEZE_MANIFEST.json > output/reveal_input_sha256.txt 2>/dev/null
+          python --version > output/python_version.txt
+
+      - name: Upload immutable Stage B reveal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-final-blind-stage-b
+          path: output
+          if-no-files-found: error
+          retention-days: 90
