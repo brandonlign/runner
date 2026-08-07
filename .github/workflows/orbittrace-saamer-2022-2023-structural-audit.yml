@@ -1,0 +1,98 @@
+name: OrbitTrace SAAMER 2022-2023 zero-value structural audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-saamer-2022-2023-structural-audit
+    paths:
+      - 'orbittrace_saamer_2022_2023_structural_audit/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen structural-audit parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-saamer-2022-2023-structural-audit
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install transport dependency
+        run: python -m pip install requests==2.32.5
+
+      - name: Enforce zero-value prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          test "$(git hash-object orbittrace_saamer_2022_2023_structural_audit/audit_structure.py)" = "d78380c377143eb5bc3bfc740846f8a4339495f3"
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9006805714/zip" \
+            -o input/freshness.zip
+          echo "07483caffb678c808f514f25a3350364d1282c4232897d68ad4f959e20db46a0  input/freshness.zip" | sha256sum -c -
+          unzip -q input/freshness.zip -d input/freshness
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/freshness/saamer_2022_2023_repo_freshness_audit.json').read_text())
+          assert r['verdict']=='PASS_SAAMER_2022_2023_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          assert r['potential_exposure_hit_count']==0
+          assert r['catalogue_access_this_audit'] is False
+          assert r['scientific_value_access_this_audit'] is False
+          assert r['target_information_access'] is False
+          PY
+          echo PASS_SAAMER_2022_2023_STRUCTURE_PREDATA_GUARDS
+
+      - name: Run structure-only archive audit
+        run: |
+          set -euo pipefail
+          python orbittrace_saamer_2022_2023_structural_audit/audit_structure.py \
+            --freshness-json input/freshness/saamer_2022_2023_repo_freshness_audit.json \
+            --output output
+
+      - name: Enforce zero-value result boundary
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/saamer_2022_2023_structural_audit.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['scientific_values_read'] is False
+              assert r['shower_label_values_read'] is False
+              assert r['orbital_values_read'] is False
+              assert r['target_information_access'] is False
+              assert r['excluded_target_interval_values_read'] is False
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_saamer_2022_2023_structural_audit/audit_structure.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+
+      - name: Upload structure artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-saamer-2022-2023-structural-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
