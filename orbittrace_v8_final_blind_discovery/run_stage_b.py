@@ -95,12 +95,18 @@ def load_reference(path: Path, expected_zip_sha256: str) -> dict[str, Any]:
     return reference
 
 
-def classify_family(family: dict[str, Any], reference_ids: set[str], reference_year: dict[str, int]) -> dict[str, Any]:
+def classify_family(
+    family: dict[str, Any],
+    reference_ids: set[str],
+    reference_year: dict[str, int],
+    reference_count: int,
+) -> dict[str, Any]:
     family_ids = set(map(str, family["event_ids"]))
     overlap_ids = sorted(family_ids & reference_ids)
     per_year = Counter(reference_year[event_id] for event_id in overlap_ids)
     overlap = len(overlap_ids)
     precision = overlap / int(family["event_count"]) if int(family["event_count"]) else 0.0
+    reference_recall = overlap / reference_count if reference_count else 0.0
     full = bool(
         int(family["rank"]) <= 25
         and int(family["year_count"]) >= 4
@@ -122,6 +128,7 @@ def classify_family(family: dict[str, Any], reference_ids: set[str], reference_y
         "overlap_ids": overlap_ids,
         "overlap_by_year": {str(year): int(per_year[year]) for year in sorted(per_year)},
         "precision": float(precision),
+        "reference_recall": float(reference_recall),
         "full_rule": full,
         "partial_rule": partial,
     }
@@ -142,7 +149,7 @@ def reveal(stage_a_artifact: Path, preflight_json: Path, reference_artifact: Pat
     reference = load_reference(reference_artifact, str(freeze["sealed_withheld_reference_artifact_sha256"]))
     reference_ids = {str(event["event_id"]) for event in reference["events"]}
     reference_year = {str(event["event_id"]): int(str(event["month_key"])[:4]) for event in reference["events"]}
-    rows = [classify_family(family, reference_ids, reference_year) for family in ranked["families"]]
+    rows = [classify_family(family, reference_ids, reference_year, len(reference_ids)) for family in ranked["families"]]
     full = [row for row in rows if row["full_rule"]]
     partial = [row for row in rows if row["partial_rule"]]
     if full:
@@ -178,7 +185,12 @@ def reveal(stage_a_artifact: Path, preflight_json: Path, reference_artifact: Pat
         "- matching: **exact event-ID equality (zero tolerance)**",
     ]
     if selected is not None:
-        md += [f"- selected blind rank: **{selected['rank']}**", f"- exact overlap: **{selected['overlap']}**"]
+        md += [
+            f"- selected blind rank: **{selected['rank']}**",
+            f"- exact overlap: **{selected['overlap']}**",
+            f"- precision: **{selected['precision']:.6f}**",
+            f"- reference recall: **{selected['reference_recall']:.6f}**",
+        ]
     (output / "STAGE_B_REVEAL.md").write_text("\n".join(md) + "\n")
     print(json.dumps({"verdict": verdict, "selected_family": selected}, indent=2, sort_keys=True))
     return 0
