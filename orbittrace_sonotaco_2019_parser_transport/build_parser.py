@@ -9,7 +9,7 @@ from pathlib import Path
 
 SOURCE = Path('input/source/run_sonotaco_2017_transport_parser.py')
 OUT = Path('output')
-EXPECTED_SOURCE_SHA = '3d3d5439ec3e4db50ae79e4ea1ef7df02768be949ee24c5e68b01357b63a3d18'
+EXPECTED_SOURCE_SHA = 'ee81d66b318ed2fa473ddfcee4c1cea0ef8ba08cba33da47103fd7c53ee625dc'
 
 
 def sha(payload: bytes) -> str:
