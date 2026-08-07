@@ -1,0 +1,1 @@
+Execution-only trigger for the source-proven whitespace-delimiter correction. No scientific source, selected panel, parser width policy, blindness rule, detector/family/centroid rule, threshold, radius, cap, ranking, power gate, scientific gate, endpoint, or target information may change.
