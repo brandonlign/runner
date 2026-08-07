@@ -1,0 +1,1 @@
+Execute the guarded transport-correction retry. The only scientific-interface change from the preserved failed attempt is the source-documented summary endpoint literal; keep date 2022-08-14 and all reserved-year/blindness/interface gates unchanged.
