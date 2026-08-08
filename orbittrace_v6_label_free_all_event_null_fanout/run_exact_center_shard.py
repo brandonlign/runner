@@ -59,7 +59,7 @@ def main()->int:
     v6=lf.load_module(args.repaired_v6_source,f"orbittrace_v6_lf_exact_{args.year}_{args.shard_index}")
     old=v6.load_base_runner(args.base_runner); support=old.load_support_module(args.support_source_parts)
     _candidate,base,_scorer=support.load_sources(args)
-    scan_by_year,cal_by_year,_audits,_ids=lf.parse_geometry_only(support)
+    scan_by_year,cal_by_year,_audits,_ids=lf.parse_geometry_only(support,base)
     scan=scan_by_year[args.year]; calibration=cal_by_year[args.year]
     lf.require(lf.canonical_sha(scan)==pre["scan_rows_sha256"],"scan input changed")
     lf.require(lf.canonical_sha(calibration)==pre["calibration_rows_sha256"],"calibration input changed")
