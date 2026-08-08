@@ -15,7 +15,7 @@ jobs:
   validate:
     runs-on: ubuntu-22.04
     env:
-      PYTHONPATH: orbittrace_multi_anchor_energy_v3:orbittrace_wavelet_catalogue_v3:.
+      PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
     steps:
       - name: Check out transport-repair branch
         uses: actions/checkout@v4
@@ -41,11 +41,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p input/geometry input/frozen input/public output
+          mkdir -p input/geometry input/frozen input/public input/v3 output
 
           test "$(git hash-object orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py)" = 'de269f8160bb23a2175d113853f303ce5089450c'
-          test "$(git hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
           test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+
+          # Exact dependency layout used by the frozen SAAMER evaluator.
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
 
           gh run download 31233762587 --repo "$GITHUB_REPOSITORY" \
             --name orbittrace-v8-maarsy-2016-2017-geometry-power-v4 \
@@ -84,7 +88,7 @@ jobs:
           assert ranked['family_count']==107 and ranked['orbit_access'] is False and ranked['target_information_access'] is False
           PY
 
-          python -m py_compile orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py input/frozen/saamer_external_evaluator.py input/frozen/literature_comparator_shared.py
+          python -m py_compile input/v3/multi_anchor_energy_v3.py orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py input/frozen/saamer_external_evaluator.py input/frozen/literature_comparator_shared.py
           test ! -e orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json
           test ! -e orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json
           echo PASS_MAARSY_ORBITAL_VALIDATION_PREORBIT_GUARDS
@@ -125,7 +129,7 @@ jobs:
           set +e
           mkdir -p output
           git rev-parse HEAD > output/execution_source_commit.txt
-          sha256sum orbittrace_v8_maarsy_2016_2017_orbital_validation/PROTOCOL.md orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py input/geometry/v8_maarsy_2016_2017_geometry_power.json input/geometry/maarsy_v8_geometry_rankings.json input/frozen/saamer_external_evaluator.py input/frozen/literature_comparator_shared.py > output/source_and_input_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_v8_maarsy_2016_2017_orbital_validation/PROTOCOL.md orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py input/v3/multi_anchor_energy_v3.py orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/geometry/v8_maarsy_2016_2017_geometry_power.json input/geometry/maarsy_v8_geometry_rankings.json input/frozen/saamer_external_evaluator.py input/frozen/literature_comparator_shared.py > output/source_and_input_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
 
