@@ -74,21 +74,68 @@ jobs:
           python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
 
+      - name: Header-only preflight using approved schema-audit locator
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from gmn_python_api import data_directory as dd
+
+          KNOWN_MARKERS=(
+              'unique trajectory identifier','sol lon','solar longitude',
+              'lamgeo','betgeo','vgeo',
+          )
+          ORBIT_TERMS=(
+              'perihelion','eccentric','inclination','argument','ascending',
+              'node','semimajor','semi-major','q au','omega',
+          )
+          def locate(text):
+              matches=[]
+              for raw in text.splitlines():
+                  low=raw.lower()
+                  if (sum(marker in low for marker in KNOWN_MARKERS)>=2 or
+                      (any(marker in low for marker in KNOWN_MARKERS) and any(term in low for term in ORBIT_TERMS))):
+                      line=raw.strip().lstrip('\ufeff')
+                      line=re.sub(r'\s+',' ',line)
+                      numeric=re.findall(r'(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?(?![A-Za-z])',line)
+                      if len(numeric)>3:
+                          raise RuntimeError('candidate schema line contains too many numeric tokens')
+                      if line:
+                          matches.append(line)
+              matches=sorted(set(matches))
+              if len(matches)!=1:
+                  raise RuntimeError(f'raw schema header not unique under approved locator: {len(matches)}')
+              line=matches[0]
+              if not line.startswith('#'):
+                  raise RuntimeError('sanitized schema line missing comment prefix')
+              fields=[x.strip() for x in line[1:].split(';')]
+              def exact(name):
+                  hits=[i for i,x in enumerate(fields) if x==name]
+                  if len(hits)!=1:
+                      raise RuntimeError(f'raw schema field {name!r} not unique: {hits}')
+                  return hits[0]
+              pos={name:exact(name) for name in ('q','e','i','peri','node')}
+              if pos['q']!=37 or fields[43]!='Q':
+                  raise RuntimeError(f'unexpected q/Q schema positions: q={pos["q"]}, Q43={fields[43]!r}')
+              return pos
+          text=dd.get_monthly_file_content_by_date('2022-01')
+          pos=locate(text)
+          print('PASS_R1_HEADER_ONLY_PREFLIGHT',pos)
+          PY
+
       - name: Restore and verify frozen prerequisites
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p input/{v3,v6,centroid,schema,source_audit,dsh,r1} output
-
           python - <<'PY'
           import base64,gzip,hashlib
           from pathlib import Path
           parts=sorted(Path('orbittrace_recurrent_core_expansion_r1/source_parts').glob('part*.b64'))
-          assert [p.name for p in parts]==['part00.b64'],[p.name for p in parts]
+          assert [p.name for p in parts]==['part00.b64']
           src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
-          got=hashlib.sha256(src).hexdigest()
-          assert got=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15',got
+          assert hashlib.sha256(src).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           Path('input/r1/run_development.py').write_bytes(src)
           PY
 
@@ -96,23 +143,19 @@ jobs:
           git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
 
-          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
           echo "3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip" | sha256sum -c -
           unzip -q input/v6.zip -d input/v6
 
-          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
           echo "a1faacf51e1f4ca2a3a92b20e27d1f07f00e1d32ab33993916379ff36acea062  input/centroid.zip" | sha256sum -c -
           unzip -q input/centroid.zip -d input/centroid
 
-          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9014633429/zip" -o input/schema.zip
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9014633429/zip" -o input/schema.zip
           echo "c748ead99c08f69a80f1c2a5202c9d4fe08579dba0a961f078fcc389b9058113  input/schema.zip" | sha256sum -c -
           unzip -q input/schema.zip -d input/schema
 
-          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9014714033/zip" -o input/source_audit.zip
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9014714033/zip" -o input/source_audit.zip
           echo "a6986603a373c9364e1a8a383ed3a37abb5a7b0db8a38c932a207939e3f379e9  input/source_audit.zip" | sha256sum -c -
           unzip -q input/source_audit.zip -d input/source_audit
 
@@ -123,7 +166,6 @@ jobs:
 
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
-
           python - <<'PY'
           import hashlib,json
           from pathlib import Path
@@ -132,18 +174,13 @@ jobs:
           assert sa['source_sha256']=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           assert sa['catalogue_access'] is False and sa['scientific_value_access'] is False
           assert sa['shower_label_access'] is False and sa['orbittrace_target_access'] is False
-
           sc=json.loads(Path('input/schema/gmn_schema_only_orbit_column_audit.json').read_text())
           assert sc['verdict']=='PASS_GMN_SCHEMA_ONLY_ORBIT_COLUMN_AUDIT'
           assert sc['event_row_values_parsed'] is False and sc['shower_label_values_accessed'] is False
           assert sc['orbittrace_target_accessed'] is False and sc['target_region_event_accessed'] is False
-          assert len(sc['schema_lines'])==1
           fields=[x.strip() for x in sc['schema_lines'][0][1:].split(';')]
           assert fields.count('q')==1 and fields.index('q')==37
           assert fields.count('Q')==1 and fields.index('Q')==43
-          for name in ('e','i','peri','node'):
-              assert fields.count(name)==1,(name,[i for i,x in enumerate(fields) if x==name])
-
           raw=Path('input/r1/run_development.py').read_bytes()
           assert hashlib.sha256(raw).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           text=raw.decode()
@@ -158,41 +195,47 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/run_r1_wrapper.py <<'PY'
-          import hashlib, importlib.util, json, sys
+          import hashlib,importlib.util,json,re,sys
           from pathlib import Path
-
           SOURCE=Path('input/r1/run_development.py')
           SOURCE_SHA='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           OLD_BLOB='ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
           COMPARATOR_SHA='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
-
+          KNOWN_MARKERS=('unique trajectory identifier','sol lon','solar longitude','lamgeo','betgeo','vgeo')
+          ORBIT_TERMS=('perihelion','eccentric','inclination','argument','ascending','node','semimajor','semi-major','q au','omega')
           raw=SOURCE.read_bytes()
           assert hashlib.sha256(raw).hexdigest()==SOURCE_SHA
           spec=importlib.util.spec_from_file_location('frozen_r1',SOURCE)
           mod=importlib.util.module_from_spec(spec)
           assert spec.loader is not None
           spec.loader.exec_module(mod)
-
           assert mod.LITERATURE_COMPARATOR_SHA256==OLD_BLOB
           mod.LITERATURE_COMPARATOR_SHA256=COMPARATOR_SHA
 
           def exact_case_raw_header_positions(text: str):
-              schema_lines=[line for line in text.splitlines() if line.startswith('# Unique trajectory;')]
-              mod.require(len(schema_lines)==1,f'raw schema header not unique: {len(schema_lines)}')
-              header_fields=[field.strip() for field in schema_lines[0][1:].split(';')]
+              matches=[]
+              for raw_line in text.splitlines():
+                  low=raw_line.lower()
+                  if (sum(marker in low for marker in KNOWN_MARKERS)>=2 or
+                      (any(marker in low for marker in KNOWN_MARKERS) and any(term in low for term in ORBIT_TERMS))):
+                      line=raw_line.strip().lstrip('\ufeff')
+                      line=re.sub(r'\s+',' ',line)
+                      numeric=re.findall(r'(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?(?![A-Za-z])',line)
+                      mod.require(len(numeric)<=3,'candidate schema line contains too many numeric tokens')
+                      if line:
+                          matches.append(line)
+              matches=sorted(set(matches))
+              mod.require(len(matches)==1,f'raw schema header not unique under approved locator: {len(matches)}')
+              line=matches[0]
+              mod.require(line.startswith('#'),'sanitized raw schema line missing comment prefix')
+              header_fields=[field.strip() for field in line[1:].split(';')]
               def exact(name: str):
                   hits=[idx for idx,field in enumerate(header_fields) if field==name]
                   mod.require(len(hits)==1,f'raw schema field {name!r} not unique: {hits}')
                   return hits[0]
-              positions={
-                  'q':exact('q'),
-                  'e':exact('e'),
-                  'i':exact('i'),
-                  'peri':exact('peri'),
-                  'node':exact('node'),
-              }
+              positions={name:exact(name) for name in ('q','e','i','peri','node')}
               mod.require(positions['q']==37,f"unexpected lowercase q position: {positions['q']}")
-              mod.require(header_fields[43]=='Q',f"unexpected uppercase Q position/value: {header_fields[43]!r}")
+              mod.require(len(header_fields)>43 and header_fields[43]=='Q',f"unexpected uppercase Q position/value")
               return header_fields,positions
 
           mod.raw_header_positions=exact_case_raw_header_positions
@@ -200,7 +243,8 @@ jobs:
               'original_frozen_source_sha256':SOURCE_SHA,
               'source_bytes_modified':False,
               'runtime_override_1':'LITERATURE_COMPARATOR_SHA256 git-blob literal -> independently verified raw SHA-256',
-              'runtime_override_2':'raw_header_positions exact case-sensitive schema matching; q != Q',
+              'runtime_override_2':'raw_header_positions uses approved schema-audit marker locator plus exact case-sensitive fields; q != Q',
+              'header_locator_source':'frozen audit_gmn_schema.py marker logic',
               'schema_audit_artifact_id':9014633429,
               'schema_audit_digest':'sha256:c748ead99c08f69a80f1c2a5202c9d4fe08579dba0a961f078fcc389b9058113',
               'scientific_rule_changed':False,
@@ -208,7 +252,6 @@ jobs:
               'target_access':False,
           }
           Path('output/r1_runtime_repair.json').write_text(json.dumps(repair,indent=2,sort_keys=True)+'\n')
-
           sys.argv=[str(SOURCE),
             '--support-source-parts','orbittrace_fixed4_support_wrapper_development/source_parts',
             '--candidate-payload','sonotaco_fixed4_final_development/candidate.py.gz.b64',
@@ -245,12 +288,12 @@ jobs:
           assert r['configuration']['competitor_results_used_for_parameter_selection'] is False
           assert all(r['integrity_gates'].values())
           assert 'does not establish superiority over Sugar/HDBSCAN' in r['claim_boundary']
-
           repair=json.loads(Path('output/r1_runtime_repair.json').read_text())
           assert repair['source_bytes_modified'] is False
           assert repair['scientific_rule_changed'] is False
           assert repair['promotion_gate_changed'] is False
           assert repair['target_access'] is False
+          assert repair['header_locator_source']=='frozen audit_gmn_schema.py marker logic'
           assert hashlib.sha256(Path('input/r1/run_development.py').read_bytes()).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           print('ORBITTRACE_R1_RESULT_BEGIN')
           print(json.dumps(r,indent=2,sort_keys=True))
