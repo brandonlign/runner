@@ -1,0 +1,149 @@
+name: OrbitTrace R1 comparator provenance audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-recurrent-core-expansion-r1
+    paths:
+      - '.github/workflows/orbittrace-r1-comparator-provenance-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-r1-comparator-provenance-audit
+          fetch-depth: 0
+
+      - name: Decode exact frozen R1 source and search Git history for intended comparator
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*' --prune
+          python - <<'PY'
+          import ast
+          import base64
+          import gzip
+          import hashlib
+          import json
+          import subprocess
+          from pathlib import Path
+
+          SOURCE_SHA256='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
+          CURRENT_COMPARATOR_BLOB='ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
+          CURRENT_COMPARATOR_SHA256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+
+          parts=sorted(Path('orbittrace_recurrent_core_expansion_r1/source_parts').glob('part*.b64'))
+          if [p.name for p in parts] != ['part00.b64']:
+              raise RuntimeError(f'unexpected R1 source parts: {[p.name for p in parts]}')
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          source=gzip.decompress(base64.b64decode(encoded,validate=True))
+          source_sha=hashlib.sha256(source).hexdigest()
+          if source_sha != SOURCE_SHA256:
+              raise RuntimeError(f'R1 source changed: {source_sha}')
+          text=source.decode('utf-8')
+          tree=ast.parse(text)
+          constants={}
+          for node in tree.body:
+              if isinstance(node,(ast.Assign,ast.AnnAssign)):
+                  targets=node.targets if isinstance(node,ast.Assign) else [node.target]
+                  for target in targets:
+                      if isinstance(target,ast.Name) and target.id in {'LITERATURE_COMPARATOR_SHA256','DSH_THRESHOLD','GEOMETRY_RADIUS'}:
+                          value=node.value
+                          if isinstance(value,ast.Constant):
+                              constants[target.id]=value.value
+          expected=constants.get('LITERATURE_COMPARATOR_SHA256')
+          if not isinstance(expected,str) or len(expected)!=64:
+              raise RuntimeError(f'invalid frozen comparator SHA256 constant: {expected!r}')
+
+          # Search every unique Python blob reachable from every fetched branch/ref.
+          raw=subprocess.check_output(['git','rev-list','--objects','--all'],text=True)
+          candidates={}
+          for line in raw.splitlines():
+              fields=line.split(' ',1)
+              if len(fields)!=2:
+                  continue
+              oid,path=fields
+              if path.endswith('.py'):
+                  candidates.setdefault(oid,set()).add(path)
+
+          matches=[]
+          examined=0
+          current_blob_record=None
+          for oid,paths in candidates.items():
+              try:
+                  payload=subprocess.check_output(['git','cat-file','blob',oid])
+              except subprocess.CalledProcessError:
+                  continue
+              examined += 1
+              digest=hashlib.sha256(payload).hexdigest()
+              if oid==CURRENT_COMPARATOR_BLOB:
+                  current_blob_record={'blob':oid,'sha256':digest,'paths':sorted(paths),'bytes':len(payload)}
+              if digest==expected:
+                  matches.append({'blob':oid,'sha256':digest,'paths':sorted(paths),'bytes':len(payload)})
+
+          # Locate refs/commits containing any matching blob/path for reconstructable provenance.
+          locations=[]
+          for match in matches:
+              oid=match['blob']
+              for path in match['paths']:
+                  log=subprocess.run(
+                      ['git','log','--all','--format=%H','--',path],
+                      check=True,capture_output=True,text=True,
+                  ).stdout.splitlines()
+                  for commit in log:
+                      probe=subprocess.run(['git','rev-parse',f'{commit}:{path}'],capture_output=True,text=True)
+                      if probe.returncode==0 and probe.stdout.strip()==oid:
+                          locations.append({'commit':commit,'path':path,'blob':oid})
+                          if len(locations)>=50:
+                              break
+                  if len(locations)>=50:
+                      break
+              if len(locations)>=50:
+                  break
+
+          result={
+              'verdict':'PASS_R1_COMPARATOR_PROVENANCE_AUDIT',
+              'catalogue_access':False,
+              'scientific_value_access':False,
+              'shower_label_access':False,
+              'orbittrace_target_access':False,
+              'r1_source_sha256':source_sha,
+              'frozen_constants':constants,
+              'expected_comparator_sha256':expected,
+              'current_restored_comparator':current_blob_record,
+              'current_expected_equal': expected==CURRENT_COMPARATOR_SHA256,
+              'python_blobs_examined':examined,
+              'exact_sha256_matches':matches,
+              'match_locations':locations,
+              'exact_match_found':bool(matches),
+              'interpretation':(
+                  'RESTORE_MATCHING_HISTORICAL_COMPARATOR' if matches else
+                  'NO_MATCHING_PYTHON_BLOB_IN_FETCHED_REPOSITORY_HISTORY'
+              ),
+          }
+          Path('output/r1_comparator_provenance_audit.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          Path('output/R1_COMPARATOR_PROVENANCE_AUDIT.md').write_text(
+              '# R1 comparator provenance audit\n\n'
+              f"- frozen R1 source SHA-256: `{source_sha}`\n"
+              f"- expected comparator SHA-256: `{expected}`\n"
+              f"- currently restored comparator SHA-256: `{CURRENT_COMPARATOR_SHA256}`\n"
+              f"- exact matching historical Python blob found: **{bool(matches)}**\n"
+              f"- Python blobs examined: **{examined}**\n"
+              f"- interpretation: **`{result['interpretation']}`**\n\n"
+              'No catalogue, shower-label value, OrbitTrace target information, or scientific event value was accessed.\n'
+          )
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-r1-comparator-provenance-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
