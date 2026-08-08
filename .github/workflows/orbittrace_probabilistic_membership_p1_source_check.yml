@@ -1,0 +1,64 @@
+name: OrbitTrace P1 frozen-source check
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - 'orbittrace_probabilistic_membership_p1/**'
+      - '.github/workflows/orbittrace_probabilistic_membership_p1_source_check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reconstruct and compile exact P1 source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          root=Path('orbittrace_probabilistic_membership_p1/source_parts')
+          parts=sorted(root.glob('part*.b64'))
+          assert [p.name for p in parts]==['part00.b64','part01.b64']
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          src=gzip.decompress(base64.b64decode(encoded,validate=True))
+          digest=hashlib.sha256(src).hexdigest()
+          assert digest=='4075934cac8b8d2934f3d7580ad29cc5826c83a4b4e2153714b57c0673379cde',digest
+          Path('/tmp/run_probabilistic_membership_p1.py').write_bytes(src)
+          print('P1_SOURCE_SHA256',digest)
+          PY
+          python -m py_compile /tmp/run_probabilistic_membership_p1.py
+      - name: Check frozen architecture markers
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('/tmp/run_probabilistic_membership_p1.py')
+          t=p.read_text()
+          for marker in [
+            'INNER_PROB = 0.99',
+            'OUTER_PROB = 0.9999',
+            'BACKGROUND_UPPER_CONFIDENCE = 0.95',
+            'MAP_THRESHOLD = 0.5',
+            'MACRO_F1_GAIN_GATE = 0.08',
+            'OAS(assume_centered=False)',
+            'membership_pretruth_sha256',
+            'qualified_matches_no_regression',
+            'recovery_at_100_no_regression',
+            'top100_dominant_precision_at_least_065',
+          ]:
+            assert marker in t,marker
+          tree=ast.parse(t)
+          calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call)]
+          assert any(isinstance(c.func,ast.Name) and c.func.id=='evaluate' for c in calls)
+          print('PASS_P1_FROZEN_SOURCE_CHECK')
+          PY
