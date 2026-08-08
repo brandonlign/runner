@@ -1,0 +1,85 @@
+name: OrbitTrace P2 D_SH batch equivalence
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - .github/workflows/orbittrace_p2_dsh_batch_equivalence.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-p2-dsh-batch-equivalence
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-p2-performance-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install source-only numeric dependencies
+        run: |
+          python -m pip install --quiet numpy scipy scikit-learn
+      - name: Restore exact frozen D_SH comparator
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p2perf
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > /tmp/p2perf/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  /tmp/p2perf/literature_comparators.py' | sha256sum -c -
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+      - name: Prove batch-size invariance and benchmark
+        env:
+          PYTHONPATH: /tmp/p2perf:.
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.util
+          import time
+          import numpy as np
+          from pathlib import Path
+
+          def load(path,name):
+              spec=importlib.util.spec_from_file_location(name,path)
+              mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); return mod
+
+          p2=load(Path('orbittrace_crossyear_two_view_membership_p2/run_development.py'),'p2batch')
+          dsh=load(Path('/tmp/p2perf/literature_comparators.py'),'dshbatch')
+          rng=np.random.default_rng(20260808)
+          n_candidate=2048
+          n_source=8
+          ids=[f'c{i:04d}' for i in range(n_candidate)]
+          seeds=[f's{i:02d}' for i in range(n_source)]
+          all_ids=ids+seeds
+          q=rng.uniform(0.03,1.0,len(all_ids)); e=rng.uniform(0.05,0.99,len(all_ids))
+          inc=rng.uniform(0.0,160.0,len(all_ids)); peri=rng.uniform(0.0,360.0,len(all_ids)); node=rng.uniform(0.0,360.0,len(all_ids))
+          orbit={eid:{'q':float(q[i]),'e':float(e[i]),'i':float(inc[i]),'peri':float(peri[i]),'node':float(node[i])} for i,eid in enumerate(all_ids)}
+
+          def run(batch):
+              p2.DSH_BATCH_SIZE=batch
+              t=time.perf_counter()
+              out=p2.min_exact_dsh_to_source(ids,seeds,orbit,dsh)
+              return out,time.perf_counter()-t
+
+          baseline,t512=run(512)
+          adaptive,t8=run(n_source)
+          b31,t31=run(31)
+          assert np.array_equal(baseline,adaptive), float(np.max(np.abs(baseline-adaptive)))
+          assert np.array_equal(baseline,b31), float(np.max(np.abs(baseline-b31)))
+          print(f'PASS_P2_DSH_BATCH_BITWISE_EQUIVALENCE candidates={n_candidate} sources={n_source}')
+          print(f'P2_DSH_BATCH_TIMING batch512={t512:.6f}s batch8={t8:.6f}s batch31={t31:.6f}s speedup512_to8={t512/t8:.3f}x')
+          PY
+      - name: Assert no scientific data boundary
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_METEOR_CATALOGUE_NO_LABELS_NO_TARGET_REGION_NO_ORBITTRACE_TARGET
