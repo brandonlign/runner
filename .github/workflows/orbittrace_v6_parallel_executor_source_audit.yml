@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: orbittrace-v6-parallel-executor-source-audit
+  cancel-in-progress: true
+
 jobs:
   audit:
     runs-on: ubuntu-22.04
@@ -40,18 +44,25 @@ jobs:
           ptext=parallel_path.read_text(); ptree=ast.parse(ptext)
           ytext=year_path.read_text(); ytree=ast.parse(ytext)
 
+          imports=[]
+          for n in ptree.body:
+              if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
+              if isinstance(n,ast.ImportFrom): imports.append(n.module or '')
+          assert not any(name in {'numpy','math','scipy','sklearn'} or name.startswith(('numpy.','scipy.','sklearn.')) for name in imports), imports
+
           defs={n.name:n for n in ptree.body if isinstance(n,ast.FunctionDef)}
           worker=defs['_run_chunk']
           calls=[]
+          attrs=[]
           for n in ast.walk(worker):
               if isinstance(n,ast.Call):
                   f=n.func
                   calls.append(f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>'))
+              if isinstance(n,ast.Attribute): attrs.append(n.attr)
           assert calls.count('_ORIGINAL')==1, calls
-          forbidden=('np.','numpy','math.','v3','fixed4','wavelet','score','distance','radius','threshold','alpha','member')
+          assert set(calls) <= {'_ORIGINAL','RuntimeError'}, calls
+          assert not attrs, attrs
           worker_text=ast.get_source_segment(ptext,worker)
-          for token in forbidden:
-              assert token not in worker_text.lower(), (token,worker_text)
           assert 'return _ORIGINAL(old, chunk, window_events, event_lookup, support, base)' in worker_text
 
           install=defs['install']
@@ -59,6 +70,7 @@ jobs:
           assert 'v6.exact_rescore_window_v6 = replacement' in install_text
           assert 'pool.map(_run_chunk' in install_text
           assert 'output_ids != input_ids' in install_text
+          assert 'worker_count = min(requested, cpu_count, 4)' in install_text
 
           ydefs={n.name:n for n in ytree.body if isinstance(n,ast.FunctionDef)}
           main_text=ast.get_source_segment(ytext,ydefs['main'])
@@ -70,6 +82,7 @@ jobs:
           print('PASS_V6_PARALLEL_EXECUTOR_SOURCE_AUDIT')
           PY
       - name: Assert no data boundary
+        if: always()
         run: |
           test ! -e input
           test ! -e output
