@@ -1,0 +1,151 @@
+name: OrbitTrace v8 MAARSY RCS bounded gzip-tar header probe
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-rcs-bounded-header-probe
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_MAARSY_RCS_STAGE0F.md'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen Stage-0F parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-rcs-bounded-header-probe
+          fetch-depth: 1
+
+      - name: Enforce exact bounded-probe protocol
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/MAARSY_RCS_STAGE0F_BOUNDED_HEADER_PROBE.md
+          mkdir -p input output
+
+      - name: Request only first 1 MiB compressed range
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            --range 0-1048575 \
+            --max-filesize 1048576 \
+            -D output/http_headers.txt \
+            'https://zenodo.org/api/records/15553437/files/silseth_thesis_data.tar.gz/content' \
+            -o input/head.gz
+          size=$(stat -c '%s' input/head.gz)
+          test "$size" -gt 0
+          test "$size" -le 1048576
+          cr=$(grep -i '^content-range:' output/http_headers.txt | tail -1 | tr -d '\r')
+          test "$cr" = 'content-range: bytes 0-1048575/21485785089' || test "$cr" = 'Content-Range: bytes 0-1048575/21485785089'
+          printf '%s\n' "$size" > output/transported_bytes.txt
+          sha256sum input/head.gz > output/bounded_range_sha256.txt
+
+      - name: Decompress at most 64 KiB and parse headers only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,zlib
+
+          comp=Path('input/head.gz').read_bytes()
+          d=zlib.decompressobj(16+zlib.MAX_WBITS)
+          raw=d.decompress(comp,65536)
+          if len(raw)<512:
+              raise RuntimeError(f'insufficient decompressed bytes for tar header: {len(raw)}')
+
+          def octal(bs):
+              s=bs.split(b'\0',1)[0].strip(b' ')
+              return int(s or b'0',8)
+          def txt(bs):
+              return bs.split(b'\0',1)[0].decode('utf-8','replace')
+          def header(block):
+              if len(block)!=512: raise RuntimeError('short tar header')
+              if block==b'\0'*512: return {'zero_block':True}
+              name=txt(block[0:100])
+              prefix=txt(block[345:500])
+              if prefix: name=f'{prefix}/{name}'
+              stored=octal(block[148:156])
+              chk=bytearray(block); chk[148:156]=b'        '
+              calc=sum(chk)
+              if stored!=calc:
+                  raise RuntimeError(f'tar header checksum mismatch for {name!r}: {stored} != {calc}')
+              return {
+                  'zero_block':False,
+                  'name':name,
+                  'mode':octal(block[100:108]),
+                  'uid':octal(block[108:116]),
+                  'gid':octal(block[116:124]),
+                  'size':octal(block[124:136]),
+                  'mtime':octal(block[136:148]),
+                  'typeflag':block[156:157].decode('latin1'),
+                  'linkname':txt(block[157:257]),
+                  'magic':txt(block[257:263]),
+              }
+
+          offset=0; headers=[]; first_nonempty=None
+          while offset+512<=len(raw):
+              h=header(raw[offset:offset+512])
+              h['header_offset_uncompressed']=offset
+              headers.append(h)
+              if h.get('zero_block'):
+                  break
+              if h['size']>0:
+                  first_nonempty=h
+                  break
+              offset += 512
+          if first_nonempty is None:
+              raise RuntimeError('no first non-empty tar member found within bounded decompressed header window')
+
+          result={
+            'schema':'orbittrace-v8-maarsy-rcs-stage0f-bounded-header-v1',
+            'compressed_range_requested':'0-1048575',
+            'compressed_bytes_received':len(comp),
+            'compressed_range_sha256':hashlib.sha256(comp).hexdigest(),
+            'decompressed_output_hard_cap_bytes':65536,
+            'decompressed_bytes_materialized':len(raw),
+            'headers_before_stop':headers,
+            'first_nonempty_member_header':first_nonempty,
+            'first_nonempty_member_payload_read':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'v8_scientific_evaluation_performed':False,
+            'target_information_access':False,
+            'gmn_stage_a_or_b_access':False,
+          }
+          Path('output/bounded_header_probe.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          PY
+          rm -f input/head.gz
+
+      - name: Enforce no member payload interpretation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/bounded_header_probe.json').read_text())
+          assert r['first_nonempty_member_payload_read'] is False
+          assert r['event_row_access'] is False
+          assert r['scientific_value_access'] is False
+          assert r['v8_scientific_evaluation_performed'] is False
+          assert r['target_information_access'] is False
+          assert r['gmn_stage_a_or_b_access'] is False
+          Path('output/result.json').write_text(json.dumps({
+            'verdict':'PASS_MAARSY_RCS_BOUNDED_HEADER_PROBE',
+            'first_nonempty_member_header':r['first_nonempty_member_header'],
+            'first_nonempty_member_payload_read':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'next_step':'classify first non-empty member by frozen filename/type and separately authorize only documentary payload access if appropriate'
+          },indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload bounded structural artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-rcs-stage0f-bounded-header
+          path: output
+          if-no-files-found: error
+          retention-days: 90
