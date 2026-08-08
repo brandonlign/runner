@@ -1,0 +1,72 @@
+name: OrbitTrace v6 literature performance source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-literature-adapter-freeze
+    paths:
+      - orbittrace_v6_literature_adapter/parallel_exact_rescore.py
+      - orbittrace_v6_literature_adapter/run_pretruth_year.py
+      - .github/workflows/orbittrace_v6_literature_performance_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-literature-performance-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-literature-performance-v1
+      - name: Prove exact wrapper and pretruth boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_literature_adapter/parallel_exact_rescore.py orbittrace_v6_literature_adapter/run_pretruth_year.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          p=Path('orbittrace_v6_literature_adapter/parallel_exact_rescore.py')
+          text=p.read_text(); tree=ast.parse(text)
+          imports=[]
+          for n in tree.body:
+              if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
+              if isinstance(n,ast.ImportFrom): imports.append(n.module or '')
+          assert not any(x in {'numpy','math','scipy','sklearn'} or x.startswith(('numpy.','scipy.','sklearn.')) for x in imports), imports
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          worker=defs['_run_chunk']
+          calls=[]
+          for n in ast.walk(worker):
+              if isinstance(n,ast.Call):
+                  f=n.func
+                  calls.append(f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>'))
+          assert calls.count('_ORIGINAL')==1, calls
+          assert set(calls) <= {'_ORIGINAL','RuntimeError'}, calls
+          install=ast.get_source_segment(text,defs['install'])
+          assert 'v6.exact_rescore_window_v6 = replacement' in install
+          assert 'pool.map(_run_chunk' in install
+          assert 'worker_count = min(max(1, int(workers)), cpu_count, 4)' in install
+
+          r=Path('orbittrace_v6_literature_adapter/run_pretruth_year.py').read_text()
+          rt=ast.parse(r)
+          assert r.count('v6.scan_year_v6(')==1
+          assert 'install_parallel_exact(v6, workers=args.parallel_exact_workers, min_parallel_records=256)' in r
+          assert 'truth_accessed": False' in r
+          assert 'mapping_accessed": False' in r
+          assert 'competitor_cluster_labels_accessed": False' in r
+          assert 'proposal_cap_per_window"] == 512' in r
+          assert 'max_primary_proposals_per_year"] == 36864' in r
+          print('PASS_V6_LITERATURE_PARALLEL_EXECUTOR_SOURCE_AUDIT')
+          PY
+      - name: Assert no-data boundary
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output_scan
+          echo NO_BENCHMARK_DATA_NO_LABEL_VALUE_NO_TARGET_ACCESS
