@@ -39,7 +39,7 @@ def main()->int:
     lf.require(float(support.BLIND_LOW)==20.0 and float(support.BLIND_HIGH)==55.0,"blind interval changed")
     candidate,base,scorer=support.load_sources(args)
 
-    scan_by_year,calibration_by_year,geometry_audits,_pretruth_ids=lf.parse_geometry_only(support)
+    scan_by_year,calibration_by_year,geometry_audits,_pretruth_ids=lf.parse_geometry_only(support,base)
     scan=scan_by_year[args.year]; calibration=calibration_by_year[args.year]
     lf.require(len(scan)==len(calibration),"all-event calibration count mismatch")
     lf.require([e["id"] for e in scan]==[e["id"] for e in calibration],"all-event calibration ID mismatch")
