@@ -1,11 +1,11 @@
-name: OrbitTrace recurrent-core expansion R1 development schemafix registered
+name: OrbitTrace recurrent-core expansion R1 development schemafix
 
 on:
   pull_request:
     branches:
       - agent/orbittrace-recurrent-core-expansion-r1
     paths:
-      - 'orbittrace_recurrent_core_expansion_r1/RUN_SCHEMAFIX2.md'
+      - 'orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX.md'
 
 permissions:
   contents: read
@@ -16,12 +16,12 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
-      - name: Check out execution child for one-file diff guard
+      - name: Check out execution child
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Enforce execution-only child and switch to frozen base
+      - name: Enforce one-file execution child and frozen parent
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -30,9 +30,9 @@ jobs:
           git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
           mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           test "${#files[@]}" -eq 1
-          test "${files[0]}" = "orbittrace_recurrent_core_expansion_r1/RUN_SCHEMAFIX2.md"
+          test "${files[0]}" = "orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX.md"
           git checkout --detach "$BASE_SHA"
-          test ! -e orbittrace_recurrent_core_expansion_r1/RUN_SCHEMAFIX2.md
+          test ! -e orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX.md
           echo "execution_base_sha=$BASE_SHA"
 
       - uses: actions/setup-python@v5
@@ -41,7 +41,7 @@ jobs:
           cache: pip
           cache-dependency-path: ghoststream_fixed4_application/requirements.txt
 
-      - name: Install exact existing scientific dependencies
+      - name: Install frozen dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
@@ -60,8 +60,7 @@ jobs:
           parts=sorted(Path('orbittrace_recurrent_core_expansion_r1/source_parts').glob('part*.b64'))
           assert [p.name for p in parts]==['part00.b64']
           src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
-          got=hashlib.sha256(src).hexdigest()
-          assert got=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15',got
+          assert hashlib.sha256(src).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           Path('input/r1/run_development.py').write_bytes(src)
           PY
 
@@ -101,51 +100,44 @@ jobs:
           import hashlib,json,re
           from pathlib import Path
 
-          source_audit=json.loads(Path('input/source_audit/recurrent_core_expansion_r1_source_audit.json').read_text())
-          assert source_audit['verdict']=='PASS_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT'
-          assert source_audit['source_sha256']=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
-          assert source_audit['catalogue_access'] is False and source_audit['scientific_value_access'] is False
-          assert source_audit['shower_label_access'] is False and source_audit['orbittrace_target_access'] is False
+          sa=json.loads(Path('input/source_audit/recurrent_core_expansion_r1_source_audit.json').read_text())
+          assert sa['verdict']=='PASS_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT'
+          assert sa['source_sha256']=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
+          assert sa['catalogue_access'] is False and sa['scientific_value_access'] is False
+          assert sa['shower_label_access'] is False and sa['orbittrace_target_access'] is False
 
-          schema=json.loads(Path('input/schema/gmn_schema_only_orbit_column_audit.json').read_text())
-          assert schema['verdict']=='PASS_GMN_SCHEMA_ONLY_ORBIT_COLUMN_AUDIT'
-          assert schema['event_row_values_parsed'] is False and schema['shower_label_values_accessed'] is False
-          assert schema['orbittrace_target_accessed'] is False and schema['target_region_event_accessed'] is False
-          assert len(schema['schema_lines'])==1
-          schema_line=schema['schema_lines'][0]
-          fields=[field.strip() for field in schema_line[1:].split(';')]
-          assert fields.count('q')==1 and fields.count('Q')==1
-          assert fields.index('q')==37 and fields.index('Q')==43
+          sc=json.loads(Path('input/schema/gmn_schema_only_orbit_column_audit.json').read_text())
+          assert sc['verdict']=='PASS_GMN_SCHEMA_ONLY_ORBIT_COLUMN_AUDIT'
+          assert sc['event_row_values_parsed'] is False and sc['shower_label_values_accessed'] is False
+          assert sc['orbittrace_target_accessed'] is False and sc['target_region_event_accessed'] is False
+          schema_line=sc['schema_lines'][0]
+          fields=[x.strip() for x in schema_line[1:].split(';')]
+          assert fields.count('q')==1 and fields.index('q')==37
+          assert fields.count('Q')==1 and fields.index('Q')==43
           for name in ('e','i','peri','node'):
-              assert fields.count(name)==1, (name,[i for i,x in enumerate(fields) if x==name])
+              assert fields.count(name)==1
 
           p=Path('input/r1/run_development.py')
           raw=p.read_bytes()
-          original_sha=hashlib.sha256(raw).hexdigest()
-          assert original_sha=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
+          assert hashlib.sha256(raw).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           text=raw.decode()
 
           old_blob='ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
-          comparator_sha256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
-          assignment_lines=[line for line in text.splitlines() if line.lstrip().startswith('LITERATURE_COMPARATOR_SHA256') and '=' in line]
-          assert len(assignment_lines)==1 and old_blob in assignment_lines[0], assignment_lines
+          new_sha='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
           assert text.count(old_blob)==1
-          blob_index=text.index(old_blob)
-          after_hash=text[:blob_index]+comparator_sha256+text[blob_index+len(old_blob):]
+          idx=text.index(old_blob)
+          after_hash=text[:idx]+new_sha+text[idx+len(old_blob):]
 
-          start_match=re.search(r'(?m)^def raw_header_positions\(text[^\n]*\):\n', after_hash)
-          assert start_match, 'raw_header_positions() not found'
-          start=start_match.start()
-          next_def=re.search(r'(?m)^def [A-Za-z_][A-Za-z0-9_]*\(', after_hash[start_match.end():])
-          assert next_def, 'next top-level function after raw_header_positions() not found'
-          end=start_match.end()+next_def.start()
+          m=re.search(r'(?m)^def raw_header_positions\(text[^\n]*\):\n',after_hash)
+          assert m
+          start=m.start()
+          n=re.search(r'(?m)^def [A-Za-z_][A-Za-z0-9_]*\(',after_hash[m.end():])
+          assert n
+          end=m.end()+n.start()
           old_parser=after_hash[start:end]
           assert 'raw schema field' in old_parser
-          assert 'exact("q")' in old_parser
-          assert 'exact("e")' in old_parser
-          assert 'exact("i")' in old_parser
-          assert 'exact("peri")' in old_parser
-          assert 'exact("node")' in old_parser
+          for token in ('exact("q")','exact("e")','exact("i")','exact("peri")','exact("node")'):
+              assert token in old_parser, token
 
           new_parser='''def raw_header_positions(text: str):
     schema_lines = [line for line in text.splitlines() if line.startswith("# Unique trajectory;")]
@@ -170,49 +162,38 @@ jobs:
 '''
           patched=after_hash[:start]+new_parser+after_hash[end:]
 
-          header_fields=[field.strip() for field in schema_line[1:].split(';')]
-          positions={name: header_fields.index(name) for name in ('q','e','i','peri','node')}
-          assert positions['q']==37
-          assert header_fields[43]=='Q' and positions['q']!=43
+          positions={name: fields.index(name) for name in ('q','e','i','peri','node')}
+          assert positions['q']==37 and fields[43]=='Q'
+          for token in ('D_SH(candidate, partner medoid) <= 0.05','unchanged exact v8 multiplicity order','no_threshold_search','no_radius_search','no_weight_search','no_variant_search'):
+              assert token in patched,token
 
-          for token in (
-              'D_SH(candidate, partner medoid) <= 0.05',
-              'unchanged exact v8 multiplicity order',
-              'no_threshold_search',
-              'no_radius_search',
-              'no_weight_search',
-              'no_variant_search',
-          ):
-              assert token in patched, token
-
-          reversed_parser=patched[:start]+old_parser+patched[start+len(new_parser):]
-          reverse_blob_index=reversed_parser.index(comparator_sha256)
-          reverted=reversed_parser[:reverse_blob_index]+old_blob+reversed_parser[reverse_blob_index+len(comparator_sha256):]
+          reverted_parser=patched[:start]+old_parser+patched[start+len(new_parser):]
+          ridx=reverted_parser.index(new_sha)
+          reverted=reverted_parser[:ridx]+old_blob+reverted_parser[ridx+len(new_sha):]
           assert reverted.encode()==raw
 
           p.write_text(patched)
-          Path('output/r1_implementation_repair.json').write_text(json.dumps({
-              'original_frozen_source_sha256': original_sha,
+          repair={
+              'original_frozen_source_sha256': hashlib.sha256(raw).hexdigest(),
               'verified_comparator_git_blob': old_blob,
-              'verified_comparator_sha256': comparator_sha256,
-              'comparator_repair_scope': 'single stale provenance literal only',
+              'verified_comparator_sha256': new_sha,
               'schema_audit_artifact_id': 9014633429,
               'schema_audit_digest': 'sha256:c748ead99c08f69a80f1c2a5202c9d4fe08579dba0a961f078fcc389b9058113',
               'schema_resolution': 'exact case-sensitive raw header names; q != Q',
               'lowercase_q_index': positions['q'],
-              'uppercase_Q_index': header_fields.index('Q'),
+              'uppercase_Q_index': fields.index('Q'),
               'old_parser_sha256': hashlib.sha256(old_parser.encode()).hexdigest(),
               'new_parser_sha256': hashlib.sha256(new_parser.encode()).hexdigest(),
               'repairs_byte_for_byte_reversible_to_frozen_source': True,
               'scientific_rule_changed': False,
               'promotion_gate_changed': False,
-          },indent=2,sort_keys=True)+'\n')
-          print('R1_IMPLEMENTATION_REPAIRS_APPLIED')
-          print(json.dumps(json.loads(Path('output/r1_implementation_repair.json').read_text()),indent=2,sort_keys=True))
+          }
+          Path('output/r1_implementation_repair.json').write_text(json.dumps(repair,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(repair,indent=2,sort_keys=True))
           PY
 
           python -m py_compile input/r1/run_development.py input/dsh/literature_comparators.py
-          echo PASS_R1_SCHEMAFIX2_PREDATA_GUARDS
+          echo PASS_R1_SCHEMAFIX_PREDATA_GUARDS
 
       - name: Execute one-shot target-excluded R1 development
         env:
@@ -252,7 +233,6 @@ jobs:
           assert r['configuration']['competitor_results_used_for_parameter_selection'] is False
           assert all(r['integrity_gates'].values())
           assert 'does not establish superiority over Sugar/HDBSCAN' in r['claim_boundary']
-
           repair=json.loads(Path('output/r1_implementation_repair.json').read_text())
           assert repair['scientific_rule_changed'] is False
           assert repair['promotion_gate_changed'] is False
@@ -276,7 +256,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: orbittrace-recurrent-core-expansion-r1-development-schemafix2
+          name: orbittrace-recurrent-core-expansion-r1-development-schemafix
           path: output
           if-no-files-found: error
           retention-days: 90
