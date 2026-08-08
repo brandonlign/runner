@@ -9,20 +9,41 @@ from typing import Any
 
 from orbittrace_v6_checkpointed_fallback.common import event_rows_sha256, load_module, require, sha256_bytes
 from orbittrace_v6_checkpointed_fallback.parallel_exact_rescore import install
-from orbittrace_v6_exact_fanout_v2.run_exact_center_shard import balanced_center_assignment
 
 YEAR = 2023
 PARENT_SHARD_COUNT = 6
 PARENT_SHARD_INDEX = 0
+EXPECTED_PARENT_CENTERS = [5.0, 15.0, 65.0, 80.0, 155.0, 190.0, 260.0, 300.0, 315.0]
+EXPECTED_PARENT_PROPOSAL_LOAD = 38985
 
 
 def canonical_sha(value: Any) -> str:
     return sha256_bytes(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode())
 
 
+def parent_center_assignment(pre: dict[str, Any], shard_count: int = PARENT_SHARD_COUNT) -> tuple[list[list[float]], list[int]]:
+    """Reproduce fanout-v2's deterministic proposal-count center scheduling."""
+    require(shard_count > 0, "shard_count must be positive")
+    centers = [float(c) for c in pre["ordered_centers"]]
+    bins: list[list[float]] = [[] for _ in range(shard_count)]
+    loads = [0 for _ in range(shard_count)]
+    for center in sorted(centers, key=lambda c: (-len(pre["centers"][c]["records"]), c)):
+        target = min(range(shard_count), key=lambda index: (loads[index], index))
+        bins[target].append(center)
+        loads[target] += len(pre["centers"][center]["records"])
+    for values in bins:
+        values.sort()
+    # Frozen cross-check against the already-completed v2 2023 manifest. This is
+    # an implementation identity assertion, not a scientific choice.
+    if int(pre["year"]) == YEAR and shard_count == PARENT_SHARD_COUNT:
+        require(bins[PARENT_SHARD_INDEX] == EXPECTED_PARENT_CENTERS, f"parent v2 shard0 center identity changed: {bins[PARENT_SHARD_INDEX]}")
+        require(loads[PARENT_SHARD_INDEX] == EXPECTED_PARENT_PROPOSAL_LOAD, f"parent v2 shard0 proposal load changed: {loads[PARENT_SHARD_INDEX]}")
+    return bins, loads
+
+
 def build_rescue_bins(pre: dict[str, Any], rescue_count: int) -> tuple[list[list[dict[str, Any]]], list[int]]:
     require(rescue_count > 0, "rescue_count must be positive")
-    parent_centers = balanced_center_assignment(pre, PARENT_SHARD_COUNT)[PARENT_SHARD_INDEX]
+    parent_centers = parent_center_assignment(pre, PARENT_SHARD_COUNT)[0][PARENT_SHARD_INDEX]
     total_cost = sum(len(pre["centers"][c]["records"]) * len(pre["centers"][c]["window_event_ids"]) for c in parent_centers)
     ideal = total_cost / rescue_count
     pieces: list[dict[str, Any]] = []
@@ -44,7 +65,6 @@ def build_rescue_bins(pre: dict[str, Any], rescue_count: int) -> tuple[list[list
         bins[target].append(piece); loads[target] += int(piece["estimated_cost"])
     for b in bins:
         b.sort(key=lambda x: (float(x["center"]), int(x["record_start"])))
-    # exact complete coverage of the original v2 parent-shard centers
     for center in parent_centers:
         ranges = sorted((int(p["record_start"]), int(p["record_stop"])) for b in bins for p in b if float(p["center"]) == center)
         cursor = 0
