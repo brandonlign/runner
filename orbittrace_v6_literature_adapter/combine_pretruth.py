@@ -48,6 +48,10 @@ def load_checkpoint(path: Path, panel: str, year: int, manifest_sha: str) -> dic
     return checkpoint
 
 
+def checkpoint_arg(panel: str, year: int) -> str:
+    return f"{panel}_{year}_checkpoint"
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--v6-source", required=True, type=Path)
@@ -59,11 +63,12 @@ def main() -> int:
     p.add_argument("--id-manifest", required=True, type=Path)
     for panel in ("hdbscan", "sugar"):
         for year in adapter.YEARS:
-            p.add_argument(f"--{panel}-{year}", required=True, type=Path)
+            p.add_argument(f"--{panel}-{year}-checkpoint", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
     args = p.parse_args()
 
-    # Still pre-truth: no parser, mapping or competitor assignment file is accepted.
+    # Still pre-truth: only hash-verified panel/year checkpoints are accepted;
+    # no parser, mapping or raw competitor assignment file is accepted.
     v6 = load_module(args.v6_source, "orbittrace_v6_pretruth_combiner")
     old = load_module(args.base_runner, "orbittrace_v6_pretruth_combiner_base")
     support = old.load_support_module(args.support_source_parts)
@@ -78,10 +83,11 @@ def main() -> int:
 
     results: dict[str, Any] = {}
     for panel in ("hdbscan", "sugar"):
-        checkpoints = [
-            load_checkpoint(getattr(args, f"{panel}_{year}"), panel, year, manifest_sha)
+        checkpoint_paths = {
+            year: getattr(args, checkpoint_arg(panel, year))
             for year in adapter.YEARS
-        ]
+        }
+        checkpoints = [load_checkpoint(checkpoint_paths[year], panel, year, manifest_sha) for year in adapter.YEARS]
         all_anchors = [anchor for checkpoint in checkpoints for anchor in checkpoint["anchors"]]
         all_components = [component for checkpoint in checkpoints for component in checkpoint["components"]]
         audits = [checkpoint["audit"] for checkpoint in checkpoints]
@@ -107,7 +113,7 @@ def main() -> int:
             "primary_ranking_sha256_before_truth": primary_hash,
             "primary_payload_bytes": len(json.dumps(primary_payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()),
             "panel_year_checkpoint_sha256": {
-                str(year): hashlib.sha256(getattr(args, f"{panel}_{year}").read_bytes()).hexdigest()
+                str(year): hashlib.sha256(checkpoint_paths[year].read_bytes()).hexdigest()
                 for year in adapter.YEARS
             },
         }
