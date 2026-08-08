@@ -38,7 +38,8 @@ jobs:
           PYTHONPATH=audit python - <<'PY'
           import hashlib
           from pathlib import Path
-          from orbittrace_v6_exact_sharded_acceleration.common import SHARD_COUNT, assign_centers, shard_plan_summary
+          from orbittrace_v6_checkpointed_fallback.common import load_module
+          from orbittrace_v6_exact_sharded_acceleration.common import SHARD_COUNT, assign_centers, shard_plan_summary, locate_proposal_owner
 
           root=Path('audit/orbittrace_v6_exact_sharded_acceleration')
           files=[root/'common.py',root/'build_catalogue_cache.py',root/'prepare_year.py',root/'run_exact_shard.py',root/'replay_year.py']
@@ -56,11 +57,26 @@ jobs:
 
           common=(root/'common.py').read_text()
           assert 'result = original_proposal(*args, **kwargs)' in common
+          assert 'locate_proposal_owner' in common
+          assert 'setattr(proposal_owner, "proposal_window_v6", proposal_capture)' in common
           assert 'v6.scan_year_v6(old, year, events, calibration_events, candidate, base, scorer, support)' in common
           assert 'caller.f_code.co_name == "scan_year_v6"' in common
           assert 'exact_rescore_not_executed_in_prepare' in common
           for forbidden in ('build_family_track_v6','evaluate_families_v6','PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'):
               assert forbidden not in common, forbidden
+
+          # Verify source-only that the helper now resolves the actual inherited
+          # proposal function used by the repaired scan rather than assuming it
+          # belongs to the v6 wrapper module.
+          v6=load_module(Path('/tmp/run_v3_primary_catalogue_v6.repaired.py'),'audit_v6_owner')
+          old=v6.load_base_runner(Path('/tmp/run_wavelet_catalogue_v3_development.py'))
+          # A lightweight object is sufficient because locate_proposal_owner only
+          # inspects scan source and attributes; it does not access catalogue data.
+          class EmptySupport: pass
+          owner_name,owner=locate_proposal_owner(v6,old,EmptySupport())
+          assert owner is not None and hasattr(owner,'proposal_window_v6')
+          assert owner_name in {'old','v6','support'}
+          print('PROPOSAL_OWNER='+str(owner_name))
 
           cache=(root/'build_catalogue_cache.py').read_text()
           assert 'del hidden_labels' in cache
@@ -71,7 +87,8 @@ jobs:
 
           replay=(root/'replay_year.py').read_text()
           assert 'v6.calibrate_year_v6 = replay_calibration' in replay
-          assert 'v6.proposal_window_v6 = replay_proposal' in replay
+          assert 'locate_proposal_owner(v6, old, support)' in replay
+          assert 'setattr(proposal_owner, "proposal_window_v6", replay_proposal)' in replay
           assert 'v6.exact_rescore_window_v6 = replay_exact' in replay
           assert replay.count('v6.scan_year_v6(') == 1
           for forbidden in ('build_family_track_v6','evaluate_families_v6','PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'):
