@@ -1,0 +1,116 @@
+name: OrbitTrace v6 exact-sharded acceleration source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-development-checkpointed-fallback
+    paths:
+      - 'orbittrace_v6_exact_sharded_acceleration/**'
+      - '.github/workflows/orbittrace_v6_exact_sharded_acceleration_source_audit.yml'
+      - '.github/workflows/orbittrace_v6_exact_sharded_acceleration_execution.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-exact-sharded-acceleration
+          path: audit
+
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+
+      - name: Audit exact-sharded implementation without catalogue access
+        run: |
+          set -euo pipefail
+          test ! -e input
+          export FROZEN_V6_DIR="$PWD/frozen-v6"
+          export EXECUTION_DIR="$PWD/audit"
+          bash audit/orbittrace_v6_exact_sharded_acceleration/reconstruct_exact_sources.sh
+
+          PYTHONPATH=audit python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          from orbittrace_v6_exact_sharded_acceleration.common import SHARD_COUNT, assign_centers, shard_plan_summary
+
+          root=Path('audit/orbittrace_v6_exact_sharded_acceleration')
+          files=[root/'common.py',root/'build_catalogue_cache.py',root/'prepare_year.py',root/'run_exact_shard.py',root/'replay_year.py']
+          for path in files:
+              compile(path.read_text(),str(path),'exec')
+              print(path.name+'_SHA256='+hashlib.sha256(path.read_bytes()).hexdigest())
+          assert SHARD_COUNT == 8
+
+          shard=(root/'run_exact_shard.py').read_text()
+          assert shard.count('v6.exact_rescore_window_v6(') == 1
+          for forbidden in ('np.arccos','exact_anchor_distances(','v3_details(','quartet_score(','pvalue','build_family_track_v6','evaluate_families_v6'):
+              assert forbidden not in shard, forbidden
+          assert 'original_exact_rescore_function_used_unchanged' in shard
+          assert 'proposal_anchor_ids(output) == proposal_anchor_ids(records)' in shard
+
+          common=(root/'common.py').read_text()
+          assert 'result = original_proposal(*args, **kwargs)' in common
+          assert 'v6.scan_year_v6(old, year, events, calibration_events, candidate, base, scorer, support)' in common
+          assert 'caller.f_code.co_name == "scan_year_v6"' in common
+          assert 'exact_rescore_not_executed_in_prepare' in common
+          for forbidden in ('build_family_track_v6','evaluate_families_v6','PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'):
+              assert forbidden not in common, forbidden
+
+          cache=(root/'build_catalogue_cache.py').read_text()
+          assert 'del hidden_labels' in cache
+          assert '"hidden_labels":' not in cache
+          assert 'real_hidden_labels_not_serialized' in cache
+          assert 'complex_key")) == "HIDDEN"' in cache
+          assert 'complex_key")) == "SPORADIC"' in cache
+
+          replay=(root/'replay_year.py').read_text()
+          assert 'v6.calibrate_year_v6 = replay_calibration' in replay
+          assert 'v6.proposal_window_v6 = replay_proposal' in replay
+          assert 'v6.exact_rescore_window_v6 = replay_exact' in replay
+          assert replay.count('v6.scan_year_v6(') == 1
+          for forbidden in ('build_family_track_v6','evaluate_families_v6','PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'):
+              assert forbidden not in replay, forbidden
+          assert 'proposal call changed index=' in replay
+          assert 'window events changed center=' in replay
+
+          inherited=Path('audit/orbittrace_v6_checkpointed_fallback/combine_with_checkpoints.py').read_text()
+          assert 'v6.scan_year_v6 = replay_scan' in inherited
+          assert 'rc = int(v6.main())' in inherited
+          assert 'build_family_track_v6' not in inherited and 'evaluate_families_v6' not in inherited
+
+          workflow=Path('audit/.github/workflows/orbittrace_v6_exact_sharded_acceleration_execution.yml').read_text()
+          assert 'year: [2022, 2023]' in workflow
+          assert 'shard: [0, 1, 2, 3, 4, 5, 6, 7]' in workflow
+          assert 'combine_with_checkpoints.py' in workflow
+          assert 'run_exact_shard.py' in workflow
+          assert 'RUN_EXACT_SHARDED_V6_AFTER_CANCELLED_NO_VERDICT' in workflow
+          assert '31270206927' in workflow
+          assert 'conclusion' in workflow and 'cancelled' in workflow
+
+          synthetic={'0.0':[{}]*100,'5.0':[{}]*90,'10.0':[{}]*80,'15.0':[{}]*70,'20.0':[{}]*60,'25.0':[{}]*50,'30.0':[{}]*40,'35.0':[{}]*30,'40.0':[{}]*20,'45.0':[{}]*10}
+          work={k:len(v)*(1000+int(float(k))*3) for k,v in synthetic.items()}
+          a1=assign_centers(synthetic,8,work); a2=assign_centers(synthetic,8,work)
+          assert a1==a2
+          flat=[x for shard_rows in a1 for x in shard_rows]
+          assert sorted(flat,key=float)==sorted(synthetic,key=float) and len(flat)==len(set(flat))
+          plan=shard_plan_summary(synthetic,8,work,{k:100 for k in synthetic})
+          assert [x['shard'] for x in plan]==list(range(8))
+          assert sum(x['proposals'] for x in plan)==sum(len(v) for v in synthetic.values())
+
+          repaired=Path('/tmp/run_v3_primary_catalogue_v6.repaired.py').read_bytes()
+          assert hashlib.sha256(repaired).hexdigest()=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          print('PASS_V6_EXACT_SHARDED_ACCELERATION_SOURCE_AUDIT')
+          PY
+
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          echo 'NO_CATALOGUE_NO_LABEL_VALUE_NO_TARGET_ACCESS'
