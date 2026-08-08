@@ -1,0 +1,103 @@
+name: OrbitTrace v8 MAARSY RCS 2016-2024 Zenodo metadata audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-rcs-2016-2024-preaccess
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_MAARSY_RCS_STAGE0E.md'
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen MAARSY-RCS preaccess parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-rcs-2016-2024-preaccess
+          fetch-depth: 1
+
+      - name: Enforce metadata-only scope
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/MAARSY_RCS_2016_2024_PREACCESS.md
+          mkdir -p output
+          ! find . -type f \( -iname '*.tar.gz' -o -iname '*.tgz' -o -iname '*.h5' -o -iname '*.hdf5' -o -iname '*.nc' \) -print -quit | grep -q .
+
+      - name: Retrieve public Zenodo record metadata only
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            -H 'Accept: application/json' \
+            'https://zenodo.org/api/records/15553437' \
+            -o output/zenodo_record.json
+          test -s output/zenodo_record.json
+          sha256sum output/zenodo_record.json > output/zenodo_record_sha256.txt
+
+      - name: Extract exact file metadata without requesting content
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          obj=json.loads(Path('output/zenodo_record.json').read_text())
+          files=obj.get('files',[])
+          if len(files)!=1:
+              raise RuntimeError(f'expected exactly one Zenodo file, got {len(files)}')
+          f=files[0]
+          if f.get('key')!='silseth_thesis_data.tar.gz':
+              raise RuntimeError(f'unexpected file key: {f.get("key")!r}')
+          md=obj.get('metadata',{})
+          out={
+            'schema':'orbittrace-v8-maarsy-rcs-stage0e-v1',
+            'record_id':obj.get('id'),
+            'doi':md.get('doi') or obj.get('doi'),
+            'title':md.get('title'),
+            'creators':md.get('creators'),
+            'publication_date':md.get('publication_date'),
+            'description':md.get('description'),
+            'license':md.get('license'),
+            'keywords':md.get('keywords'),
+            'file':{
+              'key':f.get('key'),
+              'size':f.get('size'),
+              'checksum':f.get('checksum'),
+              'id':f.get('id'),
+              'links':f.get('links'),
+            },
+            'file_content_requested':False,
+            'file_bytes_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+          }
+          # Metadata must expose a stable content/self URL, but do not request it.
+          links=out['file']['links'] or {}
+          if not any(links.get(k) for k in ('content','self','download')):
+              raise RuntimeError('Zenodo file metadata lacks content/self/download link')
+          Path('output/stage0e_metadata.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          Path('output/result.json').write_text(json.dumps({
+            'verdict':'PASS_MAARSY_RCS_ZENODO_METADATA_PREACCESS',
+            'record_id':out['record_id'],
+            'file_key':out['file']['key'],
+            'file_size_bytes':out['file']['size'],
+            'file_checksum':out['file']['checksum'],
+            'file_content_requested':False,
+            'file_bytes_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'next_step':'adjudicate exact metadata and freeze any bounded structural byte-range probe before requesting file content'
+          },indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload metadata-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-rcs-2016-2024-stage0e
+          path: output
+          if-no-files-found: error
+          retention-days: 90
