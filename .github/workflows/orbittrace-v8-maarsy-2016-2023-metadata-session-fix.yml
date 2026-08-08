@@ -1,0 +1,149 @@
+name: OrbitTrace v8 MAARSY metadata anonymous-session retry
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-2016-2023-metadata-session-fix
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_METADATA_SESSION_RETRY.md'
+
+permissions:
+  contents: read
+
+jobs:
+  metadata_schema:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen transport-correction parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-2016-2023-metadata-session-fix
+          fetch-depth: 1
+
+      - name: Enforce metadata-only source chain
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/PROTOCOL.md
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/STAGE0B_METADATA_SCHEMA.md
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/METADATA_SESSION_TRANSPORT_CORRECTION.md
+          mkdir -p input output
+          ! find . -type f \( -iname '*.tar' -o -iname '*.h5' -o -iname '*.hdf5' -o -iname '*.nc' -o -iname '*.csv' \) -print -quit | grep -q .
+
+      - name: Establish public anonymous RADAR session only
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            -A 'OrbitTrace-preaccess-metadata-audit/1.0' \
+            -c input/cookies.txt \
+            'https://www.radar-service.eu/radar/en/dataset/yk29t2gu0h4jhkjg' \
+            -o input/landing.html
+          test -s input/cookies.txt
+          grep -F 'RADAR_SESSION_ID' input/cookies.txt >/dev/null
+
+      - name: Fetch only frozen describedby resources with anonymous session
+        run: |
+          set -euo pipefail
+          base='https://www.radar-service.eu/radar/en/export/yk29t2gu0h4jhkjg'
+          curl -L --fail --retry 3 -b input/cookies.txt "$base/exportradarmetadata" -o input/radar_metadata.xml
+          curl -L --fail --retry 3 -b input/cookies.txt "$base/exportrocrate" -o input/rocrate.jsonld
+          curl -L --fail --retry 3 -b input/cookies.txt "$base/exportJsonld" -o input/schemaorg.jsonld
+          rm -f input/cookies.txt input/landing.html
+          sha256sum input/* | sort > output/description_sha256.txt
+          du -b input/* | sort -n > output/description_sizes.txt
+          python - <<'PY'
+          from pathlib import Path
+          for p in Path('input').iterdir():
+              if p.stat().st_size > 5_000_000:
+                  raise RuntimeError(f'unexpectedly large describedby resource; refusing parse: {p} {p.stat().st_size}')
+          PY
+
+      - name: Export metadata structure only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re,xml.etree.ElementTree as ET
+
+          result={
+            'schema':'orbittrace-v8-maarsy-stage0b-metadata-schema-v1',
+            'transport':'public_anonymous_session_cookie',
+            'dataset_archive_requested':False,
+            'event_data_file_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'resources':{}
+          }
+
+          raw=Path('input/radar_metadata.xml').read_bytes()
+          root=ET.fromstring(raw)
+          safe_terms=('title','name','format','size','checksum','identifier','description','filename','file','mime','media','url','location','version','license','rights','date')
+          xml_records=[]
+          for e in root.iter():
+              tag=e.tag.rsplit('}',1)[-1]
+              txt=(e.text or '').strip()
+              if txt and len(txt)<=2000 and any(k in tag.lower() for k in safe_terms):
+                  xml_records.append({'tag':tag,'text':txt})
+          result['resources']['radar_xml']={
+            'top_tag':root.tag.rsplit('}',1)[-1],
+            'tags':sorted({e.tag.rsplit('}',1)[-1] for e in root.iter()}),
+            'safe_records':xml_records[:1000]
+          }
+
+          file_ext_re=re.compile(r'\.(?:tar|zip|h5|hdf5|nc|csv|tsv|json|xml|txt|dat|bin|npy|npz|mat|pkl)(?:$|[?#])',re.I)
+          def inspect_json(path):
+              obj=json.loads(Path(path).read_text())
+              nodes=obj.get('@graph',[]) if isinstance(obj,dict) else []
+              if not isinstance(nodes,list): nodes=[]
+              if len(nodes)>10000:
+                  raise RuntimeError('describedby export unexpectedly contains event-scale graph; refusing interpretation')
+              records=[]
+              for node in nodes:
+                  if not isinstance(node,dict): continue
+                  rid=str(node.get('@id',''))
+                  typ=node.get('@type')
+                  rec={'id':rid[:2000],'type':typ}
+                  for key in ('name','encodingFormat','contentSize','sha256','md5','description','url','contentUrl'):
+                      val=node.get(key)
+                      if val is not None and not isinstance(val,(dict,list)):
+                          s=str(val)
+                          if len(s)<=2000: rec[key]=s
+                  if file_ext_re.search(rid) or any(k in rec for k in ('encodingFormat','contentSize','contentUrl')) or 'file' in str(typ).lower() or 'dataset' in str(typ).lower():
+                      records.append(rec)
+              return {'top_keys':sorted(obj.keys()) if isinstance(obj,dict) else [],'graph_node_count':len(nodes),'structural_records':records[:1000]}
+
+          result['resources']['rocrate']=inspect_json('input/rocrate.jsonld')
+          result['resources']['schemaorg']=inspect_json('input/schemaorg.jsonld')
+          Path('output/stage0b_metadata_schema.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Enforce continued no-event boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('output/stage0b_metadata_schema.json').read_text())
+          for k in ('dataset_archive_requested','event_data_file_downloaded','event_row_access','scientific_value_access','target_information_access'):
+              assert m[k] is False
+          r={
+            'schema':'orbittrace-v8-maarsy-stage0b-metadata-schema-result-v1',
+            'verdict':'PASS_MAARSY_DESCRIBEDBY_METADATA_AUDIT',
+            'anonymous_session_only':True,
+            'dataset_archive_requested':False,
+            'event_data_file_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'next_step':'adjudicate structural records before any dataset-content request'
+          }
+          Path('output/stage0b_result.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload metadata-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-2016-2023-stage0b-metadata-session-fixed
+          path: output
+          if-no-files-found: error
+          retention-days: 90
