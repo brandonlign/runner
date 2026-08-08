@@ -16,7 +16,6 @@ V3_RUN = 31235669516
 V3_ARTIFACT = 9015567085
 V3_ARTIFACT_DIGEST = "sha256:80c5590a5702f3d641315321c5d8ef1387c61a6fcf6a57057b2a7ebe7b7ecfcb"
 V3_SOURCE_COMMIT = "f3616eed5a14118c5148513b865eb7491e6f346f"
-PROSPECTIVE_RESERVATION = "SonotaCo 2017"
 
 _CAPTURED_COMPONENTS: list[dict[str, Any]] = []
 _ORIGINAL_SCAN_YEAR = v1.v6.label_free_scan_year
@@ -251,8 +250,9 @@ def main() -> int:
         "v3_predecessor_artifact": V3_ARTIFACT,
         "v3_predecessor_artifact_digest": V3_ARTIFACT_DIGEST,
         "v3_source_commit": V3_SOURCE_COMMIT,
-        "prospective_reservation": PROSPECTIVE_RESERVATION,
-        "prospective_reservation_accessed": False,
+        "prospective_validation_panel": None,
+        "external_validation_status": "not designated; requires separate repository-history freshness audit and frozen protocol",
+        "external_validation_scientific_values_accessed_by_v4": False,
     })
     result["integrity_gates"]["component_empirical_envelope_support_only"] = (
         result["expansion_diagnostics"]["support_unit"] == "frozen source-year component empirical envelope"
@@ -264,13 +264,13 @@ def main() -> int:
     result["integrity_gates"]["component_envelope_capped_by_inherited_radius"] = (
         all(float(x) <= v1.RADIUS + 1e-12 for x in result["expansion_diagnostics"]["envelope_radius_max_by_year"].values())
     )
-    result["integrity_gates"]["prospective_sonotaco_2017_unaccessed"] = True
+    result["integrity_gates"]["no_external_validation_scientific_value_access"] = True
     result["claim_boundary"] = (
         "Target-excluded v4 development only. The exact v8 family universe and ranking were frozen first. "
         "The sole successor change replaces the failed binary 1.5 membership halo with each frozen source component's "
         "own minimal centroid-centered envelope covering its original seed members, capped at the unchanged inherited 1.5 structural radius. "
         "No OrbitTrace target information, target-region event, Stage A/B output, envelope quantile/scale search, radius search, "
-        "or literature-benchmark parameter tuning entered the method. SonotaCo 2017 remains untouched and reserved for a separately frozen prospective validation only if development passes."
+        "literature-benchmark parameter tuning, or external-validation scientific value entered the method. No prospective external panel is designated; any later validation requires a separate freshness audit and frozen protocol."
     )
     passed = all(result["integrity_gates"].values()) and all(result["scientific_gates"].values())
     result["verdict"] = (
@@ -304,7 +304,7 @@ def main() -> int:
         lines.append(
             f"- {y} all-shower mean-F1 delta: **{result['annual_mean_f1_delta'][str(y)]['all']:+.6f}**"
         )
-    lines += ["", "No OrbitTrace target information was accessed. SonotaCo 2017 remains untouched. The exact v8 ranking was unchanged."]
+    lines += ["", "No OrbitTrace target information or external-validation scientific value was accessed. The exact v8 ranking was unchanged."]
     (out / "CROSS_YEAR_COMPONENT_ENVELOPE_EXPANSION_V4_DEVELOPMENT.md").write_text(
         "\n".join(lines) + "\n"
     )
