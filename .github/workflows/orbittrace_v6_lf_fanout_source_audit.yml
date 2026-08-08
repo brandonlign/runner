@@ -1,0 +1,79 @@
+name: OrbitTrace v6-LF fanout source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-label-free-all-event-null-freeze
+    paths:
+      - orbittrace_v6_label_free_all_event_null_fanout/**
+      - .github/workflows/orbittrace_v6_lf_fanout_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-fanout-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-fanout-v1
+      - name: Compile and prove executor-only decomposition
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_label_free_all_event_null_fanout/*.py
+          sha256sum orbittrace_v6_label_free_all_event_null_fanout/*.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          capture=Path('orbittrace_v6_label_free_all_event_null_fanout/capture_preexact_year.py').read_text()
+          assert 'lf.parse_geometry_only(support)' in capture
+          assert 'support.parse_catalogue' not in capture
+          assert '_hidden_labels' not in capture
+          assert 'v6.scan_year_v6(' in capture
+          assert 'v6.exact_rescore_window_v6=capture_exact' in capture
+          assert 'return []' in capture
+          assert 'label_values_not_accessed":True' in capture
+          assert 'all_event_calibration":True' in capture
+
+          shard=Path('orbittrace_v6_label_free_all_event_null_fanout/run_exact_center_shard.py').read_text()
+          assert 'lf.parse_geometry_only(support)' in shard
+          assert 'support.parse_catalogue' not in shard
+          assert 'install(v6,workers=args.workers,min_parallel_records=256)' in shard
+          assert 'balanced(pre,args.shard_count)' in shard
+          assert 'v6.exact_rescore_window_v6(old,records,window,event_lookup,support,base)' in shard
+          assert 'label_values_not_accessed":True' in shard
+
+          replay=Path('orbittrace_v6_label_free_all_event_null_fanout/replay_exact_year.py').read_text()
+          assert 'lf.parse_geometry_only(support)' in replay
+          assert 'support.parse_catalogue' not in replay
+          assert 'v6.exact_rescore_window_v6=replay' in replay
+          assert 'v6.scan_year_v6(' in replay
+          assert 'scientific_result_not_evaluated":True' in replay
+          assert 'label_values_not_accessed":True' in replay
+
+          combine=Path('orbittrace_v6_label_free_all_event_null_fanout/combine_and_evaluate.py').read_text()
+          assert 'lf.parse_geometry_only(support)' in combine
+          assert 'support.parse_catalogue' not in combine
+          assert 'v6.build_family_track_v6(old,components,base,"v3")' in combine
+          assert 'v6.build_family_track_v6(old,components,base,"fixed4_rescue")' in combine
+          freeze=combine.index('(args.output/"v6_lf_pretruth.sha256").write_text')
+          truth=combine.index('lf.parse_truth_after_freeze(support,pretruth_ids)')
+          evaluate=combine.index('v6.evaluate_families_v6(hidden_labels,primary,rescue,lf.YEARS)')
+          assert freeze < truth < evaluate
+          assert 'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT' in combine
+          assert 'FAIL_V6_LABEL_FREE_ALL_EVENT_NULL_NO_GO' in combine
+          assert '"parameter_search":False' in combine and '"null_trimming":False' in combine
+          print('PASS_V6_LF_FANOUT_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
