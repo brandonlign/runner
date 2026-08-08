@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import pickle
+from pathlib import Path
+from typing import Any
+
+from orbittrace_v6_checkpointed_fallback.common import (
+    FROZEN_V6_SHA256,
+    event_rows_sha256,
+    load_module,
+    require,
+    sha256_bytes,
+)
+
+YEARS = (2022, 2023)
+
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser()
+    p.add_argument("--year", required=True, type=int, choices=YEARS)
+    p.add_argument("--repaired-source", required=True, type=Path)
+    p.add_argument("--base-runner", required=True, type=Path)
+    p.add_argument("--support-source-parts", required=True, type=Path)
+    p.add_argument("--candidate-payload", required=True, type=Path)
+    p.add_argument("--baseline-payload", required=True, type=Path)
+    p.add_argument("--scorer-parts", required=True, type=Path)
+    p.add_argument("--output", required=True, type=Path)
+    return p.parse_args()
+
+
+def canonical_sha(value: Any) -> str:
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return sha256_bytes(raw)
+
+
+def main() -> int:
+    args = parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    repaired_sha = sha256_bytes(args.repaired_source.read_bytes())
+    v6 = load_module(args.repaired_source, f"orbittrace_v6_fanout_capture_{args.year}")
+    require(all(v6.v3.self_test().values()), "v3 self-test failed")
+    require(all(v6.v3_membership_self_test().values()), "v3 membership self-test failed")
+
+    old = v6.load_base_runner(args.base_runner)
+    require(list(old.YEARS) == [2022, 2023], "frozen base years changed")
+    require(int(old.MAX_COMPONENTS_PER_BIN) == 128, "frozen component cap changed")
+    support = old.load_support_module(args.support_source_parts)
+    candidate, base, scorer = support.load_sources(args)
+
+    scan_by_year, calibration_by_year, _hidden_labels, sources = support.parse_catalogue(base)
+    scan = scan_by_year[args.year]
+    calibration = calibration_by_year[args.year]
+    require(all(not (20.0 <= float(row["sol"]) <= 55.0) for row in scan), "blind interval present in scan")
+    scan_sha = event_rows_sha256(scan)
+    calibration_sha = event_rows_sha256(calibration)
+    source_rows = [row for row in sources if str(row.get("key", "")).startswith(str(args.year))]
+    source_sha = hashlib.sha256(
+        json.dumps(source_rows, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    ).hexdigest()
+
+    centers: dict[float, dict[str, Any]] = {}
+    original_exact = v6.exact_rescore_window_v6
+
+    def capture_exact(old_arg, records, window_events, event_lookup, support_arg, base_arg):
+        del old_arg, support_arg, base_arg
+        require(bool(records), "unexpected empty exact-rescore call")
+        center = float(records[0]["window_center"])
+        require(all(float(row["window_center"]) == center for row in records), "mixed centers in exact-rescore call")
+        require(center not in centers, f"duplicate exact center {center}")
+        ids = [str(row["id"]) for row in window_events]
+        require(all(event_lookup[event_id] is window_events[index] for index, event_id in enumerate(ids)), "event lookup/window identity mismatch")
+        record_copy = [dict(row) for row in records]
+        centers[center] = {
+            "records": record_copy,
+            "records_sha256": canonical_sha(record_copy),
+            "window_event_ids": ids,
+            "window_event_ids_sha256": canonical_sha(ids),
+        }
+        print(f"V6_FANOUT_CAPTURE center={center:.1f} records={len(records):,} events={len(ids):,}", flush=True)
+        return []
+
+    v6.exact_rescore_window_v6 = capture_exact
+    try:
+        # This executes the immutable calibration/proposal/dedup path. Exact scoring
+        # is replaced only by capture calls; no scientific result is evaluated here.
+        v6.scan_year_v6(old, args.year, scan, calibration, candidate, base, scorer, support)
+    finally:
+        v6.exact_rescore_window_v6 = original_exact
+
+    require(bool(centers), "no exact centers captured")
+    ordered_centers = sorted(centers)
+    total_records = sum(len(centers[center]["records"]) for center in ordered_centers)
+    require(total_records > 0, "no exact proposals captured")
+
+    checkpoint = {
+        "format": "orbittrace-v6-preexact-fanout-v2",
+        "year": args.year,
+        "frozen_v6_sha256": FROZEN_V6_SHA256,
+        "repaired_v6_sha256": repaired_sha,
+        "scan_rows_sha256": scan_sha,
+        "calibration_rows_sha256": calibration_sha,
+        "year_sources_sha256": source_sha,
+        "ordered_centers": ordered_centers,
+        "centers": centers,
+        "total_records": total_records,
+        "firewall": {
+            "target_interval_remains_excluded": True,
+            "hidden_labels_not_saved": True,
+            "scientific_result_not_evaluated": True,
+        },
+    }
+    raw = pickle.dumps(checkpoint, protocol=pickle.HIGHEST_PROTOCOL)
+    path = args.output / f"v6_preexact_{args.year}.pkl"
+    path.write_bytes(raw)
+    digest = sha256_bytes(raw)
+    (args.output / f"v6_preexact_{args.year}.sha256").write_text(digest + "\n")
+    (args.output / f"v6_preexact_{args.year}.json").write_text(json.dumps({
+        "year": args.year,
+        "checkpoint_sha256": digest,
+        "centers": len(ordered_centers),
+        "total_records": total_records,
+        "scan_rows_sha256": scan_sha,
+        "calibration_rows_sha256": calibration_sha,
+    }, indent=2, sort_keys=True) + "\n")
+    print(f"PASS_V6_FANOUT_PREEXACT_CAPTURE year={args.year} centers={len(ordered_centers)} records={total_records:,} sha={digest}", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
