@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import pickle
 from pathlib import Path
 from typing import Any
 
@@ -36,8 +35,6 @@ def canonical_sha(value: Any) -> str:
 
 
 def calibration_sha(proposal_cal: Any, v3_cal: Any, fixed4_cal: Any, calibration_summary: Any) -> str:
-    # Calibration arrays may be NumPy arrays. Normalize them to ordinary lists
-    # before hashing so the checkpoint identity is independent of pickle details.
     def normalize(value: Any) -> Any:
         if hasattr(value, "tolist"):
             return normalize(value.tolist())
@@ -63,6 +60,8 @@ def calibration_sha(proposal_cal: Any, v3_cal: Any, fixed4_cal: Any, calibration
 
 
 def main() -> int:
+    import pickle
+
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     repaired_sha = sha256_bytes(args.repaired_source.read_bytes())
@@ -89,8 +88,11 @@ def main() -> int:
     original_exact = v6.exact_rescore_window_v6
     original_calibrate = v6.calibrate_year_v6
 
-    def capture_calibration(old_arg, year_arg, events_arg, candidate_arg, base_arg, scorer_arg, support_arg):
-        result = original_calibrate(old_arg, year_arg, events_arg, candidate_arg, base_arg, scorer_arg, support_arg)
+    # Exact frozen signature is calibrate_year_v6(old, year, calibration_events,
+    # candidate, base, scorer). This wrapper captures the returned arrays without
+    # changing a single calibration operation or RNG seed.
+    def capture_calibration(old_arg, year_arg, events_arg, candidate_arg, base_arg, scorer_arg):
+        result = original_calibrate(old_arg, year_arg, events_arg, candidate_arg, base_arg, scorer_arg)
         require(isinstance(result, tuple) and len(result) == 4, "calibrate_year_v6 return contract changed")
         proposal_cal, v3_cal, fixed4_cal, calibration_summary = result
         calibration_state["proposal_cal"] = proposal_cal
@@ -133,21 +135,22 @@ def main() -> int:
     total_records = sum(len(centers[center]["records"]) for center in ordered_centers)
     require(total_records > 0, "no exact proposals captured")
 
-    # All audit fields through dedup_exact_proposals are already exact because
-    # they are computed before exact-rescore outputs are consumed. The trailing
-    # rejection/kept/component fields are deliberately omitted and reconstructed
-    # after exact outputs return.
+    # These exact audit fields are all computed before exact outputs are consumed.
+    # exact_rejections/retained anchors/components are intentionally reconstructed
+    # later from the real exact outputs.
     valid_audit_keys = (
-        "year", "supported_bins", "calibration", "window_count",
-        "prefilter_candidates", "proposal_candidates_scored",
-        "primary_selected_pre_dedup", "rescue_selected_pre_dedup",
-        "dedup_exact_proposals", "proposal_cap_per_window",
-        "max_primary_proposals_per_year",
+        "year", "scan_events", "calibration_events", "supported_bins", "calibration",
+        "window_count", "unsupported_windows", "prefilter_candidates",
+        "proposal_candidates_scored", "primary_proposals_selected_before_dedup",
+        "rescue_proposals_selected_before_dedup", "proposal_cap_per_window",
+        "max_primary_proposals_per_year", "deduplicated_exact_proposals",
     )
     preexact_audit = {key: audit[key] for key in valid_audit_keys}
     require(preexact_audit["proposal_cap_per_window"] == 512, "proposal cap changed")
     require(preexact_audit["max_primary_proposals_per_year"] == 36864, "annual primary proposal budget changed")
     require(len(preexact_audit["supported_bins"]) >= 30, "supported calibration bins changed")
+    require(preexact_audit["deduplicated_exact_proposals"] == total_records, "captured exact-proposal count differs from frozen audit")
+    require(preexact_audit["calibration"] == calibration_state["calibration_summary"], "captured calibration summary differs from audit")
 
     checkpoint = {
         "format": "orbittrace-v6-preexact-replay-v4",
