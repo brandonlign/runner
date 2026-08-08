@@ -1,0 +1,114 @@
+name: OrbitTrace v6 checkpointed fallback source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - 'orbittrace_v6_checkpointed_fallback/**'
+      - '.github/workflows/orbittrace_v6_checkpointed_fallback_source_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-development-checkpointed-fallback
+          path: audit
+
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+
+      - name: Reconstruct, repair and audit checkpoint decomposition
+        run: |
+          set -euo pipefail
+          test ! -e input
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress \
+            > /tmp/run_v3_primary_catalogue_v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/run_v3_primary_catalogue_v6.frozen.py' | sha256sum -c -
+
+          PYTHONPATH=audit python - <<'PY'
+          import ast
+          import hashlib
+          import pickle
+          from pathlib import Path
+          from orbittrace_v6_checkpointed_fallback.common import apply_exact_two_line_repair, event_rows_sha256
+
+          frozen=Path('/tmp/run_v3_primary_catalogue_v6.frozen.py')
+          repaired=Path('/tmp/run_v3_primary_catalogue_v6.repaired.py')
+          repaired_sha=apply_exact_two_line_repair(frozen,repaired)
+          print('REPAIRED_SOURCE_SHA256='+repaired_sha)
+
+          for path in [
+              Path('audit/orbittrace_v6_checkpointed_fallback/common.py'),
+              Path('audit/orbittrace_v6_checkpointed_fallback/run_year_checkpoint.py'),
+              Path('audit/orbittrace_v6_checkpointed_fallback/combine_with_checkpoints.py'),
+          ]:
+              compile(path.read_text(),str(path),'exec')
+              print(path.name+'_SHA256='+hashlib.sha256(path.read_bytes()).hexdigest())
+
+          text=repaired.read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          main=defs['main']; scan=defs['scan_year_v6']
+          main_src=ast.get_source_segment(text,main)
+          required_loop='''for year in YEARS:\n        audit, anchors, components = scan_year_v6(\n            old, year, scan_by_year[year], calibration_by_year[year], candidate, base, scorer, support\n        )\n        audits.append(audit); all_anchors.extend(anchors); all_components.extend(components)'''
+          assert required_loop in main_src
+          assert 'primary_families = build_family_track_v6(old, all_components, base, "v3")' in main_src
+          assert 'rescue_families = build_family_track_v6(old, all_components, base, "fixed4_rescue")' in main_src
+          assert main_src.index(required_loop) < main_src.index('primary_families = build_family_track_v6')
+
+          # Direct source-side independence guard: scan_year_v6 has no global/nonlocal
+          # declaration and does not assign attributes on any module/object argument.
+          assert not any(isinstance(n,(ast.Global,ast.Nonlocal)) for n in ast.walk(scan))
+          protected={'old','candidate','base','scorer','support'}
+          def target_root(node):
+              while isinstance(node,(ast.Attribute,ast.Subscript)):
+                  node=node.value
+              return node.id if isinstance(node,ast.Name) else None
+          for n in ast.walk(scan):
+              targets=[]
+              if isinstance(n,(ast.Assign,ast.AnnAssign,ast.AugAssign)):
+                  if isinstance(n,ast.Assign): targets=list(n.targets)
+                  else: targets=[n.target]
+              for target in targets:
+                  assert not (isinstance(target,(ast.Attribute,ast.Subscript)) and target_root(target) in protected), ast.dump(target)
+              if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='setattr' and n.args:
+                  assert not (isinstance(n.args[0],ast.Name) and n.args[0].id in protected)
+
+          year_src=Path('audit/orbittrace_v6_checkpointed_fallback/run_year_checkpoint.py').read_text()
+          assert year_src.count('v6.scan_year_v6(')==1
+          assert 'build_family_track_v6' not in year_src and 'evaluate_families_v6' not in year_src
+          assert '"hidden_labels":' not in year_src
+          assert 'scientific_result_not_evaluated_in_year_job' in year_src
+
+          combine_src=Path('audit/orbittrace_v6_checkpointed_fallback/combine_with_checkpoints.py').read_text()
+          assert 'v6.scan_year_v6 = replay_scan' in combine_src
+          assert 'rc = int(v6.main())' in combine_src
+          assert 'build_family_track_v6' not in combine_src and 'evaluate_families_v6' not in combine_src
+          assert 'event_rows_sha256(events)' in combine_src and 'event_rows_sha256(calibration_events)' in combine_src
+          assert 'checkpoint SHA mismatch' in combine_src
+
+          sample=[{'id':'x','year':2022,'sol':1.0,'sun_lon':2.0,'ecl_lat':3.0,'vg':4.0,'iau':0,'complex_key':'HIDDEN'}]
+          assert event_rows_sha256(sample)==event_rows_sha256([dict(sample[0])])
+          payload={'audit':{'year':2022},'anchors':[{'x':1}],'components':[{'event_ids':['x']}], 'flags':(True,None)}
+          raw=pickle.dumps(payload,protocol=pickle.HIGHEST_PROTOCOL)
+          assert pickle.loads(raw)==payload
+          assert hashlib.sha256(raw).hexdigest()==hashlib.sha256(raw).hexdigest()
+
+          print('PASS_V6_CHECKPOINTED_FALLBACK_SOURCE_AUDIT')
+          PY
+
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          echo 'NO_CATALOGUE_ACCESS_NO_LABEL_ACCESS_NO_TARGET_ACCESS'
