@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 import numpy as np
 
 from orbittrace_v6_sonotaco_2017_2019_transfer import run_transfer as transfer
+from orbittrace_v6_sonotaco_2017_2019_transfer.parallel_exact_rescore import install as install_parallel_exact
 
 _ORIGINAL_LOAD_MODULE = transfer.load_module
+_PARALLEL_EXECUTION: dict[str, Any] | None = None
 
 
 def portable_repair_year_centroids(v8: Any):
@@ -73,9 +74,6 @@ def portable_repair_year_centroids(v8: Any):
         transfer.require(before == after, "pooled-centroid repair changed non-centroid family structure")
         max_single = max(single_component_distances) if single_component_distances else 0.0
         transfer.require(max_single <= 1e-12, f"pooling failed single-component equivalence: {max_single}")
-        # The two development-only nonvacuity assertions are deliberately absent:
-        # duplicate_family_count > 0 and changed_duplicate_year_centroids > 0.
-        # They establish that v8 changed GMN development families, not a detector rule.
         return {
             "families_with_duplicate_same_year_components": duplicate_family_count,
             "duplicate_family_years": duplicate_family_year_count,
@@ -101,8 +99,12 @@ def portable_repair_year_centroids(v8: Any):
 
 
 def guarded_load_module(path, name):
+    global _PARALLEL_EXECUTION
     module = _ORIGINAL_LOAD_MODULE(path, name)
-    if name == "orbittrace_transfer_true_v8":
+    if name == "orbittrace_transfer_current_v6":
+        _PARALLEL_EXECUTION = install_parallel_exact(module, workers=4, min_parallel_records=256)
+        print(f"V6_TRANSFER_PARALLEL_EXECUTOR {_PARALLEL_EXECUTION}", flush=True)
+    elif name == "orbittrace_transfer_true_v8":
         module.repair_year_centroids = portable_repair_year_centroids(module)
     return module
 
