@@ -1,0 +1,112 @@
+name: OrbitTrace v8 Obninsk 1967-1968 schema export
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-obninsk-1967-1968-schema-export
+    paths:
+      - 'orbittrace_v8_obninsk_1967_1968_preaccess/RUN_SCHEMA_EXPORT.md'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen schema-export parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-obninsk-1967-1968-schema-export
+          fetch-depth: 1
+
+      - name: Enforce no event file in repository
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_obninsk_1967_1968_preaccess/PROTOCOL.md
+          test -f orbittrace_v8_obninsk_1967_1968_preaccess/SCHEMA_EXPORT.md
+          ! find . -type f -iname 'obninsk.tab' -print -quit | grep -q .
+
+      - name: Download official PDS archive
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl -L --fail --retry 3 \
+            'https://sbnarchive.psi.edu/pds4/non_mission/meteoroid.steel.orbits.zip' \
+            -o input/archive.zip
+          echo '7b4e1c138a6f44966adb28ea437921ca45b840365327f13dc5093397e0b19985  input/archive.zip' | sha256sum -c -
+
+      - name: Read only PDS4 Obninsk XML label
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, zipfile, xml.etree.ElementTree as ET
+
+          zpath=Path('input/archive.zip')
+          target='meteoroid.steel.orbits/data/obninsk.xml'
+          with zipfile.ZipFile(zpath) as zf:
+              names=zf.namelist()
+              if target not in names:
+                  raise RuntimeError('missing exact Obninsk PDS4 label')
+              # Firewall: only this XML member is opened. No .tab member is opened.
+              raw=zf.read(target)
+          root=ET.fromstring(raw)
+
+          def local(tag): return tag.rsplit('}',1)[-1]
+          fields=[]
+          for elem in root.iter():
+              if local(elem.tag) not in {'Field_Character','Field_Delimited'}:
+                  continue
+              obj={}
+              for child in list(elem):
+                  key=local(child.tag)
+                  txt=(child.text or '').strip()
+                  if txt:
+                      obj[key]=txt
+                  # flatten special constants without interpreting values as event data
+                  if key=='Special_Constants':
+                      for sub in child.iter():
+                          sk=local(sub.tag)
+                          st=(sub.text or '').strip()
+                          if st and sk!='Special_Constants':
+                              obj[f'special_{sk}']=st
+              fields.append(obj)
+
+          # Also record table-level metadata only.
+          meta={}
+          for elem in root.iter():
+              k=local(elem.tag)
+              if k in {'records','record_length','start_date_time','stop_date_time','file_name','title'} and (elem.text or '').strip():
+                  meta.setdefault(k,[]).append((elem.text or '').strip())
+
+          result={
+              'schema':'orbittrace-v8-obninsk-pds4-field-schema-v1',
+              'archive_sha256':'7b4e1c138a6f44966adb28ea437921ca45b840365327f13dc5093397e0b19985',
+              'label_member':target,
+              'label_sha256':hashlib.sha256(raw).hexdigest(),
+              'table_metadata':meta,
+              'fields':fields,
+              'obninsk_tab_opened':False,
+              'any_tab_member_opened':False,
+              'event_row_access':False,
+              'target_information_access':False,
+          }
+          Path('output/obninsk_field_schema.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          Path('output/schema_export_result.json').write_text(json.dumps({
+              'verdict':'PASS_OBNINSK_METADATA_ONLY_SCHEMA_EXPORT',
+              'field_count':len(fields),
+              'event_row_access':False,
+              'obninsk_tab_opened':False,
+              'target_information_access':False,
+          },indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+
+      - name: Upload schema-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-obninsk-1967-1968-schema-only
+          path: output
+          if-no-files-found: error
+          retention-days: 90
