@@ -58,6 +58,11 @@ def main() -> int:
         require(event_rows_sha256(events) == preparations[year]["scan_rows_sha256"], f"global exact scan rows changed {year}")
         event_lookup_by_year[year] = {str(event["id"]): event for event in events}
 
+    # A global shard can contain many contiguous chunks from the same exact center.
+    # Materialize that center's immutable 10-degree event window once per worker and
+    # reuse the exact same list/order for every chunk assigned to this worker.
+    window_cache: dict[tuple[int, str], list[dict[str, Any]]] = {}
+
     results: list[dict[str, Any]] = []
     print(
         f"V6_GLOBAL_EXACT_SHARD_START shard={args.shard}/{GLOBAL_SHARD_COUNT} "
@@ -74,9 +79,16 @@ def main() -> int:
         records = [dict(row) for row in full_records[start:stop]]
         require(len(records) == stop - start, f"chunk slice changed {year} {center} {start}:{stop}")
         require(proposal_anchor_ids(records) == proposal_anchor_ids(full_records)[start:stop], f"chunk input order changed {year} {center} {start}:{stop}")
-        events = cache["scan_by_year"][year]
-        window_events = old.window_events_for_center(events, float(center), base)
-        require(len(window_events) == int(task["window_event_count"]), f"window event count changed {year} {center}")
+
+        window_key = (year, center)
+        if window_key not in window_cache:
+            events = cache["scan_by_year"][year]
+            materialized = old.window_events_for_center(events, float(center), base)
+            require(len(materialized) == int(task["window_event_count"]), f"window event count changed {year} {center}")
+            window_cache[window_key] = materialized
+        window_events = window_cache[window_key]
+        require(len(window_events) == int(task["window_event_count"]), f"cached window event count changed {year} {center}")
+
         output = v6.exact_rescore_window_v6(
             old,
             records,
@@ -111,11 +123,13 @@ def main() -> int:
         "prepare_sha256": prep_shas,
         "repaired_v6_sha256": REPAIRED_V6_SHA256,
         "tasks": results,
+        "window_cache_entries": len(window_cache),
         "firewall": {
             "target_interval_remains_excluded": True,
             "hidden_labels_not_loaded": True,
             "original_exact_rescore_function_used_unchanged": True,
             "contiguous_record_chunks_only": True,
+            "window_event_order_reused_unchanged": True,
         },
     }
     raw = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
@@ -123,10 +137,10 @@ def main() -> int:
     path.write_bytes(raw)
     digest = sha256_bytes(raw)
     (args.output / f"global_exact_shard_{args.shard}.sha256").write_text(digest + "\n")
-    manifest = {key: payload[key] for key in ("shard", "shard_count", "plan_sha256", "catalogue_cache_sha256", "prepare_sha256", "repaired_v6_sha256", "firewall")}
+    manifest = {key: payload[key] for key in ("shard", "shard_count", "plan_sha256", "catalogue_cache_sha256", "prepare_sha256", "repaired_v6_sha256", "window_cache_entries", "firewall")}
     manifest.update({"task_count": len(results), "proposal_count": sum(row["proposal_count"] for row in results), "checkpoint_sha256": digest})
     (args.output / f"global_exact_shard_{args.shard}.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    print(f"V6_GLOBAL_EXACT_SHARD_DONE shard={args.shard} sha={digest}", flush=True)
+    print(f"V6_GLOBAL_EXACT_SHARD_DONE shard={args.shard} sha={digest} window_cache_entries={len(window_cache)}", flush=True)
     return 0
 
 
