@@ -108,10 +108,11 @@ jobs:
                   return hits[0]
               pos={
                   'id':exact('Unique trajectory'),
+                  'sol':exact('Sol lon'),
                   'q':exact('q'),'e':exact('e'),'i':exact('i'),
                   'peri':exact('peri'),'node':exact('node'),
               }
-              if pos['id']!=0 or pos['q']!=37 or fields[43]!='Q':
+              if pos['id']!=0 or pos['sol']!=5 or pos['q']!=37 or fields[43]!='Q':
                   raise RuntimeError(f'unexpected schema positions: {pos}, Q43={fields[43]!r}')
               return pos
           pos=locate(dd.get_monthly_file_content_by_date('2022-01'))
@@ -175,33 +176,45 @@ jobs:
           assert sc['orbittrace_target_accessed'] is False and sc['target_region_event_accessed'] is False
           fields=[x.strip() for x in sc['schema_lines'][0][1:].split(';')]
           assert fields[0]=='Unique trajectory'
+          assert fields[5]=='Sol lon'
           assert fields.count('q')==1 and fields.index('q')==37
           assert fields.count('Q')==1 and fields.index('Q')==43
 
           source=Path('input/r1/run_development.py').read_text()
           assert hashlib.sha256(source.encode()).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           tree=ast.parse(source)
-          funcs=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='parse_target_excluded_orbits']
-          assert len(funcs)==1
-          keys=set()
-          for n in ast.walk(funcs[0]):
+          parse_funcs=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='parse_target_excluded_orbits']
+          raw_funcs=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='raw_header_positions']
+          assert len(parse_funcs)==1 and len(raw_funcs)==1
+
+          direct=set()
+          for n in ast.walk(parse_funcs[0]):
               if isinstance(n,ast.Subscript) and isinstance(n.value,ast.Name) and n.value.id=='positions':
                   sl=n.slice
                   if isinstance(sl,ast.Constant) and isinstance(sl.value,str):
-                      keys.add(sl.value)
-          expected={'id','q','e','i','peri','node'}
-          assert keys==expected,(keys,expected)
+                      direct.add(sl.value)
+          assert direct=={'id','sol'},direct
+
+          declared=set()
+          for n in ast.walk(raw_funcs[0]):
+              if isinstance(n,ast.Dict):
+                  for key in n.keys:
+                      if isinstance(key,ast.Constant) and isinstance(key.value,str):
+                          declared.add(key.value)
+          expected={'id','sol','q','e','i','peri','node'}
+          assert declared==expected,(declared,expected)
+
           for token in ('D_SH(candidate, partner medoid) <= 0.05','unchanged exact v8 multiplicity order','no_threshold_search','no_radius_search','no_weight_search','no_variant_search'):
               assert token in source,token
           Path('output/r1_parser_interface_audit.json').write_text(json.dumps({
-              'positions_keys':sorted(keys),
-              'audited_schema_id_field':'Unique trajectory',
-              'audited_schema_id_index':0,
-              'audited_q_index':37,
-              'audited_Q_index':43,
+              'direct_positions_keys':sorted(direct),
+              'raw_header_declared_keys':sorted(declared),
+              'audited_schema_id_field':'Unique trajectory','audited_schema_id_index':0,
+              'audited_schema_sol_field':'Sol lon','audited_schema_sol_index':5,
+              'audited_q_index':37,'audited_Q_index':43,
               'scientific_rule_changed':False,
           },indent=2,sort_keys=True)+'\n')
-          print('PASS_R1_SOURCE_POSITION_INTERFACE',sorted(keys))
+          print('PASS_R1_COMPLETE_POSITION_INTERFACE',sorted(declared))
           PY
 
       - name: Execute frozen R1 with runtime-only implementation repairs
@@ -249,10 +262,12 @@ jobs:
                   return hits[0]
               positions={
                   'id':exact('Unique trajectory'),
+                  'sol':exact('Sol lon'),
                   'q':exact('q'),'e':exact('e'),'i':exact('i'),
                   'peri':exact('peri'),'node':exact('node'),
               }
               mod.require(positions['id']==0,f"unexpected event-ID position: {positions['id']}")
+              mod.require(positions['sol']==5,f"unexpected solar-longitude position: {positions['sol']}")
               mod.require(positions['q']==37,f"unexpected lowercase q position: {positions['q']}")
               mod.require(len(header_fields)>43 and header_fields[43]=='Q','unexpected uppercase Q position/value')
               return header_fields,positions
@@ -262,10 +277,10 @@ jobs:
               'original_frozen_source_sha256':SOURCE_SHA,
               'source_bytes_modified':False,
               'runtime_override_1':'LITERATURE_COMPARATOR_SHA256 git-blob literal -> independently verified raw SHA-256',
-              'runtime_override_2':'raw_header_positions uses approved schema-audit marker locator plus exact case-sensitive id/orbit fields',
+              'runtime_override_2':'raw_header_positions uses approved schema-audit marker locator plus complete exact case-sensitive id/sol/orbit interface',
               'header_locator_source':'frozen audit_gmn_schema.py marker logic',
-              'schema_id_field':'Unique trajectory',
-              'schema_id_index':0,
+              'schema_id_field':'Unique trajectory','schema_id_index':0,
+              'schema_sol_field':'Sol lon','schema_sol_index':5,
               'schema_audit_artifact_id':9014633429,
               'schema_audit_digest':'sha256:c748ead99c08f69a80f1c2a5202c9d4fe08579dba0a961f078fcc389b9058113',
               'scientific_rule_changed':False,
@@ -311,12 +326,13 @@ jobs:
           assert 'does not establish superiority over Sugar/HDBSCAN' in r['claim_boundary']
           repair=json.loads(Path('output/r1_runtime_repair.json').read_text())
           iface=json.loads(Path('output/r1_parser_interface_audit.json').read_text())
-          assert iface['positions_keys']==['e','i','id','node','peri','q']
+          assert iface['direct_positions_keys']==['id','sol']
+          assert iface['raw_header_declared_keys']==['e','i','id','node','peri','q','sol']
           assert repair['source_bytes_modified'] is False
           assert repair['scientific_rule_changed'] is False
           assert repair['promotion_gate_changed'] is False
           assert repair['target_access'] is False
-          assert repair['schema_id_field']=='Unique trajectory' and repair['schema_id_index']==0
+          assert repair['schema_id_index']==0 and repair['schema_sol_index']==5
           assert hashlib.sha256(Path('input/r1/run_development.py').read_bytes()).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           print('ORBITTRACE_R1_RESULT_BEGIN')
           print(json.dumps(r,indent=2,sort_keys=True))
