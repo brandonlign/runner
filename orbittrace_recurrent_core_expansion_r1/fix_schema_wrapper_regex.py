@@ -9,41 +9,52 @@ raw = path.read_bytes()
 text = raw.decode()
 lines = text.splitlines(keepends=True)
 
-header_hits = [
+start_hits = [
     i for i, line in enumerate(lines)
     if line.strip().startswith('m=re.search(') and 'raw_header_positions' in line
 ]
-next_hits = [
+end_hits = [
     i for i, line in enumerate(lines)
-    if line.strip().startswith('n=re.search(') and 'A-Za-z_' in line
+    if line.strip() == 'old_parser=after_hash[start:end]'
 ]
-assert len(header_hits) == 1, header_hits
-assert len(next_hits) == 1, next_hits
+assert len(start_hits) == 1, start_hits
+assert len(end_hits) == 1, end_hits
+start_i = start_hits[0]
+end_i = end_hits[0]
+assert start_i < end_i
+indent = lines[start_i][: len(lines[start_i]) - len(lines[start_i].lstrip())]
+old_block = ''.join(lines[start_i : end_i + 1])
 
-old_header_line = lines[header_hits[0]].rstrip('\n')
-old_next_line = lines[next_hits[0]].rstrip('\n')
-correct_header_line = "m=re.search(r'(?m)^def raw_header_positions\\(text[^\\n]*\\):\\n',after_hash)"
-correct_next_line = "n=re.search(r'(?m)^def [A-Za-z_][A-Za-z0-9_]*\\(',after_hash[m.end():])"
-
-assert old_header_line != correct_header_line
-assert old_next_line != correct_next_line
-lines[header_hits[0]] = correct_header_line + '\n'
-lines[next_hits[0]] = correct_next_line + '\n'
-patched = ''.join(lines)
+replacement = [
+    "source_lines=after_hash.splitlines(keepends=True)",
+    "function_hits=[i for i,line in enumerate(source_lines) if line.startswith('def raw_header_positions(')]",
+    "assert len(function_hits)==1, f'raw_header_positions definitions: {function_hits}'",
+    "function_i=function_hits[0]",
+    "next_hits=[i for i in range(function_i+1,len(source_lines)) if source_lines[i].startswith('def ')]",
+    "assert next_hits, 'next top-level function after raw_header_positions() not found'",
+    "next_i=next_hits[0]",
+    "start=sum(len(line) for line in source_lines[:function_i])",
+    "end=sum(len(line) for line in source_lines[:next_i])",
+    "old_parser=after_hash[start:end]",
+]
+new_block = ''.join(indent + line + '\n' for line in replacement)
+assert old_block != new_block
+patched_lines = lines[:start_i] + [new_block] + lines[end_i + 1 :]
+patched = ''.join(patched_lines)
 assert patched != text
 
-# The repair is limited to the two wrapper lines above. The frozen R1 scientific
-# source is restored later from its SHA-pinned payload and is not edited here.
+# This edits only the execution helper's way of locating a function in the
+# SHA-pinned scientific source. It does not edit the frozen scientific source,
+# scientific rule, thresholds, ranking, target exclusion, or promotion gates.
 path.write_text(patched)
 Path('output').mkdir(exist_ok=True)
 record = {
-    'repair_scope': 'two execution-wrapper regex source lines only',
+    'repair_scope': 'execution-wrapper source-function boundary detection only',
+    'boundary_method': 'unique top-level def raw_header_positions line through next top-level def line',
     'original_wrapper_sha256': hashlib.sha256(raw).hexdigest(),
     'patched_wrapper_sha256': hashlib.sha256(patched.encode()).hexdigest(),
-    'old_header_line': old_header_line,
-    'new_header_line': correct_header_line,
-    'old_next_line': old_next_line,
-    'new_next_line': correct_next_line,
+    'old_boundary_block_sha256': hashlib.sha256(old_block.encode()).hexdigest(),
+    'new_boundary_block_sha256': hashlib.sha256(new_block.encode()).hexdigest(),
     'scientific_source_changed': False,
     'scientific_rule_changed': False,
     'promotion_gate_changed': False,
