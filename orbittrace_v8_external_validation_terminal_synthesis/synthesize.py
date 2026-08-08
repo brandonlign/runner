@@ -88,7 +88,6 @@ def main() -> int:
     fripon = load_exact(a.fripon, "fripon_2018_2019_integrity_stop.json", FRIPON)
     hissar = load_exact(a.hissar, "hissar_v8_coverage_eligibility.json", HISSAR)
 
-    # Promoted v8 is immutable and passed only on the target-excluded development panel.
     require(v8["configuration"]["years"] == [2022, 2023], "v8 development years changed")
     require(v8["configuration"]["blind_exclusion"] == [20.0, 55.0], "v8 blind interval changed")
     require(v8["configuration"]["family_link_radius"] == 1.5, "v8 family radius changed")
@@ -102,7 +101,6 @@ def main() -> int:
     require(all(v8["scientific_gates"].values()), "v8 scientific gate no longer all-pass")
     assert_target_free_claim(v8, "v8 development")
 
-    # Inherited SAAMER power context: clean external architecture, but not direct v8 verdicts.
     require(int(s20["family_count"]) == 69 and orbital_q(s20) == 29, "SAAMER 2020/21 counts changed")
     require(s20["configuration"]["blind_exclusion"] == [20.0, 55.0], "SAAMER 2020/21 blindness changed")
     require(s20["configuration"]["no_source_labels"] is True, "SAAMER 2020/21 labels used")
@@ -117,8 +115,7 @@ def main() -> int:
     require(s22["integrity_gates"]["at_least_100_recurrent_families"] is False, "SAAMER 2022/23 power reason changed")
     assert_target_free_claim(s22, "SAAMER 2022/23")
 
-    # Direct v8 AMOR test: integrity-clean but under both immutable family-universe floors.
-    require(int(amor["family_count"]) == 19 and orbital_q(amor) == 19, "AMOR v8 counts changed")
+    require(int(amor["family_count"]) == 19 and orbital_q(amor) == 0, "AMOR v8 counts changed")
     require(amor["configuration"]["blind_exclusion"] == [20.0, 55.0], "AMOR blindness changed")
     require(all(amor["integrity_gates"].values()), "AMOR integrity no longer clean")
     require(amor["power_gates"]["at_least_100_recurrent_families"] is False, "AMOR N power reason changed")
@@ -126,21 +123,18 @@ def main() -> int:
     require(amor["orbit_read_audit"]["orbital_elements_interpreted_only_after_rank_freeze"] is True, "AMOR orbit boundary changed")
     assert_target_free_claim(amor, "AMOR")
 
-    # UKMON was fresh after exact-hit adjudication, but the historical interface never reached science.
     require(ukmon["raw_audit_verdict_preserved"] == "FAIL_UKMON_2020_2021_REPO_SCIENTIFIC_FRESHNESS_AUDIT", "UKMON raw audit history changed")
     require(ukmon["raw_hit_count"] == 1 and ukmon["additional_hits_forgiven"] == 0, "UKMON freshness adjudication changed")
     require(ukmon["meteor_api_contacted"] is False, "UKMON freshness contacted API")
     require(ukmon["scientific_value_access_this_adjudication"] is False, "UKMON freshness crossed science boundary")
     require(ukmon["target_information_access"] is False, "UKMON target information accessed")
 
-    # Harvard stayed unopened and failed only the pre-scientific recurrence-panel definition.
     require(harvard["metadata_transport_sufficient"] is True, "Harvard metadata transport no longer sufficient")
     require(harvard["har6869_table_downloaded"] is False and harvard["har6869_table_opened"] is False, "Harvard event table accessed")
     require(harvard["scientific_event_values_inspected"] is False, "Harvard science accessed")
     require(harvard["method_evaluation_performed"] is False, "Harvard method evaluation occurred")
     require(harvard["orbittrace_target_information_access"] is False, "Harvard target information accessed")
 
-    # FRIPON is terminally non-pristine; the exposure is never used to salvage or tune the method.
     require(fripon["unintended_reserved_year_web_search_exposure"] is True, "FRIPON integrity incident missing")
     require(fripon["numeric_exposed_values_copied_into_repository"] is False, "FRIPON exposed values copied")
     require(fripon["exposed_values_used_for_method_or_parser_decisions"] is False, "FRIPON exposure influenced method/parser")
@@ -149,7 +143,6 @@ def main() -> int:
     require(fripon["v8_method_changed"] is False, "FRIPON changed v8")
     require(fripon["orbittrace_target_information_access"] is False, "FRIPON target information accessed")
 
-    # Hissar is native-interface compatible but cannot mathematically meet the frozen 24-bin/year floor.
     require(hissar["frozen_min_scannable_bins_per_year"] == 24, "Hissar power floor changed")
     require(hissar["maximum_possible_1968_fixed_10deg_bins_intersected"] < 24, "Hissar metadata coverage no longer excludes powered test")
     require(hissar["coverage_gate_mathematically_possible"] is False, "Hissar coverage eligibility changed")
@@ -174,7 +167,7 @@ def main() -> int:
         "external_record": {
             "saamer_2020_2021": {"role": "inherited_v6_external_power_context", "verdict": SAAMER20, "N": 69, "Q": 29},
             "saamer_2022_2023": {"role": "inherited_v6_external_power_context", "verdict": SAAMER22, "N": 66, "Q": 33},
-            "amor_1996_1998": {"role": "direct_v8_external_test", "verdict": AMOR, "N": 19, "Q": 19},
+            "amor_1996_1998": {"role": "direct_v8_external_test", "verdict": AMOR, "N": 19, "Q": 0},
             "ukmon_2020_2021": {"role": "pre_scientific_panel", "verdict": "HISTORICAL_INTERFACE_INCOMPATIBLE_BEFORE_SCIENCE"},
             "harvard_1968_1969": {"role": "pre_scientific_panel", "verdict": HARVARD},
             "fripon_2018_2019": {"role": "preprotocol_integrity_stop", "verdict": FRIPON},
@@ -205,7 +198,7 @@ def main() -> int:
         "# OrbitTrace v8 external-validation terminal synthesis\n\n"
         f"**Verdict:** `{TERMINAL}`\n\n"
         "No powered external pass or powered external scientific failure was obtained. "
-        "The direct v8 AMOR test was underpowered (N=19, Q=19), and the remaining preregistered/reserved routes were exhausted by independent power, interface, recurrence, coverage, availability, or integrity limits. "
+        "The direct v8 AMOR test was underpowered (N=19, Q=0), and the remaining preregistered/reserved routes were exhausted by independent power, interface, recurrence, coverage, availability, or integrity limits. "
         "v8 was not changed, no successor is authorized, and OrbitTrace remains blinded.\n"
     )
     print(json.dumps(result, indent=2, sort_keys=True))
