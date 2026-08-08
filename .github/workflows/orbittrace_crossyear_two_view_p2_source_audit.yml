@@ -1,0 +1,107 @@
+name: OrbitTrace cross-year two-view P2 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/PROTOCOL.md
+      - orbittrace_crossyear_two_view_membership_p2/run_development.py
+      - .github/workflows/orbittrace_crossyear_two_view_p2_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-crossyear-two-view-p2-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-crossyear-two-view-membership-p2-freeze
+      - name: Compile and prove frozen scientific/source boundaries
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_crossyear_two_view_membership_p2/run_development.py
+          echo '829c5349cf4bc2498066d2de0a250793e18f5bac52769967efbea8cd75efd9f3  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          path=Path('orbittrace_crossyear_two_view_membership_p2/run_development.py')
+          text=path.read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+
+          constants={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: constants[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert constants['YEARS']==(2022,2023)
+          assert constants['V8_SOURCE_COMMIT']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert constants['DSH_COMPARATOR_SHA256']=='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+          assert constants['EXPECTED_FAMILY_COUNT']==226
+          assert constants['WINDOW_HALF_WIDTH_DEG']==5.0
+          assert constants['MIN_DIRECTION_NEGATIVES']==128
+          assert constants['LOGISTIC_C']==1.0
+          assert constants['LOGISTIC_MAX_ITER']==1000
+          assert constants['LOGISTIC_TOL']==1e-10
+          assert constants['RESPONSIBILITY_THRESHOLD']==0.5
+          assert constants['MACRO_F1_GAIN_GATE']==0.08
+          assert constants['TOP100_PRECISION_FLOOR']==0.65
+          assert constants['LARGE_RECALL_MULTIPLIER']==1.5
+          assert constants['LARGE_PRECISION_FLOOR']==0.85
+
+          header=ast.get_source_segment(text,defs['exact_header_positions'])
+          assert 'exact("q")' in header and 'field == "Q"' in header and 'q/Q schema identity changed' in header
+          orbit=ast.get_source_segment(text,defs['parse_target_excluded_orbits'])
+          assert orbit.index('support.BLIND_LOW') < orbit.index('values = {')
+          assert 'label_column_accessed": False' in orbit
+          assert 'target_region_orbit_decoded": False' in orbit
+
+          dsh=ast.get_source_segment(text,defs['min_exact_dsh_to_source'])
+          assert dsh.count('dsh.pairwise_dsh(')==1
+          assert 'np.min(cross, axis=1)' in dsh
+          assert '0.05' not in dsh
+
+          main=ast.get_source_segment(text,defs['main'])
+          assert 'OAS(' in text
+          assert 'StandardScaler()' in main
+          assert 'scaler.fit(X, sample_weight=sample_weight)' in main
+          assert 'LogisticRegression(' in main
+          for token in ('penalty="l2"','C=LOGISTIC_C','solver="lbfgs"','max_iter=LOGISTIC_MAX_ITER','tol=LOGISTIC_TOL','class_weight=None'):
+              assert token in main, token
+          assert '0.5 / len(x_pos)' in main and '0.5 / len(x_neg)' in main
+          assert 'denom = 1.0 + float(sum(p["odds"] for p in proposals))' in main
+          assert 'responsibility <= RESPONSIBILITY_THRESHOLD' in main
+          assert 'family_rank[str(p["family_id"])]' in main
+          assert 'global_seed_ids' in main and 'seed entered P2 competition' in main
+
+          model_freeze=main.index('(args.output / "p2_model_pretruth.sha256").write_text')
+          membership_freeze=main.index('(args.output / "p2_membership_pretruth.sha256").write_text')
+          truth_eval=main.index('baseline_full = v8.mult.evaluate_order(hidden_labels')
+          assert model_freeze < membership_freeze < truth_eval
+          pretruth=main[:truth_eval]
+          # hidden_labels may be returned by the exact parser and held opaque, but cannot enter any pretruth operation.
+          occurrences=[i for i in range(len(pretruth)) if pretruth.startswith('hidden_labels',i)]
+          assert len(occurrences)==1, occurrences
+          assert 'evaluate_order(hidden_labels' not in pretruth
+          assert 'eligible_labels(hidden_labels' not in pretruth
+
+          assert 'parameter_search": False' in main
+          assert 'new_members_can_seed_growth": False' in main
+          assert 'PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT' in main
+          assert 'FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO' in main
+          print('PASS_CROSSYEAR_TWO_VIEW_P2_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only firewall
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION_NO_ORBITTRACE_TARGET
