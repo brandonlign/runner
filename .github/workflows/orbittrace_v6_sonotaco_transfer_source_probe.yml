@@ -1,0 +1,46 @@
+name: OrbitTrace v6 SonotaCo transfer source probe
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - .github/workflows/orbittrace_v6_sonotaco_transfer_source_probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - name: Reconstruct exact frozen v6 and print reusable interfaces
+        run: |
+          set -euo pipefail
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('/tmp/v6.py').read_text(); tree=ast.parse(text); lines=text.splitlines()
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          print('TOP_LEVEL_DEFS',list(defs))
+          for name in ['component_records_track_v6','scan_year_v6','main']:
+              fn=defs.get(name)
+              if fn is None:
+                  print('MISSING',name); continue
+              print(f'===== {name} {fn.lineno}-{fn.end_lineno} =====')
+              print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(fn.lineno,fn.end_lineno+1)))
+          print('PASS_V6_TRANSFER_SOURCE_PROBE')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_ARCHIVE_NO_LABEL_NO_TARGET_ACCESS
