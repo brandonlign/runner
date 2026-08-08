@@ -54,9 +54,13 @@ def p1_covariance_for_panel_family(
     residuals: list[np.ndarray] = []
     counts: dict[str, int] = {}
     centers: dict[int, dict[str, float]] = {}
-    family_ids = set(map(str, family['event_ids']))
+    ordered_family_ids = [str(eid) for eid in family['event_ids']]
+    require(len(ordered_family_ids) == len(set(ordered_family_ids)), f"duplicate immutable seed ID in family {family['family_id']}")
     for year in YEARS:
-        rows = [event_lookup_by_year[year][eid] for eid in family_ids if eid in event_lookup_by_year[year]]
+        # Preserve the immutable family event order exactly. Do not route the
+        # seed union through a set: OAS is mathematically permutation-invariant,
+        # but floating reduction order and pretruth hashes must be deterministic.
+        rows = [event_lookup_by_year[year][eid] for eid in ordered_family_ids if eid in event_lookup_by_year[year]]
         require(len(rows) >= 4, f"family {family['family_id']} has <4 immutable seeds in {year}")
         center = p1.pooled_centroid(rows)
         centers[year] = center
