@@ -40,7 +40,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input/v3 output
-          test "$(git merge-base HEAD c9d6c44704013ba0c9430100e98a29a56b453304)" = "c9d6c44704013ba0c9430100e98a29a56b453304"
+          git fetch --no-tags --depth=1 origin c9d6c44704013ba0c9430100e98a29a56b453304
+          git diff --name-only FETCH_HEAD HEAD | sort > /tmp/audit_paths.txt
+          printf '%s\n' \
+            '.github/workflows/orbittrace-family-year-representation-audit.yml' \
+            'orbittrace_family_year_representation_audit/PROTOCOL.md' \
+            'orbittrace_family_year_representation_audit/run_audit.py' | sort > /tmp/expected_paths.txt
+          diff -u /tmp/expected_paths.txt /tmp/audit_paths.txt
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
           git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
