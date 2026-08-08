@@ -65,6 +65,7 @@ def fake_exact(records: list[dict[str, Any]], window_size: int) -> list[dict[str
 
 
 def calls_named(tree: ast.AST, name: str) -> list[ast.Call]:
+    """Find executable calls by name; comments/provenance strings do not count."""
     return [
         node
         for node in ast.walk(tree)
