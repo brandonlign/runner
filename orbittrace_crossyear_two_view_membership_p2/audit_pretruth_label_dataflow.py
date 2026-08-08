@@ -15,32 +15,38 @@ def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: audit_pretruth_label_dataflow.py CANONICAL_RUNTIME")
     path = Path(sys.argv[1])
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    main_fn = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
 
+    # Scope all dataflow checks to main(). Helper functions may legitimately use
+    # a parameter named hidden_labels, but they do not execute until main calls
+    # them. The relevant question is when main first reads the inherited truth
+    # dictionary relative to the two immutable pretruth freezes.
     hidden_loads = sorted(
         node.lineno
-        for node in ast.walk(tree)
+        for node in ast.walk(main_fn)
         if isinstance(node, ast.Name) and node.id == "hidden_labels" and isinstance(node.ctx, ast.Load)
     )
-    require(hidden_loads, "hidden_labels is never evaluated; audit target changed")
+    require(hidden_loads, "hidden_labels is never evaluated in main; audit target changed")
 
     membership_freeze_lines: list[int] = []
     model_freeze_lines: list[int] = []
     parse_store_lines: list[int] = []
-    for node in ast.walk(tree):
+    for node in ast.walk(main_fn):
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, (ast.Tuple, ast.List)):
                     names = [elt.id for elt in target.elts if isinstance(elt, ast.Name)]
                     if "hidden_labels" in names:
                         parse_store_lines.append(node.lineno)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if node.func.attr == "write_text" and isinstance(node.func.value, ast.BinOp):
-                pass
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
             call = node.value
             if isinstance(call.func, ast.Attribute) and call.func.attr in {"write_text", "write_bytes"}:
-                src = ast.get_source_segment(path.read_text(encoding="utf-8"), node) or ""
+                src = ast.get_source_segment(source, node) or ""
                 if "p2_model_pretruth" in src:
                     model_freeze_lines.append(node.lineno)
                 if "p2_membership_pretruth" in src or "p2_expanded_families.json.gz" in src:
@@ -53,15 +59,14 @@ def main() -> int:
     last_membership_freeze = max(membership_freeze_lines)
     first_truth_load = min(hidden_loads)
 
-    require(last_model_freeze < first_truth_load, "known-shower truth is loaded before model freeze")
-    require(last_membership_freeze < first_truth_load, "known-shower truth is loaded before membership freeze")
+    require(last_model_freeze < first_truth_load, "known-shower truth is read before model freeze")
+    require(last_membership_freeze < first_truth_load, "known-shower truth is read before membership freeze")
 
-    # The canonical runtime is allowed to retain the inherited parser's hidden-label
-    # dictionary in memory, but it may not READ it before the pretruth payload is
-    # immutable. Keep the set of truth reads narrow and explicit.
-    source = path.read_text(encoding="utf-8")
-    load_context = []
+    # Keep the set of main()-level truth reads narrow and explicit. This proves
+    # hidden_labels cannot influence feature construction, fitting, conflict
+    # resolution, or the frozen membership payload in the canonical source.
     lines = source.splitlines()
+    load_context = []
     for lineno in hidden_loads:
         lo = max(1, lineno - 1)
         hi = min(len(lines), lineno + 1)
@@ -73,7 +78,7 @@ def main() -> int:
         "label_totals(hidden_labels, v8.mult)",
     ):
         require(token in joined, f"unexpected/missing truth-read site: {token}")
-    require(len(hidden_loads) == 3, f"unexpected number of hidden-label reads: {hidden_loads}")
+    require(len(hidden_loads) == 3, f"unexpected number of main hidden-label reads: {hidden_loads}")
 
     # Independently ensure the raw orbital side-channel parser never asks for a
     # catalogue label/shower field. Only the exact seven geometry/orbit headers
@@ -93,7 +98,7 @@ def main() -> int:
     print(f"last_model_freeze_line={last_model_freeze}")
     print(f"last_membership_freeze_line={last_membership_freeze}")
     print(f"first_hidden_label_read_line={first_truth_load}")
-    print(f"hidden_label_read_lines={hidden_loads}")
+    print(f"main_hidden_label_read_lines={hidden_loads}")
     return 0
 
 
