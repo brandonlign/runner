@@ -64,6 +64,18 @@ def fake_exact(records: list[dict[str, Any]], window_size: int) -> list[dict[str
     ]
 
 
+def calls_named(tree: ast.AST, name: str) -> list[ast.Call]:
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (
+            (isinstance(node.func, ast.Attribute) and node.func.attr == name)
+            or (isinstance(node.func, ast.Name) and node.func.id == name)
+        )
+    ]
+
+
 def main() -> int:
     pre = fake_pre()
     max_records = 512
@@ -137,15 +149,12 @@ def main() -> int:
     protocol = protocol_path.read_text()
 
     runner_tree = ast.parse(runner_source)
-    exact_calls = [
-        node for node in ast.walk(runner_tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "exact_rescore_window_v6"
-    ]
+    combine_tree = ast.parse(combine_source)
+    exact_calls = calls_named(runner_tree, "exact_rescore_window_v6")
     require(len(exact_calls) == 1, f"runner exact-rescore call count changed: {len(exact_calls)}")
     for forbidden in ("scan_year_v6", "evaluate_order", "evaluate_families_v6"):
-        require(forbidden not in runner_source, f"scientific/evaluation stage leaked into work-unit runner: {forbidden}")
+        require(not calls_named(runner_tree, forbidden), f"scientific/evaluation call leaked into work-unit runner: {forbidden}")
+        require(not calls_named(combine_tree, forbidden), f"scientific/evaluation call leaked into combiner: {forbidden}")
     label_reads = [
         node for node in ast.walk(runner_tree)
         if isinstance(node, ast.Name)
@@ -153,7 +162,7 @@ def main() -> int:
         and node.id in {"hidden_labels", "_hidden_labels"}
     ]
     require(not label_reads, "inherited hidden-label object is read by work-unit runner")
-    require("exact_rescore_window_v6" not in combine_source, "combiner recomputes exact science")
+    require(not calls_named(combine_tree, "exact_rescore_window_v6"), "combiner recomputes exact science")
     require('"orbittrace-v6-exact-center-shard-v2"' in combine_source, "combiner no longer emits audited v2 replay format")
     require("512 records" in protocol, "frozen execution work-unit cap missing from protocol")
     require("execution equivalence" in protocol.lower(), "equivalence-only claim boundary missing")
