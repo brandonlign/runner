@@ -1,0 +1,129 @@
+name: OrbitTrace v8 Obninsk 1967-1968 preaccess audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-obninsk-1967-1968-preaccess
+    paths:
+      - 'orbittrace_v8_obninsk_1967_1968_preaccess/RUN_STAGE0.md'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen preaccess parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-obninsk-1967-1968-preaccess
+          fetch-depth: 1
+
+      - name: Enforce frozen parent and no Obninsk event file in repository
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/agent/orbittrace-v8-obninsk-1967-1968-preaccess 2>/dev/null || git rev-parse HEAD)"
+          test -f orbittrace_v8_obninsk_1967_1968_preaccess/PROTOCOL.md
+          ! find . -type f -iname 'obninsk.tab' -print -quit | grep -q .
+          ! grep -RIl --exclude='PROTOCOL.md' --exclude='orbittrace-v8-obninsk-1967-1968-preaccess.yml' 'OrbitTrace target' orbittrace_v8_obninsk_1967_1968_preaccess .github/workflows/orbittrace-v8-obninsk-1967-1968-preaccess.yml | grep -q . || true
+
+      - name: Download official PDS bundle as opaque archive
+        run: |
+          set -euo pipefail
+          mkdir -p input output metadata
+          curl -L --fail --retry 3 \
+            'https://sbnarchive.psi.edu/pds4/non_mission/meteoroid.steel.orbits.zip' \
+            -o input/meteoroid.steel.orbits.zip
+          sha256sum input/meteoroid.steel.orbits.zip | tee output/archive_sha256.txt
+          unzip -Z1 input/meteoroid.steel.orbits.zip | sort > output/archive_file_list.txt
+          grep -iE '(^|/)obninsk\.tab$' output/archive_file_list.txt
+
+      - name: Extract documentation and labels only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, zipfile
+
+          zpath = Path('input/meteoroid.steel.orbits.zip')
+          out = Path('metadata')
+          out.mkdir(exist_ok=True)
+          records=[]
+          with zipfile.ZipFile(zpath) as zf:
+              names=zf.namelist()
+              obn=[n for n in names if n.lower().endswith('/obninsk.tab') or n.lower()=='obninsk.tab']
+              if len(obn)!=1:
+                  raise RuntimeError(f'expected exactly one obninsk.tab, got {obn}')
+              # Critical firewall: never call read/open/extract on any .tab member.
+              for info in zf.infolist():
+                  name=info.filename
+                  low=name.lower()
+                  if info.is_dir() or low.endswith('.tab'):
+                      continue
+                  data=zf.read(name)
+                  dst=out / name
+                  dst.parent.mkdir(parents=True, exist_ok=True)
+                  dst.write_bytes(data)
+                  records.append({'name':name,'size':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+          Path('output/non_tab_manifest.json').write_text(json.dumps(records,indent=2,sort_keys=True)+'\n')
+          Path('output/firewall.json').write_text(json.dumps({
+              'obninsk_event_member':obn[0],
+              'obninsk_event_member_opened':False,
+              'any_tab_member_opened':False,
+              'event_row_access':False,
+              'target_information_access':False,
+          },indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Build documentation-only mapping inventory
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          keys=('obninsk','radiant','right ascension','declination','ecliptic','velocity','infinity','date','time','solar')
+          hits={k:[] for k in keys}
+          for p in Path('metadata').rglob('*'):
+              if not p.is_file(): continue
+              try: text=p.read_text(errors='ignore')
+              except Exception: continue
+              lines=text.splitlines()
+              for k in keys:
+                  for i,line in enumerate(lines,1):
+                      if k in line.lower():
+                          hits[k].append({'file':str(p.relative_to('metadata')),'line':i,'text':line[:500]})
+          Path('output/documentation_hits.json').write_text(json.dumps(hits,indent=2,sort_keys=True)+'\n')
+          required=('obninsk','radiant','velocity','time')
+          if not all(hits[k] for k in required):
+              raise RuntimeError(f'missing required documentation terms: {[k for k in required if not hits[k]]}')
+          PY
+
+      - name: Record preaccess verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          fw=json.loads(Path('output/firewall.json').read_text())
+          assert fw['event_row_access'] is False
+          assert fw['obninsk_event_member_opened'] is False
+          r={
+            'schema':'orbittrace-v8-obninsk-preaccess-stage0-v1',
+            'verdict':'PASS_OBNINSK_ARCHIVE_DOCUMENTATION_RETRIEVAL',
+            'event_row_access':False,
+            'obninsk_event_member_opened':False,
+            'target_information_access':False,
+            'scientific_v8_evaluation_performed':False,
+            'next_step':'adjudicate exact geometry/speed mapping from extracted PDS documentation before any event-row access'
+          }
+          Path('output/preaccess_result.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload documentation-only audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-obninsk-1967-1968-preaccess-stage0
+          path: output
+          if-no-files-found: error
+          retention-days: 90
