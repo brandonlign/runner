@@ -1,0 +1,63 @@
+name: OrbitTrace v6-core C1 guarded executor source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-core-probabilistic-membership-c1-freeze
+    paths:
+      - orbittrace_v6_core_probabilistic_membership_c1/AUDIT_GUARD.md
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Prove guarded activation, exact prerequisite outcomes, and strict provenance
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_v6_core_c1_guarded_development.yml').read_text()
+          for token in (
+              'EXECUTE_C1_AFTER_V6_PASS_AND_NO_LITERATURE_SUPERIORITY',
+              'gh run download 31282128101',
+              '--name orbittrace-v6-fanout-v2-development',
+              "v6['verdict']=='PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'",
+              "assert all(v6['gates'].values())",
+              "lit['classification']=='NO_LITERATURE_SUPERIORITY'",
+              "lit['broad_catalogue_superiority'] is False",
+              "lit['sparse_stream_superiority'] is False",
+              '113c579f2058126e93b93a3534aaa6108d3e827c667552ecd41ff321d7a5e3da',
+              '257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24',
+              'e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',
+              '785554905113626bebffecdd441616238eb76b04',
+              '498daf762bc82a664679998ea751feecff8033de',
+              'c9d6c44704013ba0c9430100e98a29a56b453304',
+              '--name orbittrace-v6-fanout-year-2022',
+              '--name orbittrace-v6-fanout-year-2023',
+              "r['gates']['v6_baseline_reproduced'] is True",
+              "r['configuration']['fixed4_rescue_can_seed_c1'] is False",
+              "r['configuration']['parameter_search'] is False",
+              "r['configuration']['new_members_can_seed_growth'] is False",
+          ):
+              assert token in w, token
+          # No scientific prerequisite may be weakened by a shell bypass.
+          critical=w[w.index('gh run download 31282128101'):w.index('git checkout --detach "$BASE_SHA"')]
+          assert '|| true' not in critical
+          # Scientific execution can happen only after all prerequisite/source identity checks.
+          assert w.index('PASS_C1_EXACT_RUNTIME_IDENTITIES') < w.index('Execute one-shot target-excluded C1 development')
+          # The freeze branch itself cannot contain the activation marker.
+          assert not Path('orbittrace_v6_core_probabilistic_membership_c1/RUN.md').exists()
+          print('PASS_C1_GUARDED_EXECUTOR_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only firewall
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_C1_SCIENCE_NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION
