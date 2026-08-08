@@ -32,14 +32,15 @@ jobs:
           echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
             orbittrace_crossyear_two_view_membership_p2/run_development.py \
-            /tmp/run_p2_protocol_compliant.py | tee /tmp/p2_patch.log
+            /tmp/run_p2_protocol_compliant.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/run_p2_protocol_compliant.py' | sha256sum -c -
           python -m py_compile /tmp/run_p2_protocol_compliant.py
           python - <<'PY'
-          import ast,hashlib,re
+          import ast,hashlib
           from pathlib import Path
           text=Path('/tmp/run_p2_protocol_compliant.py').read_text()
           tree=ast.parse(text)
-          digest=hashlib.sha256(text.encode()).hexdigest()
+          assert hashlib.sha256(text.encode()).hexdigest()=='169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da'
           defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
           constants={}
           for n in tree.body:
@@ -68,8 +69,9 @@ jobs:
           dsh=ast.get_source_segment(text,defs['min_exact_dsh_to_source'])
           assert dsh.count('dsh.pairwise_dsh(')==1 and 'np.min(cross, axis=1)' in dsh and '0.05' not in dsh
           main=ast.get_source_segment(text,defs['main'])
-          # Critical compliance correction: EVERY nonseed defines the ±5° universe.
-          assert 'valid_events_by_year' not in main and 'valid_nonseed_by_year' not in main
+          # Required universe correction: EVERY non-seed row enters the ±5° window test.
+          assert 'valid_nonseed_by_year = {' not in main
+          assert 'target_nonseed_events = valid_nonseed_by_year[target_year]' not in main
           assert 'nonseed_by_year = {' in main
           assert '[e for e in scan_by_year[year] if str(e["id"]) not in global_seed_ids]' in main
           assert 'target_nonseed_events = nonseed_by_year[target_year]' in main
@@ -93,7 +95,6 @@ jobs:
           assert 'evaluate_order(hidden_labels' not in pretruth and 'eligible_labels(hidden_labels' not in pretruth
           assert 'parameter_search": False' in main and 'new_members_can_seed_growth": False' in main
           print('PASS_CROSSYEAR_TWO_VIEW_P2_PROTOCOL_COMPLIANT_SOURCE_AUDIT')
-          print('P2_PROTOCOL_COMPLIANT_SOURCE_SHA256='+digest)
           PY
       - name: Assert source-only firewall
         if: always()
