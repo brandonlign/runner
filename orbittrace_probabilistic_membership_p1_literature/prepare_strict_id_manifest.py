@@ -39,7 +39,7 @@ def canonical_sha(value: Any) -> str:
 
 
 def hdbscan_ids_only(path: Path, year: int) -> list[str]:
-    """Extract only the event-id token from each JSONL row; never JSON-decode cluster values."""
+    """Extract only the event-id token from each JSONL row; never JSON-decode any other field."""
     require(sha256_file(path) == HDBSCAN_SHA256[year], f'HDBSCAN {year} artifact hash changed')
     text = gzip.decompress(path.read_bytes()).decode('utf-8')
     lines = text.splitlines()
@@ -70,7 +70,7 @@ def extract_json_array_for_key_without_parsing_rest(text: str, key: str) -> Any:
 
 
 def sugar_ids_only(path: Path, year: int) -> list[str]:
-    """Decode only the event_ids JSON array; retained_labels is never decoded or inspected."""
+    """Decode only the event_ids JSON array; no other object value is decoded or inspected."""
     require(sha256_file(path) == SUGAR_SHA256[year], f'Sugar {year} artifact hash changed')
     text = gzip.decompress(path.read_bytes()).decode('utf-8')
     raw_ids = extract_json_array_for_key_without_parsing_rest(text, 'event_ids')
