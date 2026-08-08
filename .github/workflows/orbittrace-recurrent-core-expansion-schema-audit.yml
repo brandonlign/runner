@@ -1,0 +1,60 @@
+name: OrbitTrace recurrent-core expansion GMN schema audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_recurrent_core_expansion_r1/SCHEMA_AUDIT.md'
+      - 'orbittrace_recurrent_core_expansion_r1/audit_gmn_schema.py'
+      - '.github/workflows/orbittrace-recurrent-core-expansion-schema-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install transport dependency only
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install pandas numpy requests python-dateutil
+      - name: Enforce source-only boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_recurrent_core_expansion_r1/audit_gmn_schema.py
+          ! grep -q 'meteor_trajectory_reader' orbittrace_recurrent_core_expansion_r1/audit_gmn_schema.py
+          ! grep -q 'read_data' orbittrace_recurrent_core_expansion_r1/audit_gmn_schema.py
+          ! grep -q '20.0' orbittrace_recurrent_core_expansion_r1/audit_gmn_schema.py
+          ! grep -q '55.0' orbittrace_recurrent_core_expansion_r1/audit_gmn_schema.py
+      - name: Run schema-only audit
+        run: |
+          set -euo pipefail
+          python orbittrace_recurrent_core_expansion_r1/audit_gmn_schema.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output_schema/gmn_schema_only_orbit_column_audit.json').read_text())
+          assert r['verdict']=='PASS_GMN_SCHEMA_ONLY_ORBIT_COLUMN_AUDIT'
+          assert r['trajectory_dataframe_parser_invoked'] is False
+          assert r['event_row_values_parsed'] is False
+          assert r['shower_label_values_accessed'] is False
+          assert r['orbittrace_target_accessed'] is False
+          assert r['target_region_event_accessed'] is False
+          print('PASS_GMN_SCHEMA_ONLY_ORBIT_COLUMN_AUDIT')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-core-expansion-gmn-schema-audit
+          path: output_schema
+          if-no-files-found: error
+          retention-days: 90
