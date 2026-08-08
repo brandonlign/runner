@@ -3,9 +3,9 @@ name: OrbitTrace v6 transfer family source probe
 on:
   pull_request:
     branches:
-      - agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze
+      - agent/orbittrace-v6-sonotaco-2017-2019-transfer-implementation
     paths:
-      - .github/workflows/orbittrace_v6_transfer_family_source_probe.yml
+      - orbittrace_v6_sonotaco_2017_2019_transfer/SOURCE_PROBE.md
 
 permissions:
   contents: read
@@ -19,6 +19,18 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
+      - name: Require one-file source-only child
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git init /tmp/guard >/dev/null
+          cd /tmp/guard
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/$GITHUB_REPOSITORY.git"
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA"
+          test "$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")" = 'orbittrace_v6_sonotaco_2017_2019_transfer/SOURCE_PROBE.md'
+          test "$(git show "$HEAD_SHA":orbittrace_v6_sonotaco_2017_2019_transfer/SOURCE_PROBE.md)" = 'SOURCE_ONLY_EXACT_V6_FAMILY_ORDER_PROBE'
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v3-primary-catalogue-v6
