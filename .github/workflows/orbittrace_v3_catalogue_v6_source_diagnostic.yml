@@ -1,0 +1,75 @@
+name: OrbitTrace v3 catalogue v6 source diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - .github/workflows/orbittrace_v3_catalogue_v6_source_diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-catalogue-v6-source-diagnostic
+
+      - name: Reconstruct exact frozen v6 source only
+        run: |
+          set -euo pipefail
+          test ! -e input
+          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' \
+            | base64 --decode \
+            | gzip --decompress \
+            > /tmp/run_v3_primary_catalogue_v6.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/run_v3_primary_catalogue_v6.py' | sha256sum -c -
+
+      - name: Audit scan_year_v6 definition without catalogue access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          p = Path('/tmp/run_v3_primary_catalogue_v6.py')
+          text = p.read_text()
+          tree = ast.parse(text)
+          fn = next(n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == 'scan_year_v6')
+          lines = text.splitlines()
+          print(f'SCAN_YEAR_V6_LINES={fn.lineno}-{fn.end_lineno}')
+          for i in range(max(fn.lineno, 1), min(fn.end_lineno, len(lines)) + 1):
+              if 360 <= i <= 470:
+                  print(f'{i:04d}: {lines[i-1]}')
+
+          stores = {}
+          loads = []
+          for node in ast.walk(fn):
+              if isinstance(node, ast.Name):
+                  if isinstance(node.ctx, ast.Store):
+                      stores.setdefault(node.id, []).append(getattr(node, 'lineno', None))
+                  elif isinstance(node.ctx, ast.Load):
+                      loads.append((node.id, getattr(node, 'lineno', None)))
+
+          for name in ('primary_components', 'rescue_components', 'components'):
+              print(f'{name}_stores={stores.get(name, [])}')
+              print(f'{name}_loads={[ln for n, ln in loads if n == name]}')
+
+          # This diagnostic is source-only. It deliberately proves the exact
+          # failing name is loaded in scan_year_v6 without a prior local store.
+          assert not stores.get('primary_components'), stores.get('primary_components')
+          assert any(n == 'primary_components' for n, _ in loads)
+          print('PASS_V6_UNDEFINED_PRIMARY_COMPONENTS_SOURCE_DIAGNOSTIC')
+          PY
+
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          echo 'NO_CATALOGUE_ACCESS_NO_LABEL_ACCESS_NO_TARGET_ACCESS'
