@@ -1,0 +1,233 @@
+name: OrbitTrace v6-core probabilistic membership C1 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-core-probabilistic-membership-c1-freeze
+    paths:
+      - orbittrace_v6_core_probabilistic_membership_c1/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v6-core-c1-development
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Enforce one-file child and exact v6/literature prerequisites
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_v6_core_probabilistic_membership_c1/RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_v6_core_probabilistic_membership_c1/RUN.md)"
+          first="$(printf '%s\n' "$content" | sed -n '1p')"
+          literature_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$first" = 'EXECUTE_C1_AFTER_V6_PASS_AND_NO_LITERATURE_SUPERIORITY'
+          [[ "$literature_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+
+          rm -rf /tmp/c1-prereq && mkdir -p /tmp/c1-prereq/{v6,literature}
+          gh run download 31282128101 --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-fanout-v2-development --dir /tmp/c1-prereq/v6
+          gh run download "$literature_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v3-primary-matched-literature-result --dir /tmp/c1-prereq/literature
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v6=json.loads(Path('/tmp/c1-prereq/v6/v3_primary_catalogue_v6_development.json').read_text())
+          assert v6['verdict']=='PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT',v6['verdict']
+          assert v6['configuration']['years']==[2022,2023]
+          assert v6['configuration']['blind_exclusion']==[20.0,55.0]
+          assert all(v6['gates'].values())
+          assert all(a['proposal_cap_per_window']==512 for a in v6['year_audits'])
+          assert all(a['max_primary_proposals_per_year']==36864 for a in v6['year_audits'])
+
+          lit=json.loads(Path('/tmp/c1-prereq/literature/v3_primary_matched_literature.json').read_text())
+          assert lit['classification']=='NO_LITERATURE_SUPERIORITY',lit['classification']
+          assert lit['years']==[2023,2025]
+          assert lit['blind_exclusion']==[20.0,55.0]
+          assert lit['pairwise_only_no_cross_denominator_comparison'] is True
+          assert lit['broad_catalogue_superiority'] is False
+          assert lit['sparse_stream_superiority'] is False
+          print('PASS_C1_V6_PASS_AND_NO_LITERATURE_SUPERIORITY_PREREQUISITES')
+          PY
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_v6_core_probabilistic_membership_c1/RUN.md
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-probabilistic-membership-p1-freeze-v2
+          path: p1-freeze
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 785554905113626bebffecdd441616238eb76b04
+          path: p1-transfer
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v6/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v6/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact runtimes and fanout checkpoints
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v6-result,year2022,year2023} output
+          echo '113c579f2058126e93b93a3534aaa6108d3e827c667552ecd41ff321d7a5e3da  orbittrace_v6_core_probabilistic_membership_c1/run_development.py' | sha256sum -c -
+
+          cd frozen-v6
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
+          cd ..
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          frozen=Path('/tmp/v6.frozen.py'); repaired=Path('/tmp/v6.repaired.py')
+          original=frozen.read_text()
+          before='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    components = primary_components + rescue_components
+'''
+          after='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    primary_components = component_records_track_v6(old, year, primary_capped, event_lookup, base, "v3")
+    rescue_components = component_records_track_v6(old, year, rescue_capped, event_lookup, base, "fixed4_rescue")
+    components = primary_components + rescue_components
+'''
+          assert original.count(before)==1
+          patched=original.replace(before,after,1)
+          assert patched.replace(after,before,1)==original
+          assert hashlib.sha256(patched.encode()).hexdigest()=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          repaired.write_text(patched)
+          PY
+
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          parts=sorted(Path('p1-freeze/orbittrace_probabilistic_membership_p1/source_parts').glob('part*.b64'))
+          assert [p.name for p in parts]==['part00.b64','part01.b64']
+          src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
+          assert hashlib.sha256(src).hexdigest()=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'
+          Path('/tmp/p1.frozen.py').write_bytes(src)
+          PY
+          test "$(git -C p1-transfer hash-object orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py)" = '498daf762bc82a664679998ea751feecff8033de'
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+
+          gh run download 31282128101 --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-fanout-v2-development --dir input/v6-result
+          gh run download 31282128101 --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-fanout-year-2022 --dir input/year2022
+          gh run download 31282128101 --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-fanout-year-2023 --dir input/year2023
+          python -m py_compile orbittrace_v6_core_probabilistic_membership_c1/run_development.py /tmp/v6.repaired.py /tmp/p1.frozen.py
+          echo PASS_C1_EXACT_RUNTIME_IDENTITIES
+
+      - name: Execute one-shot target-excluded C1 development
+        env:
+          PYTHONPATH: exact-v8:frozen-v6/orbittrace_wavelet_catalogue_v3:frozen-v6/orbittrace_multi_anchor_energy_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v6_core_probabilistic_membership_c1/run_development.py \
+            --v6-result-json input/v6-result/v3_primary_catalogue_v6_development.json \
+            --checkpoint-2022 input/year2022/v6_year_2022.pkl \
+            --checkpoint-2023 input/year2023/v6_year_2023.pkl \
+            --v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --p1-source /tmp/p1.frozen.py \
+            --p1-transfer-runner p1-transfer/orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --support-source-parts frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v6/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v6/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v6/mondrian_clique_development/source_parts_v2 \
+            --output output
+          cat output/V6_CORE_PROBABILISTIC_MEMBERSHIP_C1_DEVELOPMENT.md
+
+      - name: Enforce frozen C1 result boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v6_core_probabilistic_membership_c1_development.json').read_text())
+          assert r['verdict'] in {'PASS_V6_CORE_PROBABILISTIC_MEMBERSHIP_C1_DEVELOPMENT','FAIL_V6_CORE_PROBABILISTIC_MEMBERSHIP_C1_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['v6_source_sha256']=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          assert r['configuration']['p1_source_sha256']=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'
+          assert r['configuration']['p1_transfer_commit']=='785554905113626bebffecdd441616238eb76b04'
+          assert r['configuration']['p1_transfer_git_blob']=='498daf762bc82a664679998ea751feecff8033de'
+          assert r['configuration']['fixed4_rescue_can_seed_c1'] is False
+          assert r['configuration']['parameter_search'] is False
+          assert r['configuration']['new_members_can_seed_growth'] is False
+          assert r['gates']['v6_baseline_reproduced'] is True
+          assert len(r['v6_rank_pretruth_sha256'])==64
+          assert len(r['v6_seed_families_pretruth_sha256'])==64
+          assert len(r['membership_pretruth_sha256'])==64
+          print('ORBITTRACE_C1_FROZEN_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'baseline_v6':r['baseline_v6'],'c1':r['c1'],'gates':r['gates'],'diagnostics':{k:v for k,v in r['diagnostics'].items() if k!='family_year_audits'}},indent=2))
+          print('ORBITTRACE_C1_FROZEN_RESULT_END')
+          PY
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_v6_core_probabilistic_membership_c1/run_development.py /tmp/v6.repaired.py /tmp/p1.frozen.py p1-transfer/orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py > output/source_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-core-c1-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
