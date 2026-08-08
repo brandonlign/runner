@@ -1,4 +1,4 @@
-name: OrbitTrace v6 SonotaCo parser transport audit
+name: OrbitTrace v6 SonotaCo transfer source audit
 
 on:
   pull_request:
@@ -6,6 +6,8 @@ on:
       - agent/orbittrace-v6-catalogue-base
     paths:
       - orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py
+      - orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_corrected.py
+      - orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_frozen.py
       - .github/workflows/orbittrace_v6_sonotaco_transfer_parser_audit.yml
 
 permissions:
@@ -13,7 +15,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: orbittrace-v6-sonotaco-transfer-parser-audit
+  group: orbittrace-v6-sonotaco-transfer-source-audit
   cancel-in-progress: true
 
 jobs:
@@ -24,7 +26,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze
-      - name: Download exact frozen parser sources only
+
+      - name: Download and verify exact frozen parser sources only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -34,7 +37,8 @@ jobs:
           gh run download 31203088669 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2019-parser-transport --dir source19
           echo 'ee81d66b318ed2fa473ddfcee4c1cea0ef8ba08cba33da47103fd7c53ee625dc  source17/run_sonotaco_2017_transport_parser.py' | sha256sum -c -
           echo '301a711e4de43566ba434f2d4a94fc38a85714a33dcee45e26cb19340101ea43  source19/run_sonotaco_2019_transport_parser.py' | sha256sum -c -
-      - name: Prove exact one-line reversible gate transport
+
+      - name: Prove exact parser transport and blind boundary
         run: |
           set -euo pipefail
           python -m py_compile orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py
@@ -47,16 +51,20 @@ jobs:
               assert text.count(t.OBSOLETE_GATE_LINE)==1
               changed=text.replace(t.OBSOLETE_GATE_LINE,t.V6_NONBINDING_LINE,1)
               assert changed.replace(t.V6_NONBINDING_LINE,t.OBSOLETE_GATE_LINE,1)==text
+              assert changed.count(t.V6_NONBINDING_LINE)==1
               assert '"blind_interval_removed_before_label_access": True' in text
               assert text.index('if BLIND_SOLAR_MIN <= sol <= BLIND_SOLAR_MAX:') < text.index('token = row[index["shower"]]')
               compile(changed,f'transported_{year}.py','exec')
-          print('PASS_V6_SONOTACO_EXACT_PARSER_TRANSPORT_AUDIT')
+          assert t.ARCHIVE_SHA256=={2017:'1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf',2019:'d49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4'}
+          print('PASS_EXACT_PARSER_TRANSPORT_AND_BLIND_BOUNDARY')
           PY
+
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
-      - name: Reconstruct exact repaired v6 and inventory calibration interfaces
+
+      - name: Reconstruct exact repaired v6 and prove calibration preflight interface
         run: |
           set -euo pipefail
           cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
@@ -80,32 +88,86 @@ jobs:
     components = primary_components + rescue_components
 '''
           assert text.count(before)==1
-          patched=text.replace(before,after,1)
-          Path('/tmp/v6.repaired.py').write_text(patched)
-          assert hashlib.sha256(patched.encode()).hexdigest()=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
-          tree=ast.parse(patched); lines=patched.splitlines(); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
-          out=[]
-          for name,node in defs.items():
-              src=ast.get_source_segment(patched,node) or ''
-              if any(x in (name+' '+src).lower() for x in ('calibrat','supported_bin','null','scan_year_v6','build_family_track_v6','evaluate_families_v6')):
-                  out.append(f'===== {name} {node.lineno}-{node.end_lineno} =====\n'+'\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(node.lineno,node.end_lineno+1)))
-          Path('/tmp/function_inventory.txt').write_text('\n'.join(out)+'\n')
-          print('V6_SELECTED_FUNCTIONS', [x.split()[1] for x in out])
-          print('PASS_EXACT_REPAIRED_V6_TRANSFER_SOURCE_PROBE')
+          repaired=text.replace(before,after,1)
+          assert repaired.replace(after,before,1)==text
+          Path('/tmp/v6.repaired.py').write_text(repaired)
+          assert hashlib.sha256(repaired.encode()).hexdigest()=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          tree=ast.parse(repaired); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert 'calibrate_year_v6' in defs and 'scan_year_v6' in defs
+          cal=ast.get_source_segment(repaired,defs['calibrate_year_v6'])
+          scan=ast.get_source_segment(repaired,defs['scan_year_v6'])
+          assert 'for bin_index in range(36)' in cal
+          assert 'range(old.CALIBRATION_PER_BIN)' in cal
+          assert 'if len(v3_calibration) < 30:' in cal
+          assert 'insufficient supported calibration bins' in cal
+          assert scan.index('calibrate_year_v6(') < scan.index('event_lookup =')
+          print('PASS_EXACT_V6_NULL_CALIBRATION_PREFLIGHT_INTERFACE')
           PY
           python -m py_compile /tmp/v6.repaired.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: orbittrace-v6-transfer-source-probe
-          path: |
-            /tmp/v6.repaired.py
-            /tmp/function_inventory.txt
-          if-no-files-found: error
-          retention-days: 7
+
+      - name: Prove corrected transfer protocol and chronology
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_corrected.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_frozen.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_corrected.py')
+          text=p.read_text(); tree=ast.parse(text)
+          vals={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: vals[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert vals['YEARS']==(2017,2019)
+          assert vals['MIN_BACKGROUND_EVENTS']==10000
+          assert vals['MIN_DISTINCT_MAPPED_SHOWERS']==30
+          assert vals['MIN_SUPPORTED_V6_CALIBRATION_BINS']==30
+          assert vals['MIN_V3_PRIMARY_FAMILIES']==40
+          assert vals['RECOVERY100_RETENTION']==0.80
+          assert vals['QUALIFIED_RETENTION']==0.60
+          assert vals['TOP100_PRECISION_FLOOR']==0.50
+          assert vals['MRR_RETENTION']==0.80
+          assert vals['IMPROVEMENT_ENDPOINTS']==('recovered_at_25','recovered_at_50','recovered_at_100','mrr','macro_f1')
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          pre=ast.get_source_segment(text,defs['preflight_before_survey_scoring'])
+          assert 'v6.calibrate_year_v6(' in pre
+          assert 'current_v6_transfer(' not in pre and 'exact_v8_transfer(' not in pre and 'scan_year_v6(' not in pre
+          assert 'survey_candidate_scores_computed": False' in pre
+          main=ast.get_source_segment(text,defs['main'])
+          i_pre=main.index('preflight_before_survey_scoring(')
+          i_v6=main.index('legacy.current_v6_transfer(')
+          i_v8=main.index('run_true_v8_same_universe(')
+          i_freeze=main.index('(args.output / "current_v6_pretruth.sha256").write_text')
+          i_truth=main.index('current_full = v6.evaluate_families_v6(')
+          assert i_pre < i_v6 < i_freeze < i_truth
+          assert i_pre < i_v8 < i_freeze < i_truth
+          assert 'math.floor(RECOVERY100_RETENTION * int(v8_metrics["recovered_at_100"]))' in main
+          assert 'math.floor(QUALIFIED_RETENTION * int(v8_metrics["qualified_matches"]))' in main
+          assert 'MRR_RETENTION * float(v8_metrics["mrr"])' in main
+          assert 'any(strict_improvements.values())' in main
+          assert 'development_v6_mrr' not in main
+          for gate in (
+              'at_least_40_recurrent_v3_primary_families',
+              'recovery100_at_least_floor_080_v8',
+              'qualified_at_least_floor_060_v8',
+              'top100_dominant_precision_at_least_050',
+              'mrr_at_least_080_v8',
+              'at_least_one_frozen_endpoint_strictly_exceeds_v8',
+          ):
+              assert gate in main,gate
+          wrapper=Path('orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_frozen.py').read_text()
+          assert 'old.CORPUS = corrected.legacy.CORPUS_V6' in wrapper
+          assert wrapper.index('old.CORPUS = corrected.legacy.CORPUS_V6') < wrapper.index('return _ORIGINAL_PREFLIGHT')
+          print('PASS_PROTOCOL_EXACT_V6_SONOTACO_TRANSFER_SOURCE_AUDIT')
+          PY
+
       - name: Assert source-only boundary
         if: always()
         run: |
           test ! -e archive
           test ! -e input
           test ! -e output
-          echo NO_SONOTACO_ARCHIVE_NO_LABEL_VALUES_NO_TARGET_ACCESS
+          echo NO_SONOTACO_ARCHIVE_NO_LABEL_VALUE_NO_TARGET_REGION_NO_ORBITTRACE_TARGET
