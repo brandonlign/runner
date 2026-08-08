@@ -30,12 +30,12 @@ jobs:
           git remote add origin "https://x-access-token:${{ github.token }}@github.com/$GITHUB_REPOSITORY.git"
           git fetch --no-tags --depth=1 origin "$BASE_SHA" "$HEAD_SHA"
           test "$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")" = 'orbittrace_v6_sonotaco_2017_2019_transfer/SOURCE_PROBE.md'
-          test "$(git show "$HEAD_SHA":orbittrace_v6_sonotaco_2017_2019_transfer/SOURCE_PROBE.md)" = 'SOURCE_ONLY_EXACT_V6_FAMILY_ORDER_PROBE'
+          test "$(git show "$HEAD_SHA":orbittrace_v6_sonotaco_2017_2019_transfer/SOURCE_PROBE.md)" = 'SOURCE_ONLY_EXACT_V6_FAMILY_EVALUATOR_PROBE'
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
-      - name: Reconstruct exact v6 and inspect family/rank API only
+      - name: Reconstruct exact v6 and inspect family/rank/evaluator API only
         run: |
           set -euo pipefail
           test ! -e input
@@ -51,7 +51,7 @@ jobs:
           names=sorted(name for name in funcs if any(k in name.lower() for k in ('family','rank','evaluat','order')))
           print('V6_FAMILY_RANK_FUNCTIONS',names)
           for name in names:
-              if name in {'build_family_track_v6','rank_primary_families_v6','evaluate_order','evaluate_primary'} or name.startswith('build_family') or name.startswith('rank_'):
+              if name in {'build_family_track_v6','evaluate_families_v6','rank_primary_families_v6','evaluate_order','evaluate_primary'} or name.startswith('build_family') or name.startswith('rank_'):
                   n=funcs[name]
                   print(f'===== {name} {n.lineno}-{n.end_lineno} =====')
                   print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(n.lineno,n.end_lineno+1)))
@@ -61,7 +61,7 @@ jobs:
               for line in src.splitlines():
                   if 'build_family_track_v6' in line or 'primary_famil' in line or 'evaluate' in line or 'rank' in line:
                       print('MAIN_MATCH',line.strip())
-          print('PASS_V6_TRANSFER_FAMILY_SOURCE_PROBE')
+          print('PASS_V6_TRANSFER_FAMILY_EVALUATOR_SOURCE_PROBE')
           PY
       - name: Assert no-data boundary
         if: always()
