@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen R1 run after adopting the approved GMN schema-audit header-selection rule and adding a schema-only 2022-01 parser preflight. No scientific parameters, target information, or promotion gates are supplied by this file.
