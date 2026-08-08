@@ -72,10 +72,9 @@ def main() -> int:
     scan_events = exact.read_exact_geometry(args.year, args.archive, scan_ids, base)
     require(all(not (adapter.BLIND_LOW <= float(e["sol"]) <= adapter.BLIND_HIGH) for e in scan_events),
             "target interval entered panel-year scan")
-    calibration = adapter.calibration_events_from_native_sporadic(
-        {args.year: scan_events, **{y: [] for y in adapter.YEARS if y != args.year}},
-        {args.year: background_ids, **{y: set() for y in adapter.YEARS if y != args.year}},
-    )[args.year]
+    calibration = [dict(event, complex_key="SPORADIC") for event in scan_events if str(event["id"]) in background_ids]
+    require(len(calibration) == len(background_ids), "calibration ID materialization mismatch")
+    require(len(calibration) >= 1000, "insufficient panel-year calibration reservoir")
 
     print(f"V6_PANEL_YEAR_START panel={args.panel} year={args.year} rows={len(scan_events)} calibration={len(calibration)}", flush=True)
     audit, anchors, components = v6.scan_year_v6(
