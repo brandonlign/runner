@@ -1,11 +1,11 @@
-name: OrbitTrace recurrent-core expansion R1 development hashfix
+name: OrbitTrace recurrent-core expansion R1 development hashfix2
 
 on:
   pull_request:
     branches:
       - agent/orbittrace-recurrent-core-expansion-r1
     paths:
-      - 'orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX.md'
+      - 'orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX2.md'
 
 permissions:
   contents: read
@@ -30,9 +30,9 @@ jobs:
           git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
           mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           test "${#files[@]}" -eq 1
-          test "${files[0]}" = "orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX.md"
+          test "${files[0]}" = "orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX2.md"
           git checkout --detach "$BASE_SHA"
-          test ! -e orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX.md
+          test ! -e orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX2.md
           echo "execution_base_sha=$BASE_SHA"
 
       - uses: actions/setup-python@v5
@@ -115,15 +115,21 @@ jobs:
           text=raw.decode()
           old_expected='ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
           new='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
-          pattern=r'(?m)^(LITERATURE_COMPARATOR_SHA256\s*=\s*[\"\'])('+re.escape(old_expected)+r')([\"\'])$'
-          matches=list(re.finditer(pattern,text))
-          assert len(matches)==1, f'expected exactly one stale Git-blob provenance literal, found {len(matches)}'
-          m=matches[0]
-          old=m.group(2)
-          assert old==old_expected
-          patched=text[:m.start(2)]+new+text[m.end(2):]
+
+          assignment_lines=[
+              line for line in text.splitlines()
+              if line.lstrip().startswith('LITERATURE_COMPARATOR_SHA256') and '=' in line
+          ]
+          assert len(assignment_lines)==1, f'expected one comparator SHA assignment, got {assignment_lines}'
+          assignment=assignment_lines[0]
+          assert old_expected in assignment, assignment
+          assert len(re.findall(r'[0-9a-f]{40}', assignment))==1, assignment
+          assert text.count(old_expected)==1, f'stale blob literal count={text.count(old_expected)}'
+          idx=text.index(old_expected)
+          patched=text[:idx]+new+text[idx+len(old_expected):]
+
           # Prove the execution repair is exactly reversible to the frozen source bytes.
-          reverted=patched[:m.start(2)]+old+patched[m.start(2)+len(new):]
+          reverted=patched[:idx]+old_expected+patched[idx+len(new):]
           assert reverted.encode()==raw
           diff=list(difflib.unified_diff(text.splitlines(),patched.splitlines(),lineterm=''))
           removed=[line for line in diff if line.startswith('-') and not line.startswith('---')]
@@ -134,7 +140,7 @@ jobs:
           p.write_text(patched)
           Path('output/r1_provenance_constant_repair.json').write_text(json.dumps({
               'original_frozen_source_sha256': hashlib.sha256(raw).hexdigest(),
-              'old_internal_comparator_literal': old,
+              'old_internal_comparator_literal': old_expected,
               'old_literal_type': 'git_blob_sha1',
               'verified_comparator_git_blob': old_expected,
               'verified_comparator_sha256': new,
@@ -143,10 +149,10 @@ jobs:
               'byte_for_byte_reversible_to_frozen_source': True,
               'scientific_rule_changed': False,
           },indent=2,sort_keys=True)+'\n')
-          print('R1_PROVENANCE_LITERAL_REPAIRED',old,'->',new)
+          print('R1_PROVENANCE_LITERAL_REPAIRED',old_expected,'->',new)
           PY
           python -m py_compile input/r1/run_development.py input/dsh/literature_comparators.py
-          echo PASS_R1_HASHFIX_PREDATA_GUARDS
+          echo PASS_R1_HASHFIX2_PREDATA_GUARDS
 
       - name: Execute one-shot target-excluded R1 development
         env:
@@ -210,7 +216,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: orbittrace-recurrent-core-expansion-r1-development-hashfix
+          name: orbittrace-recurrent-core-expansion-r1-development-hashfix2
           path: output
           if-no-files-found: error
           retention-days: 90
