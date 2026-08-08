@@ -6,12 +6,12 @@ import gzip
 import hashlib
 import importlib.util
 import json
-import math
 import types
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from orbittrace_v6_label_free_all_event_null.parallel_exact_rescore import install as install_parallel_exact
 
@@ -57,26 +57,34 @@ def load_module(path:Path,name:str)->types.ModuleType:
     module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
 
 
-def geometry_arrays(frame,columns:dict[str,str]):
-    ids=frame[columns["id"]].astype(str).str.strip().to_numpy()
-    sol=frame[columns["sol"]].to_numpy(dtype=np.float64)
-    lam=frame[columns["lam"]].to_numpy(dtype=np.float64)
-    bet=frame[columns["bet"]].to_numpy(dtype=np.float64)
-    vg=frame[columns["vg"]].to_numpy(dtype=np.float64)
+def geometry_arrays(frame:pd.DataFrame,columns:dict[str,str]):
+    ids=frame[columns["id"]].astype(str).to_numpy()
+    sol=pd.to_numeric(frame[columns["sol"]],errors="coerce").to_numpy(dtype=np.float64)
+    lam=pd.to_numeric(frame[columns["lam"]],errors="coerce").to_numpy(dtype=np.float64)
+    bet=pd.to_numeric(frame[columns["bet"]],errors="coerce").to_numpy(dtype=np.float64)
+    vg=pd.to_numeric(frame[columns["vg"]],errors="coerce").to_numpy(dtype=np.float64)
     return ids,sol,lam,bet,vg
 
 
 def valid_blind_excluded_mask(sol:np.ndarray,lam:np.ndarray,bet:np.ndarray,vg:np.ndarray,support:types.ModuleType)->np.ndarray:
-    valid=np.isfinite(sol)&np.isfinite(lam)&np.isfinite(bet)&np.isfinite(vg)&(vg>0.0)
+    valid=np.isfinite(sol)&np.isfinite(lam)&np.isfinite(bet)&np.isfinite(vg)
+    valid &= (sol>=0.0)&(sol<=360.0)
+    valid &= (lam>=0.0)&(lam<=360.0)
+    valid &= (bet>=-90.0)&(bet<=90.0)
+    valid &= (vg>=5.0)&(vg<=75.0)
     blind=(sol>=float(support.BLIND_LOW))&(sol<=float(support.BLIND_HIGH))
     return valid & ~blind
 
 
-def parse_geometry_only(support:types.ModuleType)->tuple[dict[int,list[dict[str,Any]]],dict[int,list[dict[str,Any]]],list[dict[str,Any]],set[str]]:
+def parse_geometry_only(support:types.ModuleType,base:types.ModuleType)->tuple[dict[int,list[dict[str,Any]]],dict[int,list[dict[str,Any]]],list[dict[str,Any]],set[str]]:
     scan={year:[] for year in YEARS}; calibration={year:[] for year in YEARS}; audits=[]; seen:set[str]=set()
     for key in MONTH_KEYS:
-        year=int(key[:4]); frame=support.read_gmn_frame(key); columns=support.column_map(frame)
-        # Critical firewall: no access to frame[columns["shower"]] anywhere in this function.
+        year=int(key[:4])
+        text=support.dd.get_monthly_file_content_by_date(key)
+        payload=text.encode("utf-8")
+        frame=support.read_gmn_frame(text)
+        columns=support.column_map(frame)
+        # Critical firewall: no access to the label-column values anywhere in this function.
         ids,sol,lam,bet,vg=geometry_arrays(frame,columns)
         keep=valid_blind_excluded_mask(sol,lam,bet,vg,support)
         raw=int(len(frame)); accepted=duplicates=0
@@ -85,12 +93,13 @@ def parse_geometry_only(support:types.ModuleType)->tuple[dict[int,list[dict[str,
             if not event_id or event_id in seen:
                 duplicates+=int(bool(event_id)); continue
             seen.add(event_id)
-            s=float(sol[int(index)]); lon=float((lam[int(index)]-s)%360.0)
+            s=float(sol[int(index)])
+            lon=float(base.wrap180(float(lam[int(index)])-s))
             event={"id":event_id,"year":year,"sol":s,"sun_lon":lon,"ecl_lat":float(bet[int(index)]),"vg":float(vg[int(index)]),"iau":0,"complex_key":"HIDDEN"}
             scan[year].append(event)
             calibration[year].append(dict(event,complex_key="SPORADIC"))
             accepted+=1
-        audits.append({"key":key,"raw_rows":raw,"geometry_rows_after_blind_and_dedup":accepted,"duplicates_removed":duplicates,"label_value_accessed":False,"blind_interval_removed_before_label_access":True})
+        audits.append({"key":key,"bytes":len(payload),"sha256":support.sha256_bytes(payload),"raw_rows":raw,"geometry_rows_after_blind_and_dedup":accepted,"duplicates_removed":duplicates,"columns":{"id":columns["id"],"sol":columns["sol"],"lam":columns["lam"],"bet":columns["bet"],"vg":columns["vg"],"label_name_present_but_value_unread":columns["label"]},"label_value_accessed":False,"blind_interval_removed_before_label_access":True})
         print(f"v6-LF geometry {key}: raw={raw:,} accepted={accepted:,}",flush=True)
     for year in YEARS:
         require(len(scan[year])==len(calibration[year]),f"all-event calibration count mismatch {year}")
@@ -103,7 +112,9 @@ def parse_geometry_only(support:types.ModuleType)->tuple[dict[int,list[dict[str,
 def parse_truth_after_freeze(support:types.ModuleType,expected_ids:set[str])->tuple[dict[str,str],list[dict[str,Any]]]:
     hidden:dict[str,str]={}; audits=[]; seen:set[str]=set()
     for key in MONTH_KEYS:
-        frame=support.read_gmn_frame(key); columns=support.column_map(frame)
+        text=support.dd.get_monthly_file_content_by_date(key)
+        frame=support.read_gmn_frame(text)
+        columns=support.column_map(frame)
         ids,sol,lam,bet,vg=geometry_arrays(frame,columns)
         keep=valid_blind_excluded_mask(sol,lam,bet,vg,support)
         selected=0; duplicates=0
@@ -114,7 +125,7 @@ def parse_truth_after_freeze(support:types.ModuleType,expected_ids:set[str])->tu
             seen.add(event_id)
             require(event_id in expected_ids,f"truth pass added pretruth-absent event {event_id}")
             # FIRST label-value access is after geometry validity, blind exclusion and duplicate resolution.
-            label=support.normalize_label(frame.iloc[int(index)][columns["shower"]])
+            label=support.normalize_label(frame.iloc[int(index)][columns["label"]])
             hidden[event_id]=label if label else "SPORADIC"
             selected+=1
         audits.append({"key":key,"truth_rows":selected,"duplicates_removed":duplicates,"label_value_accessed_only_after_blind_and_dedup":True})
@@ -142,7 +153,7 @@ def main()->int:
     candidate,base,scorer=support.load_sources(args)
     parallel=install_parallel_exact(v6,workers=4,min_parallel_records=256)
 
-    scan,calibration,geometry_audits,pretruth_ids=parse_geometry_only(support)
+    scan,calibration,geometry_audits,pretruth_ids=parse_geometry_only(support,base)
     audits=[]; anchors=[]; components=[]
     for year in YEARS:
         audit,year_anchors,year_components=v6.scan_year_v6(old,year,scan[year],calibration[year],candidate,base,scorer,support)
