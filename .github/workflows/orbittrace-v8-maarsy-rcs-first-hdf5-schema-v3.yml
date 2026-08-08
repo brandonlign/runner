@@ -1,0 +1,154 @@
+name: OrbitTrace v8 MAARSY RCS first HDF5 schema-only audit v3
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-rcs-first-hdf5-schema
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_MAARSY_RCS_STAGE0G_V3.md'
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen Stage-0G parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-rcs-first-hdf5-schema
+          fetch-depth: 1
+
+      - name: Enforce corrected source blobs and value-read prohibition
+        run: |
+          set -euo pipefail
+          M=orbittrace_v8_maarsy_2016_2023_preaccess/materialize_first_hdf5_stage0g.py
+          I=orbittrace_v8_maarsy_2016_2023_preaccess/inspect_first_hdf5_schema_stage0g.py
+          test "$(git hash-object "$M")" = 'f5c7bc58ee450c900e8c0797578b37c5cdefe311'
+          test "$(git hash-object "$I")" = 'c6583aeb10a0f5747aa82d2306b8a93f388fdbc5'
+          python -m py_compile "$M" "$I"
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_v8_maarsy_2016_2023_preaccess/inspect_first_hdf5_schema_stage0g.py')
+          tree=ast.parse(p.read_text())
+          banned_methods={'read_direct','asstr','__getitem__'}
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute):
+                  if n.func.attr in banned_methods:
+                      raise RuntimeError(f'banned HDF5 value-read method in inspector: {n.func.attr}')
+                  if n.func.attr in {'values','items','get'} and isinstance(n.func.value,ast.Attribute) and n.func.value.attr=='attrs':
+                      raise RuntimeError(f'attribute-value access forbidden: attrs.{n.func.attr}')
+              if isinstance(n,ast.Subscript):
+                  v=n.value
+                  if isinstance(v,ast.Name) and v.id in {'obj','f'}:
+                      raise RuntimeError(f'HDF5 object subscription forbidden: {v.id}[...]')
+                  if isinstance(v,ast.Attribute) and v.attr=='attrs':
+                      raise RuntimeError('HDF5 attribute subscription forbidden')
+          PY
+          ! find . -type f -iname 'kep_collect.h5' -print -quit | grep -q .
+          mkdir -p input output
+
+      - name: Install frozen structural HDF5 reader before data transport
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'h5py==3.11.0'
+          python - <<'PY'
+          import h5py
+          assert h5py.__version__=='3.11.0'
+          PY
+
+      - name: Request only first 256 MiB compressed range
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            --range 0-268435455 \
+            --max-filesize 268435456 \
+            -D output/http_headers.txt \
+            'https://zenodo.org/api/records/15553437/files/silseth_thesis_data.tar.gz/content' \
+            -o input/head256.gz
+          size=$(stat -c '%s' input/head256.gz)
+          test "$size" -gt 0
+          test "$size" -le 268435456
+          cr=$(grep -i '^content-range:' output/http_headers.txt | tail -1 | tr -d '\r')
+          test "$cr" = 'content-range: bytes 0-268435455/21485785089' || test "$cr" = 'Content-Range: bytes 0-268435455/21485785089'
+          printf '%s\n' "$size" > output/transported_compressed_bytes.txt
+          sha256sum input/head256.gz > output/bounded_range_sha256.txt
+
+      - name: Materialize exact first HDF5 and stop before tar padding
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_maarsy_2016_2023_preaccess/materialize_first_hdf5_stage0g.py \
+            --compressed-range input/head256.gz \
+            --hdf5-output input/kep_collect.h5 \
+            --audit-output output/materialization.json
+
+      - name: Enumerate HDF5 structural metadata only
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_maarsy_2016_2023_preaccess/inspect_first_hdf5_schema_stage0g.py \
+            --hdf5 input/kep_collect.h5 \
+            --output output/hdf5_schema.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/hdf5_schema.json').read_text())
+          assert r['hdf5_dataset_value_read'] is False
+          assert r['hdf5_attribute_value_read'] is False
+          assert r['event_scientific_value_interpreted'] is False
+          assert r['v8_scientific_evaluation_performed'] is False
+          assert r['target_information_access'] is False
+          assert r['gmn_stage_a_or_b_access'] is False
+          Path('output/result.json').write_text(json.dumps({
+            'verdict':'PASS_MAARSY_RCS_FIRST_HDF5_SCHEMA_ONLY',
+            'object_count':len(r['objects']),
+            'dataset_paths':[x['path'] for x in r['objects'] if x['object_type']=='dataset'],
+            'hdf5_dataset_value_read':False,
+            'hdf5_attribute_value_read':False,
+            'event_scientific_value_interpreted':False,
+            'target_information_access':False,
+            'next_step':'freeze exact coordinate/unit semantics from structural names and public documentation before any value access'
+          },indent=2,sort_keys=True)+'\n')
+          PY
+          rm -f input/kep_collect.h5 input/head256.gz
+          test ! -e input/kep_collect.h5
+
+      - name: Enforce exact decompression boundary and continued firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('output/materialization.json').read_text())
+          r=json.loads(Path('output/result.json').read_text())
+          assert m['uncompressed_bytes_emitted_exactly']==139030358
+          assert m['tar_padding_after_member_decompressed'] is False
+          assert m['next_tar_header_decompressed'] is False
+          assert m['dataset_value_read'] is False
+          assert m['attribute_value_read'] is False
+          assert r['hdf5_dataset_value_read'] is False
+          assert r['hdf5_attribute_value_read'] is False
+          assert r['event_scientific_value_interpreted'] is False
+          assert r['target_information_access'] is False
+          PY
+
+      - name: Record frozen source provenance
+        run: |
+          set -euo pipefail
+          sha256sum \
+            orbittrace_v8_maarsy_2016_2023_preaccess/MAARSY_RCS_STAGE0G_FIRST_HDF5_SCHEMA.md \
+            orbittrace_v8_maarsy_2016_2023_preaccess/MAARSY_RCS_STAGE0G_SOURCE_GUARD_CORRECTION.md \
+            orbittrace_v8_maarsy_2016_2023_preaccess/MAARSY_RCS_STAGE0G_MATERIALIZER_SCOPE_CORRECTION.md \
+            orbittrace_v8_maarsy_2016_2023_preaccess/materialize_first_hdf5_stage0g.py \
+            orbittrace_v8_maarsy_2016_2023_preaccess/inspect_first_hdf5_schema_stage0g.py \
+            > output/source_sha256.txt
+          git rev-parse HEAD > output/execution_source_commit.txt
+
+      - name: Upload schema-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-rcs-stage0g-first-hdf5-schema-v3
+          path: output
+          if-no-files-found: error
+          retention-days: 90
