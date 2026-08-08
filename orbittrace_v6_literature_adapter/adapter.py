@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 YEARS = (2023, 2025)
@@ -10,6 +11,7 @@ BLIND_LOW = 20.0
 BLIND_HIGH = 55.0
 FROZEN_V6_SHA256 = "a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9"
 SUPPORT_SOURCE_SHA256 = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
+ASCII_LETTER = re.compile(r"[A-Z]")
 
 
 def require(condition: bool, message: str) -> None:
@@ -26,8 +28,6 @@ def configure_transfer_modules(v6: Any, old: Any, support: Any) -> None:
     require(float(support.BLIND_LOW) == BLIND_LOW and float(support.BLIND_HIGH) == BLIND_HIGH,
             "blind interval changed")
 
-    # The frozen detector functions accept year/corpus as transport context.
-    # These bindings are fixed before any SonotaCo benchmark row is opened.
     v6.YEARS = YEARS
     old.YEARS = list(YEARS)
     support.YEARS = list(YEARS)
@@ -35,18 +35,36 @@ def configure_transfer_modules(v6: Any, old: Any, support: Any) -> None:
     support.CORPUS = CORPUS
 
 
+def native_background_token(token: str) -> bool:
+    """Exact source-audited native SonotaCo 2023/2025 background rule."""
+    token = str(token).strip().upper()
+    return token == "" or ASCII_LETTER.search(token) is None or token.startswith("SPO")
+
+
+def native_background_ids_from_tokens(
+    year: int,
+    scan_ids: set[str],
+    native_tokens_by_id: dict[str, str],
+) -> set[str]:
+    """
+    Reduce pre-ranking native shower-token access to a binary ID set.
+
+    Every exact scan ID must have its raw native token represented.  Non-background
+    tokens remain non-background even if they are unsupported or unmapped by the
+    later common-truth catalogue.  No ESV or shower-mapping rule is applied here.
+    """
+    require(year in YEARS, f"unexpected year {year}")
+    scan_ids = {str(x) for x in scan_ids}
+    tokens = {str(k): str(v) for k, v in native_tokens_by_id.items()}
+    require(set(tokens) == scan_ids, f"native-token universe mismatch {year}")
+    return {event_id for event_id, token in tokens.items() if native_background_token(token)}
+
+
 def calibration_events_from_native_sporadic(
     scan_by_year: dict[int, list[dict[str, Any]]],
     native_sporadic_ids_by_year: dict[int, set[str]],
 ) -> dict[int, list[dict[str, Any]]]:
-    """
-    Preserve the frozen v6 null-reservoir rule.
-
-    All exact competitor rows remain in the scan.  Only rows that the frozen
-    native parser classified as actual background/SPORADIC enter calibration.
-    Unsupported/unmapped non-background shower tokens are *not* silently
-    converted into calibration background.
-    """
+    """Preserve the frozen v6 native-background null-reservoir rule."""
     out: dict[int, list[dict[str, Any]]] = {}
     for year in YEARS:
         events = scan_by_year[year]
@@ -107,8 +125,6 @@ def run_v6_panel(
     primary_families = v6.build_family_track_v6(old, all_components, base, "v3")
     rescue_families = v6.build_family_track_v6(old, all_components, base, "fixed4_rescue")
 
-    # The rescue channel is deliberately returned separately.  It is never
-    # concatenated into or used to rerank the primary literature output.
     primary_payload = {
         "panel": panel,
         "years": list(YEARS),
@@ -130,26 +146,3 @@ def run_v6_panel(
         "primary_ranking_sha256_before_truth": primary_sha256,
         "primary_payload_bytes": len(canonical),
     }
-
-
-def native_sporadic_ids_from_parser_outputs(
-    year: int,
-    scan_ids: set[str],
-    labeled: list[dict[str, Any]],
-    sporadic: list[dict[str, Any]],
-    parser_gates: dict[str, bool],
-) -> set[str]:
-    """
-    Collapse pre-ranking label access to a binary calibration-reservoir set.
-
-    `labeled` is accepted only so the wrapper can assert ID disjointness; no
-    shower identity or complex_key is retained or returned from this function.
-    Full mapped truth must be parsed/evaluated only after the primary ranking
-    hash returned by `run_v6_panel` has been frozen.
-    """
-    require(year in YEARS, f"unexpected year {year}")
-    require(parser_gates and all(bool(v) for v in parser_gates.values()), f"parser gates failed {year}")
-    labeled_ids = {str(event["id"]) for event in labeled}
-    sporadic_ids = {str(event["id"]) for event in sporadic}
-    require(not (labeled_ids & sporadic_ids), f"labeled/sporadic overlap {year}")
-    return sporadic_ids & set(scan_ids)
