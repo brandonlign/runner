@@ -29,7 +29,8 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile orbittrace_v6_label_free_all_event_null/run_development.py orbittrace_v6_label_free_all_event_null/parallel_exact_rescore.py
-          echo '6bda25e9bba2b95812a46283083e3294c209c897e66e99ba71b52f6091137cf6  orbittrace_v6_label_free_all_event_null/run_development.py' | sha256sum -c -
+          test "$(git hash-object orbittrace_v6_label_free_all_event_null/run_development.py)" = 'd91a1bb22361536c770a8c3786e598586d89b70e'
+          sha256sum orbittrace_v6_label_free_all_event_null/run_development.py
           python - <<'PY'
           import ast
           from pathlib import Path
@@ -49,31 +50,41 @@ jobs:
           assert constants['V8_MACRO_F1']==0.1736657194465356
           assert constants['MIN_TOP100_PRECISION']==0.65
 
-          geom_node=defs['parse_geometry_only']
-          geom=ast.get_source_segment(text,geom_node)
-          shower_subscripts=[]
-          normalize_calls=[]
-          for n in ast.walk(geom_node):
-              if isinstance(n,ast.Subscript):
-                  segment=ast.get_source_segment(text,n) or ''
-                  if 'columns["shower"]' in segment or "columns['shower']" in segment:
-                      shower_subscripts.append(segment)
-              if isinstance(n,ast.Call):
-                  f=n.func
-                  name=f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '')
-                  if name=='normalize_label': normalize_calls.append(n.lineno)
-          assert shower_subscripts==[], shower_subscripts
-          assert normalize_calls==[], normalize_calls
+          arrays=ast.get_source_segment(text,defs['geometry_arrays'])
+          for key in ('id','sol','lam','bet','vg'):
+              assert f'columns["{key}"]' in arrays, key
+          assert 'columns["label"]' not in arrays
+          assert arrays.count('pd.to_numeric(')==4
+          assert 'errors="coerce"' in arrays
+
+          mask=ast.get_source_segment(text,defs['valid_blind_excluded_mask'])
+          for token in ('(sol>=0.0)&(sol<=360.0)','(lam>=0.0)&(lam<=360.0)','(bet>=-90.0)&(bet<=90.0)','(vg>=5.0)&(vg<=75.0)'):
+              assert token in mask, token
+          assert 'support.BLIND_LOW' in mask and 'support.BLIND_HIGH' in mask
+
+          geom=ast.get_source_segment(text,defs['parse_geometry_only'])
+          assert 'support.dd.get_monthly_file_content_by_date(key)' in geom
+          assert 'support.read_gmn_frame(text)' in geom
+          assert 'support.column_map(frame)' in geom
+          assert 'frame[columns["label"]]' not in geom
+          assert 'frame.iloc' not in geom
+          assert 'normalize_label' not in geom
+          assert 'base.wrap180(float(lam[int(index)])-s)' in geom
           assert 'complex_key":"HIDDEN"' in geom
           assert 'dict(event,complex_key="SPORADIC")' in geom
           assert 'len(scan[year])==len(calibration[year])' in geom
           assert '[e["id"] for e in scan[year]]==[e["id"] for e in calibration[year]]' in geom
+          # Recording the label column *name* in the audit is permitted; its values stay unread.
+          assert '"label_name_present_but_value_unread":columns["label"]' in geom
+          assert '"label_value_accessed":False' in geom
 
           truth=ast.get_source_segment(text,defs['parse_truth_after_freeze'])
+          assert 'support.dd.get_monthly_file_content_by_date(key)' in truth
+          assert 'support.read_gmn_frame(text)' in truth
           blind_pos=truth.index('keep=valid_blind_excluded_mask')
-          label_pos=truth.index('support.normalize_label(frame.iloc[int(index)][columns["shower"]])')
-          assert blind_pos < label_pos
-          assert 'event_id in seen' in truth and truth.index('event_id in seen') < label_pos
+          duplicate_pos=truth.index('event_id in seen')
+          label_pos=truth.index('support.normalize_label(frame.iloc[int(index)][columns["label"]])')
+          assert blind_pos < duplicate_pos < label_pos
           assert 'seen==expected_ids' in truth
 
           main=ast.get_source_segment(text,defs['main'])
@@ -81,6 +92,7 @@ jobs:
           truth_call=main.index('parse_truth_after_freeze(support,pretruth_ids)')
           eval_pos=main.index('v6.evaluate_families_v6(hidden_labels,primary,rescue,YEARS)')
           assert freeze_pos < truth_call < eval_pos
+          assert 'parse_geometry_only(support,base)' in main
           assert 'v6.scan_year_v6(old,year,scan[year],calibration[year]' in main
           assert 'v6.build_family_track_v6(old,components,base,"v3")' in main
           assert 'v6.build_family_track_v6(old,components,base,"fixed4_rescue")' in main
