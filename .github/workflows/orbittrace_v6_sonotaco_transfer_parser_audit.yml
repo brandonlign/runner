@@ -1,0 +1,70 @@
+name: OrbitTrace v6 SonotaCo parser transport audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py
+      - .github/workflows/orbittrace_v6_sonotaco_transfer_parser_audit.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v6-sonotaco-transfer-parser-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze
+      - name: Download exact frozen parser sources only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p source17 source19
+          gh run download 31199214174 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2015-2017-parser-transport --dir source17
+          gh run download 31203088669 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2019-parser-transport --dir source19
+          echo 'ee81d66b318ed2fa473ddfcee4c1cea0ef8ba08cba33da47103fd7c53ee625dc  source17/run_sonotaco_2017_transport_parser.py' | sha256sum -c -
+          echo '301a711e4de43566ba434f2d4a94fc38a85714a33dcee45e26cb19340101ea43  source19/run_sonotaco_2019_transport_parser.py' | sha256sum -c -
+      - name: Prove exact one-line reversible gate transport
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          from orbittrace_v6_sonotaco_2017_2019_transfer import parser_transport as t
+
+          for year,path in ((2017,Path('source17/run_sonotaco_2017_transport_parser.py')),(2019,Path('source19/run_sonotaco_2019_transport_parser.py'))):
+              raw=path.read_bytes(); text=raw.decode()
+              assert t.sha256_path(path)==t.PARSER_SHA256[year]
+              assert text.count(t.OBSOLETE_GATE_LINE)==1
+              changed=text.replace(t.OBSOLETE_GATE_LINE,t.V6_NONBINDING_LINE,1)
+              assert changed.replace(t.V6_NONBINDING_LINE,t.OBSOLETE_GATE_LINE,1)==text
+              assert changed.count(t.V6_NONBINDING_LINE)==1
+              assert '"blind_interval_removed_before_label_access": True' in text
+              assert 'if BLIND_SOLAR_MIN <= sol <= BLIND_SOLAR_MAX:' in text
+              assert text.index('if BLIND_SOLAR_MIN <= sol <= BLIND_SOLAR_MAX:') < text.index('token = row[index["shower"]]')
+              compile(changed,f'transported_{year}.py','exec')
+          wrapper=Path('orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py').read_text()
+          assert 'ARCHIVE_SHA256' in wrapper
+          assert '1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf' in wrapper
+          assert 'd49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4' in wrapper
+          assert 'obsolete_supported_code_gate_imported_into_v6": False' in wrapper
+          print('PASS_V6_SONOTACO_EXACT_PARSER_TRANSPORT_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        if: always()
+        run: |
+          test ! -e archive
+          test ! -e input
+          test ! -e output
+          echo NO_SONOTACO_ARCHIVE_NO_LABEL_VALUES_NO_TARGET_ACCESS
