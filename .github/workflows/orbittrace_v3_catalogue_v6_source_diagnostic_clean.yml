@@ -36,7 +36,7 @@ jobs:
             > /tmp/run_v3_primary_catalogue_v6.py
           echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/run_v3_primary_catalogue_v6.py' | sha256sum -c -
 
-      - name: Audit scan_year_v6 definition without catalogue access
+      - name: Audit scan_year_v6 and intended component API without catalogue access
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -50,25 +50,44 @@ jobs:
           lines = text.splitlines()
           print(f'SCAN_YEAR_V6_LINES={fn.lineno}-{fn.end_lineno}')
           for i in range(fn.lineno, fn.end_lineno + 1):
-              if 350 <= i <= 470:
+              if 250 <= i <= 470:
                   print(f'{i:04d}: {lines[i-1]}')
 
           stores = {}
           loads = []
+          calls = []
           for node in ast.walk(fn):
               if isinstance(node, ast.Name):
                   if isinstance(node.ctx, ast.Store):
                       stores.setdefault(node.id, []).append(node.lineno)
                   elif isinstance(node.ctx, ast.Load):
                       loads.append((node.id, node.lineno))
+              elif isinstance(node, ast.Call):
+                  f = node.func
+                  if isinstance(f, ast.Name):
+                      name = f.id
+                  elif isinstance(f, ast.Attribute):
+                      name = f.attr
+                  else:
+                      name = '<dynamic>'
+                  if 'component' in name.lower() or 'anchor' in name.lower():
+                      calls.append((name, node.lineno, ast.get_source_segment(text, node)))
 
           for name in ('primary_components', 'rescue_components', 'components'):
               print(f'{name}_stores={stores.get(name, [])}')
               print(f'{name}_loads={[ln for n, ln in loads if n == name]}')
+          print('COMPONENT_RELATED_CALLS_IN_SCAN_YEAR_V6')
+          for row in sorted(calls, key=lambda x: x[1]):
+              print(row)
+
+          top_defs = [n.name for n in tree.body if isinstance(n, ast.FunctionDef)]
+          print('TOP_LEVEL_COMPONENT_FUNCTIONS=', [n for n in top_defs if 'component' in n.lower() or 'anchor' in n.lower()])
 
           assert not stores.get('primary_components'), stores.get('primary_components')
+          assert not stores.get('rescue_components'), stores.get('rescue_components')
           assert any(n == 'primary_components' for n, _ in loads)
-          print('PASS_V6_UNDEFINED_PRIMARY_COMPONENTS_SOURCE_DIAGNOSTIC')
+          assert any(n == 'rescue_components' for n, _ in loads)
+          print('PASS_V6_COMPONENT_BUILDER_SOURCE_DIAGNOSTIC')
           PY
 
       - name: Assert source-only boundary
