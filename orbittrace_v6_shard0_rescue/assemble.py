@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from orbittrace_v6_checkpointed_fallback.common import require, sha256_bytes
-from orbittrace_v6_exact_fanout_v2.run_exact_center_shard import balanced_center_assignment
-from orbittrace_v6_shard0_rescue.run_slice import build_rescue_bins
+from orbittrace_v6_shard0_rescue.run_slice import build_rescue_bins, parent_center_assignment
 
 YEAR = 2023
 PARENT_SHARD_COUNT = 6
@@ -35,7 +34,7 @@ def main() -> int:
     args=parse_args(); args.output.mkdir(parents=True,exist_ok=True)
     pre,pre_sha=load_with_sha(args.preexact_checkpoint)
     require(pre["format"]=="orbittrace-v6-preexact-fanout-v2" and int(pre["year"])==YEAR,"wrong preexact")
-    parent_centers=balanced_center_assignment(pre,PARENT_SHARD_COUNT)[PARENT_SHARD_INDEX]
+    parent_centers=parent_center_assignment(pre,PARENT_SHARD_COUNT)[0][PARENT_SHARD_INDEX]
     files=sorted(args.slices_dir.glob("shard0_rescue_*.pkl")); require(bool(files),"no rescue slices")
     rescue_count=None; seen=set(); by_center:dict[float,list[dict[str,Any]]]=defaultdict(list); loads=None
     for path in files:
@@ -49,7 +48,7 @@ def main() -> int:
         current=[int(v) for v in obj["estimated_loads"]]; loads=current if loads is None else loads; require(current==loads,"rescue schedules differ")
         for item in obj["slices"]: by_center[float(item["center"])].append(item)
     require(rescue_count is not None and seen==set(range(rescue_count)),f"incomplete rescue indices {seen}")
-    expected_bins,expected_loads=build_rescue_bins(pre,rescue_count); require(loads==expected_loads,"rescue load plan changed")
+    _expected_bins,expected_loads=build_rescue_bins(pre,rescue_count); require(loads==expected_loads,"rescue load plan changed")
 
     exact_by_center={}
     for center in parent_centers:
