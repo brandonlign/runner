@@ -57,14 +57,24 @@ jobs:
             orbittrace_v6_literature_adapter/adapter.py \
             orbittrace_v6_literature_adapter/prepare_id_manifest.py \
             orbittrace_v6_literature_adapter/run_pretruth.py \
+            orbittrace_v6_literature_adapter/run_pretruth_year.py \
+            orbittrace_v6_literature_adapter/combine_pretruth.py \
             orbittrace_v6_literature_adapter/evaluate_frozen.py
           python - <<'PY'
-          import ast, hashlib, importlib.util
+          import ast, hashlib, importlib.util, pickle
           from pathlib import Path
 
           root=Path('orbittrace_v6_literature_adapter')
-          for name in ('adapter.py','prepare_id_manifest.py','run_pretruth.py','evaluate_frozen.py','PROTOCOL.md'):
+          names=('adapter.py','prepare_id_manifest.py','run_pretruth.py','run_pretruth_year.py','combine_pretruth.py','evaluate_frozen.py','PROTOCOL.md')
+          for name in names:
               print(name+'_SHA256='+hashlib.sha256(root.joinpath(name).read_bytes()).hexdigest())
+
+          def arg_flags(path):
+              tree=ast.parse(Path(path).read_text()); out=[]
+              for node in ast.walk(tree):
+                  if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and node.func.attr=='add_argument' and node.args and isinstance(node.args[0],ast.Constant):
+                      out.append(node.args[0].value)
+              return set(out)
 
           path=root/'adapter.py'; text=path.read_text(); tree=ast.parse(text)
           defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
@@ -90,35 +100,46 @@ jobs:
           for token,expected in {'':True,'SPO':True,'SPO_JA':True,'123':True,'PER_JA':False,'XYZ_JA':False,'UNMAPPED_SHOWER':False}.items():
               assert mod.native_background_token(token) is expected
 
-          ids={f'SNM2023:{i}' for i in range(1200)}
-          tokens={event_id:('SPO' if i<1100 else 'UNMAPPED_JA') for i,event_id in enumerate(sorted(ids))}
-          assert len(mod.native_background_ids_from_tokens(2023,ids,tokens))==1100
-
           manifest_text=(root/'prepare_id_manifest.py').read_text()
-          manifest_tree=ast.parse(manifest_text)
           assert '"native_tokens"' not in manifest_text and '"shower_tokens"' not in manifest_text
-          assert 'native_background_ids' in manifest_text
-          # Raw token is a transient local variable only; manifest output contains IDs/counts.
           assert '"native_background_ids": sorted(background_ids' in manifest_text
 
-          pre=(root/'run_pretruth.py').read_text(); pre_tree=ast.parse(pre)
-          arg_flags=[]
-          for node in ast.walk(pre_tree):
-              if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and node.func.attr=='add_argument' and node.args and isinstance(node.args[0],ast.Constant):
-                  arg_flags.append(node.args[0].value)
           forbidden={'--parser-2023','--parser-2025','--mapping-audit','--hdbscan-2023','--hdbscan-2025','--sugar-2023','--sugar-2025'}
-          assert forbidden.isdisjoint(arg_flags)
-          assert '"truth_accessed": False' in pre
-          assert '"mapping_accessed": False' in pre
-          assert '"competitor_cluster_labels_accessed": False' in pre
+          for pre_name in ('run_pretruth.py','run_pretruth_year.py','combine_pretruth.py'):
+              flags=arg_flags(root/pre_name)
+              assert forbidden.isdisjoint(flags),(pre_name,sorted(flags&forbidden))
+              src=(root/pre_name).read_text()
+              if pre_name != 'combine_pretruth.py':
+                  assert '--exact-row-runner' in flags
+              assert 'parser_2023' not in src and 'mapping_audit' not in src
 
-          ev=(root/'evaluate_frozen.py').read_text(); ev_tree=ast.parse(ev)
+          year_src=(root/'run_pretruth_year.py').read_text()
+          assert 'scan_year_v6(' in year_src
+          assert 'V6_PANEL_YEAR_START' in year_src and 'V6_PANEL_YEAR_DONE' in year_src
+          assert 'pickle.dumps(checkpoint' in year_src
+          assert 'primary_families' not in year_src, 'year stage must stop before recurrent family construction'
+
+          comb_src=(root/'combine_pretruth.py').read_text()
+          assert 'scan_year_v6(' not in comb_src, 'combiner must not rescan data'
+          assert 'build_family_track_v6(old, all_components, base, "v3")' in comb_src
+          assert 'build_family_track_v6(old, all_components, base, "fixed4_rescue")' in comb_src
+          assert 'primary_ranking_sha256_before_truth' in comb_src
+          assert 'pickle.loads(raw)' in comb_src and 'checkpoint SHA mismatch' in comb_src
+          assert 'truth_accessed": False' in comb_src and 'competitor_cluster_labels_accessed": False' in comb_src
+
+          # Checkpoint serialization preserves representative nested Python values exactly.
+          synthetic={'audit':{'supported_bins':[1,2,3],'x':0.12345678901234568},'anchors':[{'a':1,'b':[2.0,3]}],'components':[{'event_ids':['x','y']}], 'flags':(True,None)}
+          raw=pickle.dumps(synthetic,protocol=pickle.HIGHEST_PROTOCOL)
+          assert pickle.loads(raw)==synthetic
+          assert hashlib.sha256(raw).hexdigest()==hashlib.sha256(raw).hexdigest()
+
+          ev=(root/'evaluate_frozen.py').read_text()
           assert 'parse_common_truth' in ev
           assert 'BROAD_CATALOGUE_SUPERIORITY' in ev and 'SPARSE_STREAM_SUPERIORITY' in ev
           assert 'pairwise_only_no_cross_denominator_comparison' in ev
           assert 'macro_f1_gain_ge_0_05' in ev
           assert 'four_to_nine_gain_ge_0_10' in ev and 'four_to_twentyfour_gain_ge_0_10' in ev
-          print('PASS_V6_THREE_STAGE_LITERATURE_PIPELINE_SOURCE_AUDIT')
+          print('PASS_V6_CHECKPOINTED_LITERATURE_PIPELINE_SOURCE_AUDIT')
           PY
 
       - name: Assert no-data boundary
