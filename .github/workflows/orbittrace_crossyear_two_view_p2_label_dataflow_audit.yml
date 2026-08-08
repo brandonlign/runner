@@ -1,0 +1,48 @@
+name: OrbitTrace P2 pretruth label dataflow audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/run_development.py
+      - orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py
+      - orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py
+      - orbittrace_crossyear_two_view_membership_p2/audit_pretruth_label_dataflow.py
+      - .github/workflows/orbittrace_crossyear_two_view_p2_label_dataflow_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-p2-pretruth-label-dataflow-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact canonical P2 v2 runtime
+        run: |
+          set -euo pipefail
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_v2.py' | sha256sum -c -
+          python -m py_compile /tmp/p2_v2.py
+      - name: Prove known-shower truth is unread until both pretruth freezes
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/audit_pretruth_label_dataflow.py /tmp/p2_v2.py
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e orbittrace_crossyear_two_view_membership_p2/RUN_V2.md
+          echo NO_P2_SCIENCE_NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION
