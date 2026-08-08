@@ -19,27 +19,70 @@ jobs:
         with:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
-      - name: Reconstruct exact frozen v6 and print reusable interfaces
+      - name: Reconstruct exact repaired v6 source only
         run: |
           set -euo pipefail
           cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
-            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.py
-          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.py' | sha256sum -c -
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
           python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          text=Path('/tmp/v6.frozen.py').read_text()
+          before='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    components = primary_components + rescue_components
+'''
+          after='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    primary_components = component_records_track_v6(old, year, primary_capped, event_lookup, base, "v3")
+    rescue_components = component_records_track_v6(old, year, rescue_capped, event_lookup, base, "fixed4_rescue")
+    components = primary_components + rescue_components
+'''
+          assert text.count(before)==1
+          patched=text.replace(before,after,1)
+          assert patched.replace(after,before,1)==text
+          Path('/tmp/v6.repaired.py').write_text(patched)
+          digest=hashlib.sha256(patched.encode()).hexdigest()
+          assert digest=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          print('PASS_EXACT_REPAIRED_V6_SOURCE',digest)
+          PY
+          python -m py_compile /tmp/v6.repaired.py
+      - name: Print reusable scan and calibration interfaces
+        run: |
+          python - <<'PY' | tee /tmp/function_inventory.txt
           import ast
           from pathlib import Path
-          text=Path('/tmp/v6.py').read_text(); tree=ast.parse(text); lines=text.splitlines()
+          text=Path('/tmp/v6.repaired.py').read_text(); tree=ast.parse(text); lines=text.splitlines()
           defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
           print('TOP_LEVEL_DEFS',list(defs))
-          for name in ['build_family_track_v6','evaluate_families_v6']:
-              fn=defs.get(name)
-              if fn is None:
-                  print('MISSING',name); continue
+          selected=[]
+          for name,node in defs.items():
+              src=ast.get_source_segment(text,node) or ''
+              key=(name+' '+src).lower()
+              if any(token in key for token in ('calibrat','supported_bin','null','scan_year_v6','build_family_track_v6','evaluate_families_v6')):
+                  selected.append(name)
+          print('SELECTED',selected)
+          for name in selected:
+              fn=defs[name]
               print(f'===== {name} {fn.lineno}-{fn.end_lineno} =====')
               print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(fn.lineno,fn.end_lineno+1)))
           print('PASS_V6_TRANSFER_SOURCE_PROBE')
           PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-repaired-source-transfer-probe
+          path: |
+            /tmp/v6.repaired.py
+            /tmp/function_inventory.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Assert source-only boundary
+        if: always()
         run: |
           test ! -e input
           test ! -e output
