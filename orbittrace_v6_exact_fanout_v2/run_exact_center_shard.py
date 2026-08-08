@@ -44,24 +44,40 @@ def load_preexact(path: Path, year: int) -> dict[str, Any]:
     return obj
 
 
-def balanced_center_shards(pre: dict[str, Any], shard_count: int) -> tuple[list[list[float]], list[int]]:
+def balanced_center_shards(pre: dict[str, Any], shard_count: int) -> tuple[list[list[float]], list[int], list[int]]:
     require(shard_count > 0, "shard_count must be positive")
     bins: list[list[float]] = [[] for _ in range(shard_count)]
-    loads = [0 for _ in range(shard_count)]
-    items = [
-        (float(center), len(pre["centers"][float(center)]["records"]))
-        for center in pre["ordered_centers"]
-    ]
-    # Longest-processing-time greedy scheduling. Proposal count is a pre-truth,
-    # label-free compute-cost proxy and does not alter any scientific ordering.
-    for center, count in sorted(items, key=lambda item: (-item[1], item[0])):
-        target = min(range(shard_count), key=lambda index: (loads[index], index))
+    proposal_loads = [0 for _ in range(shard_count)]
+    cost_loads = [0 for _ in range(shard_count)]
+    items: list[tuple[float, int, int, int]] = []
+    for center in pre["ordered_centers"]:
+        center = float(center)
+        proposal_count = len(pre["centers"][center]["records"])
+        window_count = len(pre["centers"][center]["window_event_ids"])
+        # exact_rescore_window_v6 evaluates each retained proposal against the
+        # center's local event window. proposal_count * window_count is therefore
+        # a deterministic pre-truth compute-cost proxy that uses no labels,
+        # scores, truth identities, or target-region information.
+        cost = proposal_count * window_count
+        items.append((center, proposal_count, window_count, cost))
+
+    # Longest-processing-time greedy scheduling under the stronger cost proxy.
+    # This changes only which independent runner computes a center. Each center
+    # still calls the immutable exact_rescore_window_v6 once and replay restores
+    # the original scientific center/proposal order with hash checks.
+    for center, proposal_count, _window_count, cost in sorted(items, key=lambda item: (-item[3], item[0])):
+        target = min(range(shard_count), key=lambda index: (cost_loads[index], proposal_loads[index], index))
         bins[target].append(center)
-        loads[target] += count
+        proposal_loads[target] += proposal_count
+        cost_loads[target] += cost
+
     for values in bins:
         values.sort()
-    require(sorted(center for values in bins for center in values) == sorted(center for center, _ in items), "balanced shard coverage changed")
-    return bins, loads
+    require(
+        sorted(center for values in bins for center in values) == sorted(center for center, *_rest in items),
+        "balanced shard coverage changed",
+    )
+    return bins, proposal_loads, cost_loads
 
 
 def main() -> int:
@@ -85,11 +101,17 @@ def main() -> int:
     event_lookup = {str(row["id"]): row for row in scan}
 
     config = install(v6, workers=args.workers, min_parallel_records=256)
-    shard_centers, shard_loads = balanced_center_shards(pre, args.shard_count)
+    shard_centers, proposal_loads, cost_loads = balanced_center_shards(pre, args.shard_count)
     selected = shard_centers[args.shard_index]
     require(bool(selected), "empty exact center shard")
     exact_by_center: dict[float, list[dict[str, Any]]] = {}
-    print(f"V6_FANOUT_BALANCE year={args.year} loads={shard_loads} selected_load={shard_loads[args.shard_index]}", flush=True)
+    print(
+        f"V6_FANOUT_BALANCE year={args.year} "
+        f"proposal_loads={proposal_loads} cost_proxy_loads={cost_loads} "
+        f"selected_proposals={proposal_loads[args.shard_index]} "
+        f"selected_cost_proxy={cost_loads[args.shard_index]}",
+        flush=True,
+    )
 
     for center in selected:
         spec = pre["centers"][center]
@@ -114,8 +136,11 @@ def main() -> int:
         "preexact_sha256": sha256_bytes(args.preexact_checkpoint.read_bytes()),
         "scan_rows_sha256": pre["scan_rows_sha256"],
         "centers": selected,
-        "scheduled_proposals": shard_loads[args.shard_index],
-        "all_shard_loads": shard_loads,
+        "scheduled_proposals": proposal_loads[args.shard_index],
+        "all_shard_loads": proposal_loads,
+        "scheduled_cost_proxy": cost_loads[args.shard_index],
+        "all_shard_cost_proxy_loads": cost_loads,
+        "cost_proxy_definition": "proposal_count * window_event_count",
         "exact_by_center": exact_by_center,
         "executor": config,
         "firewall": {"target_interval_remains_excluded": True, "labels_not_evaluated": True},
@@ -125,7 +150,12 @@ def main() -> int:
     path.write_bytes(raw)
     digest = sha256_bytes(raw)
     path.with_suffix(".sha256").write_text(digest + "\n")
-    print(f"PASS_V6_FANOUT_EXACT_SHARD year={args.year} shard={args.shard_index}/{args.shard_count} centers={len(selected)} proposals={shard_loads[args.shard_index]:,} sha={digest}", flush=True)
+    print(
+        f"PASS_V6_FANOUT_EXACT_SHARD year={args.year} shard={args.shard_index}/{args.shard_count} "
+        f"centers={len(selected)} proposals={proposal_loads[args.shard_index]:,} "
+        f"cost_proxy={cost_loads[args.shard_index]:,} sha={digest}",
+        flush=True,
+    )
     return 0
 
 
