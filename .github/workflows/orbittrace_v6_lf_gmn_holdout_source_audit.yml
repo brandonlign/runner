@@ -1,0 +1,74 @@
+name: OrbitTrace v6-LF GMN 2024/2025 holdout source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-fanout-v1
+    paths:
+      - orbittrace_v6_lf_gmn_2024_2025_holdout/**
+      - .github/workflows/orbittrace_v6_lf_gmn_holdout_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-gmn-2024-2025-holdout-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-gmn-2024-2025-holdout-fanout-freeze
+      - name: Prove prospectively frozen year-only transport
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_lf_gmn_2024_2025_holdout/*.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/holdout_context.py')
+          text=p.read_text(); tree=ast.parse(text)
+          constants={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: constants[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert constants['HOLDOUT_YEARS']==(2024,2025)
+          assert constants['HOLDOUT_CORPUS']=='orbittrace-v6-lf-gmn-2024-2025-temporal-holdout'
+          assert 'lf.YEARS=HOLDOUT_YEARS' in text
+          assert 'lf.MONTH_KEYS=HOLDOUT_MONTH_KEYS' in text
+          configure=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='configure_runtime')
+          cfg=ast.get_source_segment(text,configure)
+          for token in ('old.YEARS=HOLDOUT_YEARS','old.MONTH_KEYS=HOLDOUT_MONTH_KEYS','old.CORPUS=HOLDOUT_CORPUS','support.YEARS=HOLDOUT_YEARS','support.MONTH_KEYS=HOLDOUT_MONTH_KEYS','support.CORPUS=HOLDOUT_CORPUS','v6.CORPUS=HOLDOUT_CORPUS'):
+              assert token in cfg, token
+          for forbidden in ('ALPHA','THRESH','RADIUS','SHORTLIST','COMPONENT','PROPOSAL','CALIBRATION_PER_BIN','EPISODE_SIZE','TOP_K'):
+              assert forbidden not in cfg, forbidden
+
+          capture=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/capture_preexact_year.py').read_text()
+          assert 'lf.parse_geometry_only(support,base)' in capture
+          assert 'ctx.configure_runtime(v6,old,support)' in capture
+          assert 'len(year_audits)==12' in capture
+          assert 'label_values_not_accessed' in capture and 'all_event_calibration' in capture
+          assert "'blind_exclusion':[20.0,55.0]" in capture
+
+          protocol=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/PROTOCOL.md').read_text()
+          assert 'before any v6-LF development result is available' in protocol
+          assert 'GMN 2024 and GMN 2025' in protocol
+          assert 'qualified known-shower matches >= 90' in protocol
+          assert 'recovery@100 >= 55' in protocol
+          assert 'MRR >= 0.040' in protocol
+          assert 'top-100 dominant-label precision >= 0.60' in protocol
+          assert 'macro F1 >= 0.15' in protocol
+          assert 'POWER_INCONCLUSIVE_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT' in protocol
+          assert 'BROAD_CATALOGUE_SUPERIORITY' in protocol and 'SPARSE_STREAM_SUPERIORITY' in protocol
+          print('PASS_V6_LF_GMN_2024_2025_HOLDOUT_SOURCE_AUDIT')
+          PY
+      - name: Assert no-holdout-data boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_GMN_2024_2025_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
