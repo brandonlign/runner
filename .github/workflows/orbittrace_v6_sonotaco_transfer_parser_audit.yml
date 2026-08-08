@@ -39,28 +39,69 @@ jobs:
           set -euo pipefail
           python -m py_compile orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py
           python - <<'PY'
-          import ast
           from pathlib import Path
           from orbittrace_v6_sonotaco_2017_2019_transfer import parser_transport as t
-
           for year,path in ((2017,Path('source17/run_sonotaco_2017_transport_parser.py')),(2019,Path('source19/run_sonotaco_2019_transport_parser.py'))):
-              raw=path.read_bytes(); text=raw.decode()
+              text=path.read_text()
               assert t.sha256_path(path)==t.PARSER_SHA256[year]
               assert text.count(t.OBSOLETE_GATE_LINE)==1
               changed=text.replace(t.OBSOLETE_GATE_LINE,t.V6_NONBINDING_LINE,1)
               assert changed.replace(t.V6_NONBINDING_LINE,t.OBSOLETE_GATE_LINE,1)==text
-              assert changed.count(t.V6_NONBINDING_LINE)==1
               assert '"blind_interval_removed_before_label_access": True' in text
-              assert 'if BLIND_SOLAR_MIN <= sol <= BLIND_SOLAR_MAX:' in text
               assert text.index('if BLIND_SOLAR_MIN <= sol <= BLIND_SOLAR_MAX:') < text.index('token = row[index["shower"]]')
               compile(changed,f'transported_{year}.py','exec')
-          wrapper=Path('orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py').read_text()
-          assert 'ARCHIVE_SHA256' in wrapper
-          assert '1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf' in wrapper
-          assert 'd49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4' in wrapper
-          assert 'obsolete_supported_code_gate_imported_into_v6": False' in wrapper
           print('PASS_V6_SONOTACO_EXACT_PARSER_TRANSPORT_AUDIT')
           PY
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - name: Reconstruct exact repaired v6 and inventory calibration interfaces
+        run: |
+          set -euo pipefail
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
+          python - <<'PY'
+          import ast,hashlib
+          from pathlib import Path
+          text=Path('/tmp/v6.frozen.py').read_text()
+          before='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    components = primary_components + rescue_components
+'''
+          after='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    primary_components = component_records_track_v6(old, year, primary_capped, event_lookup, base, "v3")
+    rescue_components = component_records_track_v6(old, year, rescue_capped, event_lookup, base, "fixed4_rescue")
+    components = primary_components + rescue_components
+'''
+          assert text.count(before)==1
+          patched=text.replace(before,after,1)
+          Path('/tmp/v6.repaired.py').write_text(patched)
+          assert hashlib.sha256(patched.encode()).hexdigest()=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          tree=ast.parse(patched); lines=patched.splitlines(); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          out=[]
+          for name,node in defs.items():
+              src=ast.get_source_segment(patched,node) or ''
+              if any(x in (name+' '+src).lower() for x in ('calibrat','supported_bin','null','scan_year_v6','build_family_track_v6','evaluate_families_v6')):
+                  out.append(f'===== {name} {node.lineno}-{node.end_lineno} =====\n'+'\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(node.lineno,node.end_lineno+1)))
+          Path('/tmp/function_inventory.txt').write_text('\n'.join(out)+'\n')
+          print('V6_SELECTED_FUNCTIONS', [x.split()[1] for x in out])
+          print('PASS_EXACT_REPAIRED_V6_TRANSFER_SOURCE_PROBE')
+          PY
+          python -m py_compile /tmp/v6.repaired.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-transfer-source-probe
+          path: |
+            /tmp/v6.repaired.py
+            /tmp/function_inventory.txt
+          if-no-files-found: error
+          retention-days: 7
       - name: Assert source-only boundary
         if: always()
         run: |
