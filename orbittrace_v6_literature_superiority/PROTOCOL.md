@@ -49,6 +49,14 @@ The exact-row universes for Sugar and HDBSCAN are different. Therefore **no F1 v
 
 For each comparator/year, report the common-universe size and evaluate v6 and that comparator on identical rows and identical post-freeze truth. Never select the more favorable comparator denominator after seeing results.
 
+### Information-parity and calibration-side-information boundary
+
+The matched benchmark is **event-row matched and post-freeze-truth matched, but not strictly detector-input-information matched**. The frozen catalogue-v6 architecture constructs its Mondrian null reservoir from a one-bit native SonotaCo background designation derived from the raw native shower token (`token == ""`, no ASCII letter, or token beginning with `SPO`). The source-audited exact-row adapter retains only the resulting binary background-event ID set: it performs no IAU mapping, retains no shower identity, and exposes no target-region event. Sugar and catalogue HDBSCAN do not receive this native background bit as detector input in their frozen implementations.
+
+This asymmetry is part of the already-frozen v6 method and therefore may not be removed, weakened, or supplemented after seeing benchmark outcomes. Conversely, it must not be hidden in the interpretation. A matched-benchmark win supports superiority of the **frozen operational v6 pipeline as deployed with its native-background calibration** on the specified SonotaCo pairwise universes. It does **not**, by itself, establish same-information or fully label-free algorithmic superiority over Sugar/HDBSCAN. Any paper, abstract, figure, or target-authorization record relying on this benchmark must disclose this one-bit calibration side information and preserve that claim boundary.
+
+This clarification changes no scientific gate, denominator, comparator, detector input, score, threshold, or activation rule; it is frozen before the v6 development and matched-literature outcomes are known.
+
 ### External generalization
 
 The earlier proposed CAMSv3 2017/2018 route is invalid: the official CAMSv3 catalogue ends at 2016, so those intended files do not exist. No CAMSv3 2017/2018 result may be used as a validation claim.
@@ -79,7 +87,7 @@ Every required annual condition must hold in **both 2025 and 2023**. A tie is no
 
 ### A. `BROAD_CATALOGUE_SUPERIORITY`
 
-This is the only matched-benchmark outcome authorizing the broad statement that v6 beat both implemented established catalogue methods.
+This is the only matched-benchmark outcome authorizing the broad statement that v6 beat both implemented established catalogue methods, subject to the information-parity claim boundary above.
 
 The following conditions must hold **separately against Sugar on the Sugar exact-row universe and against HDBSCAN on the HDBSCAN exact-row universe**:
 
@@ -93,7 +101,7 @@ No cross-comparator denominator mixing is allowed.
 
 ### B. `SPARSE_STREAM_SUPERIORITY`
 
-This authorizes only a scoped claim of superiority for sparse/small optical populations.
+This authorizes only a scoped claim of superiority for sparse/small optical populations, subject to the information-parity claim boundary above.
 
 Separately against both Sugar and HDBSCAN on their exact pairwise universes:
 
