@@ -1,0 +1,81 @@
+name: OrbitTrace v6-LF matched literature source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-literature-adapter-freeze
+    paths:
+      - orbittrace_v6_literature_adapter/run_pretruth_year_v6_lf.py
+      - .github/workflows/orbittrace_v6_lf_matched_literature_execution.yml
+      - .github/workflows/orbittrace_v6_lf_literature_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-literature-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-literature-freeze
+      - name: Prove all-event null and matched pairwise boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_literature_adapter/run_pretruth_year_v6_lf.py orbittrace_v6_literature_adapter/combine_pretruth.py orbittrace_v6_literature_adapter/evaluate_frozen.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          p=Path('orbittrace_v6_literature_adapter/run_pretruth_year_v6_lf.py')
+          text=p.read_text(); tree=ast.parse(text); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          main=ast.get_source_segment(text,defs['main'])
+          assert 'native_background_ids' in main
+          assert 'native_background_ids <= scan_ids' in main
+          assert 'calibration = [dict(event, complex_key="SPORADIC") for event in scan_events]' in main
+          assert 'len(calibration) == len(scan_events)' in main
+          assert '[str(e["id"]) for e in calibration] == [str(e["id"]) for e in scan_events]' in main
+          assert 'native_background_membership_used_for_calibration": False' in main
+          assert 'calibration_reservoir": "all exact matched scan rows"' in main
+          assert 'truth_accessed": False' in main and 'mapping_accessed": False' in main
+          assert 'competitor_cluster_labels_accessed": False' in main
+          assert 'install_parallel_exact(v6, workers=args.parallel_exact_workers, min_parallel_records=256)' in main
+          assert main.count('v6.scan_year_v6(')==1
+
+          combine=Path('orbittrace_v6_literature_adapter/combine_pretruth.py').read_text()
+          # Recurrent-family combination may use scan/count identities, but it must not require the competitor-native
+          # background count to equal the method calibration count: v6-LF deliberately calibrates on all matched rows.
+          forbidden=(
+              'calibration_count"] == int(entry["native_background_count"]',
+              "calibration_count'] == int(entry['native_background_count']",
+              'calibration_count"] == checkpoint["native_background_count"]',
+          )
+          assert not any(token in combine for token in forbidden), [t for t in forbidden if t in combine]
+
+          workflow=Path('.github/workflows/orbittrace_v6_lf_matched_literature_execution.yml').read_text()
+          assert 'agent/orbittrace-v6-lf-literature-freeze' in workflow
+          assert 'orbittrace_v6_literature_adapter/RUN_V6_LF.md' in workflow
+          assert 'EXECUTE_AFTER_V6_LF_DEVELOPMENT_PASS' in workflow
+          assert '--name orbittrace-v6-lf-all-event-null-development-v2' in workflow
+          assert "r['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'" in workflow
+          assert "r['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'" in workflow
+          assert 'panel: [hdbscan, sugar]' in workflow and 'year: [2023, 2025]' in workflow
+          assert 'run_pretruth_year_v6_lf.py' in workflow
+          assert '--parallel-exact-workers 4' in workflow
+          assert workflow.index('Freeze recurrent rankings before truth') < workflow.index('Download truth metadata only after v6-LF ranking freeze')
+          assert "{'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY','NO_LITERATURE_SUPERIORITY'}" in workflow
+          assert "{'2023':26460,'2025':19658}" in workflow
+          assert "{'2023':30414,'2025':23200}" in workflow
+          print('PASS_V6_LF_MATCHED_LITERATURE_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output_scan
+          test ! -e output_literature
+          echo NO_BENCHMARK_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
