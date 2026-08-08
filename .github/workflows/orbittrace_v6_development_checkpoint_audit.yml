@@ -37,25 +37,43 @@ jobs:
           from pathlib import Path
           text=Path('/tmp/v6.py').read_text(); lines=text.splitlines(); tree=ast.parse(text)
           defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
-          for name in ('main','evaluate_primary_v6','build_family_track_v6'):
+          required={'main','evaluate_families_v6','build_family_track_v6','scan_year_v6'}
+          assert required <= set(defs), sorted(required-set(defs))
+          for name in ('main','evaluate_families_v6','build_family_track_v6'):
               fn=defs[name]
               print(f'FUNCTION {name} lines={fn.lineno}-{fn.end_lineno} args={[a.arg for a in fn.args.args]}')
-              for i in range(fn.lineno,fn.end_lineno+1):
-                  line=lines[i-1]
-                  if name!='main' or any(tok in line for tok in ('parse_catalogue','scan_year_v6','YEARS','all_anchors','all_components','build_family_track_v6','evaluate_primary_v6','result =','verdict','gates','json')):
-                      lo=max(fn.lineno,i-3); hi=min(fn.end_lineno,i+5)
-                      for j in range(lo,hi+1): print(f'{j:04d}: {lines[j-1]}')
-                      print('---')
+              if name=='main':
+                  for i in range(fn.lineno,fn.end_lineno+1):
+                      line=lines[i-1]
+                      if any(tok in line for tok in ('parse_catalogue','scan_year_v6','YEARS','all_anchors','all_components','build_family_track_v6','evaluate_families_v6','result =','verdict','gates','json')):
+                          lo=max(fn.lineno,i-2); hi=min(fn.end_lineno,i+4)
+                          for j in range(lo,hi+1): print(f'{j:04d}: {lines[j-1]}')
+                          print('---')
           main=defs['main']
           scan_calls=[]
           for node in ast.walk(main):
               if isinstance(node,ast.Call):
                   f=node.func
                   name=f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>')
-                  if name=='scan_year_v6':
-                      scan_calls.append((node.lineno,ast.get_source_segment(text,node)))
-          assert scan_calls, 'main has no scan_year_v6 call'
+                  if name=='scan_year_v6': scan_calls.append((node.lineno,ast.get_source_segment(text,node)))
+          assert len(scan_calls)==1, scan_calls
+          scan_call=scan_calls[0][1]
+          assert 'scan_by_year[year]' in scan_call and 'calibration_by_year[year]' in scan_call
+
+          # Prove year outputs are only accumulated until both scans finish;
+          # family construction and label evaluation occur after the loop.
+          loop=next(n for n in main.body if isinstance(n,ast.For) and ast.get_source_segment(text,n.iter)=='YEARS')
+          loop_src=ast.get_source_segment(text,loop)
+          assert 'scan_year_v6' in loop_src
+          assert 'build_family_track_v6' not in loop_src
+          assert 'evaluate_families_v6' not in loop_src
+          post_lines={
+              'primary_family': next(n.lineno for n in ast.walk(main) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='build_family_track_v6'),
+              'evaluation': next(n.lineno for n in ast.walk(main) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='evaluate_families_v6'),
+          }
+          assert loop.end_lineno < post_lines['primary_family'] < post_lines['evaluation']
           print('SCAN_CALLS=',scan_calls)
+          print('POST_SCAN_LINES=',post_lines)
           print('PASS_V6_DEVELOPMENT_CHECKPOINT_BOUNDARY_SOURCE_AUDIT')
           PY
 
