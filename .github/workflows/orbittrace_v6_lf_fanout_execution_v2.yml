@@ -1,0 +1,246 @@
+name: OrbitTrace v6-LF all-event null fanout development v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-fanout-v1
+    paths:
+      - orbittrace_v6_label_free_all_event_null_fanout/RUN_V2.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-v6-lf-fanout-development-v2
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Require exact one-file child
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$BASE_REF" = 'agent/orbittrace-v6-lf-fanout-v1'
+          files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          test "$files" = 'orbittrace_v6_label_free_all_event_null_fanout/RUN_V2.md'
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_label_free_all_event_null_fanout/RUN_V2.md?ref=$HEAD_SHA" --jq .content | tr -d '\n' | base64 --decode)"
+          test "$content" = 'EXECUTE_FROZEN_V6_LF_ALL_EVENT_NULL_FANOUT_V2'
+          echo PASS_V6_LF_FANOUT_V2_AUTHORIZATION
+
+  preexact:
+    needs: authorize
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2022, 2023]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Capture label-free preexact inputs
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p preexact
+          python -u execution/orbittrace_v6_label_free_all_event_null_fanout/capture_preexact_year.py \
+            --year '${{ matrix.year }}' --repaired-v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output preexact
+      - uses: actions/upload-artifact@v4
+        with: {name: 'v6-lf-v2-preexact-${{ matrix.year }}', path: preexact, if-no-files-found: error, retention-days: 90}
+
+  exact:
+    needs: preexact
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        include:
+          - {year: 2022, shard: 0}
+          - {year: 2022, shard: 1}
+          - {year: 2022, shard: 2}
+          - {year: 2022, shard: 3}
+          - {year: 2022, shard: 4}
+          - {year: 2022, shard: 5}
+          - {year: 2023, shard: 0}
+          - {year: 2023, shard: 1}
+          - {year: 2023, shard: 2}
+          - {year: 2023, shard: 3}
+          - {year: 2023, shard: 4}
+          - {year: 2023, shard: 5}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with: {name: 'v6-lf-v2-preexact-${{ matrix.year }}', path: preexact}
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Execute balanced exact shard
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p exact
+          python -u execution/orbittrace_v6_label_free_all_event_null_fanout/run_exact_center_shard.py \
+            --year '${{ matrix.year }}' --shard-index '${{ matrix.shard }}' --shard-count 6 --workers 4 \
+            --preexact-checkpoint preexact/v6_lf_preexact_${{ matrix.year }}.pkl \
+            --repaired-v6-source /tmp/v6.repaired.py --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output exact
+      - uses: actions/upload-artifact@v4
+        with: {name: 'v6-lf-v2-exact-${{ matrix.year }}-${{ matrix.shard }}', path: exact, if-no-files-found: error, retention-days: 90}
+
+  replay:
+    needs: exact
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2022, 2023]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with: {name: 'v6-lf-v2-preexact-${{ matrix.year }}', path: preexact}
+      - uses: actions/download-artifact@v4
+        with: {pattern: 'v6-lf-v2-exact-${{ matrix.year }}-*', path: exact, merge-multiple: true}
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Replay exact shards through frozen year scan
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p year
+          python -u execution/orbittrace_v6_label_free_all_event_null_fanout/replay_exact_year.py \
+            --year '${{ matrix.year }}' --preexact-checkpoint preexact/v6_lf_preexact_${{ matrix.year }}.pkl \
+            --exact-shards-dir exact --repaired-v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output year
+      - uses: actions/upload-artifact@v4
+        with: {name: 'v6-lf-v2-year-${{ matrix.year }}', path: year, if-no-files-found: error, retention-days: 90}
+
+  combine:
+    needs: replay
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-v2-year-2022, path: years}
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-v2-year-2023, path: years}
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Freeze families, then read truth and evaluate
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p output
+          python -u execution/orbittrace_v6_label_free_all_event_null_fanout/combine_and_evaluate.py \
+            --year-2022 years/v6_lf_year_2022.pkl --year-2023 years/v6_lf_year_2023.pkl \
+            --repaired-v6-source /tmp/v6.repaired.py --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output output
+          cat output/V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v6_label_free_all_event_null_development.json').read_text())
+          assert r['verdict'] in {'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT','FAIL_V6_LABEL_FREE_ALL_EVENT_NULL_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert r['configuration']['parameter_search'] is False and r['configuration']['null_trimming'] is False
+          assert r['configuration']['exact_fanout'] is True and r['configuration']['exact_shards_per_year']==6
+          assert all(r['gates'].values()) if r['verdict'].startswith('PASS_') else not all(r['gates'].values())
+          print('ORBITTRACE_V6_LF_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'evaluation':{k:v for k,v in r['evaluation'].items() if k!='per_label'},'gates':r['gates'],'scan_counts':r['scan_counts'],'calibration_counts':r['calibration_counts']},indent=2))
+          print('ORBITTRACE_V6_LF_RESULT_END')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum execution/orbittrace_v6_label_free_all_event_null/*.py execution/orbittrace_v6_label_free_all_event_null_fanout/* execution/.github/workflows/orbittrace_v6_lf_fanout_execution_v2.yml > output/source_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: orbittrace-v6-lf-all-event-null-development-v2, path: output, if-no-files-found: error, retention-days: 90}
