@@ -1,0 +1,59 @@
+name: OrbitTrace v6 transfer family source probe
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze
+    paths:
+      - .github/workflows/orbittrace_v6_transfer_family_source_probe.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-transfer-family-source-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - name: Reconstruct exact v6 and inspect family/rank API only
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('/tmp/v6.py').read_text(); tree=ast.parse(text); lines=text.splitlines()
+          funcs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          names=sorted(name for name in funcs if any(k in name.lower() for k in ('family','rank','evaluat','order')))
+          print('V6_FAMILY_RANK_FUNCTIONS',names)
+          for name in names:
+              if name in {'build_family_track_v6','rank_primary_families_v6','evaluate_order','evaluate_primary'} or name.startswith('build_family') or name.startswith('rank_'):
+                  n=funcs[name]
+                  print(f'===== {name} {n.lineno}-{n.end_lineno} =====')
+                  print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(n.lineno,n.end_lineno+1)))
+          main=funcs.get('main')
+          if main:
+              src=ast.get_source_segment(text,main) or ''
+              for line in src.splitlines():
+                  if 'build_family_track_v6' in line or 'primary_famil' in line or 'evaluate' in line or 'rank' in line:
+                      print('MAIN_MATCH',line.strip())
+          print('PASS_V6_TRANSFER_FAMILY_SOURCE_PROBE')
+          PY
+      - name: Assert no-data boundary
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABELS_NO_TARGET_ACCESS
