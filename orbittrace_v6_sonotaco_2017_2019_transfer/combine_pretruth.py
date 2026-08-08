@@ -86,10 +86,13 @@ def main() -> int:
     audits = [checkpoints[year]["audit"] for year in YEARS]
     primary_families = v6.build_family_track_v6(old, all_components, base, "v3")
     rescue_families = v6.build_family_track_v6(old, all_components, base, "fixed4_rescue")
+    primary_order = [str(f["family_id"]) for f in primary_families]
+    require(len(primary_order) == len(set(primary_order)), "primary family IDs not unique")
     primary_payload = {
         "years": list(YEARS),
         "corpus": CORPUS,
         "primary_method": "v3",
+        "primary_order": primary_order,
         "primary_families": primary_families,
         "scan_audits": audits,
     }
@@ -99,6 +102,7 @@ def main() -> int:
         "years": list(YEARS),
         "blind_exclusion": BLIND,
         "corpus": CORPUS,
+        "primary_order": primary_order,
         "primary_families": primary_families,
         "rescue_families": rescue_families,
         "primary_ranking_sha256_before_truth": primary_sha,
