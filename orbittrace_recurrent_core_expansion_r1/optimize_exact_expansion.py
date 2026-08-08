@@ -85,7 +85,9 @@ def _expand_memberships_optimized_core(
     # Object identity is used for event centers so duplicate event IDs, if any,
     # cannot alter frozen semantics.
     event_center_cache: dict[int, dict[str, float]] = {}
+    event_center_cache_hits = 0
     dsh_cache: dict[tuple[str, str], float] = {}
+    dsh_cache_hits = 0
 
     for family_i, family in enumerate(families, 1):
         fid = str(family["family_id"])
@@ -117,8 +119,10 @@ def _expand_memberships_optimized_core(
                 if abs(float(base.wrap180(float(event["sol"]) - float(comp["centroid"]["sol"])))) > 6.0 + 1e-12:
                     continue
                 center_key = id(event)
-                center = event_center_cache.get(center_key)
-                if center is None:
+                if center_key in event_center_cache:
+                    center = event_center_cache[center_key]
+                    event_center_cache_hits += 1
+                else:
                     center = event_center(event)
                     event_center_cache[center_key] = center
                 geom = float(support.centroid_distance(center, comp["centroid"], base))
@@ -131,6 +135,7 @@ def _expand_memberships_optimized_core(
                     cache_key = (eid, medoid_eid)
                     if cache_key in dsh_cache:
                         distance = dsh_cache[cache_key]
+                        dsh_cache_hits += 1
                     else:
                         distance = scalar_dsh(orbit_by_id[eid], medoid["orbit"], dsh)
                         dsh_cache[cache_key] = distance
@@ -156,7 +161,8 @@ def _expand_memberships_optimized_core(
             print(
                 f"R1_EXPANSION_PROGRESS families={family_i}/{len(families)} "
                 f"components={component_attempts} geom_pass={geometry_candidates} "
-                f"physical_pass={physical_passes} dsh_cache={len(dsh_cache)} "
+                f"physical_pass={physical_passes} center_cache_hits={event_center_cache_hits} "
+                f"dsh_cache_entries={len(dsh_cache)} dsh_cache_hits={dsh_cache_hits} "
                 f"elapsed_s={_time.perf_counter()-_t0:.1f}",
                 flush=True,
             )
@@ -182,7 +188,8 @@ def _expand_memberships_optimized_core(
     require(all(set(map(str, orig["event_ids"])).issubset(set(map(str, expanded_by_id[str(orig["family_id"])]["event_ids"]))) for orig in families), "R1 removed a frozen seed event")
     print(
         f"R1_EXPANSION_COMPLETE assigned={len(assignments)} proposals={len(proposals)} "
-        f"elapsed_s={_time.perf_counter()-_t0:.1f}",
+        f"center_cache_hits={event_center_cache_hits} dsh_cache_entries={len(dsh_cache)} "
+        f"dsh_cache_hits={dsh_cache_hits} elapsed_s={_time.perf_counter()-_t0:.1f}",
         flush=True,
     )
     return expanded, {
@@ -213,34 +220,59 @@ def expand_memberships(
     dsh: Any,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     import os as _os
+    import time as _time
     sample_n = min(int(_os.environ.get("R1_EQUIVALENCE_SAMPLE_FAMILIES", "8")), len(families))
     require(sample_n >= 1, "R1 equivalence sample must contain at least one family")
     full_active_component_ids = {str(cid) for family in families for cid in family["component_ids"]}
-    print(
-        f"R1_EQUIVALENCE_CONTEXT families_total={len(families)} components_total={len(components)} "
-        f"components_active={len(full_active_component_ids)} sample_families={sample_n}",
-        flush=True,
-    )
     sample_families = copy.deepcopy(families[:sample_n])
     sample_component_ids = {str(cid) for family in sample_families for cid in family["component_ids"]}
     sample_components = [c for c in components if str(c["component_id"]) in sample_component_ids]
-    reference = _expand_memberships_reference(
+
+    # Include one real target-excluded unreferenced component when available. This
+    # directly tests that eliminating its medoid computation leaves the complete
+    # frozen expansion return value unchanged.
+    extras = [c for c in components if str(c["component_id"]) not in sample_component_ids]
+    valid_extras = [c for c in extras if len(c.get("event_ids", [])) >= MIN_VALID_PARTNER_ORBITS]
+    extra = min(valid_extras or extras, key=lambda c: (len(c.get("event_ids", [])), str(c["component_id"]))) if extras else None
+    if extra is not None:
+        sample_components.append(extra)
+    extra_count = int(extra is not None)
+
+    print(
+        f"R1_EQUIVALENCE_CONTEXT families_total={len(families)} components_total={len(components)} "
+        f"components_active={len(full_active_component_ids)} sample_families={sample_n} "
+        f"sample_components={len(sample_components)} unreferenced_test_components={extra_count}",
+        flush=True,
+    )
+
+    _reference_t0 = _time.perf_counter()
+    reference_result = _expand_memberships_reference(
         copy.deepcopy(sample_families), copy.deepcopy(sample_components), scan_by_year,
         orbit_by_id, order, support, base, dsh,
     )
+    reference_s = _time.perf_counter() - _reference_t0
+    print(f"R1_EQUIVALENCE_REFERENCE_COMPLETE elapsed_s={reference_s:.3f}", flush=True)
+
+    _optimized_t0 = _time.perf_counter()
     optimized_result = _expand_memberships_optimized_core(
         copy.deepcopy(sample_families), copy.deepcopy(sample_components), scan_by_year,
         orbit_by_id, order, support, base, dsh,
     )
-    require(reference == optimized_result, "optimized R1 expansion differs from frozen reference on bounded deterministic sample")
+    optimized_s = _time.perf_counter() - _optimized_t0
+    require(reference_result == optimized_result, "optimized R1 expansion differs from frozen reference on bounded deterministic sample")
+    speedup = reference_s / optimized_s if optimized_s > 0 else float("inf")
     print(
-        f"PASS_R1_BOUNDED_EXACT_EQUIVALENCE families={sample_n} components={len(sample_components)}",
+        f"PASS_R1_BOUNDED_EXACT_EQUIVALENCE families={sample_n} components={len(sample_components)} "
+        f"unreferenced_test_components={extra_count} reference_s={reference_s:.3f} "
+        f"optimized_s={optimized_s:.3f} speedup_x={speedup:.3f}",
         flush=True,
     )
     if _os.environ.get("R1_EQUIVALENCE_ONLY") == "1":
         Path("output").mkdir(exist_ok=True)
         Path("output/PASS_R1_BOUNDED_EXACT_EQUIVALENCE.txt").write_text(
             f"families={sample_n}\ncomponents={len(sample_components)}\n"
+            f"unreferenced_test_components={extra_count}\nreference_s={reference_s:.6f}\n"
+            f"optimized_s={optimized_s:.6f}\nspeedup_x={speedup:.6f}\n"
         )
         raise SystemExit(42)
     return _expand_memberships_optimized_core(
@@ -259,11 +291,12 @@ record = {
         "skip medoid construction for components not referenced by recurrent families",
         "memoize unchanged event_center computation by event object identity",
         "memoize exact scalar D_SH by event id and partner medoid event id",
-        "progress logging only",
+        "progress and timing logging only",
     ],
     "old_expand_sha256": hashlib.sha256(old.encode()).hexdigest(),
     "new_expand_sha256": hashlib.sha256((reference + "\n\n" + optimized).encode()).hexdigest(),
     "bounded_equivalence_sample_families_default": 8,
+    "bounded_equivalence_includes_real_unreferenced_component_when_available": True,
     "numerical_approximation": False,
     "geometry_prefilter_added": False,
     "scientific_rule_changed": False,
