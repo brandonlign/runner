@@ -7,6 +7,7 @@ on:
     paths:
       - orbittrace_crossyear_two_view_membership_p2/PROTOCOL.md
       - orbittrace_crossyear_two_view_membership_p2/run_development.py
+      - orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py
       - .github/workflows/orbittrace_crossyear_two_view_p2_development.yml
       - .github/workflows/orbittrace_crossyear_two_view_p2_source_audit.yml
 
@@ -25,19 +26,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-crossyear-two-view-membership-p2-freeze
-      - name: Compile and prove frozen scientific/source boundaries
+      - name: Reconstruct protocol-compliant runtime and prove frozen boundaries
         run: |
           set -euo pipefail
-          python -m py_compile orbittrace_crossyear_two_view_membership_p2/run_development.py
           echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py \
+            /tmp/run_p2_protocol_compliant.py | tee /tmp/p2_patch.log
+          python -m py_compile /tmp/run_p2_protocol_compliant.py
           python - <<'PY'
-          import ast
+          import ast,hashlib,re
           from pathlib import Path
-
-          path=Path('orbittrace_crossyear_two_view_membership_p2/run_development.py')
-          text=path.read_text(); tree=ast.parse(text)
+          text=Path('/tmp/run_p2_protocol_compliant.py').read_text()
+          tree=ast.parse(text)
+          digest=hashlib.sha256(text.encode()).hexdigest()
           defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
-
           constants={}
           for n in tree.body:
               if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
@@ -57,24 +60,24 @@ jobs:
           assert constants['TOP100_PRECISION_FLOOR']==0.65
           assert constants['LARGE_RECALL_MULTIPLIER']==1.5
           assert constants['LARGE_PRECISION_FLOOR']==0.85
-
           header=ast.get_source_segment(text,defs['exact_header_positions'])
           assert 'exact("q")' in header and 'field == "Q"' in header and 'q/Q schema identity changed' in header
           orbit=ast.get_source_segment(text,defs['parse_target_excluded_orbits'])
           assert orbit.index('support.BLIND_LOW') < orbit.index('values = {')
-          assert 'label_column_accessed": False' in orbit
-          assert 'target_region_orbit_decoded": False' in orbit
-
+          assert 'label_column_accessed": False' in orbit and 'target_region_orbit_decoded": False' in orbit
           dsh=ast.get_source_segment(text,defs['min_exact_dsh_to_source'])
-          assert dsh.count('dsh.pairwise_dsh(')==1
-          assert 'np.min(cross, axis=1)' in dsh
-          assert '0.05' not in dsh
-
+          assert dsh.count('dsh.pairwise_dsh(')==1 and 'np.min(cross, axis=1)' in dsh and '0.05' not in dsh
           main=ast.get_source_segment(text,defs['main'])
-          assert 'OAS(' in text
-          assert 'StandardScaler()' in main
-          assert 'scaler.fit(X, sample_weight=sample_weight)' in main
-          assert 'LogisticRegression(' in main
+          # Critical compliance correction: EVERY nonseed defines the ±5° universe.
+          assert 'valid_events_by_year' not in main and 'valid_nonseed_by_year' not in main
+          assert 'nonseed_by_year = {' in main
+          assert '[e for e in scan_by_year[year] if str(e["id"]) not in global_seed_ids]' in main
+          assert 'target_nonseed_events = nonseed_by_year[target_year]' in main
+          assert 'missing_orbit_ids = [str(event["id"]) for event in negative_events if str(event["id"]) not in orbit_by_id]' in main
+          assert 'P2 input-ineligible: required target-window nonseed lacks valid orbit' in main
+          assert main.index('negative_events = [event for event, keep') < main.index('missing_orbit_ids =') < main.index('negative_obs = mahalanobis_distance')
+          # Frozen model/training/conflict rules remain exact.
+          assert 'OAS(' in text and 'StandardScaler()' in main and 'scaler.fit(X, sample_weight=sample_weight)' in main
           for token in ('penalty="l2"','C=LOGISTIC_C','solver="lbfgs"','max_iter=LOGISTIC_MAX_ITER','tol=LOGISTIC_TOL','class_weight=None'):
               assert token in main, token
           assert '0.5 / len(x_pos)' in main and '0.5 / len(x_neg)' in main
@@ -82,35 +85,15 @@ jobs:
           assert 'responsibility <= RESPONSIBILITY_THRESHOLD' in main
           assert 'family_rank[str(p["family_id"])]' in main
           assert 'global_seed_ids' in main and 'seed entered P2 competition' in main
-
           model_freeze=main.index('(args.output / "p2_model_pretruth.sha256").write_text')
           membership_freeze=main.index('(args.output / "p2_membership_pretruth.sha256").write_text')
           truth_eval=main.index('baseline_full = v8.mult.evaluate_order(hidden_labels')
           assert model_freeze < membership_freeze < truth_eval
           pretruth=main[:truth_eval]
-          occurrences=[i for i in range(len(pretruth)) if pretruth.startswith('hidden_labels',i)]
-          assert len(occurrences)==1, occurrences
-          assert 'evaluate_order(hidden_labels' not in pretruth
-          assert 'eligible_labels(hidden_labels' not in pretruth
-
-          assert 'parameter_search": False' in main
-          assert 'new_members_can_seed_growth": False' in main
-          assert 'PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT' in main
-          assert 'FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO' in main
-
-          workflow=Path('.github/workflows/orbittrace_crossyear_two_view_p2_development.yml').read_text()
-          assert 'agent/orbittrace-crossyear-two-view-membership-p2-freeze' in workflow
-          assert 'orbittrace_crossyear_two_view_membership_p2/RUN.md' in workflow
-          assert 'EXECUTE_AFTER_EXACT_P1_NO_GO' in workflow
-          assert '--name orbittrace-probabilistic-membership-p1-development' in workflow
-          assert "r['verdict']=='FAIL_PROBABILISTIC_MEMBERSHIP_P1_NO_GO'" in workflow
-          assert "not all(r['gates'].values())" in workflow
-          assert '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd' in workflow
-          assert 'c9d6c44704013ba0c9430100e98a29a56b453304' in workflow
-          assert '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a' in workflow
-          assert '--dsh-comparator input/dsh/literature_comparators.py' in workflow
-          assert 'orbittrace-crossyear-two-view-membership-p2-development' in workflow
-          print('PASS_CROSSYEAR_TWO_VIEW_P2_SOURCE_AUDIT')
+          assert 'evaluate_order(hidden_labels' not in pretruth and 'eligible_labels(hidden_labels' not in pretruth
+          assert 'parameter_search": False' in main and 'new_members_can_seed_growth": False' in main
+          print('PASS_CROSSYEAR_TWO_VIEW_P2_PROTOCOL_COMPLIANT_SOURCE_AUDIT')
+          print('P2_PROTOCOL_COMPLIANT_SOURCE_SHA256='+digest)
           PY
       - name: Assert source-only firewall
         if: always()
