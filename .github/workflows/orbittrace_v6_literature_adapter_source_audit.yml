@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   audit:
@@ -19,6 +20,39 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v6-literature-adapter-freeze
+
+      - name: Audit native background-token semantics only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test ! -e input
+          mkdir -p /tmp/parser2023
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir /tmp/parser2023
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  /tmp/parser2023/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          cat sonotaco_mondrian_development/source_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress \
+            > /tmp/sonotaco_2025_native.py
+          echo '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518  /tmp/sonotaco_2025_native.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          def fn_ast(path, name):
+              text=Path(path).read_text()
+              tree=ast.parse(text)
+              fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name)
+              print(f'{path}:{name}='+ast.get_source_segment(text,fn))
+              return ast.dump(fn, include_attributes=False)
+
+          a=fn_ast('/tmp/parser2023/run_sonotaco_2023_fixed4_confirmation.py','background_token')
+          b=fn_ast('/tmp/sonotaco_2025_native.py','background_token')
+          assert a==b, '2023/2025 native background classifiers differ'
+          print('PASS_IDENTICAL_SONOTACO_2023_2025_NATIVE_BACKGROUND_TOKEN_RULE')
+          PY
 
       - name: Compile and inspect adapter
         run: |
@@ -42,15 +76,12 @@ jobs:
           }
           assert required <= set(defs), sorted(set(defs))
 
-          # Source boundary: pre-ranking helper may retain IDs only; no label,
-          # complex_key or per-shower value is read from labeled events.
           fn=defs['native_sporadic_ids_from_parser_outputs']
           src=ast.get_source_segment(text,fn)
           assert 'event["id"]' in src
           assert 'event["complex_key"]' not in src
           assert 'event["label"]' not in src
 
-          # Rescue must never be fed into the primary builder/payload.
           run_src=ast.get_source_segment(text,defs['run_v6_panel'])
           assert 'build_family_track_v6(old, all_components, base, "v3")' in run_src
           assert 'build_family_track_v6(old, all_components, base, "fixed4_rescue")' in run_src
@@ -65,7 +96,6 @@ jobs:
           assert mod.FROZEN_V6_SHA256=='a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9'
           assert mod.SUPPORT_SOURCE_SHA256=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
 
-          # Bounded synthetic test of calibration semantics only.
           scan={
               2023:[{'id':f'SNM2023:{i}','sol':0.0,'complex_key':'HIDDEN'} for i in range(1200)],
               2025:[{'id':f'SNM2025:{i}','sol':0.0,'complex_key':'HIDDEN'} for i in range(1200)],
