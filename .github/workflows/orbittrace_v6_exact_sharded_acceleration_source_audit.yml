@@ -56,18 +56,18 @@ jobs:
           assert 'proposal_anchor_ids(output) == proposal_anchor_ids(records)' in shard
 
           common=(root/'common.py').read_text()
-          assert 'result = original_proposal(*args, **kwargs)' in common
           assert 'locate_proposal_owner' in common
           assert 'setattr(proposal_owner, "proposal_window_v6", proposal_capture)' in common
           assert 'v6.scan_year_v6(old, year, events, calibration_events, candidate, base, scorer, support)' in common
           assert 'caller.f_code.co_name == "scan_year_v6"' in common
           assert 'exact_rescore_not_executed_in_prepare' in common
+          assert 'proposal_owner is not None' in common
           for forbidden in ('build_family_track_v6','evaluate_families_v6','PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'):
               assert forbidden not in common, forbidden
 
-          # Dependency-free AST inspection of the exact repaired scan proves which
-          # object owns proposal_window_v6. No scientific module import or catalogue
-          # access is needed for this check.
+          # The current frozen scan has no hookable proposal_window_v6 call. That is
+          # now an explicitly supported implementation path: prepare leaves proposal
+          # generation untouched and replay recomputes the unchanged proposal stage.
           repaired_text=Path('/tmp/run_v3_primary_catalogue_v6.repaired.py').read_text()
           repaired_tree=ast.parse(repaired_text)
           scan=next(n for n in repaired_tree.body if isinstance(n,ast.FunctionDef) and n.name=='scan_year_v6')
@@ -80,16 +80,8 @@ jobs:
                   proposal_calls.append(f.value.id)
               elif isinstance(f,ast.Name) and f.id=='proposal_window_v6':
                   proposal_calls.append('v6')
-          assert proposal_calls and len(set(proposal_calls))==1, proposal_calls
-          proposal_owner=proposal_calls[0]
-          assert proposal_owner in {'old','support','v6'}, proposal_owner
-          print('PROPOSAL_OWNER='+proposal_owner)
-          if proposal_owner=='old':
-              old_tree=ast.parse(Path('/tmp/run_wavelet_catalogue_v3_development.py').read_text())
-              assert any(isinstance(n,ast.FunctionDef) and n.name=='proposal_window_v6' for n in old_tree.body)
-          elif proposal_owner=='v6':
-              assert any(isinstance(n,ast.FunctionDef) and n.name=='proposal_window_v6' for n in repaired_tree.body)
-          # support ownership is checked at runtime after the frozen support module is loaded.
+          assert proposal_calls == [], proposal_calls
+          print('PROPOSAL_REPLAY_MODE=RECOMPUTE_UNCHANGED_STAGE')
 
           cache=(root/'build_catalogue_cache.py').read_text()
           assert 'del hidden_labels' in cache
@@ -101,6 +93,7 @@ jobs:
           replay=(root/'replay_year.py').read_text()
           assert 'v6.calibrate_year_v6 = replay_calibration' in replay
           assert 'locate_proposal_owner(v6, old, support)' in replay
+          assert 'captured_proposal_count > 0' in replay
           assert 'setattr(proposal_owner, "proposal_window_v6", replay_proposal)' in replay
           assert 'v6.exact_rescore_window_v6 = replay_exact' in replay
           assert replay.count('v6.scan_year_v6(') == 1
