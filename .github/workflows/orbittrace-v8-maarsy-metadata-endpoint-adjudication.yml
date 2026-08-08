@@ -1,0 +1,157 @@
+name: OrbitTrace v8 MAARSY metadata endpoint adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-metadata-endpoint-adjudication
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_METADATA_ENDPOINT_ADJUDICATION.md'
+
+permissions:
+  contents: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen endpoint-adjudication parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-metadata-endpoint-adjudication
+          fetch-depth: 1
+
+      - name: Enforce metadata-only scope
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/METADATA_ENDPOINT_ADJUDICATION.md
+          mkdir -p input output
+          ! find . -type f \( -iname '*.tar' -o -iname '*.h5' -o -iname '*.hdf5' -o -iname '*.nc' -o -iname '*.csv' \) -print -quit | grep -q .
+
+      - name: Establish public anonymous session
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -A 'OrbitTrace-preaccess-metadata-audit/1.0' \
+            -c input/cookies.txt \
+            'https://www.radar-service.eu/radar/en/dataset/yk29t2gu0h4jhkjg' \
+            -o input/landing.html
+          grep -F 'RADAR_SESSION_ID' input/cookies.txt >/dev/null
+
+      - name: Fetch each advertised describedby endpoint independently
+        run: |
+          set -euo pipefail
+          base='https://www.radar-service.eu/radar/en/export/yk29t2gu0h4jhkjg'
+          fetch() {
+            name="$1"; path="$2"
+            code=$(curl -L --retry 3 -b input/cookies.txt -sS -o "input/$name" -w '%{http_code}' "$base/$path")
+            printf '%s %s\n' "$name" "$code" >> output/http_status.txt
+          }
+          fetch radar_metadata.xml exportradarmetadata
+          fetch schemaorg.jsonld exportJsonld
+          fetch rocrate.jsonld exportrocrate
+          test "$(awk '$1=="radar_metadata.xml"{print $2}' output/http_status.txt)" = 200
+          rm -f input/cookies.txt input/landing.html
+          sha256sum input/* | sort > output/description_sha256.txt
+          du -b input/* | sort -n > output/description_sizes.txt
+          python - <<'PY'
+          from pathlib import Path
+          for p in Path('input').iterdir():
+              if p.stat().st_size > 5_000_000:
+                  raise RuntimeError(f'unexpectedly large metadata export; refusing parse: {p} {p.stat().st_size}')
+          PY
+
+      - name: Parse only successful metadata exports
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re,xml.etree.ElementTree as ET
+
+          status={line.split()[0]:int(line.split()[1]) for line in Path('output/http_status.txt').read_text().splitlines()}
+          result={
+            'schema':'orbittrace-v8-maarsy-metadata-endpoint-adjudication-v1',
+            'http_status':status,
+            'dataset_archive_requested':False,
+            'event_data_file_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'resources':{}
+          }
+
+          raw=Path('input/radar_metadata.xml').read_bytes()
+          root=ET.fromstring(raw)
+          records=[]
+          safe_terms=('title','name','format','size','checksum','identifier','description','filename','file','mime','media','url','location','version','license','rights','date')
+          for e in root.iter():
+              tag=e.tag.rsplit('}',1)[-1]
+              txt=(e.text or '').strip()
+              if txt and len(txt)<=2000 and any(k in tag.lower() for k in safe_terms):
+                  records.append({'tag':tag,'text':txt})
+          result['resources']['radar_xml']={
+            'tags':sorted({e.tag.rsplit('}',1)[-1] for e in root.iter()}),
+            'safe_records':records[:1000]
+          }
+
+          file_ext=re.compile(r'\.(?:tar|zip|h5|hdf5|nc|csv|tsv|json|xml|txt|dat|bin|npy|npz|mat)(?:$|[?#])',re.I)
+          def inspect(path):
+              obj=json.loads(Path(path).read_text())
+              nodes=obj.get('@graph',[]) if isinstance(obj,dict) else []
+              if not isinstance(nodes,list): nodes=[]
+              if len(nodes)>10000:
+                  raise RuntimeError('metadata export unexpectedly contains event-scale graph')
+              recs=[]
+              for node in nodes:
+                  if not isinstance(node,dict): continue
+                  rid=str(node.get('@id',''))
+                  typ=node.get('@type')
+                  rec={'id':rid[:2000],'type':typ}
+                  for key,val in node.items():
+                      key_local=str(key).rsplit('/',1)[-1]
+                      if key_local in ('name','encodingFormat','contentSize','sha256','md5','description','url','contentUrl') and not isinstance(val,(dict,list)):
+                          s=str(val)
+                          if len(s)<=2000: rec[key_local]=s
+                  if file_ext.search(rid) or any(k in rec for k in ('encodingFormat','contentSize','contentUrl')) or 'file' in str(typ).lower() or 'dataset' in str(typ).lower():
+                      recs.append(rec)
+              return {'graph_node_count':len(nodes),'structural_records':recs[:1000]}
+
+          if status.get('schemaorg.jsonld')==200:
+              result['resources']['schemaorg']=inspect('input/schemaorg.jsonld')
+          else:
+              result['resources']['schemaorg']={'available':False,'http_status':status.get('schemaorg.jsonld')}
+          if status.get('rocrate.jsonld')==200:
+              result['resources']['rocrate']=inspect('input/rocrate.jsonld')
+          else:
+              result['resources']['rocrate']={'available':False,'http_status':status.get('rocrate.jsonld')}
+
+          Path('output/metadata_endpoint_adjudication.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Enforce continued firewall and write verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('output/metadata_endpoint_adjudication.json').read_text())
+          for k in ('dataset_archive_requested','event_data_file_downloaded','event_row_access','scientific_value_access','target_information_access'):
+              assert m[k] is False
+          r={
+            'verdict':'PASS_MAARSY_METADATA_ENDPOINT_AVAILABILITY_ADJUDICATION',
+            'radar_metadata_http_status':m['http_status']['radar_metadata.xml'],
+            'schemaorg_http_status':m['http_status']['schemaorg.jsonld'],
+            'rocrate_http_status':m['http_status']['rocrate.jsonld'],
+            'dataset_archive_requested':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False
+          }
+          Path('output/result.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload endpoint-adjudication artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-metadata-endpoint-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
