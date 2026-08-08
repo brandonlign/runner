@@ -33,14 +33,15 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           test "$BASE_REF" = 'agent/orbittrace-v6-performance-optimization-v1'
           files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
           test "$files" = 'orbittrace_v6_checkpointed_fallback/RUN_OPTIMIZED.md'
-          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_checkpointed_fallback/RUN_OPTIMIZED.md?ref=$HEAD_REF" --jq .content | tr -d '\n' | base64 --decode)"
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_checkpointed_fallback/RUN_OPTIMIZED.md?ref=$HEAD_SHA" --jq .content | tr -d '\n' | base64 --decode)"
           test "$content" = 'EXECUTE_EXACT_OPTIMIZED_V6_AFTER_CANCELLED_NO_VERDICT'
-          echo "PASS_V6_OPTIMIZED_EXECUTION_AUTHORIZATION head=$HEAD_REF"
+          echo "PASS_V6_OPTIMIZED_EXECUTION_AUTHORIZATION head=$HEAD_REF sha=$HEAD_SHA"
 
   year-scan:
     needs: authorize
@@ -99,6 +100,7 @@ jobs:
         env:
           PYTHONUNBUFFERED: '1'
           PYTHONPATH: execution:frozen-v6/orbittrace_wavelet_catalogue_v3:frozen-v6/orbittrace_multi_anchor_energy_v3:/tmp
+          MATRIX_YEAR: ${{ matrix.year }}
         run: |
           set -euo pipefail
           mkdir -p checkpoint
@@ -133,10 +135,6 @@ jobs:
           assert r['execution']['parallel_exact_enabled'] is True
           assert 1 <= int(r['execution']['parallel_exact_workers']) <= 4
           PY
-        env:
-          PYTHONUNBUFFERED: '1'
-          PYTHONPATH: execution:frozen-v6/orbittrace_wavelet_catalogue_v3:frozen-v6/orbittrace_multi_anchor_energy_v3:/tmp
-          MATRIX_YEAR: ${{ matrix.year }}
 
       - uses: actions/upload-artifact@v4
         with:
