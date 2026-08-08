@@ -1,0 +1,67 @@
+name: OrbitTrace v6 development checkpoint source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - .github/workflows/orbittrace_v6_development_checkpoint_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-development-checkpoint-audit
+          path: audit
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+
+      - name: Reconstruct and audit development orchestration only
+        run: |
+          set -euo pipefail
+          test ! -e input
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress \
+            > /tmp/v6.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('/tmp/v6.py').read_text(); lines=text.splitlines(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          for name in ('main','evaluate_primary_v6','build_family_track_v6'):
+              fn=defs[name]
+              print(f'FUNCTION {name} lines={fn.lineno}-{fn.end_lineno} args={[a.arg for a in fn.args.args]}')
+              for i in range(fn.lineno,fn.end_lineno+1):
+                  line=lines[i-1]
+                  if name!='main' or any(tok in line for tok in ('parse_catalogue','scan_year_v6','YEARS','all_anchors','all_components','build_family_track_v6','evaluate_primary_v6','result =','verdict','gates','json')):
+                      lo=max(fn.lineno,i-3); hi=min(fn.end_lineno,i+5)
+                      for j in range(lo,hi+1): print(f'{j:04d}: {lines[j-1]}')
+                      print('---')
+          main=defs['main']
+          scan_calls=[]
+          for node in ast.walk(main):
+              if isinstance(node,ast.Call):
+                  f=node.func
+                  name=f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>')
+                  if name=='scan_year_v6':
+                      scan_calls.append((node.lineno,ast.get_source_segment(text,node)))
+          assert scan_calls, 'main has no scan_year_v6 call'
+          print('SCAN_CALLS=',scan_calls)
+          print('PASS_V6_DEVELOPMENT_CHECKPOINT_BOUNDARY_SOURCE_AUDIT')
+          PY
+
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          echo 'NO_GMN_CATALOGUE_NO_LABEL_VALUE_NO_TARGET_ACCESS'
