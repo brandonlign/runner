@@ -11,7 +11,7 @@ TERMINAL = "INCONCLUSIVE_V8_EXTERNAL_VALIDATION_NO_POWERED_PRISTINE_PANEL"
 V8_PASS = "PASS_POOLED_YEAR_CENTROID_V8_DEVELOPMENT"
 SAAMER20 = "INCONCLUSIVE_LABEL_FREE_V6_SAAMER_EXTERNAL_POWER"
 SAAMER22 = "INCONCLUSIVE_LABEL_FREE_V6_SAAMER_2022_2023_EXTERNAL_POWER"
-AMOR = "INCONCLUSIVE_V8_AMOR_1996_1998_EXTERNAL_POWER"
+AMOR = "INCONCLUSIVE_V8_AMOR_EXTERNAL_POWER"
 UKMON = "PASS_UKMON_2020_2021_ZERO_DATA_FRESHNESS_ADJUDICATION"
 HARVARD = "FAIL_HARVARD_1968_1969_V8_RECURRENCE_ELIGIBILITY"
 FRIPON = "FAIL_FRIPON_2018_2019_EXTERNAL_INTEGRITY_PREPROTOCOL_EXPOSURE"
@@ -27,17 +27,13 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-def one_with_verdict(root: Path, verdict: str) -> tuple[Path, dict[str, Any]]:
-    matches: list[tuple[Path, dict[str, Any]]] = []
-    for path in sorted(root.rglob("*.json")):
-        try:
-            obj = json.loads(path.read_text())
-        except Exception:
-            continue
-        if isinstance(obj, dict) and obj.get("verdict") == verdict:
-            matches.append((path, obj))
-    require(len(matches) == 1, f"expected one {verdict} JSON under {root}, got {len(matches)}")
-    return matches[0]
+def load_exact(root: Path, filename: str, verdict: str) -> dict[str, Any]:
+    path = root / filename
+    require(path.is_file(), f"missing exact result file: {path}")
+    obj = json.loads(path.read_text())
+    require(isinstance(obj, dict), f"result is not an object: {path}")
+    require(obj.get("verdict") == verdict, f"{filename} verdict changed: {obj.get('verdict')!r}")
+    return obj
 
 
 def orbital_q(result: dict[str, Any]) -> int:
@@ -47,14 +43,12 @@ def orbital_q(result: dict[str, Any]) -> int:
 
 
 def assert_target_free_claim(result: dict[str, Any], label: str) -> None:
-    claim = str(result.get("claim_boundary", ""))
-    # Some pre-scientific stop artifacts expose a direct boolean rather than a prose phrase.
     direct = result.get("orbittrace_target_information_access")
     if direct is not None:
         require(direct is False, f"{label}: target-access flag not false")
-    else:
-        require("No OrbitTrace target information" in claim or "target information" in claim.lower(),
-                f"{label}: no target-free claim found")
+        return
+    claim = str(result.get("claim_boundary", ""))
+    require("no orbittrace target information" in claim.lower(), f"{label}: no target-free claim found")
 
 
 def inventory_freshness_refs(path: Path) -> dict[str, Any]:
@@ -85,14 +79,14 @@ def main() -> int:
     a = p.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
 
-    _, v8 = one_with_verdict(a.v8, V8_PASS)
-    _, s20 = one_with_verdict(a.saamer20, SAAMER20)
-    _, s22 = one_with_verdict(a.saamer22, SAAMER22)
-    _, amor = one_with_verdict(a.amor, AMOR)
-    _, ukmon = one_with_verdict(a.ukmon, UKMON)
-    _, harvard = one_with_verdict(a.harvard, HARVARD)
-    _, fripon = one_with_verdict(a.fripon, FRIPON)
-    _, hissar = one_with_verdict(a.hissar, HISSAR)
+    v8 = load_exact(a.v8, "pooled_year_centroid_v8_development.json", V8_PASS)
+    s20 = load_exact(a.saamer20, "saamer_external_validation.json", SAAMER20)
+    s22 = load_exact(a.saamer22, "saamer_2022_2023_external_validation.json", SAAMER22)
+    amor = load_exact(a.amor, "v8_amor_1996_1998_external_validation.json", AMOR)
+    ukmon = load_exact(a.ukmon, "ukmon_2020_2021_freshness_adjudication.json", UKMON)
+    harvard = load_exact(a.harvard, "harvard_1968_1969_recurrence_eligibility.json", HARVARD)
+    fripon = load_exact(a.fripon, "fripon_2018_2019_integrity_stop.json", FRIPON)
+    hissar = load_exact(a.hissar, "hissar_v8_coverage_eligibility.json", HISSAR)
 
     # Promoted v8 is immutable and passed only on the target-excluded development panel.
     require(v8["configuration"]["years"] == [2022, 2023], "v8 development years changed")
@@ -106,7 +100,7 @@ def main() -> int:
     require(v8["metrics"]["label_free_persistence"]["recovered_at_100"] == 59, "v8 persistence metric changed")
     require(all(v8["integrity_gates"].values()), "v8 integrity gate no longer all-pass")
     require(all(v8["scientific_gates"].values()), "v8 scientific gate no longer all-pass")
-    require("No OrbitTrace target information" in v8["claim_boundary"], "v8 target-free claim changed")
+    assert_target_free_claim(v8, "v8 development")
 
     # Inherited SAAMER power context: clean external architecture, but not direct v8 verdicts.
     require(int(s20["family_count"]) == 19 and orbital_q(s20) == 19, "SAAMER 2020/21 counts changed")
@@ -124,8 +118,9 @@ def main() -> int:
     # Direct v8 AMOR test: integrity-clean but under both immutable family-universe floors.
     require(int(amor["family_count"]) == 19 and orbital_q(amor) == 19, "AMOR v8 counts changed")
     require(amor["configuration"]["blind_exclusion"] == [20.0, 55.0], "AMOR blindness changed")
-    require(amor["integrity_gates"]["at_least_100_recurrent_families"] is False, "AMOR N power reason changed")
-    require(amor["integrity_gates"]["at_least_30_orbitally_corroborated_families"] is False, "AMOR Q power reason changed")
+    require(all(amor["integrity_gates"].values()), "AMOR integrity no longer clean")
+    require(amor["power_gates"]["at_least_100_recurrent_families"] is False, "AMOR N power reason changed")
+    require(amor["power_gates"]["at_least_30_orbitally_corroborated_families"] is False, "AMOR Q power reason changed")
     require(amor["orbit_read_audit"]["orbital_elements_interpreted_only_after_rank_freeze"] is True, "AMOR orbit boundary changed")
     assert_target_free_claim(amor, "AMOR")
 
