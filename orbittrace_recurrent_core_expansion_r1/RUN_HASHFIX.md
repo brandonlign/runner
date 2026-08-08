@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen R1 run after deterministic correction of two execution-wrapper regex literals. No scientific parameters, target information, or promotion gates are supplied by this file.
