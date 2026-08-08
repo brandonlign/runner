@@ -25,7 +25,7 @@ jobs:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
 
-      - name: Reconstruct exact frozen sources and print calibration boundary
+      - name: Reconstruct exact frozen null-calibration sources
         run: |
           set -euo pipefail
           test ! -e input
@@ -36,37 +36,37 @@ jobs:
           cat frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 \
             | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/support.py
           echo 'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62  /tmp/support.py' | sha256sum -c -
+          cat frozen-v6/mondrian_clique_development/source_parts_v2/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/scorer.py
+          sha256sum /tmp/scorer.py
           python - <<'PY'
           import ast
           from pathlib import Path
 
-          def defs_and_text(path):
-              text=Path(path).read_text(); tree=ast.parse(text)
-              defs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
-              return text,defs
+          def top(path):
+              text=Path(path).read_text(); tree=ast.parse(text); lines=text.splitlines()
+              defs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef))}
+              return text,defs,lines
 
           def dump(path,names):
-              text,defs=defs_and_text(path); lines=text.splitlines()
+              text,defs,lines=top(path)
               for name in names:
-                  fn=defs.get(name)
-                  if fn is None:
-                      print(f'MISSING {path} {name}')
-                      continue
-                  print(f'===== {path}::{name} {fn.lineno}-{fn.end_lineno} =====')
-                  print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(fn.lineno,fn.end_lineno+1)))
+                  node=defs.get(name)
+                  if node is None:
+                      print('MISSING',path,name); continue
+                  print(f'===== {path}::{name} {node.lineno}-{node.end_lineno} =====')
+                  print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(node.lineno,node.end_lineno+1)))
 
-          support_text,support_defs=defs_and_text('/tmp/support.py')
-          print('SUPPORT_TOP_LEVEL_DEFS', sorted(support_defs))
-          for needle in ['calibration','sporadic','complex_key','iau','label','shower']:
-              print(f'===== SUPPORT LINES CONTAINING {needle!r} =====')
-              for i,line in enumerate(support_text.splitlines(),1):
-                  if needle.lower() in line.lower():
-                      print(f'{i:04d}: {line}')
-
-          likely=[name for name in support_defs if any(k in name.lower() for k in ('parse','catalog','calibr','event','load'))]
-          dump('/tmp/support.py',likely)
-          dump('/tmp/v6.py',['calibrate_year_v6','scan_year_v6','main'])
-          print('PASS_V6_CALIBRATION_SOURCE_PROBE')
+          st,sd,sl=top('/tmp/support.py')
+          ct,cd,cl=top('/tmp/scorer.py')
+          print('SCORER_TOP_LEVEL',sorted(cd))
+          for i,line in enumerate(cl,1):
+              if any(k in line.lower() for k in ('calibration','mondrian','bin','episode','sample','random','choice')):
+                  print(f'SCORER_MATCH {i:04d}: {line}')
+          dump('/tmp/scorer.py',['MondrianWindowFactory','stable_seed'])
+          dump('/tmp/support.py',['parse_catalogue'])
+          dump('/tmp/v6.py',['calibrate_year_v6'])
+          print('PASS_V6_NULL_GENERATOR_SOURCE_PROBE')
           PY
 
       - name: Assert source-only boundary
