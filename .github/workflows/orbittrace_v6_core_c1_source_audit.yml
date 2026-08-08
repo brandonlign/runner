@@ -1,0 +1,126 @@
+name: OrbitTrace v6-core C1 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-core-probabilistic-membership-c1-freeze
+    paths:
+      - orbittrace_v6_core_probabilistic_membership_c1/AUDIT.md
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-probabilistic-membership-p1-freeze-v2
+          path: p1-freeze
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 785554905113626bebffecdd441616238eb76b04
+          path: p1-transfer
+          fetch-depth: 1
+      - name: Verify exact source identities and compile
+        run: |
+          set -euo pipefail
+          echo '113c579f2058126e93b93a3534aaa6108d3e827c667552ecd41ff321d7a5e3da  orbittrace_v6_core_probabilistic_membership_c1/run_development.py' | sha256sum -c -
+          test "$(git -C p1-transfer hash-object orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py)" = '498daf762bc82a664679998ea751feecff8033de'
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          parts=sorted(Path('p1-freeze/orbittrace_probabilistic_membership_p1/source_parts').glob('part*.b64'))
+          assert [p.name for p in parts]==['part00.b64','part01.b64']
+          src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
+          assert hashlib.sha256(src).hexdigest()=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'
+          PY
+          python -m py_compile orbittrace_v6_core_probabilistic_membership_c1/run_development.py p1-transfer/orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
+      - name: Prove C1 reuses audited P1 membership and exact v6 rank
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          ctext=Path('orbittrace_v6_core_probabilistic_membership_c1/run_development.py').read_text()
+          ctree=ast.parse(ctext)
+          defs={n.name:n for n in ctree.body if isinstance(n,ast.FunctionDef)}
+          main=ast.get_source_segment(ctext,defs['main'])
+          assert 'primary_families = v6.build_family_track_v6(old, all_components, base, "v3")' in main
+          assert 'rank_order = [str(f["family_id"]) for f in primary_families]' in main
+          assert 'transfer.YEARS = YEARS' in main
+          assert 'expanded, diagnostics = transfer.apply_exact_p1_membership(p1, primary_families, scan_by_year, base)' in main
+          assert 'fixed4_rescue_can_seed_c1": False' in main
+          assert 'new_members_can_seed_growth": False' in main
+          assert 'parameter_search": False' in main
+
+          ptext=Path('p1-transfer/orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py').read_text()
+          ptree=ast.parse(ptext); pdefs={n.name:n for n in ptree.body if isinstance(n,ast.FunctionDef)}
+          apply=ast.get_source_segment(ptext,pdefs['apply_exact_p1_membership'])
+          for token in (
+              'float(p1.INNER_PROB) == 0.99',
+              'float(p1.OUTER_PROB) == 0.9999',
+              'float(p1.BACKGROUND_UPPER_CONFIDENCE) == 0.95',
+              'float(p1.MAP_THRESHOLD) == 0.5',
+              'p1.OAS(assume_centered=False).fit(x)',
+              'p1.poisson_rate_upper(n_shell, p1.BACKGROUND_UPPER_CONFIDENCE)',
+              'posterior = float(best[\'stream_intensity\'] / denom)',
+              'if posterior <= p1.MAP_THRESHOLD:',
+          ):
+              assert token in ptext,token
+          assert 'hidden_labels' not in apply
+          print('PASS_C1_EXACT_SHARED_P1_MEMBERSHIP_ENGINE')
+          PY
+      - name: Prove pretruth freeze precedes evaluator and authoritative evaluation access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('orbittrace_v6_core_probabilistic_membership_c1/run_development.py').read_text(); tree=ast.parse(text)
+          main=ast.get_source_segment(text,{n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}['main'])
+          freeze=main.index('(args.output / "c1_membership_pretruth.sha256").write_text')
+          first_eval=main.index('v8.mult.evaluate_order(hidden_labels')
+          authoritative_eval=main.index('v6_result["evaluation"]')
+          assert freeze < first_eval < authoritative_eval
+          assert main.count('v8.mult.evaluate_order(hidden_labels')==2
+          assert 'require_baseline_reproduction(v6_result["evaluation"], baseline)' in main
+          assert 'membership_pretruth_sha256' in main
+          assert 'v6_rank_pretruth_sha256' in main
+          assert 'v6_seed_families_pretruth_sha256' in main
+          print('PASS_C1_PRETRUTH_FREEZE_AND_BASELINE_REPRODUCTION_BOUNDARY')
+          PY
+      - name: Prove exact relative gates and target firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('orbittrace_v6_core_probabilistic_membership_c1/run_development.py').read_text()
+          for token in (
+              'MACRO_F1_GAIN_GATE = 0.08',
+              'MRR_RETENTION = 0.95',
+              'ABSOLUTE_PRECISION_FLOOR = 0.65',
+              'PRECISION_REGRESSION_ALLOWANCE = 0.02',
+              'qualified_no_regression',
+              'recovery100_no_regression',
+              'macro_f1_gain_ge_008',
+              'mrr_retention_ge_095',
+              'target interval entered C1 scan',
+              'hidden_labels_not_saved',
+          ):
+              assert token in text,token
+          print('PASS_C1_FROZEN_RELATIVE_GATES_AND_FIREWALL')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_C1_SCIENCE_NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION
