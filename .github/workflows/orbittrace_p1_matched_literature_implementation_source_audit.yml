@@ -1,0 +1,106 @@
+name: OrbitTrace P1 matched literature implementation source audit
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-p1-matched-literature-freeze]
+    paths:
+      - orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py
+      - orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
+      - .github/workflows/orbittrace_p1_matched_literature_implementation_source_audit.yml
+
+permissions:
+  contents: read
+concurrency:
+  group: orbittrace-p1-matched-literature-implementation-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-p1-matched-literature-implementation-freeze
+      - name: Reconstruct exact frozen P1 and compile adapter
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          parts=sorted(Path('orbittrace_probabilistic_membership_p1/source_parts').glob('part*.b64'))
+          assert [p.name for p in parts]==['part00.b64','part01.b64']
+          src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
+          assert hashlib.sha256(src).hexdigest()=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'
+          Path('/tmp/p1_frozen.py').write_bytes(src)
+          PY
+          python -m py_compile /tmp/p1_frozen.py orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
+      - name: Prove strict ID-only manifest boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py').read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          def executable(fn):
+              body=list(fn.body)
+              if body and isinstance(body[0],ast.Expr) and isinstance(body[0].value,ast.Constant) and isinstance(body[0].value.value,str): body=body[1:]
+              return [n for stmt in body for n in ast.walk(stmt)]
+          h=executable(defs['hdbscan_ids_only']); s=executable(defs['sugar_ids_only'])
+          hc=[n.func.attr if isinstance(n.func,ast.Attribute) else n.func.id for n in h if isinstance(n,ast.Call) and isinstance(n.func,(ast.Attribute,ast.Name))]
+          assert 'loads' not in hc and 'load' not in hc and 'findall' in hc
+          assert not any(isinstance(n,ast.Constant) and n.value in {'hdbscan_cluster','cluster','cluster_id','label'} for n in h)
+          assert not any(isinstance(n,ast.Constant) and n.value in {'retained_labels','labels','shower','cluster'} for n in s)
+          assert "extract_json_array_for_key_without_parsing_rest(text, 'event_ids')" in ast.get_source_segment(text,defs['sugar_ids_only'])
+          for token in ("competitor_cluster_values_parsed': False","known_shower_truth_values_parsed': False","native_shower_tokens_parsed': False","'hdbscan': {2023: 26460, 2025: 19658}","'sugar': {2023: 30414, 2025: 23200}"):
+              assert token in text,token
+          print('PASS_P1_STRICT_ID_ONLY_MANIFEST')
+          PY
+      - name: Prove exact P1 membership primitives and conflict ordering
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          fs=Path('/tmp/p1_frozen.py').read_text(); ft=ast.parse(fs)
+          ts=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py').read_text(); tt=ast.parse(ts)
+          fdefs={n.name:n for n in ft.body if isinstance(n,ast.FunctionDef)}; tdefs={n.name:n for n in tt.body if isinstance(n,ast.FunctionDef)}
+          apply=tdefs['apply_exact_p1_membership']; cov=tdefs['p1_covariance_for_panel_family']; frozen_main=fdefs['main']
+          text=ts
+          for token in ("float(p1.INNER_PROB) == 0.99","float(p1.OUTER_PROB) == 0.9999","float(p1.BACKGROUND_UPPER_CONFIDENCE) == 0.95","float(p1.MAP_THRESHOLD) == 0.5","p1.OAS(assume_centered=False).fit(x)","p1.residual_matrix(rows, center, base)","p1.poisson_rate_upper(n_shell, p1.BACKGROUND_UPPER_CONFIDENCE)","stream_total = (float(current_seed_count) + nonseed_excess) / p1.INNER_PROB","posterior = float(best['stream_intensity'] / denom)","if posterior <= p1.MAP_THRESHOLD:"):
+              assert token in text,token
+          for token in ('INNER_PROB = 0.99','OUTER_PROB = 0.9999','BACKGROUND_UPPER_CONFIDENCE = 0.95','MAP_THRESHOLD = 0.5'):
+              assert token in fs,token
+          def key_lambda(fn):
+              hits=[]
+              for n in ast.walk(fn):
+                  if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='sorted':
+                      for kw in n.keywords:
+                          if kw.arg=='key' and isinstance(kw.value,ast.Lambda): hits.append(kw.value)
+              assert len(hits)==1,len(hits)
+              return ast.dump(hits[0],include_attributes=False)
+          assert key_lambda(frozen_main)==key_lambda(apply)
+          for name in ('hidden_labels','hdbscan_cluster','retained_labels','competitor_assignments','known_shower'):
+              assert name not in ast.get_source_segment(ts,apply) and name not in ast.get_source_segment(ts,cov)
+          print('PASS_P1_EXACT_MEMBERSHIP_TRANSFER')
+          PY
+      - name: Prove v8-first and narrow support-ineligibility
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py').read_text(); tree=ast.parse(text)
+          main=ast.get_source_segment(text,{n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}['main'])
+          assert main.index('exact.run_v8_panel') < main.index('apply_exact_p1_membership')
+          assert "SUPPORT_INELIGIBLE_RE = re.compile(r'^family ([A-Za-z0-9_.:-]+) year (2023|2025) has only ([0-9]+) events in local window$')" in text
+          assert 'match = SUPPORT_INELIGIBLE_RE.fullmatch(str(exc))' in main and 'if match is None:\n            raise' in main
+          for token in ("'required_episode_events': 128","'no_support_relaxation': True","'p1_membership_executed': False","'p1_membership_pretruth_sha256': family_sha","'v8_order_pretruth_sha256': order_sha","'competitor_cluster_values_accessed': False","'known_shower_truth_accessed': False","'membership_and_rank_frozen_before_truth': True"):
+              assert token in main,token
+          print('PASS_P1_V8_FIRST_INELIGIBILITY_BOUNDARY')
+          PY
+      - name: Assert source-only firewall
+        run: |
+          test ! -e input && test ! -e output && test ! -e output_pretruth
+          echo NO_SONOTACO_NO_ASSIGNMENTS_NO_TRUTH_NO_TARGET_REGION_NO_P1_SCIENCE
