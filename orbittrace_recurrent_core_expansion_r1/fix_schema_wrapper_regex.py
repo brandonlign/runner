@@ -69,24 +69,27 @@ selection_replacement = [
 new_selection_block = ''.join(selection_indent + line + '\n' for line in selection_replacement)
 lines = lines[:selection_i] + [new_selection_block] + lines[selection_i + 1 :]
 
-# Repair C: restore the event-ID mapping omitted by the first replacement
-# parser. The approved raw schema has `Unique trajectory` as field 0 after the
-# leading comment marker is removed. No event-row value is inspected here.
-id_anchor_hits = [
+# Repair C: restore the complete raw-header interface required by the frozen
+# orbit parser. The approved raw schema has `Unique trajectory` at field 0 and
+# `Sol lon` at field 5 after removing the leading comment marker. No event-row
+# value is inspected here.
+position_anchor_hits = [
     i for i, line in enumerate(lines)
     if line.strip() == '"q": exact("q"),'
 ]
-assert len(id_anchor_hits) == 1, id_anchor_hits
-id_anchor_i = id_anchor_hits[0]
-id_indent = lines[id_anchor_i][: len(lines[id_anchor_i]) - len(lines[id_anchor_i].lstrip())]
-id_line = id_indent + '"id": exact("Unique trajectory"),\n'
+assert len(position_anchor_hits) == 1, position_anchor_hits
+position_anchor_i = position_anchor_hits[0]
+position_indent = lines[position_anchor_i][: len(lines[position_anchor_i]) - len(lines[position_anchor_i].lstrip())]
+id_line = position_indent + '"id": exact("Unique trajectory"),\n'
+sol_line = position_indent + '"sol": exact("Sol lon"),\n'
 assert all('"id": exact("Unique trajectory")' not in line for line in lines)
-lines = lines[:id_anchor_i] + [id_line] + lines[id_anchor_i:]
+assert all('"sol": exact("Sol lon")' not in line for line in lines)
+lines = lines[:position_anchor_i] + [id_line, sol_line] + lines[position_anchor_i:]
 patched = ''.join(lines)
 
 # Repair D: schema-only preflight on the SAME month already used by the
-# approved no-row schema audit. It also statically enumerates every literal
-# `positions["..."]` key used by parse_target_excluded_orbits, guaranteeing the
+# approved no-row schema audit. It statically enumerates every literal
+# `positions["..."]` key used by parse_target_excluded_orbits and proves the
 # replacement parser supplies the complete interface before the expensive run.
 needle = "PYTHONPATH=input/v3:orbittrace_wavelet_catalogue_v3:. \\\npython input/r1/run_development.py \\\n"
 assert patched.count(needle) == 1, patched.count(needle)
@@ -102,6 +105,8 @@ text = dd.get_monthly_file_content_by_date('2022-01')
 fields, positions = ns['raw_header_positions'](text)
 assert fields[0] == 'Unique trajectory', fields[0]
 assert positions['id'] == 0, positions
+assert fields[5] == 'Sol lon', fields[5]
+assert positions['sol'] == 5, positions
 assert positions['q'] == 37, positions
 assert fields[43] == 'Q', fields[43]
 assert positions['q'] != 43
@@ -117,6 +122,7 @@ for node in ast.walk(funcs[0]):
             required.add(key.value)
 missing = sorted(required - set(positions))
 assert not missing, f'missing raw-header position keys: {missing}; required={sorted(required)}; supplied={sorted(positions)}'
+assert required == {'id', 'sol'}, required
 print('R1_REQUIRED_POSITION_KEYS', sorted(required))
 print('PASS_R1_SCHEMA_PARSER_PREFLIGHT')
 PY
@@ -132,14 +138,17 @@ assert patched != text
 path.write_text(patched)
 Path('output').mkdir(exist_ok=True)
 record = {
-    'repair_scope': 'execution-wrapper source boundary + audited header selection + event-ID interface + static schema preflight',
+    'repair_scope': 'execution-wrapper source boundary + audited header selection + complete raw-schema interface + static schema preflight',
     'boundary_method': 'unique top-level def raw_header_positions line through next top-level def line',
     'header_selection_method': 'same textual marker rule as approved GMN schema-only audit',
     'event_id_field': 'Unique trajectory',
     'event_id_expected_index': 0,
+    'solar_longitude_field': 'Sol lon',
+    'solar_longitude_expected_index': 5,
     'preflight_month': '2022-01',
     'preflight_event_rows_parsed': False,
     'preflight_static_required_position_key_check': True,
+    'required_position_keys_expected': ['id', 'sol'],
     'original_wrapper_sha256': hashlib.sha256(raw).hexdigest(),
     'patched_wrapper_sha256': hashlib.sha256(patched.encode()).hexdigest(),
     'old_boundary_block_sha256': hashlib.sha256(old_boundary_block.encode()).hexdigest(),
