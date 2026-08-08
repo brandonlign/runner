@@ -1,0 +1,1 @@
+Execution-only trigger for frozen pooled-reference nearest-component projection v12 development. No scientific method, representation rule, threshold, radius, cap, weight, endpoint, blindness rule, promotion gate, or evaluation definition may change in this child.
