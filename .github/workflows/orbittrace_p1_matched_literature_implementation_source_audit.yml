@@ -6,6 +6,7 @@ on:
     paths:
       - orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py
       - orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
+      - orbittrace_probabilistic_membership_p1_literature/apply_exact_v8_corpus_patch.py
       - .github/workflows/orbittrace_p1_matched_literature_implementation_source_audit.yml
 
 permissions:
@@ -22,7 +23,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-p1-matched-literature-implementation-freeze
-      - name: Reconstruct exact frozen P1 and compile adapter
+
+      - name: Reconstruct exact frozen P1 and protocol-exact matched runtime
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -34,7 +36,15 @@ jobs:
           assert hashlib.sha256(src).hexdigest()=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'
           Path('/tmp/p1_frozen.py').write_bytes(src)
           PY
-          python -m py_compile /tmp/p1_frozen.py orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
+          python orbittrace_probabilistic_membership_p1_literature/apply_exact_v8_corpus_patch.py \
+            orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py \
+            /tmp/p1_matched_pretruth.py | tee /tmp/p1_matched_patch.log
+          python -m py_compile \
+            /tmp/p1_frozen.py \
+            /tmp/p1_matched_pretruth.py \
+            orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py \
+            orbittrace_probabilistic_membership_p1_literature/apply_exact_v8_corpus_patch.py
+
       - name: Prove strict ID-only manifest boundary
         run: |
           set -euo pipefail
@@ -57,19 +67,19 @@ jobs:
               assert token in text,token
           print('PASS_P1_STRICT_ID_ONLY_MANIFEST')
           PY
-      - name: Prove exact P1 membership primitives and conflict ordering
+
+      - name: Prove exact P1 membership primitives and deterministic seed ordering
         run: |
           set -euo pipefail
           python - <<'PY'
           import ast
           from pathlib import Path
           fs=Path('/tmp/p1_frozen.py').read_text(); ft=ast.parse(fs)
-          ts=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py').read_text(); tt=ast.parse(ts)
+          ts=Path('/tmp/p1_matched_pretruth.py').read_text(); tt=ast.parse(ts)
           fdefs={n.name:n for n in ft.body if isinstance(n,ast.FunctionDef)}; tdefs={n.name:n for n in tt.body if isinstance(n,ast.FunctionDef)}
           apply=tdefs['apply_exact_p1_membership']; cov=tdefs['p1_covariance_for_panel_family']; frozen_main=fdefs['main']
-          text=ts
           for token in ("float(p1.INNER_PROB) == 0.99","float(p1.OUTER_PROB) == 0.9999","float(p1.BACKGROUND_UPPER_CONFIDENCE) == 0.95","float(p1.MAP_THRESHOLD) == 0.5","p1.OAS(assume_centered=False).fit(x)","p1.residual_matrix(rows, center, base)","p1.poisson_rate_upper(n_shell, p1.BACKGROUND_UPPER_CONFIDENCE)","stream_total = (float(current_seed_count) + nonseed_excess) / p1.INNER_PROB","posterior = float(best['stream_intensity'] / denom)","if posterior <= p1.MAP_THRESHOLD:"):
-              assert token in text,token
+              assert token in ts,token
           for token in ('INNER_PROB = 0.99','OUTER_PROB = 0.9999','BACKGROUND_UPPER_CONFIDENCE = 0.95','MAP_THRESHOLD = 0.5'):
               assert token in fs,token
           def key_lambda(fn):
@@ -81,25 +91,34 @@ jobs:
               assert len(hits)==1,len(hits)
               return ast.dump(hits[0],include_attributes=False)
           assert key_lambda(frozen_main)==key_lambda(apply)
+          covsrc=ast.get_source_segment(ts,cov)
+          assert "ordered_family_ids = [str(eid) for eid in family['event_ids']]" in covsrc
+          assert 'family_ids = set(' not in covsrc
+          assert 'for eid in ordered_family_ids if eid in event_lookup_by_year[year]' in covsrc
           for name in ('hidden_labels','hdbscan_cluster','retained_labels','competitor_assignments','known_shower'):
-              assert name not in ast.get_source_segment(ts,apply) and name not in ast.get_source_segment(ts,cov)
-          print('PASS_P1_EXACT_MEMBERSHIP_TRANSFER')
+              assert name not in ast.get_source_segment(ts,apply) and name not in covsrc
+          print('PASS_P1_EXACT_MEMBERSHIP_TRANSFER_AND_DETERMINISM')
           PY
-      - name: Prove v8-first and narrow support-ineligibility
+
+      - name: Prove exact promoted-v8 panel identity and narrow support-ineligibility
         run: |
           set -euo pipefail
           python - <<'PY'
-          import ast
+          import ast,hashlib
           from pathlib import Path
-          text=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py').read_text(); tree=ast.parse(text)
+          text=Path('/tmp/p1_matched_pretruth.py').read_text(); tree=ast.parse(text)
           main=ast.get_source_segment(text,{n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}['main'])
+          assert "support.CORPUS = 'sonotaco-exact-row-literature-pairwise'" in main
+          assert 'p1-sonotaco-exact-row-pretruth' not in main
           assert main.index('exact.run_v8_panel') < main.index('apply_exact_p1_membership')
           assert "SUPPORT_INELIGIBLE_RE = re.compile(r'^family ([A-Za-z0-9_.:-]+) year (2023|2025) has only ([0-9]+) events in local window$')" in text
           assert 'match = SUPPORT_INELIGIBLE_RE.fullmatch(str(exc))' in main and 'if match is None:\n            raise' in main
           for token in ("'required_episode_events': 128","'no_support_relaxation': True","'p1_membership_executed': False","'p1_membership_pretruth_sha256': family_sha","'v8_order_pretruth_sha256': order_sha","'competitor_cluster_values_accessed': False","'known_shower_truth_accessed': False","'membership_and_rank_frozen_before_truth': True"):
               assert token in main,token
-          print('PASS_P1_V8_FIRST_INELIGIBILITY_BOUNDARY')
+          print('P1_MATCHED_PROTOCOL_EXACT_RUNTIME_SHA256='+hashlib.sha256(text.encode()).hexdigest())
+          print('PASS_P1_EXACT_V8_FIRST_INELIGIBILITY_BOUNDARY')
           PY
+
       - name: Assert source-only firewall
         run: |
           test ! -e input && test ! -e output && test ! -e output_pretruth
