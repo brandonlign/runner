@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from orbittrace_v6_literature_adapter import adapter
+from orbittrace_v6_literature_adapter.parallel_exact_rescore import install as install_parallel_exact
 
 
 def require(ok: bool, message: str) -> None:
@@ -43,6 +44,7 @@ def main() -> int:
     p.add_argument("--scorer-parts", required=True, type=Path)
     p.add_argument("--archive", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
+    p.add_argument("--parallel-exact-workers", type=int, default=0)
     args = p.parse_args()
 
     # Deliberately no parser, mapping or comparator assignment input here.
@@ -52,6 +54,11 @@ def main() -> int:
     support = old.load_support_module(args.support_source_parts)
     candidate, base, scorer = support.load_sources(args)
     adapter.configure_transfer_modules(v6, old, support)
+    execution = {"parallel_exact_enabled": False, "parallel_exact_workers": 0}
+    if args.parallel_exact_workers > 0:
+        execution.update(install_parallel_exact(v6, workers=args.parallel_exact_workers, min_parallel_records=256))
+        execution["parallel_exact_enabled"] = True
+        execution["parallel_exact_workers"] = int(execution["workers"])
 
     manifest = json.loads(args.id_manifest.read_text())
     require(manifest["classification"] == "pretruth exact-row ID-only manifest", "wrong manifest classification")
@@ -76,7 +83,7 @@ def main() -> int:
     require(len(calibration) == len(background_ids), "calibration ID materialization mismatch")
     require(len(calibration) >= 1000, "insufficient panel-year calibration reservoir")
 
-    print(f"V6_PANEL_YEAR_START panel={args.panel} year={args.year} rows={len(scan_events)} calibration={len(calibration)}", flush=True)
+    print(f"V6_PANEL_YEAR_START panel={args.panel} year={args.year} rows={len(scan_events)} calibration={len(calibration)} execution={execution}", flush=True)
     audit, anchors, components = v6.scan_year_v6(
         old, args.year, scan_events, calibration, candidate, base, scorer, support
     )
@@ -95,6 +102,7 @@ def main() -> int:
         "competitor_cluster_labels_accessed": False,
         "scan_count": len(scan_events),
         "calibration_count": len(calibration),
+        "execution": execution,
         "audit": audit,
         "anchors": anchors,
         "components": components,
