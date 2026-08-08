@@ -20,8 +20,6 @@ start = sum(len(x) for x in lines[: node.lineno - 1])
 end = sum(len(x) for x in lines[: node.end_lineno])
 old = text[start:end]
 
-# The parser/comparator repairs occur earlier in the file; the R1 expansion
-# function itself must still be the frozen implementation shape audited above.
 for token in (
     'medoid_cache = {cid: component_orbit_medoid(c, orbit_by_id, dsh) for cid, c in component_by_id.items()}',
     'for family in families:',
@@ -57,9 +55,9 @@ def _expand_memberships_optimized_core(
         for event in scan_by_year[year]:
             sol_bins[year][int(math.floor(float(event["sol"]))) % 360].append(event)
 
-    # Exact dead-work elimination: only components referenced by recurrent families
-    # can ever be used as `comp` or `partner` below. Unreferenced components cannot
-    # affect any R1 proposal, assignment, rank, or gate.
+    # Exact dead-work elimination only: components never referenced by a recurrent
+    # family can never be `comp` or `partner` below, so their medoids cannot affect
+    # any proposal, assignment, ranking, diagnostic, or gate.
     active_component_ids = sorted({str(cid) for family in families for cid in family["component_ids"]})
     require(set(active_component_ids).issubset(component_by_id), "family references unknown component")
     medoid_cache: dict[str, dict[str, Any] | None] = {}
@@ -82,7 +80,11 @@ def _expand_memberships_optimized_core(
     component_with_partner = 0
     geometry_candidates = 0
     physical_passes = 0
-    event_center_cache: dict[str, dict[str, float]] = {}
+
+    # Memoize pure computations without changing any numerical expression.
+    # Object identity is used for event centers so duplicate event IDs, if any,
+    # cannot alter frozen semantics.
+    event_center_cache: dict[int, dict[str, float]] = {}
     dsh_cache: dict[tuple[str, str], float] = {}
 
     for family_i, family in enumerate(families, 1):
@@ -108,34 +110,18 @@ def _expand_memberships_optimized_core(
             local_events: list[dict[str, Any]] = []
             for offset in range(-7, 8):
                 local_events.extend(sol_bins[year].get((center_bin + offset) % 360, []))
-            comp_centroid = comp["centroid"]
             for event in local_events:
                 eid = str(event["id"])
                 if eid in all_seed_ids or eid not in orbit_by_id:
                     continue
-                if abs(float(base.wrap180(float(event["sol"]) - float(comp_centroid["sol"])))) > 6.0 + 1e-12:
+                if abs(float(base.wrap180(float(event["sol"]) - float(comp["centroid"]["sol"])))) > 6.0 + 1e-12:
                     continue
-                center = event_center_cache.get(eid)
+                center_key = id(event)
+                center = event_center_cache.get(center_key)
                 if center is None:
                     center = event_center(event)
-                    event_center_cache[eid] = center
-
-                # Exact necessary-condition short circuits for the same Euclidean
-                # geometry metric. If one normalized coordinate alone exceeds the
-                # frozen radius, the full norm must exceed it too. Non-finite values
-                # fall through to the original exact distance function.
-                d_lat = (float(center["ecl_lat"]) - float(comp_centroid["ecl_lat"])) / 2.0
-                if math.isfinite(d_lat) and abs(d_lat) > FAMILY_LINK_RADIUS + 1e-12:
-                    continue
-                d_vg = (float(center["vg"]) - float(comp_centroid["vg"])) / 2.0
-                if math.isfinite(d_vg) and abs(d_vg) > FAMILY_LINK_RADIUS + 1e-12:
-                    continue
-                d_lon = float(base.wrap180(float(center["sun_lon"]) - float(comp_centroid["sun_lon"])))
-                d_lon *= math.cos(math.radians(0.5 * (float(center["ecl_lat"]) + float(comp_centroid["ecl_lat"])))) / 2.0
-                if math.isfinite(d_lon) and abs(d_lon) > FAMILY_LINK_RADIUS + 1e-12:
-                    continue
-
-                geom = float(support.centroid_distance(center, comp_centroid, base))
+                    event_center_cache[center_key] = center
+                geom = float(support.centroid_distance(center, comp["centroid"], base))
                 if geom > FAMILY_LINK_RADIUS + 1e-12:
                     continue
                 geometry_candidates += 1
@@ -143,8 +129,9 @@ def _expand_memberships_optimized_core(
                 for partner_cid, medoid in partner_medoid_rows:
                     medoid_eid = str(medoid["event_id"])
                     cache_key = (eid, medoid_eid)
-                    distance = dsh_cache.get(cache_key)
-                    if distance is None:
+                    if cache_key in dsh_cache:
+                        distance = dsh_cache[cache_key]
+                    else:
                         distance = scalar_dsh(orbit_by_id[eid], medoid["orbit"], dsh)
                         dsh_cache[cache_key] = distance
                     row = (distance, partner_cid, medoid)
@@ -228,6 +215,12 @@ def expand_memberships(
     import os as _os
     sample_n = min(int(_os.environ.get("R1_EQUIVALENCE_SAMPLE_FAMILIES", "8")), len(families))
     require(sample_n >= 1, "R1 equivalence sample must contain at least one family")
+    full_active_component_ids = {str(cid) for family in families for cid in family["component_ids"]}
+    print(
+        f"R1_EQUIVALENCE_CONTEXT families_total={len(families)} components_total={len(components)} "
+        f"components_active={len(full_active_component_ids)} sample_families={sample_n}",
+        flush=True,
+    )
     sample_families = copy.deepcopy(families[:sample_n])
     sample_component_ids = {str(cid) for family in sample_families for cid in family["component_ids"]}
     sample_components = [c for c in components if str(c["component_id"]) in sample_component_ids]
@@ -235,11 +228,11 @@ def expand_memberships(
         copy.deepcopy(sample_families), copy.deepcopy(sample_components), scan_by_year,
         orbit_by_id, order, support, base, dsh,
     )
-    optimized = _expand_memberships_optimized_core(
+    optimized_result = _expand_memberships_optimized_core(
         copy.deepcopy(sample_families), copy.deepcopy(sample_components), scan_by_year,
         orbit_by_id, order, support, base, dsh,
     )
-    require(reference == optimized, "optimized R1 expansion differs from frozen reference on bounded deterministic sample")
+    require(reference == optimized_result, "optimized R1 expansion differs from frozen reference on bounded deterministic sample")
     print(
         f"PASS_R1_BOUNDED_EXACT_EQUIVALENCE families={sample_n} components={len(sample_components)}",
         flush=True,
@@ -264,15 +257,15 @@ out.mkdir(exist_ok=True)
 record = {
     "optimization_scope": [
         "skip medoid construction for components not referenced by recurrent families",
-        "cache event_center by event id",
-        "cache exact scalar D_SH by event id and partner medoid event id",
-        "exact necessary-condition short-circuits for latitude, speed and longitude geometry terms",
+        "memoize unchanged event_center computation by event object identity",
+        "memoize exact scalar D_SH by event id and partner medoid event id",
         "progress logging only",
     ],
     "old_expand_sha256": hashlib.sha256(old.encode()).hexdigest(),
     "new_expand_sha256": hashlib.sha256((reference + "\n\n" + optimized).encode()).hexdigest(),
     "bounded_equivalence_sample_families_default": 8,
     "numerical_approximation": False,
+    "geometry_prefilter_added": False,
     "scientific_rule_changed": False,
     "distance_definition_changed": False,
     "dsh_definition_changed": False,
