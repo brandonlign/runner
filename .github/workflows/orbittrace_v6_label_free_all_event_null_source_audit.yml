@@ -1,0 +1,97 @@
+name: OrbitTrace v6-LF all-event null source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_v6_label_free_all_event_null/PROTOCOL.md
+      - orbittrace_v6_label_free_all_event_null/run_development.py
+      - orbittrace_v6_label_free_all_event_null/parallel_exact_rescore.py
+      - .github/workflows/orbittrace_v6_label_free_all_event_null_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-all-event-null-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-label-free-all-event-null-freeze
+      - name: Compile and prove hard label firewall
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_label_free_all_event_null/run_development.py orbittrace_v6_label_free_all_event_null/parallel_exact_rescore.py
+          sha256sum orbittrace_v6_label_free_all_event_null/run_development.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_v6_label_free_all_event_null/run_development.py')
+          text=p.read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          constants={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: constants[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert constants['YEARS']==(2022,2023)
+          assert constants['REPAIRED_V6_SHA256']=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          assert constants['V8_QUALIFIED']==95
+          assert constants['V8_RECOVERY100']==58
+          assert constants['V8_MRR']==0.045531138942766655
+          assert constants['V8_MACRO_F1']==0.1736657194465356
+          assert constants['MIN_TOP100_PRECISION']==0.65
+
+          geom=ast.get_source_segment(text,defs['parse_geometry_only'])
+          assert 'columns["shower"]' not in geom
+          assert 'normalize_label' not in geom
+          assert 'complex_key":"HIDDEN"' in geom
+          assert 'dict(event,complex_key="SPORADIC")' in geom
+          assert 'len(scan[year])==len(calibration[year])' in geom
+          assert '[e["id"] for e in scan[year]]==[e["id"] for e in calibration[year]]' in geom
+
+          truth=ast.get_source_segment(text,defs['parse_truth_after_freeze'])
+          blind_pos=truth.index('keep=valid_blind_excluded_mask')
+          label_pos=truth.index('support.normalize_label(frame.iloc[int(index)][columns["shower"]])')
+          assert blind_pos < label_pos
+          assert 'event_id in seen' in truth and truth.index('event_id in seen') < label_pos
+          assert 'seen==expected_ids' in truth
+
+          main=ast.get_source_segment(text,defs['main'])
+          freeze_pos=main.index('(args.output/"v6_lf_pretruth.sha256").write_text')
+          truth_call=main.index('parse_truth_after_freeze(support,pretruth_ids)')
+          eval_pos=main.index('v6.evaluate_families_v6(hidden_labels,primary,rescue,YEARS)')
+          assert freeze_pos < truth_call < eval_pos
+          assert 'v6.scan_year_v6(old,year,scan[year],calibration[year]' in main
+          assert 'v6.build_family_track_v6(old,components,base,"v3")' in main
+          assert 'v6.build_family_track_v6(old,components,base,"fixed4_rescue")' in main
+          assert 'install_parallel_exact(v6,workers=4,min_parallel_records=256)' in main
+          assert '"calibration_reservoir":"all geometrically valid target-excluded scan events; no shower-label selection"' in main
+          assert '"parameter_search":False' in main and '"null_trimming":False' in main
+          assert 'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT' in main
+          assert 'FAIL_V6_LABEL_FREE_ALL_EVENT_NULL_NO_GO' in main
+
+          q=Path('orbittrace_v6_label_free_all_event_null/parallel_exact_rescore.py')
+          qt=q.read_text(); qtree=ast.parse(qt); qdefs={n.name:n for n in qtree.body if isinstance(n,ast.FunctionDef)}
+          worker=qdefs['_run_chunk']; calls=[]
+          for n in ast.walk(worker):
+              if isinstance(n,ast.Call):
+                  f=n.func; calls.append(f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>'))
+          assert calls.count('_ORIGINAL')==1 and set(calls)<={'_ORIGINAL','RuntimeError'}
+          install=ast.get_source_segment(qt,qdefs['install'])
+          assert 'v6.exact_rescore_window_v6=replacement' in install
+          assert 'pool.map(_run_chunk,chunks,chunksize=1)' in install
+          print('PASS_V6_LF_ALL_EVENT_NULL_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
