@@ -67,6 +67,9 @@ def crossfit_expand_local_envelope(
         "radius_quantile": None,
         "component_centroids_refit": False,
         "same_year_support_only": True,
+        # Compatibility field consumed by the frozen v1 result assembler. It is intentionally
+        # false; the v4 wrapper removes the obsolete other-year gate before computing v4 verdict.
+        "other_year_support_only": False,
         "cross_year_recurrence_preserved_by_frozen_v8_family": True,
         "new_members_by_year": {},
         "eligible_family_event_pairs_by_year": {},
