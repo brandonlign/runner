@@ -13,7 +13,7 @@ v4 moves out of the binary-radius expansion lineage. It uses each already-existi
 - Solar longitude 20°–55° remains removed before label access.
 - The exact v8 226-family universe, pooled family-year centroids, scores, and multiplicity ranking must reproduce before expansion.
 - No OrbitTrace coordinate, member, identity, prior target family, target-region event, Stage A/B output, or reveal may enter this work.
-- SonotaCo 2017 remains untouched and reserved. It may not be accessed for method performance unless v4 development passes and a separate prospective protocol is frozen first.
+- No external validation panel is designated by this development protocol. Repository history already contains prior SonotaCo 2017 raw/score/label exposure, so it is not represented as pristine here. Any later external validation requires a separate repository-history freshness audit and a separately frozen protocol before scientific-value access.
 
 ## Required predecessor
 
@@ -52,7 +52,7 @@ This run may not test or select:
 - any recursive reassignment or centroid refit;
 - any reranking, score fusion, or family-graph change;
 - any literature-benchmark-driven parameter;
-- any SonotaCo 2017 value, label, score, or endpoint.
+- any external-validation scientific value, label, score, or endpoint.
 
 A failure is a permanent no-go for this exact component-envelope rule. It does not authorize a same-panel parameter search.
 
@@ -73,4 +73,8 @@ Pass only if all gates pass.
 
 ## Consequence of a pass
 
-A development pass authorizes only preparation of a separately frozen prospective SonotaCo 2017 validation/benchmark. The v8 final blind GMN firewall remains untouched, and no OrbitTrace target-containing search is authorized by this experiment.
+A development pass authorizes only a separate external-panel freshness audit and, if that audit identifies a scientifically usable holdout, preparation of a separately frozen prospective validation/benchmark protocol. The v8 final blind GMN firewall remains untouched, and no OrbitTrace target-containing search is authorized by this experiment.
+
+## Provenance correction note
+
+The initial v4 commit incorrectly described SonotaCo 2017 as untouched. Repository-history inspection performed while the first v4 computation was still in progress—and before any v4 outcome was observed—showed prior SonotaCo 2017 raw/score/label exposure in later validation work. This correction changes only prospective-validation metadata. The v4 membership rule, development panel, scientific gates, blinding boundary, and no-tuning restrictions are unchanged.
