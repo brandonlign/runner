@@ -22,6 +22,7 @@ assert segment is not None
 
 required_text = [
     'component_by_id = {str(c["component_id"]): c for c in components}',
+    'scan_lookup = {year: {str(e["id"]): e for e in scan_by_year[year]} for year in YEARS}',
     'medoid_cache = {cid: component_orbit_medoid(c, orbit_by_id, dsh) for cid, c in component_by_id.items()}',
     'comps = [component_by_id[str(cid)] for cid in family["component_ids"]]',
     'for partner in comps:',
@@ -64,8 +65,18 @@ assert len(comps_assignments) == 1
 comps_text = ast.get_source_segment(source, comps_assignments[0])
 assert comps_text == 'comps = [component_by_id[str(cid)] for cid in family["component_ids"]]', comps_text
 
+# Prove scan_lookup is a pure dead assignment: exactly one Store and zero Loads.
+scan_lookup_names = [
+    node for node in ast.walk(fn)
+    if isinstance(node, ast.Name) and node.id == "scan_lookup"
+]
+scan_lookup_stores = [node for node in scan_lookup_names if isinstance(node.ctx, ast.Store)]
+scan_lookup_loads = [node for node in scan_lookup_names if isinstance(node.ctx, ast.Load)]
+assert len(scan_lookup_stores) == 1, len(scan_lookup_stores)
+assert len(scan_lookup_loads) == 0, len(scan_lookup_loads)
+
 report = {
-    "verdict": "PASS_R1_UNREFERENCED_MEDOID_DEADWORK_PROOF",
+    "verdict": "PASS_R1_UNREFERENCED_MEDOID_AND_SCAN_LOOKUP_DEADWORK_PROOF",
     "frozen_source_sha256": FROZEN_SHA256,
     "scientific_source_executed": False,
     "catalogue_access": False,
@@ -75,7 +86,12 @@ report = {
     "medoid_cache_attribute_uses": cache_attribute_uses,
     "partner_binding": "for partner in comps",
     "comps_binding": 'family["component_ids"] -> component_by_id',
-    "conclusion": "a medoid for a component ID absent from every recurrent family component_ids list is unreachable after construction and cannot affect expand_memberships output",
+    "scan_lookup_store_count": len(scan_lookup_stores),
+    "scan_lookup_load_count": len(scan_lookup_loads),
+    "conclusions": [
+        "a medoid for a component ID absent from every recurrent family component_ids list is unreachable after construction and cannot affect expand_memberships output",
+        "scan_lookup is assigned exactly once and never read inside expand_memberships, so removing its construction cannot affect output",
+    ],
 }
 Path("output").mkdir(exist_ok=True)
 Path("output/r1_unreferenced_medoid_deadwork_proof.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
