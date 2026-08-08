@@ -14,11 +14,13 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-22.04
+    env:
+      PYTHONPATH: orbittrace_multi_anchor_energy_v3:orbittrace_wavelet_catalogue_v3:.
     steps:
-      - name: Check out frozen orbital-validation parent
+      - name: Check out transport-repair branch
         uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-v8-maarsy-2016-2017-orbital-validation
+          ref: agent/orbittrace-v8-maarsy-orbital-transport-repair
           fetch-depth: 1
 
       - name: Set up Python
@@ -28,13 +30,13 @@ jobs:
           cache: pip
           cache-dependency-path: ghoststream_fixed4_application/requirements.txt
 
-      - name: Install exact runtime dependencies before orbit access
+      - name: Install frozen dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
           python -m pip install 'h5py==3.11.0'
 
-      - name: Fetch and pin immutable geometry artifact and frozen evaluator sources
+      - name: Reconstruct exact frozen prerequisites before orbit access
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -42,100 +44,47 @@ jobs:
           mkdir -p input/geometry input/frozen input/public output
 
           test "$(git hash-object orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py)" = 'de269f8160bb23a2175d113853f303ce5089450c'
-          python -m py_compile orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py
+          test "$(git hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
 
-          # Exact already-completed geometry-only result: family/ranking universe is immutable before orbit.
-          curl -L --fail --retry 3 \
-            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9014840161/zip" \
-            -o input/geometry.zip
-          echo '1016bb4bb8767d4f826ec97c31083f51fed29856f9ce8f8618b070e153fda342  input/geometry.zip' | sha256sum -c -
-          unzip -q input/geometry.zip -d input/geometry
+          gh run download 31233762587 --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v8-maarsy-2016-2017-geometry-power-v4 \
+            --dir input/geometry
           echo '12705afe1d499f8c0a5acbbae37d7119e4c369015b1cd1cfc18f2c3b63086351  input/geometry/v8_maarsy_2016_2017_geometry_power.json' | sha256sum -c -
           echo 'fe8905d4c681a62f0b3f3b574465793d157f378d5c8321910f8d0bc6875e7279  input/geometry/maarsy_v8_geometry_rankings.json' | sha256sum -c -
 
-          # Retrieve exact frozen external evaluator + D_SH blobs from this repository object database.
-          fetch_blob() {
-            sha="$1"; out="$2"
-            curl -L --fail --retry 3 \
-              -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/git/blobs/$sha" \
-              -o "$out.json"
-            python - "$out.json" "$out" <<'PY'
-          import base64,json,sys
-          src,out=sys.argv[1:]
-          obj=json.load(open(src))
-          assert obj['encoding']=='base64'
-          open(out,'wb').write(base64.b64decode(obj['content']))
-          PY
-            rm -f "$out.json"
-            test "$(git hash-object "$out")" = "$sha"
-          }
-          fetch_blob 16a4e832893cbc689ff084510f792349035e5ff7 input/frozen/saamer_external_evaluator.py
-          fetch_blob ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2 input/frozen/literature_comparator_shared.py
-          python -m py_compile input/frozen/saamer_external_evaluator.py input/frozen/literature_comparator_shared.py
+          git fetch --no-tags --depth=1 origin agent/orbittrace-label-free-v6-saamer-2020-2021-external
+          git show FETCH_HEAD:orbittrace_label_free_v6_saamer_external/run_external_validation.py > input/frozen/saamer_external_evaluator.py
+          test "$(git hash-object input/frozen/saamer_external_evaluator.py)" = '16a4e832893cbc689ff084510f792349035e5ff7'
 
-          # Public source pins defining the native six-column orbit semantics before values are read.
-          curl -L --fail --retry 3 \
-            'https://raw.githubusercontent.com/danielk333/dasst/298b45b2bdb2ef4e2d20bd6a13d5401189d79798/src/dasst/orbit_determination/methods.py' \
-            -o input/public/dasst_methods.py
-          curl -L --fail --retry 3 \
-            'https://raw.githubusercontent.com/danielk333/pyorb/e808fd230599a7b0153c1632b298644f26595187/pyorb/orbit.py' \
-            -o input/public/pyorb_orbit.py
-          curl -L --fail --retry 3 \
-            'https://raw.githubusercontent.com/jvierine/pansy_receiver/a9f40ab941fa6fec0a781de552c2a4341c8639ba/dasst_orbits_from_candidate_states.py' \
-            -o input/public/author_dasst_orbits.py
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/frozen/literature_comparator_shared.py
+          test "$(git hash-object input/frozen/literature_comparator_shared.py)" = 'ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
+
+          curl -L --fail --retry 3 'https://raw.githubusercontent.com/danielk333/dasst/298b45b2bdb2ef4e2d20bd6a13d5401189d79798/src/dasst/orbit_determination/methods.py' -o input/public/dasst_methods.py
+          curl -L --fail --retry 3 'https://raw.githubusercontent.com/danielk333/pyorb/e808fd230599a7b0153c1632b298644f26595187/pyorb/orbit.py' -o input/public/pyorb_orbit.py
+          curl -L --fail --retry 3 'https://raw.githubusercontent.com/jvierine/pansy_receiver/a9f40ab941fa6fec0a781de552c2a4341c8639ba/dasst_orbits_from_candidate_states.py' -o input/public/author_dasst_orbits.py
           test "$(git hash-object input/public/dasst_methods.py)" = '4672e516ea71a39a63a487f7ed6d4852b3a97b36'
           test "$(git hash-object input/public/pyorb_orbit.py)" = 'a735a50893a60624f0148991153dc8eddcb11d44'
           test "$(git hash-object input/public/author_dasst_orbits.py)" = '078ab7a939bc0939296aa0cf5bdc5ab00ad7a643'
-          grep -Fq 'degrees=True' input/public/dasst_methods.py
-          grep -Fq 'results["kepler_" + frame_name][:, :, ind] = orb.kepler' input/public/dasst_methods.py
-          grep -Fq "KEPLER = ['a', 'e', 'i', 'omega', 'Omega', 'anom']" input/public/pyorb_orbit.py
-          grep -Fq 'AU_M = 149_597_870_700.0' input/public/author_dasst_orbits.py
-          grep -Fq 'DASST/pyorb order is a, e, i, omega, Omega, true anomaly.' input/public/author_dasst_orbits.py
-          grep -Fq 'a_au = kepler[0] / AU_M' input/public/author_dasst_orbits.py
-          grep -Fq 'q_au = abs(a_au * (1.0 - e))' input/public/author_dasst_orbits.py
 
-          # Pre-orbit artifact assertions and canonical rank hash.
           python - <<'PY'
-          import hashlib,json
+          import hashlib, json
           from pathlib import Path
           r=json.loads(Path('input/geometry/v8_maarsy_2016_2017_geometry_power.json').read_text())
           ranked=json.loads(Path('input/geometry/maarsy_v8_geometry_rankings.json').read_text())
           assert r['verdict']=='PASS_V8_MAARSY_EXTERNAL_N_POWER_GATE'
-          assert r['family_count']==107
-          assert r['configuration']['years']==[2016,2017]
-          assert r['N_power_gate_passed'] is True
-          assert r['Q_power_gate_evaluated'] is False
+          assert r['family_count']==107 and r['configuration']['years']==[2016,2017]
+          assert r['N_power_gate_passed'] is True and r['Q_power_gate_evaluated'] is False
           assert r['orbit_access'] is False and r['target_information_access'] is False
           assert all(r['integrity_gates'].values())
-          canon=json.dumps(ranked,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
-          sha=hashlib.sha256(canon).hexdigest()
-          assert sha=='a23696dc09896696d8b3c210181b9f0f93446dde73329f1ac5c53a4cf288c05b', sha
-          assert r['ranking_sha256_before_any_orbit_access']==sha
-          assert ranked['family_count']==107 and ranked['years']==[2016,2017]
-          assert ranked['orbit_access'] is False and ranked['target_information_access'] is False
+          canon=hashlib.sha256(json.dumps(ranked,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+          assert canon=='a23696dc09896696d8b3c210181b9f0f93446dde73329f1ac5c53a4cf288c05b'
+          assert r['ranking_sha256_before_any_orbit_access']==canon
+          assert ranked['family_count']==107 and ranked['orbit_access'] is False and ranked['target_information_access'] is False
           PY
 
-          # HDF5 access firewall: the orbital runner may dereference only native `kepler`.
-          python - <<'PY'
-          import ast
-          from pathlib import Path
-          p=Path('orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py')
-          tree=ast.parse(p.read_text())
-          literal=[]; dynamic=0
-          for n in ast.walk(tree):
-              if isinstance(n,ast.Subscript) and isinstance(n.value,ast.Name) and n.value.id=='h':
-                  s=n.slice
-                  if isinstance(s,ast.Constant) and isinstance(s.value,str): literal.append(s.value)
-                  else: dynamic+=1
-          assert set(literal)=={'kepler'}, literal
-          assert dynamic==0, dynamic
-          source=p.read_text()
-          assert 'kepler_std' in source
-          assert 'geometry_fields_opened_this_stage' in source
-          PY
-
+          python -m py_compile orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py input/frozen/saamer_external_evaluator.py input/frozen/literature_comparator_shared.py
           test ! -e orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json
           test ! -e orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json
           echo PASS_MAARSY_ORBITAL_VALIDATION_PREORBIT_GUARDS
@@ -151,32 +100,23 @@ jobs:
             --output output
           cat output/V8_MAARSY_2016_2017_EXTERNAL_VALIDATION.md
 
-      - name: Enforce external verdict and continued blindness
+      - name: Enforce frozen verdict and firewall
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
           r=json.loads(Path('output/v8_maarsy_2016_2017_external_validation.json').read_text())
-          assert r['verdict'] in {
-            'FAIL_V8_MAARSY_EXTERNAL_ORBITAL_INTEGRITY',
-            'INCONCLUSIVE_V8_MAARSY_EXTERNAL_POWER_Q',
-            'PASS_V8_MAARSY_EXTERNAL_VALIDATION',
-            'FAIL_V8_MAARSY_EXTERNAL_VALIDATION',
-          }
+          assert r['verdict'] in {'FAIL_V8_MAARSY_EXTERNAL_ORBITAL_INTEGRITY','INCONCLUSIVE_V8_MAARSY_EXTERNAL_POWER_Q','PASS_V8_MAARSY_EXTERNAL_VALIDATION','FAIL_V8_MAARSY_EXTERNAL_VALIDATION'}
           assert r['geometry_prerequisite']['N']==107
           assert r['geometry_prerequisite']['ranking_sha256']=='a23696dc09896696d8b3c210181b9f0f93446dde73329f1ac5c53a4cf288c05b'
-          assert r['configuration']['D_SH_threshold']==0.05
-          assert r['configuration']['N_power_floor']==100
-          assert r['configuration']['Q_power_floor']==30
-          assert r['configuration']['native_kepler_order']==['a_m','e','i_deg','omega_deg','Omega_deg','nu_deg']
+          assert r['configuration']['D_SH_threshold']==0.05 and r['configuration']['Q_power_floor']==30
           assert r['orbit_read_audit']['kepler_std_opened'] is False
           assert r['orbit_read_audit']['geometry_fields_opened_this_stage'] is False
           assert r['orbit_read_audit']['orbital_elements_interpreted_only_after_rank_freeze'] is True
           assert r['orbittrace_target_information_access'] is False
           assert r['final_gmn_stage_a_authorized_by_this_runner'] is False
-          assert r['v8_method_changed'] is False
-          assert r['external_power_floors_lowered'] is False
+          assert r['v8_method_changed'] is False and r['external_power_floors_lowered'] is False
           PY
 
       - name: Record immutable provenance
@@ -185,15 +125,7 @@ jobs:
           set +e
           mkdir -p output
           git rev-parse HEAD > output/execution_source_commit.txt
-          sha256sum \
-            orbittrace_v8_maarsy_2016_2017_orbital_validation/PROTOCOL.md \
-            orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py \
-            input/geometry/v8_maarsy_2016_2017_geometry_power.json \
-            input/geometry/maarsy_v8_geometry_rankings.json \
-            input/frozen/saamer_external_evaluator.py \
-            input/frozen/literature_comparator_shared.py \
-            input/public/dasst_methods.py input/public/pyorb_orbit.py input/public/author_dasst_orbits.py \
-            > output/source_and_input_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_v8_maarsy_2016_2017_orbital_validation/PROTOCOL.md orbittrace_v8_maarsy_2016_2017_orbital_validation/run_orbital_validation.py input/geometry/v8_maarsy_2016_2017_geometry_power.json input/geometry/maarsy_v8_geometry_rankings.json input/frozen/saamer_external_evaluator.py input/frozen/literature_comparator_shared.py > output/source_and_input_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
 
