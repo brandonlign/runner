@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile orbittrace_v6_label_free_all_event_null/run_development.py orbittrace_v6_label_free_all_event_null/parallel_exact_rescore.py
-          sha256sum orbittrace_v6_label_free_all_event_null/run_development.py
+          echo '6bda25e9bba2b95812a46283083e3294c209c897e66e99ba71b52f6091137cf6  orbittrace_v6_label_free_all_event_null/run_development.py' | sha256sum -c -
           python - <<'PY'
           import ast
           from pathlib import Path
@@ -49,9 +49,21 @@ jobs:
           assert constants['V8_MACRO_F1']==0.1736657194465356
           assert constants['MIN_TOP100_PRECISION']==0.65
 
-          geom=ast.get_source_segment(text,defs['parse_geometry_only'])
-          assert 'columns["shower"]' not in geom
-          assert 'normalize_label' not in geom
+          geom_node=defs['parse_geometry_only']
+          geom=ast.get_source_segment(text,geom_node)
+          shower_subscripts=[]
+          normalize_calls=[]
+          for n in ast.walk(geom_node):
+              if isinstance(n,ast.Subscript):
+                  segment=ast.get_source_segment(text,n) or ''
+                  if 'columns["shower"]' in segment or "columns['shower']" in segment:
+                      shower_subscripts.append(segment)
+              if isinstance(n,ast.Call):
+                  f=n.func
+                  name=f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '')
+                  if name=='normalize_label': normalize_calls.append(n.lineno)
+          assert shower_subscripts==[], shower_subscripts
+          assert normalize_calls==[], normalize_calls
           assert 'complex_key":"HIDDEN"' in geom
           assert 'dict(event,complex_key="SPORADIC")' in geom
           assert 'len(scan[year])==len(calibration[year])' in geom
