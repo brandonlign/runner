@@ -25,7 +25,7 @@ jobs:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
 
-      - name: Reconstruct exact frozen sources and print hotspot structure
+      - name: Reconstruct exact frozen sources and print calibration boundary
         run: |
           set -euo pipefail
           test ! -e input
@@ -40,9 +40,13 @@ jobs:
           import ast
           from pathlib import Path
 
-          def dump(path, names):
-              text=Path(path).read_text(); tree=ast.parse(text); lines=text.splitlines()
+          def defs_and_text(path):
+              text=Path(path).read_text(); tree=ast.parse(text)
               defs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+              return text,defs
+
+          def dump(path,names):
+              text,defs=defs_and_text(path); lines=text.splitlines()
               for name in names:
                   fn=defs.get(name)
                   if fn is None:
@@ -50,20 +54,19 @@ jobs:
                       continue
                   print(f'===== {path}::{name} {fn.lineno}-{fn.end_lineno} =====')
                   print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(fn.lineno,fn.end_lineno+1)))
-                  print(f'ARGS {name}: {[a.arg for a in fn.args.args]}')
-                  calls=[]; loops=[]
-                  for n in ast.walk(fn):
-                      if isinstance(n,ast.Call):
-                          f=n.func
-                          nm=f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>')
-                          calls.append((n.lineno,nm))
-                      if isinstance(n,(ast.For,ast.While)):
-                          loops.append((n.lineno,type(n).__name__,ast.get_source_segment(text,n.target) if isinstance(n,ast.For) else ''))
-                  print('CALLS',calls); print('LOOPS',loops)
 
-          dump('/tmp/v6.py',['v3_details','calibrate_year_v6','exact_rescore_window_v6','scan_year_v6'])
-          dump('/tmp/support.py',['exact_anchor_distances','quartet_score'])
-          print('PASS_V6_HOTSPOT_HELPER_SOURCE_PROBE')
+          support_text,support_defs=defs_and_text('/tmp/support.py')
+          print('SUPPORT_TOP_LEVEL_DEFS', sorted(support_defs))
+          for needle in ['calibration','sporadic','complex_key','iau','label','shower']:
+              print(f'===== SUPPORT LINES CONTAINING {needle!r} =====')
+              for i,line in enumerate(support_text.splitlines(),1):
+                  if needle.lower() in line.lower():
+                      print(f'{i:04d}: {line}')
+
+          likely=[name for name in support_defs if any(k in name.lower() for k in ('parse','catalog','calibr','event','load'))]
+          dump('/tmp/support.py',likely)
+          dump('/tmp/v6.py',['calibrate_year_v6','scan_year_v6','main'])
+          print('PASS_V6_CALIBRATION_SOURCE_PROBE')
           PY
 
       - name: Assert source-only boundary
@@ -71,4 +74,4 @@ jobs:
           set -euo pipefail
           test ! -e input
           test ! -e output
-          echo NO_CATALOGUE_NO_LABEL_NO_TARGET_ACCESS
+          echo NO_CATALOGUE_NO_LABEL_VALUE_NO_TARGET_ACCESS
