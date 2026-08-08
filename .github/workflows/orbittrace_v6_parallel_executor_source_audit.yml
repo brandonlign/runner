@@ -1,0 +1,76 @@
+name: OrbitTrace v6 parallel executor source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-development-checkpointed-fallback
+    paths:
+      - .github/workflows/orbittrace_v6_parallel_executor_source_audit.yml
+      - orbittrace_v6_checkpointed_fallback/parallel_exact_rescore.py
+      - orbittrace_v6_checkpointed_fallback/run_year_checkpoint.py
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-performance-optimization-v1
+          path: execution
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - name: Prove frozen science and wrapper boundaries
+        run: |
+          set -euo pipefail
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          parallel_path=Path('execution/orbittrace_v6_checkpointed_fallback/parallel_exact_rescore.py')
+          year_path=Path('execution/orbittrace_v6_checkpointed_fallback/run_year_checkpoint.py')
+          ptext=parallel_path.read_text(); ptree=ast.parse(ptext)
+          ytext=year_path.read_text(); ytree=ast.parse(ytext)
+
+          defs={n.name:n for n in ptree.body if isinstance(n,ast.FunctionDef)}
+          worker=defs['_run_chunk']
+          calls=[]
+          for n in ast.walk(worker):
+              if isinstance(n,ast.Call):
+                  f=n.func
+                  calls.append(f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>'))
+          assert calls.count('_ORIGINAL')==1, calls
+          forbidden=('np.','numpy','math.','v3','fixed4','wavelet','score','distance','radius','threshold','alpha','member')
+          worker_text=ast.get_source_segment(ptext,worker)
+          for token in forbidden:
+              assert token not in worker_text.lower(), (token,worker_text)
+          assert 'return _ORIGINAL(old, chunk, window_events, event_lookup, support, base)' in worker_text
+
+          install=defs['install']
+          install_text=ast.get_source_segment(ptext,install)
+          assert 'v6.exact_rescore_window_v6 = replacement' in install_text
+          assert 'pool.map(_run_chunk' in install_text
+          assert 'output_ids != input_ids' in install_text
+
+          ydefs={n.name:n for n in ytree.body if isinstance(n,ast.FunctionDef)}
+          main_text=ast.get_source_segment(ytext,ydefs['main'])
+          assert 'install(v6, workers=args.parallel_exact_workers' in main_text
+          assert 'audit, anchors, components = v6.scan_year_v6(' in main_text
+          assert 'proposal_cap_per_window' in main_text and '== 512' in main_text
+          assert 'max_primary_proposals_per_year' in main_text and '== 36864' in main_text
+          assert 'hidden_labels_not_saved' in main_text
+          print('PASS_V6_PARALLEL_EXECUTOR_SOURCE_AUDIT')
+          PY
+      - name: Assert no data boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABEL_NO_TARGET_ACCESS
