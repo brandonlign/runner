@@ -1,0 +1,61 @@
+name: OrbitTrace P1 matched literature execution source audit
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-p1-matched-literature-freeze]
+    paths:
+      - .github/workflows/orbittrace_p1_matched_literature_execution.yml
+      - .github/workflows/orbittrace_p1_matched_literature_execution_source_audit.yml
+
+permissions:
+  contents: read
+concurrency:
+  group: orbittrace-p1-matched-literature-execution-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-p1-matched-literature-implementation-freeze
+      - name: Prove guarded chronology and exact identities
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_p1_matched_literature_execution.yml').read_text()
+          for token in (
+              'agent/orbittrace-p1-matched-literature-implementation-freeze',
+              'orbittrace_probabilistic_membership_p1_literature/RUN.md',
+              'EXECUTE_P1_MATCHED_AFTER_EXACT_P1_PASS',
+              "r['verdict']=='PASS_PROBABILISTIC_MEMBERSHIP_P1_DEVELOPMENT'",
+              "r['configuration']['parameter_search'] is False",
+              "r['configuration']['new_members_can_seed_growth'] is False",
+              "assert all(r['gates'].values())",
+              "e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508",
+              "35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761",
+              "8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3",
+              "2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389",
+              "77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e",
+              "9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430",
+              "f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52",
+          ):
+              assert token in w,token
+          assert '|| true' not in w
+          assert "matrix:\n        panel: [hdbscan, sugar]" in w
+          assert 'needs: [authorize, manifest, pretruth]' in w
+          assert w.index('prepare_strict_id_manifest.py') < w.index('run_pretruth_panel.py') < w.index('evaluate_frozen.py')
+          assert '--hdbscan-pretruth' in w and '--sugar-pretruth' in w
+          assert 'P1_MATCHED_INPUT_INELIGIBLE_EXACT_V8_SUPPORT' in w
+          assert "if r['matched_input_ineligible']:" in w
+          assert "assert not r['broad_catalogue_superiority'] and not r['sparse_stream_superiority']" in w
+          print('PASS_P1_MATCHED_EXECUTION_CHRONOLOGY_AND_PROVENANCE')
+          PY
+      - name: Prove no activation on freeze branch
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_probabilistic_membership_p1_literature/RUN.md
+          echo NO_P1_MATCHED_EXECUTION_NO_SONOTACO_NO_TARGET_REGION
