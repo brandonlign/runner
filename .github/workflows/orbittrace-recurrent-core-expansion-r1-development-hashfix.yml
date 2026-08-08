@@ -97,7 +97,7 @@ jobs:
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
           python - <<'PY'
-          import hashlib,json,re
+          import difflib,hashlib,json,re
           from pathlib import Path
           s=json.loads(Path('input/source_audit/recurrent_core_expansion_r1_source_audit.json').read_text())
           assert s['verdict']=='PASS_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT'
@@ -113,23 +113,34 @@ jobs:
           raw=p.read_bytes()
           assert hashlib.sha256(raw).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           text=raw.decode()
-          pattern=r'(?m)^(LITERATURE_COMPARATOR_SHA256\s*=\s*[\"\'])([0-9a-f]{64})([\"\'])$'
-          m=re.search(pattern,text)
-          assert m, 'missing unique comparator SHA256 constant'
-          assert len(re.findall(pattern,text))==1
-          old=m.group(2)
+          old_expected='ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
           new='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
-          assert old!=new, 'stale hash already repaired unexpectedly'
+          pattern=r'(?m)^(LITERATURE_COMPARATOR_SHA256\s*=\s*[\"\'])('+re.escape(old_expected)+r')([\"\'])$'
+          matches=list(re.finditer(pattern,text))
+          assert len(matches)==1, f'expected exactly one stale Git-blob provenance literal, found {len(matches)}'
+          m=matches[0]
+          old=m.group(2)
+          assert old==old_expected
           patched=text[:m.start(2)]+new+text[m.end(2):]
-          reverted=patched[:m.start(2)]+old+patched[m.start(2)+64:]
+          # Prove the execution repair is exactly reversible to the frozen source bytes.
+          reverted=patched[:m.start(2)]+old+patched[m.start(2)+len(new):]
           assert reverted.encode()==raw
+          diff=list(difflib.unified_diff(text.splitlines(),patched.splitlines(),lineterm=''))
+          removed=[line for line in diff if line.startswith('-') and not line.startswith('---')]
+          added=[line for line in diff if line.startswith('+') and not line.startswith('+++')]
+          assert len(removed)==1 and len(added)==1, (removed,added)
+          assert old_expected in removed[0] and new in added[0]
           assert 'D_SH(candidate, partner medoid) <= 0.05' in patched
           p.write_text(patched)
           Path('output/r1_provenance_constant_repair.json').write_text(json.dumps({
               'original_frozen_source_sha256': hashlib.sha256(raw).hexdigest(),
-              'old_internal_comparator_sha256': old,
+              'old_internal_comparator_literal': old,
+              'old_literal_type': 'git_blob_sha1',
+              'verified_comparator_git_blob': old_expected,
               'verified_comparator_sha256': new,
-              'repair_scope': 'single 64-hex provenance literal only',
+              'repair_scope': 'single 40-hex Git-blob provenance literal replaced by verified SHA-256',
+              'changed_source_lines': 1,
+              'byte_for_byte_reversible_to_frozen_source': True,
               'scientific_rule_changed': False,
           },indent=2,sort_keys=True)+'\n')
           print('R1_PROVENANCE_LITERAL_REPAIRED',old,'->',new)
@@ -177,7 +188,11 @@ jobs:
           assert 'does not establish superiority over Sugar/HDBSCAN' in r['claim_boundary']
           repair=json.loads(Path('output/r1_provenance_constant_repair.json').read_text())
           assert repair['scientific_rule_changed'] is False
-          assert repair['repair_scope']=='single 64-hex provenance literal only'
+          assert repair['repair_scope']=='single 40-hex Git-blob provenance literal replaced by verified SHA-256'
+          assert repair['changed_source_lines']==1
+          assert repair['byte_for_byte_reversible_to_frozen_source'] is True
+          assert repair['verified_comparator_git_blob']=='ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
+          assert repair['verified_comparator_sha256']=='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
           print('ORBITTRACE_R1_RESULT_BEGIN')
           print(json.dumps(r,indent=2,sort_keys=True))
           print('ORBITTRACE_R1_RESULT_END')
