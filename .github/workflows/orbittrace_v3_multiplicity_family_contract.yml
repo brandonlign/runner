@@ -1,0 +1,54 @@
+name: OrbitTrace v3 multiplicity family contract
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - '.github/workflows/orbittrace_v3_multiplicity_family_contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-multiplicity-rank-freeze
+          path: audit
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen
+      - name: Print source-only family contract
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          cat frozen/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress \
+            > /tmp/v3.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v3.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('/tmp/v3.py').read_text()
+          tree=ast.parse(text)
+          names=['build_family_track_v6','evaluate_primary']
+          for name in names:
+              nodes=[n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name==name]
+              if nodes:
+                  n=nodes[0]
+                  print(f'BEGIN_{name}')
+                  print(ast.get_source_segment(text,n))
+                  print(f'END_{name}')
+          main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+          print('BEGIN_MAIN_TAIL')
+          lines=text.splitlines()
+          for i in range(max(main.lineno, main.end_lineno-90), main.end_lineno+1):
+              print(f'{i:04d}: {lines[i-1]}')
+          print('END_MAIN_TAIL')
+          print('NO_DATA_NO_LABEL_NO_TARGET_ACCESS')
+          PY
