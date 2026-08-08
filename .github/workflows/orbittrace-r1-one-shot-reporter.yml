@@ -1,0 +1,99 @@
+name: OrbitTrace R1 one-shot executor reporter
+
+on:
+  workflow_run:
+    workflows: ['OrbitTrace R1 one-shot target-excluded executor']
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  report:
+    if: github.event.workflow_run.event == 'pull_request_target'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download executor artifact if present
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/r1_report
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            -o /tmp/r1_artifacts.json
+          python - <<'PY' > /tmp/r1_artifact_id.txt
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/r1_artifacts.json').read_text())
+          hits=[a for a in data.get('artifacts',[]) if a.get('name')=='orbittrace-r1-one-shot-target-excluded-development']
+          print(hits[0]['id'] if len(hits)==1 else '')
+          PY
+          AID="$(cat /tmp/r1_artifact_id.txt)"
+          if [ -n "$AID" ]; then
+            curl -L --fail --retry 3 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$AID/zip" \
+              -o /tmp/r1_artifact.zip
+            unzip -q /tmp/r1_artifact.zip -d /tmp/r1_report
+          fi
+
+      - name: Post immutable executor outcome to request PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          PR_NUMBER: '472'
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/r1_comment.json
+          import json,os
+          from pathlib import Path
+          conclusion=os.environ['RUN_CONCLUSION']
+          run_id=os.environ['RUN_ID']
+          run_url=os.environ['RUN_URL']
+          root=Path('/tmp/r1_report')
+          result_path=root/'recurrent_core_expansion_r1_development.json'
+          repair_path=root/'r1_runtime_repair.json'
+          lines=[
+              f'R1_ONE_SHOT_EXECUTOR_RUN: `{run_id}`',
+              f'R1_ONE_SHOT_EXECUTOR_CONCLUSION: `{conclusion}`',
+              f'Run: {run_url}',
+          ]
+          if repair_path.exists():
+              repair=json.loads(repair_path.read_text())
+              lines.append(f"Frozen source bytes modified: `{repair.get('source_bytes_modified')}`")
+              lines.append(f"Scientific rule changed: `{repair.get('scientific_rule_changed')}`")
+              lines.append(f"Target access: `{repair.get('target_access')}`")
+          if result_path.exists():
+              r=json.loads(result_path.read_text())
+              summary={
+                  'verdict':r.get('verdict'),
+                  'metrics':r.get('metrics'),
+                  'promotion_gates':r.get('promotion_gates'),
+                  'integrity_gates':r.get('integrity_gates'),
+                  'claim_boundary':r.get('claim_boundary'),
+              }
+              lines.append('R1_SCIENTIFIC_RESULT:')
+              lines.append('```json')
+              lines.append(json.dumps(summary,indent=2,sort_keys=True))
+              lines.append('```')
+          else:
+              lines.append('R1_SCIENTIFIC_RESULT: `NO_RESULT_JSON_PRODUCED`')
+          body='\n'.join(lines)
+          print(json.dumps({'body':body}))
+          PY
+          curl -L --fail --retry 3 \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --data-binary @/tmp/r1_comment.json
