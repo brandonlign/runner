@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen R1 run after replacing execution-wrapper regex boundary detection with deterministic top-level function-line slicing. No scientific parameters, target information, or promotion gates are supplied by this file.
