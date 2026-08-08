@@ -28,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile orbittrace_crossyear_two_view_membership_p2/run_development.py
+          sha256sum orbittrace_crossyear_two_view_membership_p2/run_development.py
           echo '829c5349cf4bc2498066d2de0a250793e18f5bac52769967efbea8cd75efd9f3  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
           python - <<'PY'
           import ast
@@ -87,7 +88,6 @@ jobs:
           truth_eval=main.index('baseline_full = v8.mult.evaluate_order(hidden_labels')
           assert model_freeze < membership_freeze < truth_eval
           pretruth=main[:truth_eval]
-          # hidden_labels may be returned by the exact parser and held opaque, but cannot enter any pretruth operation.
           occurrences=[i for i in range(len(pretruth)) if pretruth.startswith('hidden_labels',i)]
           assert len(occurrences)==1, occurrences
           assert 'evaluate_order(hidden_labels' not in pretruth
