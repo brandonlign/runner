@@ -442,7 +442,7 @@ def main() -> int:
     result["claim_boundary"] = (
         "Target-excluded B1 development only. The exact promoted-v8 discovery family universe and multiplicity ranking "
         "are frozen before B1 membership. B1 transfers a stream-vs-local-field density model from the opposite year "
-        "using only original v8 seeds plus unlabeled field events; labels enter only after expanded membership is hashed. "
+        "using only original v8 seeds plus field geometry/orbits; inherited labels are never passed to B1 membership, and label evaluation begins only after expanded membership is hashed. "
         "A development pass does not establish Sugar/HDBSCAN superiority or external generalization and requires frozen "
         "matched comparison plus prospective external validation before any OrbitTrace target-containing application."
     )
