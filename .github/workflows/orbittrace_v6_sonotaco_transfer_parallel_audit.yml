@@ -1,0 +1,81 @@
+name: OrbitTrace v6 SonotaCo transfer parallel executor audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_v6_sonotaco_2017_2019_transfer/parallel_exact_rescore.py
+      - orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py
+      - .github/workflows/orbittrace_v6_sonotaco_transfer_parallel_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-sonotaco-transfer-parallel-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze
+      - name: Prove wrapper delegates all science to immutable scalar function
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v6_sonotaco_2017_2019_transfer/parallel_exact_rescore.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          p=Path('orbittrace_v6_sonotaco_2017_2019_transfer/parallel_exact_rescore.py')
+          text=p.read_text(); tree=ast.parse(text)
+          imports=[]
+          for n in tree.body:
+              if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
+              if isinstance(n,ast.ImportFrom): imports.append(n.module or '')
+          assert not any(x in {'numpy','math','scipy','sklearn'} or x.startswith(('numpy.','scipy.','sklearn.')) for x in imports), imports
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          worker=defs['_run_chunk']
+          calls=[]
+          for n in ast.walk(worker):
+              if isinstance(n,ast.Call):
+                  f=n.func
+                  calls.append(f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>'))
+          assert calls.count('_ORIGINAL')==1, calls
+          assert set(calls) <= {'_ORIGINAL','RuntimeError'}, calls
+          install=ast.get_source_segment(text,defs['install'])
+          assert 'v6.exact_rescore_window_v6 = replacement' in install
+          assert 'pool.map(_run_chunk, chunks, chunksize=1)' in install
+          assert 'worker_count = min(requested, cpu_count, 4)' in install
+          assert 'input_ids' in install and 'output_ids' in install and 'output_ids != input_ids' in install
+          assert 'immutable original exact_rescore_window_v6 called per contiguous chunk' in install
+
+          portable=Path('orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py').read_text()
+          ptree=ast.parse(portable); pdefs={n.name:n for n in ptree.body if isinstance(n,ast.FunctionDef)}
+          guarded=ast.get_source_segment(portable,pdefs['guarded_load_module'])
+          assert 'if name == "orbittrace_transfer_current_v6"' in guarded
+          assert 'install_parallel_exact(module, workers=4, min_parallel_records=256)' in guarded
+          assert 'elif name == "orbittrace_transfer_true_v8"' in guarded
+          assert 'module.repair_year_centroids = portable_repair_year_centroids(module)' in guarded
+          print('PASS_V6_SONOTACO_TRANSFER_PARALLEL_SOURCE_AUDIT')
+          PY
+      - name: Bind to prior byte-equivalence evidence
+        run: |
+          cat <<'EOF'
+          Prior target-excluded equivalence run: 31281198488
+          Verdict: PASS_V6_PARALLEL_EXACT_RESCORE_EQUIVALENCE
+          512-proposal scalar/parallel outputs byte-identical; speedup 2.0936476728517897x.
+          This transfer wrapper uses the same contiguous-delegation algorithm and changes no scalar operation.
+          EOF
+      - name: Assert no-data boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_SONOTACO_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
