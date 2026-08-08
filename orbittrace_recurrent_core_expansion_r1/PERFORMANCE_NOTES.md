@@ -10,19 +10,20 @@ The frozen implementation constructs `medoid_cache` for every component before i
 
 The pinned target-excluded v6 development artifact used by the R1 execution records 2,074 components for 2022 and 1,845 for 2023, or 3,919 total. The 226 recurrent families in the same pinned artifact reference 1,313 unique component IDs. Because R1 can only access components listed in `family["component_ids"]`, medoids for the remaining 2,606 components cannot affect any proposal, conflict, assignment, ranking, diagnostic, or gate. Computing those medoids is implementation dead work.
 
+The static workflow independently proves this reachability fact from the frozen source and records `PASS_R1_UNREFERENCED_MEDOID_DEADWORK_PROOF`: `medoid_cache` has exactly one subscript read, `medoid_cache[str(partner["component_id"])]`; `partner` is bound by `for partner in comps`; and `comps` is built only from the current recurrent family's `component_ids`.
+
 ## Exact-only optimization scope
 
 The proposed optimized expansion performs only the following:
 
 1. Construct medoids only for component IDs actually referenced by recurrent families.
-2. Memoize the unchanged `event_center(event)` result by Python event-object identity.
-3. Memoize the unchanged frozen `scalar_dsh(event_orbit, medoid_orbit)` result by event ID and medoid event ID.
-4. Remove the frozen function's unused `scan_lookup` construction.
-5. Add progress/timing output.
+2. Remove the frozen function's `scan_lookup` assignment, which is assigned but never read inside `expand_memberships`.
+3. Memoize the unchanged frozen `scalar_dsh(event_orbit, medoid_orbit)` result only for an identical candidate event ID and the identical medoid orbit object.
+4. Add progress/timing output.
 
-No geometric prefilter, numerical approximation, alternative D_SH implementation, threshold adjustment, medoid change, recursive growth, ranking change, or gate change is permitted.
+No event-center cache, geometric prefilter, numerical approximation, alternative D_SH implementation, threshold adjustment, medoid change, recursive growth, ranking change, or gate change is permitted.
 
-The frozen `literature_comparators.py` D_SH comparator remains byte-identical and is still called for every cache miss.
+The frozen `literature_comparators.py` D_SH comparator remains byte-identical and is still called for every cache miss. The frozen geometry expression remains unchanged.
 
 ## Equivalence firewall
 
@@ -32,13 +33,16 @@ The bounded proof also includes one real target-excluded component not reference
 
 The diagnostic is hard-wired to exit immediately after the equality proof and therefore cannot produce a competing full R1 scientific verdict.
 
+Expensive equivalence execution uses a dedicated execution-child trigger so ordinary performance-audit commits do not repeatedly launch full target-excluded rebuilds.
+
 ## Progress indicators
 
 Future optimized execution emits:
 
-- `R1_EXPANSION_START` with family, total-component, active-component, and seed counts.
+- `R1_EXPANSION_START` with family, total-component, active-component, skipped-component, and seed counts.
+- `R1_MEDOID_LARGE_BEGIN` / `R1_MEDOID_LARGE_DONE` around components with at least 100 seed events.
 - `R1_MEDOID_PROGRESS` every 25 active medoids with elapsed seconds.
-- `R1_EXPANSION_PROGRESS` every 10 recurrent families with component attempts, geometry passes, physical passes, event-center cache hits, D_SH cache entries/hits, and elapsed seconds.
+- `R1_EXPANSION_PROGRESS` every 10 recurrent families with component attempts, geometry passes, physical passes, D_SH cache entries/hits, and elapsed seconds.
 - `R1_EXPANSION_COMPLETE` with final assignment/cache/timing counts.
 
 An external `r1_process_heartbeat.sh` helper is also retained for diagnostic runs where process CPU/RSS/thread activity is useful; it does not alter the scientific process.
