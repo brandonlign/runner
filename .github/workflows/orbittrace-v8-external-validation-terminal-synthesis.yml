@@ -1,0 +1,152 @@
+name: OrbitTrace v8 external-validation terminal synthesis
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-external-validation-terminal-synthesis
+    paths:
+      - 'orbittrace_v8_external_validation_terminal_synthesis/RUN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  synthesize:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen terminal-synthesis parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-external-validation-terminal-synthesis
+          fetch-depth: 1
+
+      - name: Enforce frozen synthesis and promoted-v8 sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/PROTOCOL.md)" = "1556d3e16d1333f04438b00e8c945c4b23b080bf"
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/SCHEMA_CORRECTION.md)" = "b473a74bc427a120fd4053129e117a9ada7fb69d"
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/synthesize.py)" = "a1818afe61d65b33243933af15b935b56194e1be"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/PROTOCOL.md)" = "8b0a1dc8565a702af6188d42dcebe6b1b71002b6"
+          python -m py_compile orbittrace_v8_external_validation_terminal_synthesis/synthesize.py
+          grep -Fq 'INCONCLUSIVE_V8_AMOR_EXTERNAL_POWER' orbittrace_v8_external_validation_terminal_synthesis/synthesize.py
+          grep -Fq 'INCONCLUSIVE_V8_EXTERNAL_VALIDATION_NO_POWERED_PRISTINE_PANEL' orbittrace_v8_external_validation_terminal_synthesis/synthesize.py
+
+      - name: Fetch complete repository branch-name inventory only
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          git for-each-ref --format='%(refname)' refs/remotes/origin | grep -v '/HEAD$' | sort > input/remote_refs.txt
+          test -s input/remote_refs.txt
+
+      - name: Fetch and hash-verify immutable result artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fetch_artifact() {
+            id="$1"; sha="$2"; name="$3"
+            mkdir -p "input/$name"
+            curl -L --fail --retry 3 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" \
+              -o "input/$name.zip"
+            echo "$sha  input/$name.zip" | sha256sum -c -
+            unzip -q "input/$name.zip" -d "input/$name"
+          }
+
+          fetch_artifact 9009728299 88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e v8
+          fetch_artifact 9006672467 d9fc2530305b832448471a329341665c5369344784ea3835e61a6effb59bb922 saamer20
+          fetch_artifact 9007437717 0e4482d750d8dea93ef56205180b4d456aaedc4adb6dc04d9239a35ab32cab50 saamer22
+          fetch_artifact 9010756922 c2641dce42ceb807697ee5965d5418a8d033673158442bfd9c343605b9330fa6 amor
+          fetch_artifact 9011943529 d44e0673683045683ca78fd79642b4afa1b9495e3586aa6a3e4bd29a1445424a ukmon
+          fetch_artifact 9012522244 7d9e68ec6f5f9790613869316839f9b6e5cb29c3a0c17f360dd244b0d6531c67 harvard
+          fetch_artifact 9012820047 e4251f16073dc8c8eaa30b82e8ab588296ff0c9e6a08beff9d00c8cb97685428 fripon
+          fetch_artifact 9012947320 4ba04ea8c4f5d2b0adf384053915abd0dd401904239134218691962565542a67 hissar
+
+          # Preserve and verify the two failed UKMON pre-scientific transports without opening their contents.
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012001791/zip" -o input/ukmon_structure_failure.zip
+          echo "08dc0b6de876733c2de8ce6079487ee5b3bdb1245bb98bc63da84c41566e4dfa  input/ukmon_structure_failure.zip" | sha256sum -c -
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9012076689/zip" -o input/ukmon_fallback_failure.zip
+          echo "404f24e581d70d9141e1407622bf22300320492f77691a384bf11a8455e0e5d7  input/ukmon_fallback_failure.zip" | sha256sum -c -
+
+          test -f input/v8/pooled_year_centroid_v8_development.json
+          test -f input/saamer20/saamer_external_validation.json
+          test -f input/saamer22/saamer_2022_2023_external_validation.json
+          test -f input/amor/v8_amor_1996_1998_external_validation.json
+          test -f input/ukmon/ukmon_2020_2021_freshness_adjudication.json
+          test -f input/harvard/harvard_1968_1969_recurrence_eligibility.json
+          test -f input/fripon/fripon_2018_2019_integrity_stop.json
+          test -f input/hissar/hissar_v8_coverage_eligibility.json
+
+      - name: Run zero-catalogue immutable terminal synthesis
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_external_validation_terminal_synthesis/synthesize.py \
+            --v8 input/v8 \
+            --saamer20 input/saamer20 \
+            --saamer22 input/saamer22 \
+            --amor input/amor \
+            --ukmon input/ukmon \
+            --harvard input/harvard \
+            --fripon input/fripon \
+            --hissar input/hissar \
+            --remote-refs input/remote_refs.txt \
+            --output output
+          cat output/V8_EXTERNAL_VALIDATION_TERMINAL_SYNTHESIS.md
+
+      - name: Enforce terminal scientific interpretation and blindness
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v8_external_validation_terminal_synthesis.json').read_text())
+          assert r['verdict']=='INCONCLUSIVE_V8_EXTERNAL_VALIDATION_NO_POWERED_PRISTINE_PANEL'
+          assert r['promoted_v8_development']['verdict']=='PASS_POOLED_YEAR_CENTROID_V8_DEVELOPMENT'
+          assert r['external_record']['amor_1996_1998']['verdict']=='INCONCLUSIVE_V8_AMOR_EXTERNAL_POWER'
+          assert r['powered_external_verdict_obtained'] is False
+          assert r['powered_external_pass_obtained'] is False
+          assert r['powered_external_scientific_fail_obtained'] is False
+          assert r['direct_v8_external_test_powered'] is False
+          assert r['data_availability_or_pristine_panel_limitation_reached'] is True
+          assert r['v8_method_changed_from_external_results'] is False
+          assert r['external_power_floors_lowered'] is False
+          assert r['new_detector_developed_from_external_results'] is False
+          assert r['successor_detector_authorized'] is False
+          assert r['target_reveal_authorized'] is False
+          assert r['orbittrace_target_information_access'] is False
+          assert r['catalogue_or_web_access_this_synthesis'] is False
+          assert r['scientific_value_access_this_synthesis'] is False
+          assert r['repository_only_route_inventory']['unknown_freshness_routes']==[]
+          PY
+
+      - name: Record immutable synthesis provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/synthesis_commit.txt
+          sha256sum \
+            orbittrace_v8_external_validation_terminal_synthesis/PROTOCOL.md \
+            orbittrace_v8_external_validation_terminal_synthesis/SCHEMA_CORRECTION.md \
+            orbittrace_v8_external_validation_terminal_synthesis/synthesize.py \
+            orbittrace_pooled_year_centroid_v8/PROTOCOL.md > output/source_sha256.txt
+          sha256sum input/*.zip > output/input_artifact_sha256.txt 2>/dev/null || true
+          sha256sum input/remote_refs.txt > output/remote_refs_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload terminal synthesis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-external-validation-terminal-synthesis
+          path: output
+          if-no-files-found: error
+          retention-days: 90
