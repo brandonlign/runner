@@ -31,6 +31,12 @@ jobs:
           test "${files[0]}" = "orbittrace_probabilistic_membership_p1/RUN.md"
           git checkout --detach "$BASE_SHA"
           test ! -e orbittrace_probabilistic_membership_p1/RUN.md
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -41,12 +47,12 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
-      - name: Restore exact sources and v8 artifacts
+      - name: Restore exact P1, v8, and structural inputs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p input/{v3,v8} output
+          mkdir -p input/{v3,v6,v8} output
           python - <<'PY'
           import base64,gzip,hashlib
           from pathlib import Path
@@ -56,7 +62,7 @@ jobs:
           encoded=''.join(''.join(p.read_text().split()) for p in parts)
           src=gzip.decompress(base64.b64decode(encoded,validate=True))
           digest=hashlib.sha256(src).hexdigest()
-          assert digest=='4075934cac8b8d2934f3d7580ad29cc5826c83a4b4e2153714b57c0673379cde',digest
+          assert digest=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',digest
           Path('/tmp/run_probabilistic_membership_p1.py').write_bytes(src)
           PY
           python -m py_compile /tmp/run_probabilistic_membership_p1.py
@@ -64,22 +70,29 @@ jobs:
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
 
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+
           git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
-          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
           cp input/v3/multi_anchor_energy_v3.py input/v3/wavelet_episode_comparator.py
 
           curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v8.zip
-          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v8.zip' | sha256sum -c -
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+          echo 'f76b8448f299ccf078fc5978c0890b9a084f131080db8d2136b5e6dba77edc7b  input/v6/label_free_sparse_support_v6_families.json.gz' | sha256sum -c -
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo '88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip' | sha256sum -c -
           unzip -q input/v8.zip -d input/v8
-          echo 'f76b8448f299ccf078fc5978c0890b9a084f131080db8d2136b5e6dba77edc7b  input/v8/label_free_sparse_support_v6_families.json.gz' | sha256sum -c -
-          echo 'ed81975fe10c35b49862487b0073b5d192c0983ea47dc56f281d7b4f8a250c03  input/v8/label_free_sparse_support_v6_evaluation.json.gz' | sha256sum -c -
-          echo 'e97f840059956c47e3088484d884d7836e3a20e6c415b461564befb0e0699858  input/v8/label_free_sparse_support_v6_rankings.json' | sha256sum -c -
+          echo 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b  input/v8/pooled_year_centroid_v8_development.json' | sha256sum -c -
       - name: Execute one-shot target-excluded P1 development
         env:
           PYTHONUNBUFFERED: '1'
-          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+          PYTHONPATH: exact-v8:input/v3:orbittrace_wavelet_catalogue_v3:.
         run: |
           set -euo pipefail
           python -u /tmp/run_probabilistic_membership_p1.py \
@@ -88,12 +101,12 @@ jobs:
             --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             --scorer-parts mondrian_clique_development/source_parts_v2 \
-            --v8-families-json-gz input/v8/label_free_sparse_support_v6_families.json.gz \
-            --v8-evaluation-json-gz input/v8/label_free_sparse_support_v6_evaluation.json.gz \
-            --v8-rankings-json input/v8/label_free_sparse_support_v6_rankings.json \
+            --v6-structural-families-json-gz input/v6/label_free_sparse_support_v6_families.json.gz \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
             --output output
           cat output/PROBABILISTIC_MEMBERSHIP_P1_DEVELOPMENT.md
-      - name: Enforce frozen result boundary
+      - name: Enforce exact-v8 baseline and frozen result boundary
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -105,6 +118,11 @@ jobs:
           assert r['configuration']['blind_exclusion']==[20.0,55.0]
           assert r['configuration']['parameter_search'] is False
           assert r['configuration']['new_members_can_seed_growth'] is False
+          assert r['configuration']['v8_source_commit']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert r['gates']['v8_baseline_reproduced'] is True
           assert len(r['membership_pretruth_sha256'])==64
           print('ORBITTRACE_P1_RESULT_BEGIN')
           print(json.dumps({'verdict':r['verdict'],'baseline_v8':r['baseline_v8'],'p1':r['p1'],'gates':r['gates'],'diagnostics':r['diagnostics']},indent=2))
@@ -117,6 +135,7 @@ jobs:
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
           sha256sum /tmp/run_probabilistic_membership_p1.py orbittrace_probabilistic_membership_p1/PROTOCOL.md > output/source_sha256.txt 2>/dev/null || true
+          git -C exact-v8 rev-parse HEAD > output/exact_v8_commit.txt 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
