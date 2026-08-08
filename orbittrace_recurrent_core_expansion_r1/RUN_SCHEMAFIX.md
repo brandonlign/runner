@@ -1,0 +1,1 @@
+Execute the frozen R1 development once using only the parent workflow's implementation-only provenance and exact-case raw-schema repairs. No scientific rule, threshold, radius, medoid definition, conflict rule, ranking rule, promotion gate, target access, Stage A, or Stage B change is authorized.
