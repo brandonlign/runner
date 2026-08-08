@@ -1,0 +1,45 @@
+name: OrbitTrace v6-LF support interface probe
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-label-free-all-event-null-freeze
+    paths:
+      - .github/workflows/orbittrace_v6_lf_support_interface_probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - name: Print exact support parser interfaces only
+        run: |
+          set -euo pipefail
+          cat frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/support.py
+          echo 'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62  /tmp/support.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('/tmp/support.py').read_text(); tree=ast.parse(text); lines=text.splitlines()
+          defs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.ClassDef))}
+          print('TOP_LEVEL_DEFS',sorted(defs))
+          for name in ['parse_catalogue','read_gmn_frame','column_map']:
+              n=defs.get(name)
+              if n is None:
+                  print('MISSING',name); continue
+              print(f'===== {name} {n.lineno}-{n.end_lineno} =====')
+              print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(n.lineno,n.end_lineno+1)))
+          print('PASS_V6_LF_SUPPORT_INTERFACE_PROBE')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
