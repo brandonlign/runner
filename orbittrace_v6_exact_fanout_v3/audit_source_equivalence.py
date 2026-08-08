@@ -144,8 +144,15 @@ def main() -> int:
         and node.func.attr == "exact_rescore_window_v6"
     ]
     require(len(exact_calls) == 1, f"runner exact-rescore call count changed: {len(exact_calls)}")
-    for forbidden in ("scan_year_v6", "evaluate_order", "evaluate_families_v6", "hidden_labels"):
+    for forbidden in ("scan_year_v6", "evaluate_order", "evaluate_families_v6"):
         require(forbidden not in runner_source, f"scientific/evaluation stage leaked into work-unit runner: {forbidden}")
+    label_reads = [
+        node for node in ast.walk(runner_tree)
+        if isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Load)
+        and node.id in {"hidden_labels", "_hidden_labels"}
+    ]
+    require(not label_reads, "inherited hidden-label object is read by work-unit runner")
     require("exact_rescore_window_v6" not in combine_source, "combiner recomputes exact science")
     require('"orbittrace-v6-exact-center-shard-v2"' in combine_source, "combiner no longer emits audited v2 replay format")
     require("512 records" in protocol, "frozen execution work-unit cap missing from protocol")
