@@ -44,24 +44,45 @@ def load_preexact(path: Path, year: int) -> dict[str, Any]:
     return obj
 
 
-def balanced_center_shards(pre: dict[str, Any], shard_count: int) -> tuple[list[list[float]], list[int]]:
+def center_work(spec: dict[str, Any]) -> int:
+    """Label-free deterministic work proxy for the untouched scalar rescore.
+
+    Each proposal performs full-window geometry passes, so proposal count alone
+    underweights dense windows. records × window rows is a substantially closer
+    wall-clock proxy while remaining entirely pre-truth and execution-only.
+    """
+    proposals = len(spec["records"])
+    window_rows = len(spec["window_event_ids"])
+    require(proposals > 0 and window_rows > 0, "invalid preexact center workload")
+    return proposals * window_rows
+
+
+def balanced_center_shards(pre: dict[str, Any], shard_count: int) -> tuple[list[list[float]], list[int], list[int]]:
     require(shard_count > 0, "shard_count must be positive")
     bins: list[list[float]] = [[] for _ in range(shard_count)]
-    loads = [0 for _ in range(shard_count)]
-    items = [
-        (float(center), len(pre["centers"][float(center)]["records"]))
-        for center in pre["ordered_centers"]
-    ]
-    # Longest-processing-time greedy scheduling. Proposal count is a pre-truth,
-    # label-free compute-cost proxy and does not alter any scientific ordering.
-    for center, count in sorted(items, key=lambda item: (-item[1], item[0])):
-        target = min(range(shard_count), key=lambda index: (loads[index], index))
+    work_loads = [0 for _ in range(shard_count)]
+    proposal_loads = [0 for _ in range(shard_count)]
+    items = []
+    for center in pre["ordered_centers"]:
+        c = float(center)
+        spec = pre["centers"][c]
+        proposals = len(spec["records"])
+        work = center_work(spec)
+        items.append((c, work, proposals))
+
+    # Longest-processing-time scheduling by estimated scalar operations. Tie
+    # breaks are deterministic and affect execution placement only, never
+    # proposal order, scores, families, rankings, gates, or scientific output.
+    for center, work, proposals in sorted(items, key=lambda item: (-item[1], -item[2], item[0])):
+        target = min(range(shard_count), key=lambda index: (work_loads[index], proposal_loads[index], index))
         bins[target].append(center)
-        loads[target] += count
+        work_loads[target] += work
+        proposal_loads[target] += proposals
     for values in bins:
         values.sort()
-    require(sorted(center for values in bins for center in values) == sorted(center for center, _ in items), "balanced shard coverage changed")
-    return bins, loads
+    require(sorted(center for values in bins for center in values) == sorted(center for center, _, _ in items), "balanced shard coverage changed")
+    require(sum(proposal_loads) == int(pre["total_records"]), "balanced proposal accounting changed")
+    return bins, work_loads, proposal_loads
 
 
 def main() -> int:
@@ -85,11 +106,15 @@ def main() -> int:
     event_lookup = {str(row["id"]): row for row in scan}
 
     config = install(v6, workers=args.workers, min_parallel_records=256)
-    shard_centers, shard_loads = balanced_center_shards(pre, args.shard_count)
+    shard_centers, shard_work_loads, shard_proposal_loads = balanced_center_shards(pre, args.shard_count)
     selected = shard_centers[args.shard_index]
     require(bool(selected), "empty exact center shard")
     exact_by_center: dict[float, list[dict[str, Any]]] = {}
-    print(f"V6_FANOUT_BALANCE year={args.year} loads={shard_loads} selected_load={shard_loads[args.shard_index]}", flush=True)
+    print(
+        f"V6_FANOUT_COST_BALANCE year={args.year} work_loads={shard_work_loads} "
+        f"proposal_loads={shard_proposal_loads} selected_work={shard_work_loads[args.shard_index]}",
+        flush=True,
+    )
 
     for center in selected:
         spec = pre["centers"][center]
@@ -104,7 +129,11 @@ def main() -> int:
         outputs = v6.exact_rescore_window_v6(old, records, window_events, event_lookup, support, base)
         require([str(row["proposal_anchor_id"]) for row in outputs] == [str(row["proposal_anchor_id"]) for row in records], f"exact output order changed center {center}")
         exact_by_center[center] = outputs
-        print(f"V6_FANOUT_EXACT_DONE year={args.year} shard={args.shard_index}/{args.shard_count} center={center:.1f} records={len(records):,}", flush=True)
+        print(
+            f"V6_FANOUT_EXACT_DONE year={args.year} shard={args.shard_index}/{args.shard_count} "
+            f"center={center:.1f} records={len(records):,} window_rows={len(ids):,} work={center_work(spec):,}",
+            flush=True,
+        )
 
     payload = {
         "format": "orbittrace-v6-exact-center-shard-v2",
@@ -114,8 +143,11 @@ def main() -> int:
         "preexact_sha256": sha256_bytes(args.preexact_checkpoint.read_bytes()),
         "scan_rows_sha256": pre["scan_rows_sha256"],
         "centers": selected,
-        "scheduled_proposals": shard_loads[args.shard_index],
-        "all_shard_loads": shard_loads,
+        "scheduled_proposals": shard_proposal_loads[args.shard_index],
+        "all_shard_proposal_loads": shard_proposal_loads,
+        "scheduled_work_proxy": shard_work_loads[args.shard_index],
+        "all_shard_work_loads": shard_work_loads,
+        "work_proxy": "proposal_count_times_window_event_count",
         "exact_by_center": exact_by_center,
         "executor": config,
         "firewall": {"target_interval_remains_excluded": True, "labels_not_evaluated": True},
@@ -125,7 +157,12 @@ def main() -> int:
     path.write_bytes(raw)
     digest = sha256_bytes(raw)
     path.with_suffix(".sha256").write_text(digest + "\n")
-    print(f"PASS_V6_FANOUT_EXACT_SHARD year={args.year} shard={args.shard_index}/{args.shard_count} centers={len(selected)} proposals={shard_loads[args.shard_index]:,} sha={digest}", flush=True)
+    print(
+        f"PASS_V6_FANOUT_EXACT_SHARD year={args.year} shard={args.shard_index}/{args.shard_count} "
+        f"centers={len(selected)} proposals={shard_proposal_loads[args.shard_index]:,} "
+        f"work={shard_work_loads[args.shard_index]:,} sha={digest}",
+        flush=True,
+    )
     return 0
 
 
