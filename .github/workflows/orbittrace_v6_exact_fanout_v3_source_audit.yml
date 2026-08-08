@@ -1,0 +1,61 @@
+name: OrbitTrace v6 exact fanout v3 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-exact-fanout-v2
+    paths:
+      - orbittrace_v6_exact_fanout_v3/**
+      - .github/workflows/orbittrace_v6_exact_fanout_v3_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-exact-fanout-v3-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile infrastructure only
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v6_exact_fanout_v3/workunit_plan.py \
+            orbittrace_v6_exact_fanout_v3/run_exact_workunit_shard.py \
+            orbittrace_v6_exact_fanout_v3/combine_exact_workunits.py \
+            orbittrace_v6_exact_fanout_v3/audit_source_equivalence.py
+      - name: Prove deterministic partition and monolithic reconstruction equivalence
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_v6_exact_fanout_v3/audit_source_equivalence.py
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          ! find . -maxdepth 3 -type f -name 'RUN*.md' -path '*fanout_v3*' | grep -q .
+          python - <<'PY'
+          from pathlib import Path
+          files=[
+              Path('orbittrace_v6_exact_fanout_v3/workunit_plan.py'),
+              Path('orbittrace_v6_exact_fanout_v3/run_exact_workunit_shard.py'),
+              Path('orbittrace_v6_exact_fanout_v3/combine_exact_workunits.py'),
+              Path('orbittrace_v6_exact_fanout_v3/audit_source_equivalence.py'),
+          ]
+          text='\n'.join(path.read_text() for path in files)
+          for forbidden in (
+              'OrbitTrace-April',
+              'target coordinate',
+              'target_identity',
+              'canonical_members',
+              'evaluate_order(',
+              'evaluate_families_v6(',
+          ):
+              assert forbidden not in text, forbidden
+          print('NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION_NO_SCIENTIFIC_RESULT')
+          PY
