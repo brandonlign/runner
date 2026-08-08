@@ -1,0 +1,1 @@
+R1 scientific execution is intentionally blocked. This branch currently authorizes only the GMN schema-only audit. No R1 detector, membership expansion, label evaluation, literature benchmark rerun, target-containing scan, Stage A, or Stage B may execute until a separate scientific protocol is frozen after the schema audit.
