@@ -1,0 +1,66 @@
+name: OrbitTrace v6 exact sub-center fanout v3 source audit
+
+on:
+  pull_request:
+    paths:
+      - 'orbittrace_v6_exact_fanout_v3/**'
+      - '.github/workflows/orbittrace_v6_exact_subcenter_fanout_v3_source_audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile infrastructure sources
+        run: |
+          python -m py_compile \
+            orbittrace_v6_exact_fanout_v3/subcenter_schedule.py \
+            orbittrace_v6_exact_fanout_v3/run_exact_unit_shard.py \
+            orbittrace_v6_exact_fanout_v3/replay_exact_units_year.py
+      - name: Prove deterministic contiguous synthetic scheduling
+        run: |
+          python - <<'PY'
+          from orbittrace_v6_exact_fanout_v3.subcenter_schedule import build_units, balanced_unit_shards
+
+          pre = {
+              'ordered_centers': [10.0, 20.0, 30.0],
+              'centers': {
+                  10.0: {'records': [{}] * 5000, 'window_event_ids': list(range(100))},
+                  20.0: {'records': [{}] * 3073, 'window_event_ids': list(range(250))},
+                  30.0: {'records': [{}] * 17, 'window_event_ids': list(range(50))},
+              },
+          }
+          units = build_units(pre, max_records_per_unit=2048)
+          assert [(u.center, u.start, u.stop) for u in units] == [
+              (10.0, 0, 2048), (10.0, 2048, 4096), (10.0, 4096, 5000),
+              (20.0, 0, 2048), (20.0, 2048, 3073),
+              (30.0, 0, 17),
+          ]
+          a_bins, a_loads = balanced_unit_shards(pre, 3, max_records_per_unit=2048)
+          b_bins, b_loads = balanced_unit_shards(pre, 3, max_records_per_unit=2048)
+          assert a_bins == b_bins
+          assert a_loads == b_loads
+          assigned = sorted((u.center, u.start, u.stop) for values in a_bins for u in values)
+          expected = sorted((u.center, u.start, u.stop) for u in units)
+          assert assigned == expected
+          assert len(assigned) == len(set(assigned))
+          print('PASS_V6_SUBCENTER_SYNTHETIC_SCHEDULE_AUDIT', a_loads)
+          PY
+      - name: Reject scientific and target coupling in scheduler
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('orbittrace_v6_exact_fanout_v3/subcenter_schedule.py').read_text()
+          forbidden = ['hidden_labels', 'known_shower', 'catalogue_truth', 'OrbitTrace', 'target_rank']
+          found = [token for token in forbidden if token in text]
+          if found:
+              raise SystemExit(f'forbidden scheduler coupling: {found}')
+          print('PASS_V6_SUBCENTER_SCHEDULER_FIREWALL_AUDIT')
+          PY
