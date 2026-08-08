@@ -6,6 +6,7 @@ on:
     paths:
       - orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py
       - orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
+      - orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel_intermediate.py
       - orbittrace_probabilistic_membership_p1_literature/apply_exact_v8_corpus_patch.py
       - .github/workflows/orbittrace_p1_matched_literature_implementation_source_audit.yml
 
@@ -24,7 +25,7 @@ jobs:
         with:
           ref: agent/orbittrace-p1-matched-literature-implementation-freeze
 
-      - name: Reconstruct exact frozen P1 and protocol-exact matched runtime
+      - name: Reconstruct exact frozen P1 and actual protocol-exact matched runtime
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -35,15 +36,49 @@ jobs:
           src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
           assert hashlib.sha256(src).hexdigest()=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'
           Path('/tmp/p1_frozen.py').write_bytes(src)
+          intermediate=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel_intermediate.py').read_bytes()
+          assert hashlib.sha256(intermediate).hexdigest()=='af0c48e185793514ea98e90bdeb0fcf18be60751deeb7c818fac0c2d11b1cb1e'
           PY
           python orbittrace_probabilistic_membership_p1_literature/apply_exact_v8_corpus_patch.py \
-            orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py \
+            orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel_intermediate.py \
             /tmp/p1_matched_pretruth.py | tee /tmp/p1_matched_patch.log
+          echo '127ff2af8cd2597736cedbb4eab19cecdf7985e89f65c5267eda46e97ed82dcb  /tmp/p1_matched_pretruth.py' | sha256sum -c -
           python -m py_compile \
             /tmp/p1_frozen.py \
             /tmp/p1_matched_pretruth.py \
+            orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py \
+            orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel_intermediate.py \
             orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py \
             orbittrace_probabilistic_membership_p1_literature/apply_exact_v8_corpus_patch.py
+
+      - name: Prove actual execution entry reconstructs only audited runtime
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py').read_text(); tree=ast.parse(text)
+          vals={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: vals[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert vals['INTERMEDIATE_SHA256']=='af0c48e185793514ea98e90bdeb0fcf18be60751deeb7c818fac0c2d11b1cb1e'
+          assert vals['RUNTIME_SHA256']=='127ff2af8cd2597736cedbb4eab19cecdf7985e89f65c5267eda46e97ed82dcb'
+          assert vals['BEFORE']=="    support.CORPUS = 'p1-sonotaco-exact-row-pretruth'\n"
+          assert vals['AFTER']=="    support.CORPUS = 'sonotaco-exact-row-literature-pairwise'\n"
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          main=ast.get_source_segment(text,defs['main'])
+          assert 'if text.count(BEFORE) != 1:' in main
+          assert 'patched = text.replace(BEFORE, AFTER, 1)' in main
+          assert 'patched.replace(AFTER, BEFORE, 1) != text' in main
+          assert 'if sha256(payload) != RUNTIME_SHA256:' in main
+          assert "runpy.run_path(str(RUNTIME), run_name='__main__')" in main
+          # Wrapper has no detector/P1 math of its own.
+          for forbidden in ('OAS','chi2','poisson_rate_upper','stream_intensity','evaluate_order','run_v8_panel'):
+              assert forbidden not in text,forbidden
+          print('PASS_P1_MATCHED_EXECUTION_ENTRY_RUNTIME_IDENTITY')
+          PY
 
       - name: Prove strict ID-only manifest boundary
         run: |
@@ -115,7 +150,7 @@ jobs:
           assert 'match = SUPPORT_INELIGIBLE_RE.fullmatch(str(exc))' in main and 'if match is None:\n            raise' in main
           for token in ("'required_episode_events': 128","'no_support_relaxation': True","'p1_membership_executed': False","'p1_membership_pretruth_sha256': family_sha","'v8_order_pretruth_sha256': order_sha","'competitor_cluster_values_accessed': False","'known_shower_truth_accessed': False","'membership_and_rank_frozen_before_truth': True"):
               assert token in main,token
-          print('P1_MATCHED_PROTOCOL_EXACT_RUNTIME_SHA256='+hashlib.sha256(text.encode()).hexdigest())
+          assert hashlib.sha256(text.encode()).hexdigest()=='127ff2af8cd2597736cedbb4eab19cecdf7985e89f65c5267eda46e97ed82dcb'
           print('PASS_P1_EXACT_V8_FIRST_INELIGIBILITY_BOUNDARY')
           PY
 
