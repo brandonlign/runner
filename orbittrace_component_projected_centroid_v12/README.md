@@ -1,1 +1,0 @@
-Component-projected centroid v12 is a one-shot clean-room representation-layer successor to promoted v8. The scientific rule and promotion gates are frozen in `PROTOCOL.md`; `run_development.py` implements only that rule. The 20°–55° interval remains excluded before labels and no target-containing blind search or reveal is authorized.
