@@ -1,0 +1,1 @@
+Execution-only trigger for frozen recurrent-core expansion R1 development. No scientific constant, D_SH threshold, geometry radius, medoid rule, conflict rule, seed architecture, ranking, gate, endpoint, blindness rule, or validation panel may change in this child.
