@@ -1,0 +1,134 @@
+name: OrbitTrace v6 task-balanced fanout v4 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-fanout-taskbalanced-v4
+    paths:
+      - orbittrace_v6_exact_fanout_v2/AUDIT_TASKBALANCED_V4.md
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Require one-file source-audit child
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          test "$files" = 'orbittrace_v6_exact_fanout_v2/AUDIT_TASKBALANCED_V4.md'
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_exact_fanout_v2/AUDIT_TASKBALANCED_V4.md?ref=$HEAD_SHA" --jq .content | tr -d '\n' | base64 --decode)"
+          test "$content" = 'AUDIT_TASKBALANCED_V4_SOURCE_ONLY'
+
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-fanout-taskbalanced-v4
+
+      - name: Compile and prove exact task decomposition
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v6_exact_fanout_v2/run_exact_task_shard.py \
+            orbittrace_v6_exact_fanout_v2/replay_exact_year_tasked.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          def load(path):
+              text=Path(path).read_text(); tree=ast.parse(text)
+              defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+              return text,tree,defs
+
+          st,stree,sdefs=load('orbittrace_v6_exact_fanout_v2/run_exact_task_shard.py')
+          rt,rtree,rdefs=load('orbittrace_v6_exact_fanout_v2/replay_exact_year_tasked.py')
+
+          # Execution wrapper may schedule/slice only; it must not reimplement
+          # distance/scoring/statistical math.
+          imports=[]
+          for n in stree.body:
+              if isinstance(n,ast.Import): imports.extend(a.name for a in n.names)
+              elif isinstance(n,ast.ImportFrom): imports.append(n.module or '')
+          assert not any(x in {'numpy','scipy','sklearn'} or x.startswith(('numpy.','scipy.','sklearn.')) for x in imports),imports
+          main=ast.get_source_segment(st,sdefs['main'])
+          assert main.count('v6.exact_rescore_window_v6(')==1
+          for forbidden in ('v3_details','exact_anchor_distances','quartet_score','empirical_upper_pvalue'):
+              assert forbidden not in main,forbidden
+          assert 'records = full_records[start:stop]' in main
+          assert '[str(row["proposal_anchor_id"]) for row in chunk] == [str(row["proposal_anchor_id"]) for row in records]' in main
+          assert 'window_events = [event_lookup[event_id] for event_id in ids]' in main
+
+          build=ast.get_source_segment(st,sdefs['build_tasks'])
+          assert 'ideal = int(math.ceil(total_work / shard_count))' in build
+          assert 'parts = max(1, min(n, int(math.ceil(center_work / ideal))))' in build
+          assert 'stop = start + q + (1 if part < r else 0)' in build
+          assert 'start == n' in build
+          schedule=ast.get_source_segment(st,sdefs['schedule_tasks'])
+          assert "key=lambda t: (-int(t[\"work\"]), float(t[\"center\"]), int(t[\"start\"]))" in schedule
+          assert 'min(range(shard_count), key=lambda i: (work_loads[i], proposal_loads[i], i))' in schedule
+
+          reconstruct=ast.get_source_segment(rt,rdefs['reconstruct_exact_by_center'])
+          for token in (
+              'seen_indices == set(range(shard_count))',
+              'total_task_proposals == int(pre["total_records"])',
+              'set(chunks) == set(ordered_centers)',
+              'start == cursor and stop > start',
+              'cursor == n',
+              'merged_ids == original_ids',
+          ):
+              assert token in reconstruct,token
+          replay=ast.get_source_segment(rt,rdefs['main'])
+          assert replay.count('v6.scan_year_v6(')==1
+          assert 'v6.exact_rescore_window_v6 = replay_exact' in replay
+          assert 'replayed == ordered_centers' in replay
+          assert 'proposal_cap_per_window' in replay and '== 512' in replay
+          assert 'max_primary_proposals_per_year' in replay and '== 36864' in replay
+
+          print('PASS_TASKBALANCED_V4_EXACT_DECOMPOSITION_SOURCE_AUDIT')
+          PY
+
+      - name: Synthetic scheduling and merge invariant test
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python - <<'PY'
+          from orbittrace_v6_exact_fanout_v2.run_exact_task_shard import build_tasks,schedule_tasks
+          pre={
+              'ordered_centers':[0.0,5.0,10.0],
+              'total_records':20,
+              'centers':{
+                  0.0:{'records':[{'proposal_anchor_id':f'a{i}'} for i in range(12)],'window_event_ids':[str(i) for i in range(100)]},
+                  5.0:{'records':[{'proposal_anchor_id':f'b{i}'} for i in range(4)],'window_event_ids':[str(i) for i in range(20)]},
+                  10.0:{'records':[{'proposal_anchor_id':f'c{i}'} for i in range(4)],'window_event_ids':[str(i) for i in range(20)]},
+              },
+          }
+          tasks,ideal=build_tasks(pre,3)
+          bins,work,props,ideal2=schedule_tasks(pre,3)
+          assert ideal==ideal2
+          assert sum(props)==20
+          assert sum(work)==12*100+4*20+4*20
+          # Oversized 0-degree center must split contiguously and exactly cover 0:12.
+          slices=sorted((int(t['start']),int(t['stop'])) for t in tasks if float(t['center'])==0.0)
+          cursor=0
+          for start,stop in slices:
+              assert start==cursor and stop>start
+              cursor=stop
+          assert cursor==12 and len(slices)>1
+          ids={(float(t['center']),int(t['start']),int(t['stop'])) for b in bins for t in b}
+          assert len(ids)==len(tasks)
+          print('PASS_TASKBALANCED_V4_SYNTHETIC_PARTITION_AND_SCHEDULE')
+          print('work_loads',work,'proposal_loads',props,'ideal',ideal)
+          PY
+
+      - name: Assert source-only firewall
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABELS_NO_TARGET_REGION_NO_ORBITTRACE_TARGET
