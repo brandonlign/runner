@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen R1 run after completing the audited raw-schema interface (`id` and `sol`) and requiring the static preflight to verify that these are exactly the position keys used by parse_target_excluded_orbits. No scientific parameters, target information, or promotion gates are supplied by this file.
