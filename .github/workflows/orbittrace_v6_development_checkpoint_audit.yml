@@ -18,117 +18,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-v6-development-checkpoint-audit
-          path: audit
+          ref: agent/orbittrace-v6-development-checkpoint-final-audit
+          path: recovery
+
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
 
-      - name: Reconstruct exact frozen and repaired v6 sources
+      - name: Run final source-only recovery audit
         run: |
           set -euo pipefail
           test ! -e input
-          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
-            | tr -d '\n\r' | base64 --decode | gzip --decompress \
-            > /tmp/v6.frozen.py
-          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
-          python - <<'PY'
-          import hashlib
-          from pathlib import Path
-          original=Path('/tmp/v6.frozen.py').read_text()
-          before='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
-    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
-    capped = primary_capped + rescue_capped
+          python recovery/orbittrace_v6_development_checkpoint/audit_source.py \
+            --recovery-root recovery \
+            --frozen-root frozen-v6
 
-    components = primary_components + rescue_components
-'''
-          after='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
-    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
-    capped = primary_capped + rescue_capped
-
-    primary_components = component_records_track_v6(old, year, primary_capped, event_lookup, base, "v3")
-    rescue_components = component_records_track_v6(old, year, rescue_capped, event_lookup, base, "fixed4_rescue")
-    components = primary_components + rescue_components
-'''
-          assert original.count(before)==1
-          repaired=original.replace(before,after,1)
-          assert repaired.replace(after,before,1)==original
-          Path('/tmp/v6.repaired.py').write_text(repaired)
-          print('REPAIRED_V6_SHA256='+hashlib.sha256(repaired.encode()).hexdigest())
-          print('PASS_EXACT_TWO_LINE_REPAIR_RECONSTRUCTION')
-          PY
-          python -m py_compile /tmp/v6.repaired.py \
-            audit/orbittrace_v6_development_checkpoint/run_year.py \
-            audit/orbittrace_v6_development_checkpoint/replay_main.py
-
-      - name: Prove checkpoint and replay boundaries from source
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import ast, hashlib, pickle
-          from pathlib import Path
-
-          text=Path('/tmp/v6.repaired.py').read_text(); tree=ast.parse(text)
-          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
-          required={'main','evaluate_families_v6','build_family_track_v6','scan_year_v6'}
-          assert required <= set(defs), sorted(required-set(defs))
-          main=defs['main']
-          scan_calls=[]
-          for node in ast.walk(main):
-              if isinstance(node,ast.Call):
-                  f=node.func
-                  name=f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>')
-                  if name=='scan_year_v6': scan_calls.append((node.lineno,ast.get_source_segment(text,node)))
-          assert len(scan_calls)==1, scan_calls
-          assert 'scan_by_year[year]' in scan_calls[0][1] and 'calibration_by_year[year]' in scan_calls[0][1]
-
-          loop=next(n for n in main.body if isinstance(n,ast.For) and ast.get_source_segment(text,n.iter)=='YEARS')
-          loop_src=ast.get_source_segment(text,loop)
-          assert 'scan_year_v6' in loop_src
-          assert 'build_family_track_v6' not in loop_src and 'evaluate_families_v6' not in loop_src
-          family_line=next(n.lineno for n in ast.walk(main) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='build_family_track_v6')
-          eval_line=next(n.lineno for n in ast.walk(main) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='evaluate_families_v6')
-          assert loop.end_lineno < family_line < eval_line
-
-          run_path=Path('audit/orbittrace_v6_development_checkpoint/run_year.py')
-          replay_path=Path('audit/orbittrace_v6_development_checkpoint/replay_main.py')
-          protocol_path=Path('audit/orbittrace_v6_development_checkpoint/PROTOCOL.md')
-          run_text=run_path.read_text(); run_tree=ast.parse(run_text)
-          run_calls=[]
-          for node in ast.walk(run_tree):
-              if isinstance(node,ast.Call):
-                  f=node.func
-                  run_calls.append(f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>'))
-          assert run_calls.count('scan_year_v6')==1
-          assert 'build_family_track_v6' not in run_calls and 'evaluate_families_v6' not in run_calls
-          assert 'ordered_scan_ids_sha256' in run_text and 'ordered_calibration_ids_sha256' in run_text
-          assert 'truth_used_for_scan' in run_text and 'target_access' in run_text
-
-          replay_text=replay_path.read_text()
-          assert 'v6.scan_year_v6 = replay_scan_year_v6' in replay_text
-          assert 'result = v6.main()' in replay_text
-          assert 'build_family_track_v6' not in replay_text
-          assert 'evaluate_families_v6' not in replay_text
-          assert 'ordered scan universe changed' in replay_text
-          assert 'ordered calibration universe changed' in replay_text
-          assert 'catalogue source identity changed' in replay_text
-          forbidden_literals={'PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT','FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT','recovered_at_100','top100_dominant_precision','qualified_matches'}
-          assert all(lit not in replay_text for lit in forbidden_literals)
-
-          x={'audit':{'supported_bins':[1,2], 'x':0.12345678901234568},'anchors':[{'id':'a'}],'components':[{'event_ids':['a','b']}], 'flag':False}
-          raw=pickle.dumps(x,protocol=pickle.HIGHEST_PROTOCOL)
-          assert pickle.loads(raw)==x
-          print('FROZEN_MAIN_SCAN_LOOP_END='+str(loop.end_lineno))
-          print('FROZEN_MAIN_FAMILY_LINE='+str(family_line))
-          print('FROZEN_MAIN_EVALUATION_LINE='+str(eval_line))
-          print('RUN_YEAR_SHA256='+hashlib.sha256(run_path.read_bytes()).hexdigest())
-          print('REPLAY_MAIN_SHA256='+hashlib.sha256(replay_path.read_bytes()).hexdigest())
-          print('RECOVERY_PROTOCOL_SHA256='+hashlib.sha256(protocol_path.read_bytes()).hexdigest())
-          print('PASS_V6_DEVELOPMENT_CACHED_YEAR_REPLAY_SOURCE_AUDIT')
-          PY
-
-      - name: Assert source-only boundary
+      - name: Assert no-data boundary
         run: |
           set -euo pipefail
           test ! -e input
