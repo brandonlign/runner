@@ -1,0 +1,206 @@
+name: OrbitTrace pooled-reference component-projection v12 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-reference-component-projection-v12
+    paths:
+      - 'orbittrace_pooled_reference_component_projection_v12/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check execution child and one-file diff
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Enforce execution-only child and switch to immutable base SHA
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          test "$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")" = "orbittrace_pooled_reference_component_projection_v12/RUN.md"
+          test "$(cat orbittrace_pooled_reference_component_projection_v12/RUN.md)" = "Execution-only trigger for frozen pooled-reference nearest-component projection v12 development. No scientific method, representation rule, threshold, radius, cap, weight, endpoint, blindness rule, promotion gate, or evaluation definition may change in this child."
+          git checkout --detach "$BASE_SHA"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+
+          git fetch --no-tags --depth=1 origin c9d6c44704013ba0c9430100e98a29a56b453304
+          git diff --name-only FETCH_HEAD HEAD | sort > /tmp/base_diff.txt
+          printf '%s\n' \
+            '.github/workflows/orbittrace-pooled-reference-component-projection-v12.yml' \
+            'orbittrace_pooled_reference_component_projection_v12/PROTOCOL.md' \
+            'orbittrace_pooled_reference_component_projection_v12/run_development.py' | sort > /tmp/expected_diff.txt
+          diff -u /tmp/expected_diff.txt /tmp/base_diff.txt
+          echo PASS_V12_EXECUTION_CHILD_FIREWALL
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen predecessor and clean-room inputs before development access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v6 input/centroid input/v8 input/representation output
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = "f248df78e1258b132b41aecca6a985a5eb782654"
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo "3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip" | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
+          echo "a1faacf51e1f4ca2a3a92b20e27d1f07f00e1d32ab33993916379ff36acea062  input/centroid.zip" | sha256sum -c -
+          unzip -q input/centroid.zip -d input/centroid
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip" | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9013581721/zip" -o input/representation.zip
+          echo "50590e37a674e9562c776c86820c870a775b2c8c76259873f1259fc804b31ac2  input/representation.zip" | sha256sum -c -
+          unzip -q input/representation.zip -d input/representation
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v6=json.loads(Path('input/v6/label_free_sparse_support_v6_development.json').read_text())
+          assert v6['verdict']=='PASS_LABEL_FREE_SPARSE_SUPPORT_V6_DEVELOPMENT'
+          assert v6['family_count']==226
+          assert v6['metrics']['multiplicity']['recovered_at_100']==60
+          assert v6['metrics']['label_free_persistence']['recovered_at_100']==59
+          assert v6['metrics']['label_free_persistence']['qualified_matches']==95
+          c=json.loads(Path('input/centroid/component_centroid_source_audit.json').read_text())
+          assert c['verdict']=='PASS_COMPONENT_CENTROID_SOURCE_AUDIT'
+          assert c['catalogue_access'] is False and c['scientific_value_access'] is False and c['target_information_access'] is False
+          v8=json.loads(Path('input/v8/pooled_year_centroid_v8_development.json').read_text())
+          assert v8['verdict']=='PASS_POOLED_YEAR_CENTROID_V8_DEVELOPMENT'
+          assert v8['family_count']==226
+          assert v8['metrics']['multiplicity']['recovered_at_100']==58
+          assert abs(v8['metrics']['multiplicity']['top100_dominant_precision']-0.6884631112636006)<1e-15
+          assert abs(v8['metrics']['multiplicity']['mrr']-0.045531138942766655)<1e-15
+          a=json.loads(Path('input/representation/family_year_representation_source_only_audit.json').read_text())
+          assert a['verdict']=='PASS_FAMILY_YEAR_REPRESENTATION_SOURCE_ONLY_AUDIT'
+          assert a['family_count']==226 and a['duplicate_family_years']==118
+          assert a['families_with_duplicate_same_year_components']==75
+          assert a['configuration']['label_use'].startswith('none')
+          PY
+
+          python -m py_compile \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_pooled_reference_component_projection_v12/run_development.py
+          rm -rf output/*
+          echo PASS_V12_PREDATA_GUARDS
+
+      - name: Run one-shot target-excluded v12 development
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_pooled_reference_component_projection_v12/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v6-result-json input/v6/label_free_sparse_support_v6_development.json \
+            --centroid-audit-json input/centroid/component_centroid_source_audit.json \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --representation-audit-json input/representation/family_year_representation_source_only_audit.json \
+            --output output
+          cat output/POOLED_REFERENCE_COMPONENT_PROJECTION_V12_DEVELOPMENT.md
+
+      - name: Enforce result integrity and immutable decision rule
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/pooled_reference_component_projection_v12_development.json').read_text())
+          assert r['verdict'] in {
+            'PASS_POOLED_REFERENCE_COMPONENT_PROJECTION_V12_DEVELOPMENT',
+            'FAIL_POOLED_REFERENCE_COMPONENT_PROJECTION_V12_DEVELOPMENT',
+          }
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['one_successor_only'] is True
+          assert r['configuration']['no_representation_search'] is True
+          assert r['family_count']==226
+          assert r['qualified_known_showers']==95
+          assert r['representation_diagnostics']['duplicate_family_years']==118
+          assert r['representation_diagnostics']['families_with_duplicate_same_year_components']==75
+          assert r['representation_diagnostics']['selection_uses_labels'] is False
+          assert r['representation_diagnostics']['selection_uses_scores'] is False
+          assert all(r['integrity_gates'].values())
+          if r['verdict'].startswith('PASS_'):
+            assert all(r['scientific_gates'].values())
+            assert r['decision']=='PROVISIONALLY_PROMOTE_V12_AND_BENCHMARK_WITHOUT_RETUNING'
+          else:
+            assert not all(r['scientific_gates'].values())
+            assert r['decision']=='PERMANENT_NO_GO_V12_PRESERVE_V8_AS_FINAL_ARCHITECTURE'
+          assert 'No OrbitTrace target information' in Path('output/POOLED_REFERENCE_COMPONENT_PROJECTION_V12_DEVELOPMENT.md').read_text()
+          print('ORBITTRACE_V12_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_V12_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/development_commit.txt
+          printf '%s\n' "${{ github.event.pull_request.base.sha }}" > output/frozen_base_sha.txt
+          sha256sum \
+            orbittrace_pooled_reference_component_projection_v12/PROTOCOL.md \
+            orbittrace_pooled_reference_component_projection_v12/run_development.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload v12 development artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-pooled-reference-component-projection-v12-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
