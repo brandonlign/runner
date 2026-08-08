@@ -1,0 +1,64 @@
+name: OrbitTrace P2 D_SH batch sweep
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - .github/workflows/orbittrace_p2_dsh_batch_sweep.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-p2-performance-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet numpy scipy scikit-learn
+      - name: Exact synthetic sweep
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p2perf
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > /tmp/p2perf/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  /tmp/p2perf/literature_comparators.py' | sha256sum -c -
+          PYTHONPATH=/tmp/p2perf:. python - <<'PY'
+          import importlib.util,time
+          import numpy as np
+          from pathlib import Path
+          def load(path,name):
+              spec=importlib.util.spec_from_file_location(name,path); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+          p2=load(Path('orbittrace_crossyear_two_view_membership_p2/run_development.py'),'p2sweep')
+          dsh=load(Path('/tmp/p2perf/literature_comparators.py'),'dshsweep')
+          rng=np.random.default_rng(20260808)
+          batches=[8,16,32,64,128,512]
+          n_candidate=4096
+          summary={}
+          for n_source in [4,8,16,32,64]:
+              ids=[f'c{i:05d}' for i in range(n_candidate)]; seeds=[f's{i:03d}' for i in range(n_source)]; all_ids=ids+seeds
+              q=rng.uniform(.03,1.0,len(all_ids)); e=rng.uniform(.05,.99,len(all_ids)); inc=rng.uniform(0,160,len(all_ids)); peri=rng.uniform(0,360,len(all_ids)); node=rng.uniform(0,360,len(all_ids))
+              orbit={eid:{'q':float(q[i]),'e':float(e[i]),'i':float(inc[i]),'peri':float(peri[i]),'node':float(node[i])} for i,eid in enumerate(all_ids)}
+              outputs={}; timings={}
+              for batch in batches:
+                  p2.DSH_BATCH_SIZE=batch
+                  t=time.perf_counter(); outputs[batch]=p2.min_exact_dsh_to_source(ids,seeds,orbit,dsh); timings[batch]=time.perf_counter()-t
+              ref=outputs[512]
+              for batch in batches[:-1]: assert np.array_equal(ref,outputs[batch]), (n_source,batch,float(np.max(np.abs(ref-outputs[batch]))))
+              best=min(batches,key=lambda b:timings[b])
+              summary[n_source]=(best,timings)
+              print('P2_DSH_SWEEP sources=',n_source,'best=',best,'timings=',{b:round(timings[b],6) for b in batches},'speedup=',round(timings[512]/timings[best],3))
+          print('PASS_P2_DSH_BATCH_SWEEP_BITWISE_EQUIVALENCE')
+          PY
+      - name: No-data firewall
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_METEOR_DATA_NO_LABELS_NO_TARGET
