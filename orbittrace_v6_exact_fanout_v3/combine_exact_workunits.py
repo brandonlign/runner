@@ -33,6 +33,45 @@ def load_pickle_with_sidecar(path: Path) -> tuple[Any, str]:
     return pickle.loads(raw), digest
 
 
+def reconstruct_exact_by_center(
+    pre: dict[str, Any],
+    units: dict[tuple[float, int, int], dict[str, Any]],
+) -> dict[float, list[dict[str, Any]]]:
+    """Reconstruct exact outputs in the immutable preexact record order."""
+    exact_by_center: dict[float, list[dict[str, Any]]] = {}
+    for raw_center in pre["ordered_centers"]:
+        center = float(raw_center)
+        records = pre["centers"][center]["records"]
+        center_units = sorted(
+            (unit for key, unit in units.items() if key[0] == center),
+            key=lambda unit: int(unit["start"]),
+        )
+        cursor = 0
+        exact: list[dict[str, Any]] = []
+        for unit in center_units:
+            start = int(unit["start"])
+            stop = int(unit["stop"])
+            require(start == cursor, f"work-unit gap/overlap during combine center {center}")
+            sliced = records[start:stop]
+            require(canonical_sha(sliced) == unit["records_sha256"], f"record slice changed center {center} {start}:{stop}")
+            part = list(unit["exact"])
+            require(
+                [str(row["proposal_anchor_id"]) for row in part]
+                == [str(row["proposal_anchor_id"]) for row in sliced],
+                f"exact slice order changed center {center} {start}:{stop}",
+            )
+            exact.extend(part)
+            cursor = stop
+        require(cursor == len(records), f"incomplete center combine {center}")
+        require(
+            [str(row["proposal_anchor_id"]) for row in exact]
+            == [str(row["proposal_anchor_id"]) for row in records],
+            f"full exact output order changed center {center}",
+        )
+        exact_by_center[center] = exact
+    return exact_by_center
+
+
 def main() -> int:
     args = parse_args()
     require(args.max_records_per_unit > 0, "max_records_per_unit must be positive")
@@ -78,37 +117,7 @@ def main() -> int:
     require(seen_shards == set(range(shard_count)), f"incomplete work-unit shards: {sorted(seen_shards)} / {shard_count}")
     require(set(units) == expected_keys, "work-unit coverage differs from deterministic plan")
 
-    exact_by_center: dict[float, list[dict[str, Any]]] = {}
-    for raw_center in pre["ordered_centers"]:
-        center = float(raw_center)
-        records = pre["centers"][center]["records"]
-        center_units = sorted(
-            (unit for key, unit in units.items() if key[0] == center),
-            key=lambda unit: int(unit["start"]),
-        )
-        cursor = 0
-        exact: list[dict[str, Any]] = []
-        for unit in center_units:
-            start = int(unit["start"])
-            stop = int(unit["stop"])
-            require(start == cursor, f"work-unit gap/overlap during combine center {center}")
-            sliced = records[start:stop]
-            require(canonical_sha(sliced) == unit["records_sha256"], f"record slice changed center {center} {start}:{stop}")
-            part = list(unit["exact"])
-            require(
-                [str(row["proposal_anchor_id"]) for row in part]
-                == [str(row["proposal_anchor_id"]) for row in sliced],
-                f"exact slice order changed center {center} {start}:{stop}",
-            )
-            exact.extend(part)
-            cursor = stop
-        require(cursor == len(records), f"incomplete center combine {center}")
-        require(
-            [str(row["proposal_anchor_id"]) for row in exact]
-            == [str(row["proposal_anchor_id"]) for row in records],
-            f"full exact output order changed center {center}",
-        )
-        exact_by_center[center] = exact
+    exact_by_center = reconstruct_exact_by_center(pre, units)
 
     # Emit a synthetic one-shard v2 payload. The already-audited v2 replay stage
     # can consume it unchanged, so no scientific scan/replay code is duplicated.
