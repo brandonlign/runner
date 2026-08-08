@@ -1,0 +1,83 @@
+name: OrbitTrace P2 SonotaCo orbit schema audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - orbittrace_p2_schema_audit/RUN.md
+      - .github/workflows/orbittrace_p2_sonotaco_orbit_schema_audit.yml
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  schema:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require one-file schema intent plus workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_p2_schema_audit/RUN.md?ref=$HEAD_SHA" --jq .content | tr -d '\n' | base64 --decode)"
+          test "$content" = 'AUDIT_SNMV3_HEADER_ONLY_FOR_P2_ORBIT_FIELDS'
+      - name: Download exact frozen matched archives
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail --location --retry 3 --output input/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          curl --fail --location --retry 3 --output input/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+      - name: Read CSV headers only
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee output/schema.json
+          import csv,json,zipfile
+          from pathlib import Path
+          result={}
+          for year,path in ((2023,Path('input/023a.zip')),(2025,Path('input/025a.zip'))):
+              with zipfile.ZipFile(path) as z:
+                  members=[n for n in z.namelist() if n.lower().endswith('.csv') and not n.endswith('/')]
+                  if len(members)!=1:
+                      raise RuntimeError(f'{year}: expected exactly one CSV, got {members}')
+                  member=members[0]
+                  with z.open(member) as raw:
+                      first=raw.readline().decode('utf-8-sig').rstrip('\r\n')
+                      # Explicitly prove no second/data row is read.
+                      header=next(csv.reader([first],delimiter=';'))
+              normalized=[x.strip().lower() for x in header]
+              orbit_candidates={
+                  key:[i for i,name in enumerate(normalized) if name in aliases]
+                  for key,aliases in {
+                      'q':{'q','qau','q_au','periheliondistance','perihelion_distance'},
+                      'e':{'e','ecc','eccentricity'},
+                      'i':{'i','ideg','inc','inclination','inclinationdeg'},
+                      'peri':{'peri','perideg','omega','argperi','argumentofperihelion'},
+                      'node':{'node','nodedeg','omegaasc','ascendingnode','longitudeofascendingnode'},
+                  }.items()
+              }
+              result[str(year)]={'member':member,'header_count':len(header),'header':header,'normalized_header':normalized,'orbit_candidates':orbit_candidates,'data_rows_read':0}
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/schema.json').read_text())
+          for year in ('2023','2025'):
+              assert r[year]['data_rows_read']==0
+              assert r[year]['header_count'] in (45,46)
+          assert r['2023']['normalized_header']==r['2025']['normalized_header'], 'SNMv3 matched-year schemas differ'
+          print('PASS_P2_SONOTACO_HEADER_ONLY_SCHEMA_AUDIT')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p2-sonotaco-orbit-schema-header-only
+          path: output/schema.json
+          if-no-files-found: error
+          retention-days: 30
