@@ -41,7 +41,7 @@ jobs:
             orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py \
             orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
 
-      - name: Audit strict ID-only manifest by operations, not comments
+      - name: Audit strict ID-only manifest by executable operations
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -52,24 +52,38 @@ jobs:
           defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
           h=defs['hdbscan_ids_only']; s=defs['sugar_ids_only']; helper=defs['extract_json_array_for_key_without_parsing_rest']
 
+          def executable_nodes(fn):
+              body=list(fn.body)
+              if body and isinstance(body[0],ast.Expr) and isinstance(body[0].value,ast.Constant) and isinstance(body[0].value.value,str):
+                  body=body[1:]
+              for stmt in body:
+                  yield from ast.walk(stmt)
+
           def calls(fn):
               out=[]
-              for n in ast.walk(fn):
+              for n in executable_nodes(fn):
                   if isinstance(n,ast.Call):
                       f=n.func
                       if isinstance(f,ast.Attribute): out.append(f.attr)
                       elif isinstance(f,ast.Name): out.append(f.id)
               return out
+
           hc=calls(h); sc=calls(s); helperc=calls(helper)
           assert 'loads' not in hc and 'load' not in hc, hc
           assert 'findall' in hc, hc
-          # No dict/subscript access to cluster fields exists in HDB ID extraction.
-          hsrc=ast.get_source_segment(text,h)
-          assert 'hdbscan_cluster' not in hsrc
-          assert "['cluster']" not in hsrc and '.get("cluster"' not in hsrc and ".get('cluster'" not in hsrc
+          # HDBSCAN ID extraction must not decode or reference cluster fields.
+          h_exec=list(executable_nodes(h))
+          forbidden_h={'hdbscan_cluster','cluster','cluster_id','label'}
+          assert not any(isinstance(n,ast.Name) and n.id in forbidden_h for n in h_exec)
+          assert not any(isinstance(n,ast.Constant) and isinstance(n.value,str) and n.value in forbidden_h for n in h_exec)
+
+          # Sugar extraction may decode exactly the event_ids array and no label payload.
           ssrc=ast.get_source_segment(text,s)
           assert "extract_json_array_for_key_without_parsing_rest(text, 'event_ids')" in ssrc
-          assert 'retained_labels' not in ssrc
+          s_exec=list(executable_nodes(s))
+          forbidden_s={'retained_labels','labels','shower','shower_code','cluster'}
+          assert not any(isinstance(n,ast.Name) and n.id in forbidden_s for n in s_exec)
+          assert not any(isinstance(n,ast.Constant) and isinstance(n.value,str) and n.value in forbidden_s for n in s_exec)
           assert 'raw_decode' in helperc
 
           for token in (
