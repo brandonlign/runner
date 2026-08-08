@@ -1,0 +1,1 @@
+Execute the frozen target-excluded R1 development exactly once from parent commit 2bb52fed75133a3cb163e64d0d9937e60a7b5d76. The only infrastructure change from the prior complete-interface attempt is the Actions timeout ceiling: 360 minutes instead of 120. Scientific source, parser interface, target exclusion, R1 rule, exact-v8 ranking, and promotion gates are unchanged.
