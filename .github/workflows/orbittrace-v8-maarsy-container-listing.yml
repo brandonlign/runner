@@ -1,0 +1,123 @@
+name: OrbitTrace v8 MAARSY opaque-container listing
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-container-listing
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_STAGE0C_CONTAINER_LISTING.md'
+
+permissions:
+  contents: read
+
+jobs:
+  list_container:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen Stage-0C parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-container-listing
+          fetch-depth: 1
+
+      - name: Enforce container-listing-only source
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/STAGE0C_CONTAINER_LISTING.md
+          mkdir -p input output
+
+      - name: Establish public anonymous RADAR session
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -A 'OrbitTrace-preaccess-container-audit/1.0' \
+            -c input/cookies.txt \
+            'https://www.radar-service.eu/radar/en/dataset/yk29t2gu0h4jhkjg' \
+            -o input/landing.html
+          grep -F 'RADAR_SESSION_ID' input/cookies.txt >/dev/null
+
+      - name: Download exact opaque archive and verify metadata pins
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -b input/cookies.txt \
+            'https://www.radar-service.eu/radar-backend/archives/yk29t2gu0h4jhkjg/versions/1/content' \
+            -o input/dataset.tar
+          test "$(stat -c '%s' input/dataset.tar)" = '10686464'
+          echo 'a064c43c1b82dae8a5a214a4a1faa271  input/dataset.tar' | md5sum -c -
+          sha256sum input/dataset.tar > output/archive_sha256.txt
+          printf '10686464\n' > output/archive_size_bytes.txt
+
+      - name: List tar headers only without opening member payloads
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,tarfile
+
+          tar_path=Path('input/dataset.tar')
+          members=[]
+          with tarfile.open(tar_path, mode='r:') as tf:
+              for m in tf.getmembers():
+                  members.append({
+                      'name':m.name,
+                      'size':m.size,
+                      'type':m.type.decode('latin1') if isinstance(m.type,bytes) else str(m.type),
+                      'mode':m.mode,
+                      'linkname':m.linkname,
+                      'isfile':m.isfile(),
+                      'isdir':m.isdir(),
+                  })
+              # Intentionally do not call extract(), extractall(), extractfile(), or fileobj reads for any member.
+          result={
+              'schema':'orbittrace-v8-maarsy-stage0c-container-list-v1',
+              'archive_sha256':hashlib.sha256(tar_path.read_bytes()).hexdigest(),
+              'archive_size_bytes':tar_path.stat().st_size,
+              'archive_md5_expected':'a064c43c1b82dae8a5a214a4a1faa271',
+              'member_count':len(members),
+              'members':members,
+              'dataset_archive_downloaded':True,
+              'archive_member_payload_opened':False,
+              'event_row_access':False,
+              'scientific_value_access':False,
+              'v8_scientific_evaluation_performed':False,
+              'target_information_access':False,
+              'gmn_stage_a_or_b_access':False,
+          }
+          Path('output/container_listing.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          PY
+          # Delete all downloaded web/dataset material before uploading output.
+          rm -f input/dataset.tar input/cookies.txt input/landing.html
+          test ! -e input/dataset.tar
+
+      - name: Enforce no payload access verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/container_listing.json').read_text())
+          assert r['dataset_archive_downloaded'] is True
+          assert r['archive_member_payload_opened'] is False
+          assert r['event_row_access'] is False
+          assert r['scientific_value_access'] is False
+          assert r['v8_scientific_evaluation_performed'] is False
+          assert r['target_information_access'] is False
+          assert r['gmn_stage_a_or_b_access'] is False
+          Path('output/result.json').write_text(json.dumps({
+            'verdict':'PASS_MAARSY_OPAQUE_CONTAINER_LISTING',
+            'archive_sha256':r['archive_sha256'],
+            'member_count':r['member_count'],
+            'archive_member_payload_opened':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'next_step':'classify member names only and freeze any documentary/schema payload access before opening a member'
+          },indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload header-only structural artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-stage0c-container-listing
+          path: output
+          if-no-files-found: error
+          retention-days: 90
