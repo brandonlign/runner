@@ -25,56 +25,39 @@ jobs:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: v6
 
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/orbittrace-v8-literature-matched-sonotaco
-          path: lit
-
-      - name: Reconstruct exact sources and inspect calibration interface only
+      - name: Reconstruct and pin exact repaired v6 source hash only
         run: |
           set -euo pipefail
           test ! -e input
           cat v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
             | tr -d '\n\r' | base64 --decode | gzip --decompress \
-            > /tmp/run_v3_primary_catalogue_v6.py
-          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/run_v3_primary_catalogue_v6.py' | sha256sum -c -
-
-          cat v6/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 \
-            | tr -d '\n\r' | base64 --decode | gzip --decompress \
-            > /tmp/frozen_support.py
-          sha256sum /tmp/frozen_support.py
-
+            > /tmp/frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/frozen.py' | sha256sum -c -
           python - <<'PY'
-          import ast
+          import hashlib
           from pathlib import Path
+          original=Path('/tmp/frozen.py').read_text()
+          before='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
 
-          def print_fn(path,name):
-              text=Path(path).read_text(); lines=text.splitlines(); tree=ast.parse(text)
-              fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name)
-              print(f'FUNCTION {path}:{name} lines={fn.lineno}-{fn.end_lineno} args={[a.arg for a in fn.args.args]}')
-              for i in range(fn.lineno,fn.end_lineno+1): print(f'{i:04d}: {lines[i-1]}')
-              print('---')
+    components = primary_components + rescue_components
+'''
+          after='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
 
-          print_fn('/tmp/run_v3_primary_catalogue_v6.py','calibrate_year_v6')
-          print_fn('/tmp/frozen_support.py','parse_catalogue')
-
-          support=Path('/tmp/frozen_support.py').read_text().splitlines()
-          print('SUPPORT_RESERVOIR_INTERFACE_LINES')
-          for i,line in enumerate(support,1):
-              low=line.lower()
-              if any(t in low for t in ['calibration_by_year','scan_by_year','hidden_labels','calibration','sporadic','shower']):
-                  if i < 900:
-                      print(f'{i:04d}: {line}')
-
-          ex=Path('lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py').read_text()
-          exlines=ex.splitlines(); extree=ast.parse(ex)
-          for name in ['read_exact_geometry','parse_common_truth']:
-              fn=next(n for n in extree.body if isinstance(n,ast.FunctionDef) and n.name==name)
-              print(f'EXACT_FUNCTION {name} lines={fn.lineno}-{fn.end_lineno}')
-              for i in range(fn.lineno,fn.end_lineno+1): print(f'{i:04d}: {exlines[i-1]}')
-              print('---')
-
-          print('PASS_V6_CALIBRATION_RESERVOIR_SOURCE_AUDIT')
+    primary_components = component_records_track_v6(old, year, primary_capped, event_lookup, base, "v3")
+    rescue_components = component_records_track_v6(old, year, rescue_capped, event_lookup, base, "fixed4_rescue")
+    components = primary_components + rescue_components
+'''
+          assert original.count(before)==1
+          repaired=original.replace(before,after,1)
+          assert repaired.replace(after,before,1)==original
+          digest=hashlib.sha256(repaired.encode()).hexdigest()
+          print('FROZEN_V6_SHA256=a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9')
+          print('REPAIRED_V6_SHA256='+digest)
+          print('PASS_V6_REPAIRED_SOURCE_HASH_PIN')
           PY
 
       - name: Assert source-only boundary
