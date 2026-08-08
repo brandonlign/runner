@@ -44,9 +44,7 @@ def main()->int:
     old=v6.load_base_runner(args.base_runner); support=old.load_support_module(args.support_source_parts); _candidate,base,_scorer=support.load_sources(args)
     lf.require(float(support.BLIND_LOW)==20.0 and float(support.BLIND_HIGH)==55.0,"blind interval changed")
 
-    # Rebuild only the label-free geometry universe so exact year hashes and the
-    # eventual truth-event universe can be verified before any label value is read.
-    scan,calibration,geometry_audits,pretruth_ids=lf.parse_geometry_only(support)
+    scan,calibration,geometry_audits,pretruth_ids=lf.parse_geometry_only(support,base)
     for year in lf.YEARS:
         c=checkpoints[year]
         lf.require(lf.canonical_sha(scan[year])==c["scan_rows_sha256"],f"scan hash mismatch at combine {year}")
