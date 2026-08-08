@@ -34,14 +34,14 @@ jobs:
           content="$(git show "$HEAD_SHA":orbittrace_probabilistic_membership_p1/RUN.md)"
           mode="$(printf '%s\n' "$content" | sed -n '1p')"
           upstream_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$mode" = 'EXECUTE_P1_AFTER_FANOUT_V6_SCIENTIFIC_FAIL'
           [[ "$upstream_run" =~ ^[0-9]+$ ]]
           test "$(printf '%s\n' "$content" | wc -l)" -eq 2
           rm -rf /tmp/p1-prereq && mkdir -p /tmp/p1-prereq
 
-          if [ "$mode" = 'EXECUTE_P1_AFTER_FANOUT_V6_SCIENTIFIC_FAIL' ]; then
-            gh run download "$upstream_run" --repo "$GITHUB_REPOSITORY" \
-              --name orbittrace-v6-fanout-v2-development --dir /tmp/p1-prereq
-            python - <<'PY'
+          gh run download "$upstream_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-fanout-v2-development --dir /tmp/p1-prereq
+          python - <<'PY'
           import json
           from pathlib import Path
           r=json.loads(Path('/tmp/p1-prereq/v3_primary_catalogue_v6_development.json').read_text())
@@ -55,25 +55,6 @@ jobs:
           assert not all(r['gates'].values())
           print('PASS_P1_ACTIVATION_V6_SCIENTIFIC_FAIL')
           PY
-          elif [ "$mode" = 'EXECUTE_P1_AFTER_MATCHED_NO_LITERATURE_SUPERIORITY' ]; then
-            gh run download "$upstream_run" --repo "$GITHUB_REPOSITORY" \
-              --name orbittrace-v6-fanout-matched-literature-result --dir /tmp/p1-prereq
-            python - <<'PY'
-          import json
-          from pathlib import Path
-          r=json.loads(Path('/tmp/p1-prereq/v3_primary_matched_literature.json').read_text())
-          assert r['classification']=='NO_LITERATURE_SUPERIORITY',r['classification']
-          assert r['years']==[2023,2025]
-          assert r['blind_exclusion']==[20.0,55.0]
-          assert r['pairwise_only_no_cross_denominator_comparison'] is True
-          assert r['broad_catalogue_superiority'] is False
-          assert r['sparse_stream_superiority'] is False
-          print('PASS_P1_ACTIVATION_MATCHED_NO_LITERATURE_SUPERIORITY')
-          PY
-          else
-            echo "unauthorized P1 activation mode: $mode" >&2
-            exit 1
-          fi
 
           git checkout --detach "$BASE_SHA"
           test ! -e orbittrace_probabilistic_membership_p1/RUN.md
