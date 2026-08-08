@@ -22,12 +22,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install transport dependency only
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install exact existing GMN transport dependencies
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
-          python -m pip install pandas numpy requests python-dateutil
       - name: Enforce source-only boundary
         run: |
           set -euo pipefail
