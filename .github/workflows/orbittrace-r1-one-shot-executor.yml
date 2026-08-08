@@ -80,23 +80,15 @@ jobs:
           python - <<'PY'
           import re
           from gmn_python_api import data_directory as dd
-
-          KNOWN_MARKERS=(
-              'unique trajectory identifier','sol lon','solar longitude',
-              'lamgeo','betgeo','vgeo',
-          )
-          ORBIT_TERMS=(
-              'perihelion','eccentric','inclination','argument','ascending',
-              'node','semimajor','semi-major','q au','omega',
-          )
+          KNOWN_MARKERS=('unique trajectory identifier','sol lon','solar longitude','lamgeo','betgeo','vgeo')
+          ORBIT_TERMS=('perihelion','eccentric','inclination','argument','ascending','node','semimajor','semi-major','q au','omega')
           def locate(text):
               matches=[]
               for raw in text.splitlines():
                   low=raw.lower()
                   if (sum(marker in low for marker in KNOWN_MARKERS)>=2 or
                       (any(marker in low for marker in KNOWN_MARKERS) and any(term in low for term in ORBIT_TERMS))):
-                      line=raw.strip().lstrip('\ufeff')
-                      line=re.sub(r'\s+',' ',line)
+                      line=re.sub(r'\s+',' ',raw.strip().lstrip('\ufeff'))
                       numeric=re.findall(r'(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?(?![A-Za-z])',line)
                       if len(numeric)>3:
                           raise RuntimeError('candidate schema line contains too many numeric tokens')
@@ -114,16 +106,19 @@ jobs:
                   if len(hits)!=1:
                       raise RuntimeError(f'raw schema field {name!r} not unique: {hits}')
                   return hits[0]
-              pos={name:exact(name) for name in ('q','e','i','peri','node')}
-              if pos['q']!=37 or fields[43]!='Q':
-                  raise RuntimeError(f'unexpected q/Q schema positions: q={pos["q"]}, Q43={fields[43]!r}')
+              pos={
+                  'id':exact('Unique trajectory'),
+                  'q':exact('q'),'e':exact('e'),'i':exact('i'),
+                  'peri':exact('peri'),'node':exact('node'),
+              }
+              if pos['id']!=0 or pos['q']!=37 or fields[43]!='Q':
+                  raise RuntimeError(f'unexpected schema positions: {pos}, Q43={fields[43]!r}')
               return pos
-          text=dd.get_monthly_file_content_by_date('2022-01')
-          pos=locate(text)
+          pos=locate(dd.get_monthly_file_content_by_date('2022-01'))
           print('PASS_R1_HEADER_ONLY_PREFLIGHT',pos)
           PY
 
-      - name: Restore and verify frozen prerequisites
+      - name: Restore and verify frozen prerequisites and parser interface
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -167,7 +162,7 @@ jobs:
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
           python - <<'PY'
-          import hashlib,json
+          import ast,hashlib,json
           from pathlib import Path
           sa=json.loads(Path('input/source_audit/recurrent_core_expansion_r1_source_audit.json').read_text())
           assert sa['verdict']=='PASS_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT'
@@ -179,14 +174,34 @@ jobs:
           assert sc['event_row_values_parsed'] is False and sc['shower_label_values_accessed'] is False
           assert sc['orbittrace_target_accessed'] is False and sc['target_region_event_accessed'] is False
           fields=[x.strip() for x in sc['schema_lines'][0][1:].split(';')]
+          assert fields[0]=='Unique trajectory'
           assert fields.count('q')==1 and fields.index('q')==37
           assert fields.count('Q')==1 and fields.index('Q')==43
-          raw=Path('input/r1/run_development.py').read_bytes()
-          assert hashlib.sha256(raw).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
-          text=raw.decode()
+
+          source=Path('input/r1/run_development.py').read_text()
+          assert hashlib.sha256(source.encode()).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
+          tree=ast.parse(source)
+          funcs=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='parse_target_excluded_orbits']
+          assert len(funcs)==1
+          keys=set()
+          for n in ast.walk(funcs[0]):
+              if isinstance(n,ast.Subscript) and isinstance(n.value,ast.Name) and n.value.id=='positions':
+                  sl=n.slice
+                  if isinstance(sl,ast.Constant) and isinstance(sl.value,str):
+                      keys.add(sl.value)
+          expected={'id','q','e','i','peri','node'}
+          assert keys==expected,(keys,expected)
           for token in ('D_SH(candidate, partner medoid) <= 0.05','unchanged exact v8 multiplicity order','no_threshold_search','no_radius_search','no_weight_search','no_variant_search'):
-              assert token in text,token
-          print('PASS_R1_FROZEN_SOURCE_AND_SCHEMA_BINDINGS')
+              assert token in source,token
+          Path('output/r1_parser_interface_audit.json').write_text(json.dumps({
+              'positions_keys':sorted(keys),
+              'audited_schema_id_field':'Unique trajectory',
+              'audited_schema_id_index':0,
+              'audited_q_index':37,
+              'audited_Q_index':43,
+              'scientific_rule_changed':False,
+          },indent=2,sort_keys=True)+'\n')
+          print('PASS_R1_SOURCE_POSITION_INTERFACE',sorted(keys))
           PY
 
       - name: Execute frozen R1 with runtime-only implementation repairs
@@ -218,8 +233,7 @@ jobs:
                   low=raw_line.lower()
                   if (sum(marker in low for marker in KNOWN_MARKERS)>=2 or
                       (any(marker in low for marker in KNOWN_MARKERS) and any(term in low for term in ORBIT_TERMS))):
-                      line=raw_line.strip().lstrip('\ufeff')
-                      line=re.sub(r'\s+',' ',line)
+                      line=re.sub(r'\s+',' ',raw_line.strip().lstrip('\ufeff'))
                       numeric=re.findall(r'(?<![A-Za-z])[-+]?\d+(?:\.\d+)?(?:[Ee][-+]?\d+)?(?![A-Za-z])',line)
                       mod.require(len(numeric)<=3,'candidate schema line contains too many numeric tokens')
                       if line:
@@ -233,9 +247,14 @@ jobs:
                   hits=[idx for idx,field in enumerate(header_fields) if field==name]
                   mod.require(len(hits)==1,f'raw schema field {name!r} not unique: {hits}')
                   return hits[0]
-              positions={name:exact(name) for name in ('q','e','i','peri','node')}
+              positions={
+                  'id':exact('Unique trajectory'),
+                  'q':exact('q'),'e':exact('e'),'i':exact('i'),
+                  'peri':exact('peri'),'node':exact('node'),
+              }
+              mod.require(positions['id']==0,f"unexpected event-ID position: {positions['id']}")
               mod.require(positions['q']==37,f"unexpected lowercase q position: {positions['q']}")
-              mod.require(len(header_fields)>43 and header_fields[43]=='Q',f"unexpected uppercase Q position/value")
+              mod.require(len(header_fields)>43 and header_fields[43]=='Q','unexpected uppercase Q position/value')
               return header_fields,positions
 
           mod.raw_header_positions=exact_case_raw_header_positions
@@ -243,8 +262,10 @@ jobs:
               'original_frozen_source_sha256':SOURCE_SHA,
               'source_bytes_modified':False,
               'runtime_override_1':'LITERATURE_COMPARATOR_SHA256 git-blob literal -> independently verified raw SHA-256',
-              'runtime_override_2':'raw_header_positions uses approved schema-audit marker locator plus exact case-sensitive fields; q != Q',
+              'runtime_override_2':'raw_header_positions uses approved schema-audit marker locator plus exact case-sensitive id/orbit fields',
               'header_locator_source':'frozen audit_gmn_schema.py marker logic',
+              'schema_id_field':'Unique trajectory',
+              'schema_id_index':0,
               'schema_audit_artifact_id':9014633429,
               'schema_audit_digest':'sha256:c748ead99c08f69a80f1c2a5202c9d4fe08579dba0a961f078fcc389b9058113',
               'scientific_rule_changed':False,
@@ -289,11 +310,13 @@ jobs:
           assert all(r['integrity_gates'].values())
           assert 'does not establish superiority over Sugar/HDBSCAN' in r['claim_boundary']
           repair=json.loads(Path('output/r1_runtime_repair.json').read_text())
+          iface=json.loads(Path('output/r1_parser_interface_audit.json').read_text())
+          assert iface['positions_keys']==['e','i','id','node','peri','q']
           assert repair['source_bytes_modified'] is False
           assert repair['scientific_rule_changed'] is False
           assert repair['promotion_gate_changed'] is False
           assert repair['target_access'] is False
-          assert repair['header_locator_source']=='frozen audit_gmn_schema.py marker logic'
+          assert repair['schema_id_field']=='Unique trajectory' and repair['schema_id_index']==0
           assert hashlib.sha256(Path('input/r1/run_development.py').read_bytes()).hexdigest()=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
           print('ORBITTRACE_R1_RESULT_BEGIN')
           print(json.dumps(r,indent=2,sort_keys=True))
