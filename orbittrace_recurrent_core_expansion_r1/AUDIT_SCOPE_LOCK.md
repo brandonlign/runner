@@ -1,0 +1,1 @@
+The schema audit may answer only whether orbital-element fields are present in the GMN monthly transport. It cannot inspect event values or affect any threshold or method parameter.
