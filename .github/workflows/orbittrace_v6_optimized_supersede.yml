@@ -1,0 +1,34 @@
+name: OrbitTrace v6 optimized execution supersede control
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-performance-optimization-v1
+    paths:
+      - orbittrace_v6_checkpointed_fallback/SUPERSEDE.md
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-v6-optimized-development
+  cancel-in-progress: true
+
+jobs:
+  supersede:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Require one-file supersede child and exact reason
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          test "$files" = 'orbittrace_v6_checkpointed_fallback/SUPERSEDE.md'
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_checkpointed_fallback/SUPERSEDE.md?ref=$HEAD_REF" --jq .content | tr -d '\n' | base64 --decode)"
+          test "$content" = 'SUPERSEDE_REDUNDANT_RUN_31281504254_WITH_EXACT_FANOUT_31282128101'
+          echo 'PASS_REDUNDANT_EXECUTION_SUPERSEDED_NO_SCIENCE'
