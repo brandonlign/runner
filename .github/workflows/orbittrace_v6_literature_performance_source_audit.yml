@@ -7,6 +7,9 @@ on:
     paths:
       - orbittrace_v6_literature_adapter/parallel_exact_rescore.py
       - orbittrace_v6_literature_adapter/run_pretruth_year.py
+      - orbittrace_v6_literature_adapter/bootstrap_optimized_runtime.sh
+      - orbittrace_v6_literature_adapter/prepare_optimized_manifest.sh
+      - .github/workflows/orbittrace_v6_optimized_matched_literature_execution.yml
       - .github/workflows/orbittrace_v6_literature_performance_source_audit.yml
 
 permissions:
@@ -24,9 +27,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v6-literature-performance-v1
-      - name: Prove exact wrapper and pretruth boundary
+      - name: Prove exact wrapper and optimized matched boundaries
         run: |
           set -euo pipefail
+          bash -n orbittrace_v6_literature_adapter/bootstrap_optimized_runtime.sh
+          bash -n orbittrace_v6_literature_adapter/prepare_optimized_manifest.sh
           python -m py_compile orbittrace_v6_literature_adapter/parallel_exact_rescore.py orbittrace_v6_literature_adapter/run_pretruth_year.py
           python - <<'PY'
           import ast
@@ -54,7 +59,6 @@ jobs:
           assert 'worker_count = min(max(1, int(workers)), cpu_count, 4)' in install
 
           r=Path('orbittrace_v6_literature_adapter/run_pretruth_year.py').read_text()
-          rt=ast.parse(r)
           assert r.count('v6.scan_year_v6(')==1
           assert 'install_parallel_exact(v6, workers=args.parallel_exact_workers, min_parallel_records=256)' in r
           assert 'truth_accessed": False' in r
@@ -62,11 +66,30 @@ jobs:
           assert 'competitor_cluster_labels_accessed": False' in r
           assert 'proposal_cap_per_window"] == 512' in r
           assert 'max_primary_proposals_per_year"] == 36864' in r
-          print('PASS_V6_LITERATURE_PARALLEL_EXECUTOR_SOURCE_AUDIT')
+
+          w=Path('.github/workflows/orbittrace_v6_optimized_matched_literature_execution.yml').read_text()
+          assert 'agent/orbittrace-v6-literature-performance-v1' in w
+          assert 'orbittrace_v6_literature_adapter/RUN_OPTIMIZED.md' in w
+          assert 'EXECUTE_AFTER_OPTIMIZED_V6_PASS' in w
+          assert 'gh run download 31281504254' in w
+          assert '--name orbittrace-v6-optimized-development' in w
+          assert '31270206927' not in w
+          assert 'panel: [hdbscan, sugar]' in w and 'year: [2023, 2025]' in w
+          assert '--parallel-exact-workers 4' in w
+          assert w.index('Freeze recurrent rankings before truth') < w.index('Download post-freeze truth metadata only after ranking freeze')
+          assert "r['blind_exclusion']==[20.0,55.0]" in w
+          assert "{'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY','NO_LITERATURE_SUPERIORITY'}" in w
+
+          b=Path('orbittrace_v6_literature_adapter/bootstrap_optimized_runtime.sh').read_text()
+          assert 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9' in b
+          assert '257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24' in b
+          assert 'ffe8351b9ee8df4418fb4926fab782d66180e276' in b
+          print('PASS_V6_OPTIMIZED_LITERATURE_SOURCE_AUDIT')
           PY
       - name: Assert no-data boundary
         if: always()
         run: |
           test ! -e input
           test ! -e output_scan
+          test ! -e output_literature
           echo NO_BENCHMARK_DATA_NO_LABEL_VALUE_NO_TARGET_ACCESS
