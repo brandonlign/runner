@@ -1,0 +1,78 @@
+name: OrbitTrace v6 exact fanout cost-balance source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-exact-fanout-v2
+    paths:
+      - orbittrace_v6_exact_fanout_v2/run_exact_center_shard.py
+      - .github/workflows/orbittrace_v6_exact_fanout_cost_balance_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile scheduler source
+        run: python -m py_compile orbittrace_v6_exact_fanout_v2/run_exact_center_shard.py
+      - name: Verify deterministic pre-truth cost balancing
+        run: |
+          python - <<'PY'
+          import ast
+          import importlib.util
+          from pathlib import Path
+
+          path=Path('orbittrace_v6_exact_fanout_v2/run_exact_center_shard.py')
+          tree=ast.parse(path.read_text())
+          fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='balanced_center_shards')
+          names={n.id for n in ast.walk(fn) if isinstance(n,ast.Name)}
+          attrs={n.attr for n in ast.walk(fn) if isinstance(n,ast.Attribute)}
+          forbidden={'hidden_labels','truth','complex_key','shower','score','target'}
+          assert not (forbidden & names), forbidden & names
+          assert not (forbidden & attrs), forbidden & attrs
+
+          spec=importlib.util.spec_from_file_location('fanout_cost_balance',path)
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          pre={
+            'ordered_centers':[0.0,5.0,10.0,15.0],
+            'centers':{
+              0.0:{'records':[None]*10,'window_event_ids':[None]*100},
+              5.0:{'records':[None]*20,'window_event_ids':[None]*10},
+              10.0:{'records':[None]*5,'window_event_ids':[None]*80},
+              15.0:{'records':[None]*10,'window_event_ids':[None]*20},
+            },
+          }
+          first=mod.balanced_center_shards(pre,2)
+          second=mod.balanced_center_shards(pre,2)
+          assert first==second
+          bins,proposal_loads,cost_loads=first
+          assert sorted(c for b in bins for c in b)==[0.0,5.0,10.0,15.0]
+          assert sum(proposal_loads)==45
+          assert sum(cost_loads)==1800
+          assert sorted(cost_loads)==[800,1000]
+          assert 0.0 in bins[cost_loads.index(1000)]
+          print('PASS_COST_BALANCE_DETERMINISTIC_PRETRUTH_ONLY')
+          print({'bins':bins,'proposal_loads':proposal_loads,'cost_loads':cost_loads})
+          PY
+      - name: Assert scientific replay interface unchanged
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('orbittrace_v6_exact_fanout_v2/run_exact_center_shard.py').read_text()
+          assert 'v6.exact_rescore_window_v6(old, records, window_events, event_lookup, support, base)' in s
+          assert 'format": "orbittrace-v6-exact-center-shard-v2"' in s
+          assert 'captured record hash mismatch' in s
+          assert 'captured window hash mismatch' in s
+          assert 'exact output order changed' in s
+          assert 'target_interval_remains_excluded' in s
+          assert 'labels_not_evaluated' in s
+          print('PASS_SCIENTIFIC_REPLAY_INTERFACE_UNCHANGED')
+          PY
