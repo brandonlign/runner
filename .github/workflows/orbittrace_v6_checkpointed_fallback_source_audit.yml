@@ -7,6 +7,7 @@ on:
     paths:
       - 'orbittrace_v6_checkpointed_fallback/**'
       - '.github/workflows/orbittrace_v6_checkpointed_fallback_source_audit.yml'
+      - '.github/workflows/orbittrace_v6_checkpointed_fallback_execution.yml'
 
 permissions:
   contents: read
@@ -45,6 +46,7 @@ jobs:
           frozen=Path('/tmp/run_v3_primary_catalogue_v6.frozen.py')
           repaired=Path('/tmp/run_v3_primary_catalogue_v6.repaired.py')
           repaired_sha=apply_exact_two_line_repair(frozen,repaired)
+          assert repaired_sha=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
           print('REPAIRED_SOURCE_SHA256='+repaired_sha)
 
           for path in [
@@ -65,8 +67,6 @@ jobs:
           assert 'rescue_families = build_family_track_v6(old, all_components, base, "fixed4_rescue")' in main_src
           assert main_src.index(required_loop) < main_src.index('primary_families = build_family_track_v6')
 
-          # Direct source-side independence guard: scan_year_v6 has no global/nonlocal
-          # declaration and does not assign attributes on any module/object argument.
           assert not any(isinstance(n,(ast.Global,ast.Nonlocal)) for n in ast.walk(scan))
           protected={'old','candidate','base','scorer','support'}
           def target_root(node):
@@ -76,8 +76,7 @@ jobs:
           for n in ast.walk(scan):
               targets=[]
               if isinstance(n,(ast.Assign,ast.AnnAssign,ast.AugAssign)):
-                  if isinstance(n,ast.Assign): targets=list(n.targets)
-                  else: targets=[n.target]
+                  targets=list(n.targets) if isinstance(n,ast.Assign) else [n.target]
               for target in targets:
                   assert not (isinstance(target,(ast.Attribute,ast.Subscript)) and target_root(target) in protected), ast.dump(target)
               if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='setattr' and n.args:
@@ -96,12 +95,21 @@ jobs:
           assert 'event_rows_sha256(events)' in combine_src and 'event_rows_sha256(calibration_events)' in combine_src
           assert 'checkpoint SHA mismatch' in combine_src
 
+          workflow=Path('audit/.github/workflows/orbittrace_v6_checkpointed_fallback_execution.yml').read_text()
+          assert 'workflow_dispatch:' in workflow
+          assert 'pull_request:' not in workflow and 'push:' not in workflow and 'schedule:' not in workflow
+          assert 'matrix:\n        year: [2022, 2023]' in workflow
+          assert 'pattern: orbittrace-v6-dev-year-*' in workflow
+          assert 'combine_with_checkpoints.py' in workflow
+          assert 'V6_YEAR_HEARTBEAT' in workflow
+          assert "assert digest=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'" in workflow
+          print('execution_workflow_SHA256='+hashlib.sha256(workflow.encode()).hexdigest())
+
           sample=[{'id':'x','year':2022,'sol':1.0,'sun_lon':2.0,'ecl_lat':3.0,'vg':4.0,'iau':0,'complex_key':'HIDDEN'}]
           assert event_rows_sha256(sample)==event_rows_sha256([dict(sample[0])])
           payload={'audit':{'year':2022},'anchors':[{'x':1}],'components':[{'event_ids':['x']}], 'flags':(True,None)}
           raw=pickle.dumps(payload,protocol=pickle.HIGHEST_PROTOCOL)
           assert pickle.loads(raw)==payload
-          assert hashlib.sha256(raw).hexdigest()==hashlib.sha256(raw).hexdigest()
 
           print('PASS_V6_CHECKPOINTED_FALLBACK_SOURCE_AUDIT')
           PY
