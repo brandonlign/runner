@@ -1,0 +1,145 @@
+name: OrbitTrace v8 MAARSY metadata-description schema audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-2016-2023-metadata-schema
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_STAGE0B_METADATA_SCHEMA.md'
+
+permissions:
+  contents: read
+
+jobs:
+  metadata_schema:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen metadata-schema parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-2016-2023-metadata-schema
+          fetch-depth: 1
+
+      - name: Enforce metadata-only scope
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/PROTOCOL.md
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/STAGE0B_METADATA_SCHEMA.md
+          mkdir -p input output
+          ! find . -type f \( -iname '*.tar' -o -iname '*.h5' -o -iname '*.hdf5' -o -iname '*.nc' -o -iname '*.csv' \) -print -quit | grep -q .
+
+      - name: Fetch only frozen describedby resources
+        run: |
+          set -euo pipefail
+          base='https://www.radar-service.eu/radar/en/export/yk29t2gu0h4jhkjg'
+          curl -L --fail --retry 3 "$base/exportradarmetadata" -o input/radar_metadata.xml
+          curl -L --fail --retry 3 "$base/exportrocrate" -o input/rocrate.jsonld
+          curl -L --fail --retry 3 "$base/exportJsonld" -o input/schemaorg.jsonld
+          sha256sum input/* | sort > output/description_sha256.txt
+          du -b input/* | sort -n > output/description_sizes.txt
+          # Descriptive exports should stay metadata-sized. Stop before parsing if an endpoint unexpectedly returns a large payload.
+          python - <<'PY'
+          from pathlib import Path
+          for p in Path('input').iterdir():
+              if p.stat().st_size > 5_000_000:
+                  raise RuntimeError(f'unexpectedly large describedby resource; refusing parse: {p} {p.stat().st_size}')
+          PY
+
+      - name: Export metadata structure without scientific-value interpretation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re,xml.etree.ElementTree as ET
+          from urllib.parse import urlparse
+
+          out={
+            'schema':'orbittrace-v8-maarsy-stage0b-metadata-schema-v1',
+            'dataset_archive_requested':False,
+            'event_data_file_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'resources':{}
+          }
+
+          # XML: preserve element/attribute names and only short metadata-like text.
+          raw=Path('input/radar_metadata.xml').read_bytes()
+          root=ET.fromstring(raw)
+          tags=sorted({e.tag.rsplit('}',1)[-1] for e in root.iter()})
+          xml_records=[]
+          safe_name_terms=('title','name','format','size','checksum','identifier','description','filename','file','mime','media','url','location','version','license','rights','date')
+          for e in root.iter():
+              tag=e.tag.rsplit('}',1)[-1]
+              txt=(e.text or '').strip()
+              if txt and len(txt)<=1000 and any(k in tag.lower() for k in safe_name_terms):
+                  xml_records.append({'tag':tag,'text':txt})
+          out['resources']['radar_xml']={'top_tag':root.tag.rsplit('}',1)[-1],'tags':tags,'safe_records':xml_records[:500]}
+
+          # JSON-LD: record graph entity ids/types and structural file-like metadata only.
+          def inspect_json(path):
+              obj=json.loads(Path(path).read_text())
+              nodes=obj.get('@graph',[]) if isinstance(obj,dict) else []
+              if not isinstance(nodes,list): nodes=[]
+              records=[]
+              file_ext_re=re.compile(r'\.(?:tar|zip|h5|hdf5|nc|csv|tsv|json|xml|txt|dat|bin)(?:$|[?#])',re.I)
+              for node in nodes:
+                  if not isinstance(node,dict): continue
+                  rid=str(node.get('@id',''))
+                  typ=node.get('@type')
+                  rec={'id':rid[:2000],'type':typ}
+                  for key in ('name','encodingFormat','contentSize','sha256','md5','description','url','contentUrl'):
+                      val=node.get(key)
+                      if val is not None:
+                          s=str(val)
+                          # Keep structural strings; do not emit large arrays/objects.
+                          if len(s)<=2000:
+                              rec[key]=s
+                  if file_ext_re.search(rid) or any(k in rec for k in ('encodingFormat','contentSize','contentUrl')) or 'file' in str(typ).lower() or 'dataset' in str(typ).lower():
+                      records.append(rec)
+              top_keys=sorted(obj.keys()) if isinstance(obj,dict) else []
+              return {'top_keys':top_keys,'graph_node_count':len(nodes),'structural_records':records[:1000]}
+
+          out['resources']['rocrate']=inspect_json('input/rocrate.jsonld')
+          out['resources']['schemaorg']=inspect_json('input/schemaorg.jsonld')
+
+          # Guard against accidentally treating a describedby export as an event table.
+          total_nodes=sum(v.get('graph_node_count',0) for k,v in out['resources'].items() if isinstance(v,dict))
+          if total_nodes > 10000:
+              raise RuntimeError('describedby export unexpectedly contains event-scale graph; refusing interpretation')
+
+          Path('output/stage0b_metadata_schema.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Record metadata-only verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('output/stage0b_metadata_schema.json').read_text())
+          assert m['dataset_archive_requested'] is False
+          assert m['event_data_file_downloaded'] is False
+          assert m['event_row_access'] is False
+          assert m['scientific_value_access'] is False
+          assert m['target_information_access'] is False
+          r={
+            'schema':'orbittrace-v8-maarsy-stage0b-metadata-schema-result-v1',
+            'verdict':'PASS_MAARSY_DESCRIBEDBY_METADATA_AUDIT',
+            'dataset_archive_requested':False,
+            'event_data_file_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'next_step':'adjudicate whether metadata exposes a file/schema path sufficient to freeze the v8 parser before any dataset-content access'
+          }
+          Path('output/stage0b_result.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload metadata-description artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-2016-2023-stage0b-metadata-schema
+          path: output
+          if-no-files-found: error
+          retention-days: 90
