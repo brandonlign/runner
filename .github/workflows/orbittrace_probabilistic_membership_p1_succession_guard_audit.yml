@@ -24,39 +24,40 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-probabilistic-membership-p1-freeze-v3-succession
-      - name: Prove P1 science identity and authorization-only change
+      - name: Prove frozen P1 science and single v6-fail authorization
         run: |
           set -euo pipefail
           python - <<'PY'
           import base64,gzip,hashlib
           from pathlib import Path
-
           parts=sorted(Path('orbittrace_probabilistic_membership_p1/source_parts').glob('part*.b64'))
           assert [p.name for p in parts]==['part00.b64','part01.b64']
-          encoded=''.join(''.join(p.read_text().split()) for p in parts)
-          source=gzip.decompress(base64.b64decode(encoded,validate=True))
+          source=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
           assert hashlib.sha256(source).hexdigest()=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'
 
           workflow=Path('.github/workflows/orbittrace_probabilistic_membership_p1_guarded_development.yml').read_text()
-          assert 'agent/orbittrace-probabilistic-membership-p1-freeze-v3-succession' in workflow
-          assert "test \"${files[0]}\" = 'orbittrace_probabilistic_membership_p1/RUN_GUARDED.md'" in workflow
-          assert "test \"$reason\" = 'V6_FAIL' -o \"$reason\" = 'LITERATURE_NO_SUPERIORITY'" in workflow
+          assert 'EXECUTE_FROZEN_P1_AFTER_V6_SCIENTIFIC_FAIL' in workflow
           assert '--name orbittrace-v6-fanout-v2-development' in workflow
           assert "r['verdict']=='FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'" in workflow
-          assert '--name orbittrace-v3-primary-matched-literature-result' in workflow
-          assert "r['classification']=='NO_LITERATURE_SUPERIORITY'" in workflow
-          assert "r['broad_catalogue_superiority'] is False" in workflow
-          assert "r['sparse_stream_superiority'] is False" in workflow
+          assert "r['configuration']['years']==[2022,2023]" in workflow
+          assert "r['configuration']['blind_exclusion']==[20.0,55.0]" in workflow
+          assert "all(a['proposal_cap_per_window']==512 for a in r['year_audits'])" in workflow
+          assert "all(a['max_primary_proposals_per_year']==36864 for a in r['year_audits'])" in workflow
           assert "assert digest=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'" in workflow
           assert "r['baseline_v8']['qualified_matches']==95" in workflow
           assert "r['baseline_v8']['recovered_at_100']==58" in workflow
           assert "r['configuration']['parameter_search'] is False" in workflow
           assert "r['configuration']['new_members_can_seed_growth'] is False" in workflow
+          assert 'LITERATURE_NO_SUPERIORITY' not in workflow
+          assert 'orbittrace-v3-primary-matched-literature-result' not in workflow
 
           guard=Path('orbittrace_probabilistic_membership_p1/SUCCESSION_GUARD.md').read_text()
-          assert '`V6_FAIL`' in guard and '`LITERATURE_NO_SUPERIORITY`' in guard
+          assert 'only' in guard.lower()
+          assert '`FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT`' in guard
+          assert 'C1' in guard
+          assert 'literature result' in guard.lower()
           assert 'does not change the frozen P1 scientific source' in guard
-          print('PASS_P1_SUCCESSION_GUARD_SOURCE_AUDIT')
+          print('PASS_P1_V6_FAIL_ONLY_SUCCESSION_GUARD')
           PY
       - name: Assert source-only firewall
         run: |
