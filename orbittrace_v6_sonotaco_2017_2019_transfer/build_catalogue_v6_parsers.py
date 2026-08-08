@@ -32,6 +32,9 @@ def adapt(year: int, source: Path, output: Path) -> str:
     require(text.count(old_if) == 1, f"{year} parser gate execution anchor changed")
     old_error = f'        raise RuntimeError(f"frozen {year} parser gate failed: {{parser_gates}}")\n'
     require(text.count(old_error) == 1, f"{year} parser gate error anchor changed")
+    old_id = f'            "id": f"SNM{year}:{{row_index}}",\n'
+    new_id = f'            "id": f"{year}:SNM{year}:{{row_index}}",\n'
+    require(text.count(old_id) == 1, f"{year} deterministic event-ID anchor changed")
 
     patched = text.replace(OLD_GATE_FIELD, NEW_GATE_FIELD, 1)
     patched = patched.replace(old_if, '    if not all(audit_record["gates"].values()):\n', 1)
@@ -40,12 +43,15 @@ def adapt(year: int, source: Path, output: Path) -> str:
         f'        raise RuntimeError(f"catalogue-v6 {year} transport gate failed: {{audit_record[\'gates\']}}")\n',
         1,
     )
+    patched = patched.replace(old_id, new_id, 1)
 
     # Exact scientific row transform, quality cuts, mapping, target exclusion,
-    # background definition and returned events remain inherited byte-for-byte.
-    # Only the obsolete fixed4-specific >=30 native codes with >=20 events/code
-    # condition is demoted from a fatal parser gate to a report-only diagnostic,
-    # as preregistered before this transport is executed.
+    # background definition and returned geometry remain inherited byte-for-byte.
+    # Two preregistered transport-only adaptations are made before any execution:
+    # (1) the obsolete fixed4-specific >=30 native codes with >=20 events/code gate
+    # is report-only for catalogue v6; (2) event IDs receive a deterministic
+    # leading four-digit year so the exact inherited v8 evaluator's immutable
+    # year-from-ID convention remains valid on SonotaCo.
     require('if BLIND_SOLAR_MIN <= sol <= BLIND_SOLAR_MAX:' in patched, "blind gate missing")
     require('# Critical blindness boundary: no label token or feature is read before this exclusion.' in patched, "blind-order marker missing")
     require('ncam is not None and ncam >= 2.0' in patched, "quality cut changed")
@@ -54,6 +60,7 @@ def adapt(year: int, source: Path, output: Path) -> str:
     require('"at_least_30_distinct_labeled_showers"' in patched, "mapped-shower gate changed")
     require(patched.count('fixed4_supported_native_code_gate_report_only') == 1, "report-only record missing")
     require(patched.count('if name != "at_least_30_supported_native_codes"') == 1, "single excluded fixed4 gate not proven")
+    require(patched.count(new_id) == 1 and old_id not in patched, "deterministic year-prefix ID adaptation failed")
     compile(patched, str(output), "exec")
     output.write_text(patched, encoding="utf-8")
     return sha(output.read_bytes())
