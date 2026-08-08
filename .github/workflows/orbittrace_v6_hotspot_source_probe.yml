@@ -19,59 +19,30 @@ jobs:
         with:
           ref: agent/orbittrace-v6-performance-optimization-v1
           path: probe
-
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
-
-      - name: Reconstruct exact frozen null-calibration sources
+      - name: Reconstruct exact frozen v6 and print evaluation/family interfaces
         run: |
           set -euo pipefail
           test ! -e input
           test ! -e output
-          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
-            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.py
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.py
           echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.py' | sha256sum -c -
-          cat frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 \
-            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/support.py
-          echo 'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62  /tmp/support.py' | sha256sum -c -
-          cat frozen-v6/mondrian_clique_development/source_parts_v2/part*.b64 \
-            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/scorer.py
-          sha256sum /tmp/scorer.py
           python - <<'PY'
           import ast
           from pathlib import Path
-
-          def top(path):
-              text=Path(path).read_text(); tree=ast.parse(text); lines=text.splitlines()
-              defs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef))}
-              return text,defs,lines
-
-          def dump(path,names):
-              text,defs,lines=top(path)
-              for name in names:
-                  node=defs.get(name)
-                  if node is None:
-                      print('MISSING',path,name); continue
-                  print(f'===== {path}::{name} {node.lineno}-{node.end_lineno} =====')
-                  print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(node.lineno,node.end_lineno+1)))
-
-          st,sd,sl=top('/tmp/support.py')
-          ct,cd,cl=top('/tmp/scorer.py')
-          print('SCORER_TOP_LEVEL',sorted(cd))
-          for i,line in enumerate(cl,1):
-              if any(k in line.lower() for k in ('calibration','mondrian','bin','episode','sample','random','choice')):
-                  print(f'SCORER_MATCH {i:04d}: {line}')
-          dump('/tmp/scorer.py',['MondrianWindowFactory','stable_seed'])
-          dump('/tmp/support.py',['parse_catalogue'])
-          dump('/tmp/v6.py',['calibrate_year_v6'])
-          print('PASS_V6_NULL_GENERATOR_SOURCE_PROBE')
+          text=Path('/tmp/v6.py').read_text(); tree=ast.parse(text); lines=text.splitlines()
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          for name in ['build_family_track_v6','evaluate_families_v6','main']:
+              fn=defs[name]
+              print(f'===== {name} {fn.lineno}-{fn.end_lineno} =====')
+              print('\n'.join(f'{i:04d}: {lines[i-1]}' for i in range(fn.lineno,fn.end_lineno+1)))
+          print('PASS_V6_EVALUATION_SOURCE_PROBE')
           PY
-
       - name: Assert source-only boundary
         run: |
-          set -euo pipefail
           test ! -e input
           test ! -e output
           echo NO_CATALOGUE_NO_LABEL_VALUE_NO_TARGET_ACCESS
