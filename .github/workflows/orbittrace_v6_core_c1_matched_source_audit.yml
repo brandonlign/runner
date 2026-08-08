@@ -1,0 +1,134 @@
+name: OrbitTrace v6-core C1 matched implementation source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-core-probabilistic-membership-c1-freeze
+    paths:
+      - orbittrace_v6_core_probabilistic_membership_c1/AUDIT_MATCHED.md
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 785554905113626bebffecdd441616238eb76b04
+          path: p1-transfer
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-v6-literature-adapter-freeze
+          path: v6lit
+          fetch-depth: 1
+      - name: Compile and record exact source identities
+        run: |
+          set -euo pipefail
+          test "$(git -C p1-transfer hash-object orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py)" = '498daf762bc82a664679998ea751feecff8033de'
+          test "$(git -C p1-transfer hash-object orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py)" = 'a797ff5dc45be13ccae79e846d66c8406c6db812'
+          test "$(git -C v6lit hash-object orbittrace_v6_literature_adapter/prepare_id_manifest.py)" = '6905d474f764be63584a8d499eb85e5509b0ebc1'
+          test "$(git -C v6lit hash-object orbittrace_v6_literature_adapter/evaluate_frozen.py)" = '77c3be6f30e4a861d4dfb1bdb23568530e325e34'
+          PYTHONPATH="$PWD/p1-transfer:$PWD/v6lit:$PYTHONPATH" python -m py_compile \
+            orbittrace_v6_core_probabilistic_membership_c1/prepare_strict_matched_manifest.py \
+            orbittrace_v6_core_probabilistic_membership_c1/combine_apply_c1_pretruth.py \
+            orbittrace_v6_core_probabilistic_membership_c1/evaluate_matched.py
+          mkdir -p audit_output
+          sha256sum \
+            orbittrace_v6_core_probabilistic_membership_c1/prepare_strict_matched_manifest.py \
+            orbittrace_v6_core_probabilistic_membership_c1/combine_apply_c1_pretruth.py \
+            orbittrace_v6_core_probabilistic_membership_c1/evaluate_matched.py \
+            orbittrace_v6_core_probabilistic_membership_c1/MATCHED_LITERATURE_PROTOCOL.md \
+            > audit_output/source_sha256.txt
+      - name: Prove strict event-ID and native-background pretruth manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('orbittrace_v6_core_probabilistic_membership_c1/prepare_strict_matched_manifest.py').read_text(); tree=ast.parse(text)
+          imports=ast.get_source_segment(text,tree)
+          assert 'hdbscan_ids_only' in text and 'sugar_ids_only' in text
+          assert 'extract_background_ids' in text
+          assert 'load_hdbscan' not in text and 'load_sugar' not in text
+          assert 'competitor_cluster_values_parsed' in text and 'False' in text
+          assert 'known_shower_truth_values_parsed' in text
+          assert 'competitor_values_used_for_calibration' in text
+          assert 'native survey shower token' in text
+          assert "len(background) >= 1000" in text
+          print('PASS_C1_MATCHED_STRICT_ID_NATIVE_BACKGROUND_MANIFEST')
+          PY
+      - name: Prove exact v6 family rank and shared C1 membership pretruth
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('orbittrace_v6_core_probabilistic_membership_c1/combine_apply_c1_pretruth.py').read_text(); tree=ast.parse(text)
+          main=ast.get_source_segment(text,{n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}['main'])
+          assert 'v6.build_family_track_v6(old, all_components, base, "v3")' in main
+          assert 'rank_order = [str(f["family_id"]) for f in primary_families]' in main
+          assert 'transfer.apply_exact_p1_membership(p1, primary_families, scan_by_year, base)' in main
+          assert 'tuple(transfer.YEARS) == YEARS' in main
+          for token in (
+              'competitor_cluster_values_parsed"] is False',
+              'known_shower_truth_values_parsed"] is False',
+              'competitor_values_used_for_calibration"] is False',
+              'truth_accessed"] is False',
+              'competitor_cluster_labels_accessed"] is False',
+              'fixed4_rescue_can_seed_c1": False',
+              'new_members_can_seed_or_refit": False',
+              'rank_and_membership_frozen_before_truth": True',
+              'v6_primary_rank_pretruth_sha256',
+              'v6_seed_families_pretruth_sha256',
+              'c1_membership_pretruth_sha256',
+          ):
+              assert token in text,token
+          assert 'hidden_labels' not in text
+          assert 'load_hdbscan' not in text and 'load_sugar' not in text
+          print('PASS_C1_MATCHED_V6_RANK_SHARED_MEMBERSHIP_PRETRUTH')
+          PY
+      - name: Prove evaluator inherits exact v6 bars and post-freeze access order
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD/v6lit:$PYTHONPATH" python - <<'PY'
+          import ast,importlib.util,sys
+          from pathlib import Path
+          text=Path('orbittrace_v6_core_probabilistic_membership_c1/evaluate_matched.py').read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          main=ast.get_source_segment(text,defs['main']); panel=ast.get_source_segment(text,defs['evaluate_panel']); load=ast.get_source_segment(text,defs['load_pretruth'])
+          assert 'from orbittrace_v6_literature_adapter import evaluate_frozen as frozen_v6_eval' in text
+          assert 'frozen_v6_eval.annual_pairwise_gates' in panel
+          assert 'frozen_v6_eval.BINS' in text
+          assert main.index('load_pretruth(args.hdbscan_pretruth') < main.index('exact = load_module')
+          for token in ('competitor_cluster_values_accessed','known_shower_truth_accessed','rank_and_membership_frozen_before_truth','c1_membership_pretruth_sha256','v6_primary_rank_pretruth_sha256'):
+              assert token in load,token
+          assert panel.index('exact.load_hdbscan') < panel.index('exact.parse_common_truth')
+          assert 'exact.load_sugar' in panel
+          assert 'exact.best_competitor_matches' in panel
+          assert 'exact.burden_for_families' in panel and 'exact.burden_for_clusters' in panel
+          assert 'pairwise_only_no_cross_denominator_comparison' in main
+          assert "classification = \"BROAD_CATALOGUE_SUPERIORITY\"" in main
+          assert "classification = \"SPARSE_STREAM_SUPERIORITY\"" in main
+          assert "classification = \"NO_LITERATURE_SUPERIORITY\"" in main
+          print('PASS_C1_MATCHED_EXACT_V6_ADJUDICATOR_AND_ACCESS_ORDER')
+          PY
+      - name: Assert source-only firewall
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_C1_MATCHED_SCIENCE_NO_ASSIGNMENT_VALUES_NO_TRUTH_VALUES_NO_TARGET_REGION
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-c1-matched-source-audit
+          path: audit_output
+          if-no-files-found: error
+          retention-days: 30
