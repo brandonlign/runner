@@ -1,0 +1,135 @@
+name: OrbitTrace v8 MAARSY 2016-2023 preaccess metadata audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-2016-2023-preaccess
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_STAGE0A.md'
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen MAARSY preaccess parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-2016-2023-preaccess
+          fetch-depth: 1
+
+      - name: Enforce metadata-only scope
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/PROTOCOL.md
+          ! find . -type f \( -iname '*maarsy*.h5' -o -iname '*maarsy*.hdf5' -o -iname '*maarsy*.nc' -o -iname '*maarsy*.csv' -o -iname '*maarsy*.zip' -o -iname '*maarsy*.tar*' \) -print -quit | grep -q .
+          mkdir -p output
+
+      - name: Resolve DOI without following data-file links
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            -A 'OrbitTrace-preaccess-metadata-audit/1.0' \
+            -D output/doi_response_headers.txt \
+            'https://doi.org/10.22000/yk29t2gu0h4jhkjg' \
+            -o output/repository_landing.html
+          test -s output/repository_landing.html
+          sha256sum output/repository_landing.html > output/repository_landing_sha256.txt
+
+      - name: Retrieve DataCite DOI metadata only
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            -H 'Accept: application/vnd.api+json' \
+            'https://api.datacite.org/dois/10.22000/yk29t2gu0h4jhkjg' \
+            -o output/datacite.json
+          test -s output/datacite.json
+          sha256sum output/datacite.json > output/datacite_sha256.txt
+
+      - name: Extract transport metadata without downloading resources
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          from urllib.parse import urlparse
+
+          dc=json.loads(Path('output/datacite.json').read_text())
+          attrs=dc.get('data',{}).get('attributes',{})
+          html=Path('output/repository_landing.html').read_text(errors='ignore')
+          urls=sorted(set(re.findall(r'https?://[^"\'<>\s]+',html)))
+          # Record URLs only; never request any of them here.
+          likely=[]
+          for u in urls:
+              low=u.lower()
+              if any(x in low for x in ('download','file','resource','dataset','api','metadata','record')):
+                  likely.append(u[:2000])
+          out={
+            'schema':'orbittrace-v8-maarsy-stage0a-metadata-v1',
+            'doi':'10.22000/yk29t2gu0h4jhkjg',
+            'datacite_url':attrs.get('url'),
+            'publisher':attrs.get('publisher'),
+            'publication_year':attrs.get('publicationYear'),
+            'titles':attrs.get('titles'),
+            'creators':attrs.get('creators'),
+            'rights_list':attrs.get('rightsList'),
+            'sizes':attrs.get('sizes'),
+            'formats':attrs.get('formats'),
+            'descriptions':attrs.get('descriptions'),
+            'subjects':attrs.get('subjects'),
+            'types':attrs.get('types'),
+            'related_identifiers':attrs.get('relatedIdentifiers'),
+            'landing_candidate_urls':likely[:200],
+            'event_data_file_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+          }
+          Path('output/stage0a_metadata.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          # Human-readable transport summary; strip HTML tags before keyword snippets.
+          text=re.sub(r'<[^>]+>',' ',html)
+          text=re.sub(r'\s+',' ',text)
+          needles=('MAARSY','meteor','trajectory','geocentric','velocity','file','download','Huyghebaert')
+          snippets={}
+          lower=text.lower()
+          for n in needles:
+              i=lower.find(n.lower())
+              if i>=0:
+                  snippets[n]=text[max(0,i-300):i+700]
+          Path('output/landing_keyword_snippets.json').write_text(json.dumps(snippets,indent=2,sort_keys=True)+'\n')
+          if not attrs.get('url'):
+              raise RuntimeError('DataCite DOI metadata lacks landing URL')
+          PY
+
+      - name: Enforce no event access and record verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('output/stage0a_metadata.json').read_text())
+          assert m['event_data_file_downloaded'] is False
+          assert m['event_row_access'] is False
+          assert m['scientific_value_access'] is False
+          assert m['target_information_access'] is False
+          r={
+            'schema':'orbittrace-v8-maarsy-stage0a-result-v1',
+            'verdict':'PASS_MAARSY_DOI_METADATA_TRANSPORT',
+            'event_data_file_downloaded':False,
+            'event_row_access':False,
+            'scientific_value_access':False,
+            'target_information_access':False,
+            'next_step':'adjudicate repository metadata and identify documentation/schema resources before any event-file download'
+          }
+          Path('output/stage0a_result.json').write_text(json.dumps(r,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload metadata-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-2016-2023-preaccess-stage0a
+          path: output
+          if-no-files-found: error
+          retention-days: 90
