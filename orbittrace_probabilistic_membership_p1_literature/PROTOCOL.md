@@ -19,9 +19,17 @@ The panel-specific family identities are outputs of the exact v8 architecture on
 
 P1 may change only final family membership. Added members never seed growth, refit a centroid/covariance/background estimate, create a family, change recurrence, or change the exact v8 multiplicity order.
 
+## Exact-v8 support boundary
+
+A prior frozen v8 exact-row literature exercise established a genuine transport limitation on at least one HDBSCAN-matched SonotaCo configuration: a valid recurrent object could encounter only 64 available 2025 local-window rows while promoted v8 requires an exact 128-event episode. This limitation predates P1 and is therefore part of the evidence available before this preregistration.
+
+P1 may not repair that limitation by padding, duplicating events, widening the 10° window, borrowing events outside the exact comparator universe, lowering the 128-event requirement, changing quality cuts, changing recurrence, or replacing the promoted-v8 core detector. If a matched panel/window cannot instantiate the exact promoted-v8 core construction, that absence is preserved as part of P1's performance on that universe.
+
+If the complete exact-v8 paired-year detector cannot be executed on a comparator universe under its unchanged requirements, that panel is classified `P1_MATCHED_INPUT_INELIGIBLE_EXACT_V8_SUPPORT`. It is not silently replaced by a different event universe and cannot count as a superiority pass. Because the final literature claim requires an eligible pairwise result against both HDBSCAN and Sugar, such an ineligibility prevents a broad or sparse literature-superiority claim unless a separately preregistered genuinely common universe exists that requires no scientific change to either method.
+
 ## Frozen P1 architecture under transfer
 
-For each recurrent v8 family produced on a matched panel, apply the same P1 rule frozen before GMN development:
+For each recurrent v8 family produced on an eligible matched panel, apply the same P1 rule frozen before GMN development:
 
 - reconstruct pooled same-year centroids from immutable v8 seed-event unions using the promoted-v8 circular/robust conventions;
 - express seeds/events in the inherited four-dimensional v8 observation geometry;
@@ -72,7 +80,7 @@ For each comparator panel:
 
 1. materialize only the already-frozen exact-row ID/geometry universe and target-excluded calibration/background representation;
 2. keep known-shower truth and competitor cluster labels inaccessible;
-3. run the exact promoted-v8 target-free detector on the paired 2023/2025 panel;
+3. run the exact promoted-v8 target-free detector on the paired 2023/2025 panel, preserving any exact-support insufficiency rather than modifying it;
 4. freeze the complete recurrent v8 family universe and exact multiplicity order;
 5. apply exact frozen P1 membership without truth/comparator access;
 6. serialize and SHA-256 freeze the complete P1 family membership payload and unchanged v8 order;
@@ -90,6 +98,7 @@ For each comparator and year report at minimum:
 - exact event-row count;
 - eligible known-shower count;
 - P1 recurrent-family count and unchanged v8 rank identity;
+- exact-v8 support/ineligibility diagnostics, including every local window below a required immutable support count;
 - qualified known-shower matches;
 - macro F1;
 - per-shower F1 distribution;
@@ -114,7 +123,7 @@ P1 establishes broad catalogue superiority only if, independently against HDBSCA
 2. no nonempty size stratum has P1 mean F1 more than 0.05 below the comparator;
 3. P1 exceeds the comparator by at least 0.10 mean F1 in at least two nonempty size strata in that year;
 4. P1's number of eligible showers with F1 > 0.5 is not lower than the comparator's;
-5. every common-universe, source/provenance, target-exclusion, and pre-truth integrity gate passes.
+5. every common-universe, exact-v8 support, source/provenance, target-exclusion, and pre-truth integrity gate passes.
 
 ### `SPARSE_STREAM_SUPERIORITY`
 
@@ -124,17 +133,19 @@ If broad superiority is not met, P1 establishes sparse-stream superiority only i
 2. combined mean F1 over 4–24-event showers is at least comparator + 0.10;
 3. P1 macro F1 is no more than 0.10 below that comparator;
 4. P1 retains at least 80% of that comparator's count of eligible showers with F1 > 0.5;
-5. every common-universe, source/provenance, target-exclusion, and pre-truth integrity gate passes.
+5. every common-universe, exact-v8 support, source/provenance, target-exclusion, and pre-truth integrity gate passes.
 
 ### `NO_LITERATURE_SUPERIORITY`
 
-Any result satisfying neither complete condition is classified `NO_LITERATURE_SUPERIORITY`. A strong single-year result, a win against only one comparator, a large gain in one hand-selected size bin, or a development-panel gain does not qualify as literature superiority.
+Any eligible result satisfying neither complete condition is classified `NO_LITERATURE_SUPERIORITY`. A strong single-year result, a win against only one comparator, a large gain in one hand-selected size bin, or a development-panel gain does not qualify as literature superiority.
+
+`P1_MATCHED_INPUT_INELIGIBLE_EXACT_V8_SUPPORT` is reported separately from `NO_LITERATURE_SUPERIORITY`, but it cannot satisfy either superiority claim.
 
 No threshold may be relaxed after seeing P1 or comparator outcomes.
 
 ## Internal v8 non-regression report
 
-On each exact-row comparator panel, P1 must also be evaluated against the exact panel-specific promoted-v8 membership baseline from which it starts. Report the change in macro F1, qualified matches, dominant precision, per-size F1, and membership count.
+On each eligible exact-row comparator panel, P1 must also be evaluated against the exact panel-specific promoted-v8 membership baseline from which it starts. Report the change in macro F1, qualified matches, dominant precision, per-size F1, and membership count.
 
 This is an architecture diagnostic, not a substitute for the Sugar/HDBSCAN superiority bars. If P1 materially damages its own v8 core interpretation on a transfer panel, that result must be reported even if some pairwise comparator endpoint is favorable.
 
@@ -144,6 +155,7 @@ This is an architecture diagnostic, not a substitute for the Sugar/HDBSCAN super
 - P1 development pass + `BROAD_CATALOGUE_SUPERIORITY`: P1 may proceed to separately frozen no-retuning generalization/validation.
 - P1 development pass + `SPARSE_STREAM_SUPERIORITY`: P1 may proceed to separately frozen no-retuning generalization/validation with its claim restricted to sparse/weak-stream superiority.
 - P1 development pass + `NO_LITERATURE_SUPERIORITY`: P1 does not satisfy the project superiority goal and may not be rescued by retuning this architecture on the matched outcomes. The already-frozen P2 successor may then be considered only according to its own succession rule.
+- P1 matched input ineligibility from exact-v8 support: report the limitation explicitly; do not alter v8/P1 to force a comparison. It cannot authorize a superiority claim or target deployment.
 
 No matched-literature outcome alone authorizes an OrbitTrace target-containing search.
 
@@ -158,6 +170,6 @@ Forbidden throughout this comparison:
 - any prior target rank or target-containing result;
 - any event from the excluded 20°–55° interval;
 - use of comparator labels before P1 memberships/rank hashes are frozen;
-- any P1 retuning, model selection, threshold search, or alternative transfer variant.
+- any P1 retuning, model selection, threshold search, support relaxation, padding, or alternative transfer variant.
 
 This protocol is comparison-only. A final blind target deployment requires a separately frozen authorization, target success threshold, complete-ranking output, reveal procedure, and claim boundary after the selected method has satisfied the required no-retuning generalization evidence.
