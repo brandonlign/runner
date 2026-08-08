@@ -1,0 +1,288 @@
+name: OrbitTrace recurrent-core expansion R1 development schemafix
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-recurrent-core-expansion-r1
+    paths:
+      - 'orbittrace_recurrent_core_expansion_r1/RUN_SCHEMAFIX.md'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out execution child for one-file diff guard
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Enforce execution-only child and switch to frozen base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = "orbittrace_recurrent_core_expansion_r1/RUN_SCHEMAFIX.md"
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_recurrent_core_expansion_r1/RUN_SCHEMAFIX.md
+          echo "execution_base_sha=$BASE_SHA"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact existing scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Restore pinned prerequisites and apply implementation-only repairs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,v6,centroid,schema,source_audit,dsh,r1} output
+
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          parts=sorted(Path('orbittrace_recurrent_core_expansion_r1/source_parts').glob('part*.b64'))
+          assert [p.name for p in parts]==['part00.b64']
+          src=gzip.decompress(base64.b64decode(''.join(''.join(p.read_text().split()) for p in parts),validate=True))
+          got=hashlib.sha256(src).hexdigest()
+          assert got=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15',got
+          Path('input/r1/run_development.py').write_bytes(src)
+          PY
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo "3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip" | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
+          echo "a1faacf51e1f4ca2a3a92b20e27d1f07f00e1d32ab33993916379ff36acea062  input/centroid.zip" | sha256sum -c -
+          unzip -q input/centroid.zip -d input/centroid
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9014633429/zip" -o input/schema.zip
+          echo "c748ead99c08f69a80f1c2a5202c9d4fe08579dba0a961f078fcc389b9058113  input/schema.zip" | sha256sum -c -
+          unzip -q input/schema.zip -d input/schema
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9014714033/zip" -o input/source_audit.zip
+          echo "a6986603a373c9364e1a8a383ed3a37abb5a7b0db8a38c932a207939e3f379e9  input/source_audit.zip" | sha256sum -c -
+          unzip -q input/source_audit.zip -d input/source_audit
+
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          test "$(git hash-object input/dsh/literature_comparators.py)" = "ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2"
+          echo "85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py" | sha256sum -c -
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+
+          python - <<'PY'
+          import hashlib,json,re
+          from pathlib import Path
+
+          source_audit=json.loads(Path('input/source_audit/recurrent_core_expansion_r1_source_audit.json').read_text())
+          assert source_audit['verdict']=='PASS_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT'
+          assert source_audit['source_sha256']=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
+          assert source_audit['catalogue_access'] is False and source_audit['scientific_value_access'] is False
+          assert source_audit['shower_label_access'] is False and source_audit['orbittrace_target_access'] is False
+
+          schema=json.loads(Path('input/schema/gmn_schema_only_orbit_column_audit.json').read_text())
+          assert schema['verdict']=='PASS_GMN_SCHEMA_ONLY_ORBIT_COLUMN_AUDIT'
+          assert schema['event_row_values_parsed'] is False and schema['shower_label_values_accessed'] is False
+          assert schema['orbittrace_target_accessed'] is False and schema['target_region_event_accessed'] is False
+          assert len(schema['schema_lines'])==1
+          schema_line=schema['schema_lines'][0]
+          fields=[field.strip() for field in schema_line[1:].split(';')]
+          assert fields.count('q')==1 and fields.count('Q')==1
+          assert fields.index('q')==37 and fields.index('Q')==43
+          for name in ('e','i','peri','node'):
+              assert fields.count(name)==1, (name,[i for i,x in enumerate(fields) if x==name])
+
+          p=Path('input/r1/run_development.py')
+          raw=p.read_bytes()
+          original_sha=hashlib.sha256(raw).hexdigest()
+          assert original_sha=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15'
+          text=raw.decode()
+
+          # Repair 1: stale comparator provenance literal only.
+          old_blob='ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
+          comparator_sha256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+          assignment_lines=[line for line in text.splitlines() if line.lstrip().startswith('LITERATURE_COMPARATOR_SHA256') and '=' in line]
+          assert len(assignment_lines)==1 and old_blob in assignment_lines[0], assignment_lines
+          assert text.count(old_blob)==1
+          blob_index=text.index(old_blob)
+          after_hash=text[:blob_index]+comparator_sha256+text[blob_index+len(old_blob):]
+
+          # Repair 2: raw-header parsing only. The audited GMN schema is case-sensitive:
+          # lowercase q is perihelion distance; uppercase Q is a distinct field.
+          start_match=re.search(r'(?m)^def raw_header_positions\(text[^\n]*\):\n', after_hash)
+          assert start_match, 'raw_header_positions() not found'
+          start=start_match.start()
+          next_def=re.search(r'(?m)^def [A-Za-z_][A-Za-z0-9_]*\(', after_hash[start_match.end():])
+          assert next_def, 'next top-level function after raw_header_positions() not found'
+          end=start_match.end()+next_def.start()
+          old_parser=after_hash[start:end]
+          assert 'raw schema field' in old_parser
+          assert '"q": exact("q")' in old_parser or "'q': exact('q')" in old_parser
+          assert '"e": exact("e")' in old_parser or "'e': exact('e')" in old_parser
+          assert '"i": exact("i")' in old_parser or "'i': exact('i')" in old_parser
+
+          new_parser='''def raw_header_positions(text: str):
+    schema_lines = [line for line in text.splitlines() if line.startswith("# Unique trajectory;")]
+    require(len(schema_lines) == 1, f"raw schema header not unique: {len(schema_lines)}")
+    header_fields = [field.strip() for field in schema_lines[0][1:].split(";")]
+
+    def exact(name: str) -> int:
+        hits = [idx for idx, field in enumerate(header_fields) if field == name]
+        require(len(hits) == 1, f"raw schema field {name!r} not unique: {hits}")
+        return hits[0]
+
+    positions = {
+        "q": exact("q"),
+        "e": exact("e"),
+        "i": exact("i"),
+        "peri": exact("peri"),
+        "node": exact("node"),
+    }
+    return header_fields, positions
+
+
+'''
+          patched=after_hash[:start]+new_parser+after_hash[end:]
+
+          # Validate the replacement logic directly against the already-audited schema line.
+          header_fields=[field.strip() for field in schema_line[1:].split(';')]
+          positions={name: header_fields.index(name) for name in ('q','e','i','peri','node')}
+          assert positions['q']==37
+          assert header_fields[43]=='Q' and positions['q']!=43
+
+          # Scientific architecture/gates must remain present and unchanged in the execution copy.
+          for token in (
+              'D_SH(candidate, partner medoid) <= 0.05',
+              'unchanged exact v8 multiplicity order',
+              'no_threshold_search',
+              'no_radius_search',
+              'no_weight_search',
+              'no_variant_search',
+          ):
+              assert token in patched, token
+
+          # Prove both implementation repairs are exactly reversible to the SHA-pinned frozen source.
+          parser_start=start
+          parser_end=start+len(new_parser)
+          reversed_parser=patched[:parser_start]+old_parser+patched[parser_end:]
+          reverse_blob_index=reversed_parser.index(comparator_sha256)
+          reverted=reversed_parser[:reverse_blob_index]+old_blob+reversed_parser[reverse_blob_index+len(comparator_sha256):]
+          assert reverted.encode()==raw
+
+          p.write_text(patched)
+          Path('output/r1_implementation_repair.json').write_text(json.dumps({
+              'original_frozen_source_sha256': original_sha,
+              'verified_comparator_git_blob': old_blob,
+              'verified_comparator_sha256': comparator_sha256,
+              'comparator_repair_scope': 'single stale provenance literal only',
+              'schema_audit_artifact_id': 9014633429,
+              'schema_audit_digest': 'sha256:c748ead99c08f69a80f1c2a5202c9d4fe08579dba0a961f078fcc389b9058113',
+              'schema_resolution': 'exact case-sensitive raw header names; q != Q',
+              'lowercase_q_index': positions['q'],
+              'uppercase_Q_index': header_fields.index('Q'),
+              'old_parser_sha256': hashlib.sha256(old_parser.encode()).hexdigest(),
+              'new_parser_sha256': hashlib.sha256(new_parser.encode()).hexdigest(),
+              'repairs_byte_for_byte_reversible_to_frozen_source': True,
+              'scientific_rule_changed': False,
+              'promotion_gate_changed': False,
+          },indent=2,sort_keys=True)+'\n')
+          print('R1_IMPLEMENTATION_REPAIRS_APPLIED')
+          print(json.dumps(json.loads(Path('output/r1_implementation_repair.json').read_text()),indent=2,sort_keys=True))
+          PY
+
+          python -m py_compile input/r1/run_development.py input/dsh/literature_comparators.py
+          echo PASS_R1_SCHEMAFIX_PREDATA_GUARDS
+
+      - name: Execute one-shot target-excluded R1 development
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python input/r1/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v6-result-json input/v6/label_free_sparse_support_v6_development.json \
+            --centroid-audit-json input/centroid/component_centroid_source_audit.json \
+            --schema-audit-json input/schema/gmn_schema_only_orbit_column_audit.json \
+            --dsh-comparator input/dsh/literature_comparators.py \
+            --output output
+          cat output/RECURRENT_CORE_EXPANSION_R1_DEVELOPMENT.md
+
+      - name: Enforce result and claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/recurrent_core_expansion_r1_development.json').read_text())
+          assert r['verdict'] in {'PASS_RECURRENT_CORE_EXPANSION_R1_DEVELOPMENT','FAIL_RECURRENT_CORE_EXPANSION_R1_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['physical_acceptance']=='D_SH(candidate, partner medoid) <= 0.05'
+          assert r['configuration']['new_members_can_seed_further_growth'] is False
+          assert r['configuration']['ranking_after_expansion']=='unchanged exact v8 multiplicity order'
+          assert r['configuration']['no_threshold_search'] is True
+          assert r['configuration']['no_radius_search'] is True
+          assert r['configuration']['no_weight_search'] is True
+          assert r['configuration']['no_variant_search'] is True
+          assert r['configuration']['competitor_results_used_for_parameter_selection'] is False
+          assert all(r['integrity_gates'].values())
+          assert 'does not establish superiority over Sugar/HDBSCAN' in r['claim_boundary']
+
+          repair=json.loads(Path('output/r1_implementation_repair.json').read_text())
+          assert repair['scientific_rule_changed'] is False
+          assert repair['promotion_gate_changed'] is False
+          assert repair['repairs_byte_for_byte_reversible_to_frozen_source'] is True
+          assert repair['schema_resolution']=='exact case-sensitive raw header names; q != Q'
+          assert repair['lowercase_q_index']==37 and repair['uppercase_Q_index']==43
+          print('ORBITTRACE_R1_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_R1_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/development_base_commit.txt
+          sha256sum orbittrace_recurrent_core_expansion_r1/PROTOCOL.md input/r1/run_development.py input/dsh/literature_comparators.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-core-expansion-r1-development-schemafix
+          path: output
+          if-no-files-found: error
+          retention-days: 90
