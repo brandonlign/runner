@@ -1,0 +1,44 @@
+name: OrbitTrace P1 pretruth label dataflow audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-probabilistic-membership-p1-freeze-v2
+    paths:
+      - 'orbittrace_probabilistic_membership_p1/**'
+      - '.github/workflows/orbittrace_probabilistic_membership_p1_pretruth_dataflow_audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  label-dataflow-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reconstruct exact frozen P1 runtime
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          root=Path('orbittrace_probabilistic_membership_p1/source_parts')
+          parts=sorted(root.glob('part*.b64'))
+          assert [p.name for p in parts]==['part00.b64','part01.b64']
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          src=gzip.decompress(base64.b64decode(encoded,validate=True))
+          digest=hashlib.sha256(src).hexdigest()
+          assert digest=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',digest
+          Path('/tmp/run_probabilistic_membership_p1.py').write_bytes(src)
+          print('P1_SOURCE_SHA256',digest)
+          PY
+          python -m py_compile /tmp/run_probabilistic_membership_p1.py
+      - name: Prove truth is evaluation-only after immutable membership hash
+        run: |
+          set -euo pipefail
+          python orbittrace_probabilistic_membership_p1/audit_pretruth_label_dataflow.py \
+            /tmp/run_probabilistic_membership_p1.py
