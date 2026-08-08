@@ -1,0 +1,84 @@
+name: OrbitTrace recurrent-core expansion R1 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_recurrent_core_expansion_r1/PROTOCOL.md'
+      - 'orbittrace_recurrent_core_expansion_r1/source_parts/**'
+      - '.github/workflows/orbittrace-recurrent-core-expansion-r1-source-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Decode and verify frozen R1 source
+        run: |
+          set -euo pipefail
+          mkdir -p output_r1_source_audit decoded_r1
+          python - <<'PY'
+          import base64,gzip,hashlib,json,re
+          from pathlib import Path
+          parts=sorted(Path('orbittrace_recurrent_core_expansion_r1/source_parts').glob('part*.b64'))
+          assert [p.name for p in parts]==['part00.b64']
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          source=gzip.decompress(base64.b64decode(encoded,validate=True))
+          digest=hashlib.sha256(source).hexdigest()
+          assert digest=='806e6577b19f5771d58531b036fdb991526999aa6d83795d3e5c864d7c2e8a15',digest
+          Path('decoded_r1/run_development.py').write_bytes(source)
+          text=source.decode('utf-8')
+          protocol=Path('orbittrace_recurrent_core_expansion_r1/PROTOCOL.md').read_text()
+          checks={
+            'source_sha256_exact': True,
+            'development_years_2022_2023': 'YEARS = (2022, 2023)' in text,
+            'dsh_threshold_exact_005': 'DSH_THRESHOLD = 0.05' in text,
+            'geometry_radius_exact_15': 'FAMILY_LINK_RADIUS = 1.5' in text,
+            'minimum_partner_orbits_exact_4': 'MIN_VALID_PARTNER_ORBITS = 4' in text,
+            'macro_f1_gain_exact_005': 'MACRO_F1_MIN_GAIN = 0.05' in text,
+            'top100_precision_floor_exact_065': 'TOP100_PRECISION_FLOOR = 0.65' in text,
+            'large_recall_multiplier_exact_15': 'LARGE_RECALL_MULTIPLIER = 1.5' in text,
+            'large_precision_floor_exact_080': 'LARGE_PRECISION_FLOOR = 0.80' in text,
+            'raw_orbit_parser_no_dataframe_parser': 'read_gmn_frame' not in text and 'meteor_trajectory_reader' not in text,
+            'orbit_parser_no_label_argument': 'def parse_target_excluded_orbits(\n    scan_by_year' in text and 'hidden_labels' not in text[text.index('def parse_target_excluded_orbits'):text.index('def scalar_dsh')],
+            'expansion_no_label_argument': 'def expand_memberships(' in text and 'hidden_labels' not in text[text.index('def expand_memberships'):text.index('def label_totals')],
+            'expansion_before_first_r1_label_evaluation': text.index('expanded_families, expansion = expand_memberships') < text.index('# FIRST R1 LABEL EVALUATION'),
+            'no_target_literal_identity': 'OrbitTrace-April' not in text and '247.17' not in text and '-14.34' not in text,
+            'protocol_declares_no_variant_search': 'There is no alternative medoid definition' in protocol,
+            'protocol_declares_target_inaccessible': 'Solar longitude 20°–55° remains inaccessible to R1.' in protocol,
+          }
+          result={
+            'verdict':'PASS_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT' if all(checks.values()) else 'FAIL_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT',
+            'source_sha256':digest,
+            'catalogue_access':False,
+            'scientific_value_access':False,
+            'shower_label_access':False,
+            'orbittrace_target_access':False,
+            'target_region_event_access':False,
+            'checks':checks,
+          }
+          Path('output_r1_source_audit/recurrent_core_expansion_r1_source_audit.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,indent=2,sort_keys=True))
+          assert result['verdict']=='PASS_RECURRENT_CORE_EXPANSION_R1_SOURCE_AUDIT'
+          PY
+          python -m py_compile decoded_r1/run_development.py
+      - name: Record source provenance
+        run: |
+          set -euo pipefail
+          sha256sum decoded_r1/run_development.py orbittrace_recurrent_core_expansion_r1/PROTOCOL.md > output_r1_source_audit/source_sha256.txt
+          git rev-parse HEAD > output_r1_source_audit/audit_commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-core-expansion-r1-source-audit
+          path: output_r1_source_audit
+          if-no-files-found: error
+          retention-days: 90
