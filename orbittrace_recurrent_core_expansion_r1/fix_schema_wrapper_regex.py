@@ -41,9 +41,8 @@ boundary_replacement = [
 new_boundary_block = ''.join(indent + line + '\n' for line in boundary_replacement)
 lines = lines[:start_i] + [new_boundary_block] + lines[end_i + 1 :]
 
-# Repair B: make the replacement parser select the raw header by the SAME
-# textual marker rule used by the approved schema-only audit, rather than an
-# exact line prefix. Case is preserved for field extraction, so q != Q.
+# Repair B: select the raw header by the SAME textual marker rule used by the
+# approved schema-only audit. Case is preserved for field extraction, q != Q.
 selection_hits = [
     i for i, line in enumerate(lines)
     if 'schema_lines = [line for line in text.splitlines() if line.startswith("# Unique trajectory;")]' in line
@@ -69,22 +68,56 @@ selection_replacement = [
 ]
 new_selection_block = ''.join(selection_indent + line + '\n' for line in selection_replacement)
 lines = lines[:selection_i] + [new_selection_block] + lines[selection_i + 1 :]
+
+# Repair C: restore the event-ID mapping omitted by the first replacement
+# parser. The approved raw schema has `Unique trajectory` as field 0 after the
+# leading comment marker is removed. No event-row value is inspected here.
+id_anchor_hits = [
+    i for i, line in enumerate(lines)
+    if line.strip() == '"q": exact("q"),'
+]
+assert len(id_anchor_hits) == 1, id_anchor_hits
+id_anchor_i = id_anchor_hits[0]
+id_indent = lines[id_anchor_i][: len(lines[id_anchor_i]) - len(lines[id_anchor_i].lstrip())]
+id_line = id_indent + '"id": exact("Unique trajectory"),\n'
+assert all('"id": exact("Unique trajectory")' not in line for line in lines)
+lines = lines[:id_anchor_i] + [id_line] + lines[id_anchor_i:]
 patched = ''.join(lines)
 
-# Repair C: add a schema-only preflight on the SAME month already used by the
-# approved no-row schema audit. This calls only raw_header_positions(); it does
-# not parse an event row, label, target-region event, or scientific score.
+# Repair D: schema-only preflight on the SAME month already used by the
+# approved no-row schema audit. It also statically enumerates every literal
+# `positions["..."]` key used by parse_target_excluded_orbits, guaranteeing the
+# replacement parser supplies the complete interface before the expensive run.
 needle = "PYTHONPATH=input/v3:orbittrace_wavelet_catalogue_v3:. \\\npython input/r1/run_development.py \\\n"
 assert patched.count(needle) == 1, patched.count(needle)
 preflight = r'''PYTHONPATH=input/v3:orbittrace_wavelet_catalogue_v3:. python - <<'PY'
+import ast
 import runpy
+from pathlib import Path
 from gmn_python_api import data_directory as dd
-ns = runpy.run_path('input/r1/run_development.py', run_name='r1_schema_preflight')
+
+source_path = Path('input/r1/run_development.py')
+ns = runpy.run_path(str(source_path), run_name='r1_schema_preflight')
 text = dd.get_monthly_file_content_by_date('2022-01')
 fields, positions = ns['raw_header_positions'](text)
+assert fields[0] == 'Unique trajectory', fields[0]
+assert positions['id'] == 0, positions
 assert positions['q'] == 37, positions
 assert fields[43] == 'Q', fields[43]
 assert positions['q'] != 43
+
+tree = ast.parse(source_path.read_text())
+funcs = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'parse_target_excluded_orbits']
+assert len(funcs) == 1
+required = set()
+for node in ast.walk(funcs[0]):
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == 'positions':
+        key = node.slice
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            required.add(key.value)
+missing = sorted(required - set(positions))
+assert not missing, f'missing raw-header position keys: {missing}; required={sorted(required)}; supplied={sorted(positions)}'
+print('R1_REQUIRED_POSITION_KEYS', sorted(required))
 print('PASS_R1_SCHEMA_PARSER_PREFLIGHT')
 PY
 
@@ -94,16 +127,19 @@ assert patched != text
 
 # Everything above changes only execution plumbing around the SHA-pinned R1
 # source. Scientific source bytes are restored later from the frozen payload;
-# the only source edits remain the already-declared comparator-provenance fix
-# and exact-case schema parser repair, both checked reversible there.
+# scientific thresholds, ranking, target exclusion, and promotion gates stay
+# unchanged.
 path.write_text(patched)
 Path('output').mkdir(exist_ok=True)
 record = {
-    'repair_scope': 'execution-wrapper source boundary + audited schema-header selection + schema-only preflight',
+    'repair_scope': 'execution-wrapper source boundary + audited header selection + event-ID interface + static schema preflight',
     'boundary_method': 'unique top-level def raw_header_positions line through next top-level def line',
     'header_selection_method': 'same textual marker rule as approved GMN schema-only audit',
+    'event_id_field': 'Unique trajectory',
+    'event_id_expected_index': 0,
     'preflight_month': '2022-01',
     'preflight_event_rows_parsed': False,
+    'preflight_static_required_position_key_check': True,
     'original_wrapper_sha256': hashlib.sha256(raw).hexdigest(),
     'patched_wrapper_sha256': hashlib.sha256(patched.encode()).hexdigest(),
     'old_boundary_block_sha256': hashlib.sha256(old_boundary_block.encode()).hexdigest(),
