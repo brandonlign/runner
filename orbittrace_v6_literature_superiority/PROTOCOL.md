@@ -2,149 +2,145 @@
 
 ## Status and activation
 
-This is a comparison/claim protocol only. It is frozen before the repaired v3-primary catalogue v6 development result is known.
+This is a comparison/claim protocol only, frozen before the repaired v3-primary catalogue-v6 development result is known. It activates only if the exact preregistered repaired v6 run returns `PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT`. A development failure leaves it dormant and authorizes no rescue, retuning, or benchmark-driven modification.
 
-It becomes scientifically active only if the exact preregistered v6 development run returns `PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT`. A development failure leaves this protocol dormant and authorizes no rescue, retuning, or benchmark-driven modification of v6.
-
-This protocol does not access or authorize any OrbitTrace target-containing scan. Solar longitude 20°–55° remains excluded before label access in every matched benchmark.
+No target-containing scan is authorized here. Solar longitude 20°–55° remains excluded before scientific evaluation.
 
 ## Method under test
 
-The candidate is the exact frozen v3-primary dual-output catalogue v6 architecture from PR #221, with only the source-audited implementation repair established in PR #490: the two missing calls to the already-frozen `component_records_track_v6` function. No scientific parameter, proposal rule, calibration rule, membership definition, component algorithm, recurrence rule, ranking rule, or gate may change after the development result.
+The candidate is the exact v3-primary dual-output catalogue-v6 architecture frozen in PR #221, with only the source-audited two-line component-construction repair established by PR #490. No score, proposal rule, calibration rule, membership definition, component algorithm, recurrence rule, ranking rule, or gate may change from any later result.
 
-The fixed4 rescue channel is not part of the v3 primary ranking and cannot be used to satisfy a primary superiority gate.
+Fixed4 is a separate rescue channel and may not satisfy a v3-primary superiority gate.
 
 ## Comparator boundary
 
-Use only already-frozen literature implementations and results/parameters. No comparator parameter may be changed after seeing v6 output.
+Use only already-frozen literature implementations/results/parameters.
 
 ### Catalogue comparators
 
 1. **Sugar et al. uncertainty-aware catalogue reconstruction**
-   - exact already-frozen 1,000-clone implementation;
+   - frozen 1,000-clone implementation;
    - `min_samples=5`;
-   - frozen 2025 epsilon `0.028705145052265017` transferred unchanged to 2023;
-   - retained-master `>=100/1000` recurrence assignment is the primary Sugar catalogue output;
-   - deterministic DBSCAN and `>=500/1000` strong-master outputs remain diagnostics, not replacement baselines.
+   - frozen 2025 epsilon `0.028705145052265017`, transferred unchanged to 2023;
+   - retained-master `>=100/1000` assignment is the primary Sugar output;
+   - deterministic DBSCAN and `>=500/1000` outputs remain diagnostics.
 
 2. **Peña-Asensio–Ferrari catalogue HDBSCAN transfer**
    - published unstandardized GEO six-vector;
    - `hdbscan==0.8.44`;
    - `min_cluster_size=100`, default `min_samples`, Euclidean metric, `eom` selection;
-   - exact already-frozen quality filters and matching rules.
+   - exact frozen quality/matching rules.
 
 3. **Promoted OrbitTrace v8**
-   - exact promoted v8 source and ranking;
-   - acts as the internal predecessor for ranked-discovery metrics.
+   - exact promoted source/ranking;
+   - internal predecessor for ranked-discovery metrics only.
 
 ### Not catalogue-superiority comparators
 
-- Brown-family/CMOR wavelet remains an episode or survey-wavelet comparator unless a faithful matched catalogue interface is independently justified before execution.
-- Southworth–Hawkins and D_N linkage remain targeted/episode comparators, not invented full-catalogue algorithms.
-- The deferred CMOR-style catalogue transfer remains deferred under its existing support audit and cannot be weakened to create a convenient comparator.
+Brown-family/CMOR wavelet remains an episode/survey-wavelet comparator unless a faithful catalogue interface is independently justified. Southworth–Hawkins and D_N remain targeted/episode comparators. The deferred CMOR catalogue transfer remains deferred; its support rules may not be weakened to create a convenient comparison.
 
 ## Benchmark corpora
 
 ### Matched literature benchmark
 
-Use **SonotaCo 2025 and SonotaCo 2023**, because the full frozen Sugar and HDBSCAN comparators already exist there. This is a matched comparison panel, **not fresh external validation**: the underlying v3 episode score has prior SonotaCo development/transfer history.
+Use SonotaCo **2025 and 2023**, where frozen full Sugar and HDBSCAN outputs already exist. This is a matched comparison panel, not fresh external validation, because the underlying v3 episode score has prior SonotaCo history.
 
-The v6 transport must be frozen before its first catalogue-scale SonotaCo execution. It may change parser/field plumbing only. Scientific v6 rules are immutable.
+The exact-row universes for Sugar and HDBSCAN are different. Therefore **no F1 value from the Sugar universe may be directly compared to an HDBSCAN F1 value**. Every v6-vs-literature statement is pairwise on the exact event/reference universe frozen by that comparator's assignments.
 
-For every annual comparison, evaluate only an explicitly frozen common event/reference universe supported by both v6 and the comparator being compared. Report both the common-universe size and any exclusions. Never compare F1 values computed on different event universes as if they were head-to-head.
+For each comparator/year, report the common-universe size and evaluate v6 and that comparator on identical rows and identical post-freeze truth. Never select the more favorable comparator denominator after seeing results.
 
-### Fresh external validation
+### External generalization
 
-Literature benchmarking does not authorize OrbitTrace deployment. A separately preregistered scientifically fresh external validation remains required after any successful literature adjudication. CAMSv3 2017/2018 is currently repository-history clean for scientific-value exposure and may be used only under a separately frozen compatible validation protocol. Its lack of a trustworthy native shower-label field means it must not be forced into a label-F1 benchmark; recurrence/coherence endpoints require their own predeclared gates.
+The earlier proposed CAMSv3 2017/2018 route is invalid: the official CAMSv3 catalogue ends at 2016, so those intended files do not exist. No CAMSv3 2017/2018 result may be used as a validation claim.
+
+A stronger genuinely pristine external panel may be added only under a separately frozen protocol if one becomes available. In the current repository, PR #494 instead freezes a weaker but legitimate **architecture-pre-frozen, no-retuning SonotaCo 2017/2019 transfer**. Those raw archives are not pristine, but catalogue-v6 was frozen before the later score-label attempt and that attempt produced no catalogue ranking/scientific result. A PR #494 pass can therefore support prospective generalization of this fixed architecture, but must not be described as never-seen/pristine validation.
 
 ## Metrics
 
-### Catalogue membership / population metrics
+### Catalogue membership / population
 
-On exact common rows and common eligible reference showers, report:
+On each exact pairwise common universe report:
 
-- Hungarian-matched per-shower F1;
+- per-shower F1 under the frozen best-match/tie rules;
 - macro F1;
-- number and fraction of eligible showers with F1 > 0.5;
-- number and fraction with F1 > 0.8;
-- noise/unassigned fraction where the output semantics permit a direct comparison;
-- annual size-stratum mean F1 for `4–9`, `10–24`, `25–49`, `50–99`, and `100+` reference members.
+- F1 > 0.5 and F1 > 0.8 counts/fractions;
+- noise/unassigned burden where directly comparable;
+- annual mean F1 in `4–9`, `10–24`, `25–49`, `50–99`, and `100+` reference-member strata.
 
-NMI/ARI may be reported only when the two outputs form genuinely comparable partitions on the exact same event universe. They are diagnostics otherwise and cannot determine superiority.
+NMI/ARI are diagnostics only when both outputs are genuine comparable partitions of the same rows.
 
-### Ranked discovery metrics
+### Ranked discovery
 
-Only compare methods that have a frozen, scientifically meaningful ranking. Against promoted v8, report:
-
-- recovery@25, @50, @100;
-- MRR over qualified known showers;
-- top-25, top-50, and top-100 dominant-label precision;
-- qualified known-shower matches.
-
-Do not invent a post-hoc ranking for Sugar or HDBSCAN merely to make them enter a ranked metric.
+Only compare methods with a frozen meaningful ranking. Against promoted v8 report recovery@25/@50/@100, MRR, top-25/top-50/top-100 dominant-label precision, and qualified matches. Do not invent a ranking for Sugar or HDBSCAN.
 
 ## Frozen superiority classifications
 
-All required conditions must hold independently in **both 2025 and 2023** unless stated otherwise. A tie within the numerical tolerances below is not a win.
+Every required annual condition must hold in **both 2025 and 2023**. A tie is not a win.
 
 ### A. `BROAD_CATALOGUE_SUPERIORITY`
 
-This is the only outcome that authorizes the broad statement that v6 beat the implemented established catalogue methods on the matched benchmark.
+This is the only matched-benchmark outcome authorizing the broad statement that v6 beat both implemented established catalogue methods.
 
-Required against the best of the frozen Sugar retained-master and HDBSCAN catalogue outputs on each year/common universe:
+The following conditions must hold **separately against Sugar on the Sugar exact-row universe and against HDBSCAN on the HDBSCAN exact-row universe**:
 
-1. v6 macro F1 is at least the best comparator macro F1 **plus 0.05 absolute** in both years;
-2. v6 is not lower than the best comparator by more than **0.05 absolute mean F1 in any one of the five size strata** in either year;
-3. v6 exceeds the best comparator by at least **0.10 absolute mean F1** in at least two size strata in both years;
-4. v6 has at least as many eligible showers with F1 > 0.5 as the best comparator in both years;
-5. no integrity/common-universe gate fails.
+1. v6 macro F1 >= comparator macro F1 **+0.05 absolute** in both years;
+2. v6 is not below the comparator by >**0.05 absolute mean F1** in any of the five size strata in either year;
+3. v6 exceeds the comparator by >=**0.10 absolute mean F1** in at least two size strata in each year;
+4. v6 has at least as many eligible showers with F1 >0.5 as the comparator in each year;
+5. all source/common-universe/integrity gates pass.
+
+No cross-comparator denominator mixing is allowed.
 
 ### B. `SPARSE_STREAM_SUPERIORITY`
 
-This authorizes only a scoped claim that v6 is superior for sparse/small optical shower populations, not that it is the best general catalogue method.
+This authorizes only a scoped claim of superiority for sparse/small optical populations.
 
-Required against both frozen Sugar and HDBSCAN on exact common universes:
+Separately against both Sugar and HDBSCAN on their exact pairwise universes:
 
-1. in `4–9`, v6 mean F1 exceeds each comparator by **>=0.10 absolute** in both years;
-2. across the combined `4–24` population, v6 mean F1 exceeds each comparator by **>=0.10 absolute** in both years;
-3. v6 macro F1 is no more than **0.10 absolute below** the best catalogue comparator in either year;
-4. v6 does not lose more than **20% relative** of the best comparator's count of F1 > 0.5 showers in either year;
-5. no integrity/common-universe gate fails.
+1. `4–9` v6 mean F1 >= comparator +**0.10** in both years;
+2. combined `4–24` v6 mean F1 >= comparator +**0.10** in both years;
+3. v6 macro F1 is no more than **0.10 absolute below that same comparator** in either year;
+4. v6 retains at least **80%** of that comparator's F1>0.5 shower count in either year;
+5. all integrity/common-universe gates pass.
 
-This classification may coexist with a large-shower disadvantage and must state that limitation explicitly.
+Any large-shower disadvantage must be stated explicitly.
 
 ### C. `IMPROVED_INTERNAL_DISCOVERY_ONLY`
 
-If v6 does not beat the literature methods under A or B but improves the promoted v8 ranked-discovery layer, it may still replace v8 internally only if all of the following hold on the frozen target-excluded ranked evaluation:
+This does not mean v6 beat the literature. It can justify replacing v8 internally only if all non-regression gates hold on the same frozen target-excluded evaluation:
 
 - recovery@100 >= v8;
 - MRR >= v8;
 - top-100 dominant precision >= v8 minus 0.02 absolute;
 - qualified matches >= v8;
-- at least one of recovery@25, recovery@50, recovery@100, or MRR improves materially under a threshold frozen before that comparison run.
 
-A separate freeze must define the numeric material-improvement threshold before execution; this document deliberately does not allow selecting it after results.
+and at least one **material** ranked-discovery improvement occurs under this now-frozen rule:
+
+- recovery@25 >= v8 +3 recovered showers; or
+- recovery@50 >= v8 +4; or
+- recovery@100 >= v8 +5; or
+- MRR >= max(v8 MRR +0.005 absolute, 1.10 × v8 MRR).
+
+These thresholds are frozen before the v6 literature/ranking comparison result and cannot be relaxed afterward.
 
 ### D. `NO_SUPERIORITY`
 
-If none of A–C passes, v6 must not be described as beating the literature or replacing v8. Preserve the result and move to a genuinely new architecture/fresh development panel rather than tuning this v6 result.
+If none of A–C passes, v6 must not be described as beating the literature or replacing v8. Preserve it and move to a genuinely new architecture/fresh development panel rather than tuning the exposed result.
 
 ## OrbitTrace authorization boundary
 
-A successful v6 development result alone is insufficient. A literature benchmark result alone is insufficient.
+A target-containing blind OrbitTrace deployment is authorized only after all of the following are completed without method retuning:
 
-A new target-containing blind OrbitTrace deployment may be authorized only after:
+1. exact repaired v6 target-excluded development passes its original gates;
+2. this matched literature adjudication completes;
+3. v6 achieves at least `SPARSE_STREAM_SUPERIORITY` (or `BROAD_CATALOGUE_SUPERIORITY`);
+4. the architecture-pre-frozen SonotaCo 2017/2019 transfer in PR #494 passes, **or** a separately frozen stronger genuinely pristine external validation passes;
+5. a final target-deployment protocol freezes the target success threshold, complete ranking output, reveal procedure, and claim boundary before restoring 20°–55°.
 
-1. exact repaired v6 development passes its original frozen gates;
-2. this literature adjudication is completed without benchmark-driven retuning;
-3. the method achieves at least `SPARSE_STREAM_SUPERIORITY` or a separately justified stronger discovery classification frozen before external validation;
-4. a scientifically fresh external validation passes its separately frozen gates;
-5. the final target-deployment protocol, ranking-success threshold, and reveal procedure are frozen before the 20°–55° target interval is restored.
+If authorization relies on PR #494 rather than a pristine panel, the eventual claim must say **pre-frozen no-retuning external transfer**, not pristine prospective validation.
 
-The previous v8 partial blind recovery at rank 59/780 is historical evidence only. It may not be used to choose any v6 parameter, threshold, ranking term, proposal rule, or success cutoff.
+Historical v8 partial OrbitTrace recovery at rank 59/780 is evidence only and may not choose any v6 parameter, gate, adapter choice, ranking term, or final success cutoff.
 
 ## Claim discipline
 
-Even a successful target deployment would establish a **prospective blinded recovery/rediscovery by the frozen successor method**, not rewrite the historical fact that the original OrbitTrace candidate arose from the earlier blind HDBSCAN search.
-
-No outcome under this protocol licenses the claim that one method is universally best across radar/optical surveys, sparse/dense regimes, or incompatible catalogue interfaces.
+Even a successful final target deployment would establish a prospective blinded recovery/rediscovery by the frozen successor method. It does not rewrite the historical fact that the original OrbitTrace candidate came from the earlier blind HDBSCAN search, and it does not establish universal superiority across incompatible radar/optical survey regimes.
