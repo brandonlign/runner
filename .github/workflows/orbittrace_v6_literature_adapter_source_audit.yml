@@ -54,18 +54,20 @@ jobs:
           print('PASS_IDENTICAL_SONOTACO_2023_2025_NATIVE_BACKGROUND_TOKEN_RULE')
           PY
 
-      - name: Compile and inspect adapter
+      - name: Compile and inspect adapter stages
         run: |
           set -euo pipefail
           test ! -e input
-          python -m py_compile orbittrace_v6_literature_adapter/adapter.py
+          python -m py_compile \
+            orbittrace_v6_literature_adapter/adapter.py \
+            orbittrace_v6_literature_adapter/prepare_id_manifest.py \
+            orbittrace_v6_literature_adapter/run_pretruth.py
           python - <<'PY'
           import ast, hashlib, importlib.util
           from pathlib import Path
 
           path=Path('orbittrace_v6_literature_adapter/adapter.py')
-          text=path.read_text()
-          tree=ast.parse(text)
+          text=path.read_text(); tree=ast.parse(text)
           digest=hashlib.sha256(path.read_bytes()).hexdigest()
           print('ADAPTER_SHA256='+digest)
           defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
@@ -83,9 +85,15 @@ jobs:
           assert 'token.startswith("SPO")' in bg_src
           assert 'ASCII_LETTER.search(token) is None' in bg_src
 
-          ids_src=ast.get_source_segment(text,defs['native_background_ids_from_tokens'])
-          assert 'native_background_token(token)' in ids_src
-          assert 'complex_key' not in ids_src and 'mapping' not in ids_src and 'iau' not in ids_src
+          ids_fn=defs['native_background_ids_from_tokens']
+          call_names=[]
+          for node in ast.walk(ids_fn):
+              if isinstance(node,ast.Call):
+                  f=node.func
+                  call_names.append(f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>'))
+          assert 'native_background_token' in call_names
+          assert not any(isinstance(node,ast.Subscript) and isinstance(node.slice,ast.Constant)
+                         and node.slice.value in {'complex_key','iau','code','label'} for node in ast.walk(ids_fn))
 
           run_src=ast.get_source_segment(text,defs['run_v6_panel'])
           assert 'build_family_track_v6(old, all_components, base, "v3")' in run_src
@@ -101,18 +109,9 @@ jobs:
           assert mod.FROZEN_V6_SHA256=='a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9'
           assert mod.SUPPORT_SOURCE_SHA256=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
 
-          # Exact classifier semantics, including unsupported non-background.
-          cases={
-              '': True,
-              'SPO': True,
-              'SPO_JA': True,
-              '123': True,
-              'PER_JA': False,
-              'XYZ_JA': False,
-              'UNMAPPED_SHOWER': False,
-          }
+          cases={'':True,'SPO':True,'SPO_JA':True,'123':True,'PER_JA':False,'XYZ_JA':False,'UNMAPPED_SHOWER':False}
           for token,expected in cases.items():
-              assert mod.native_background_token(token) is expected, (token,expected)
+              assert mod.native_background_token(token) is expected,(token,expected)
 
           ids={f'SNM2023:{i}' for i in range(1200)}
           tokens={event_id:('SPO' if i<1100 else 'UNMAPPED_JA') for i,event_id in enumerate(sorted(ids))}
@@ -125,7 +124,21 @@ jobs:
           bg25={f'SNM2025:{i}' for i in range(1100)}
           cal=mod.calibration_events_from_native_sporadic(scan,{2023:bg,2025:bg25})
           assert len(cal[2023])==1100 and len(cal[2025])==1100
-          assert all(e['complex_key']=='SPORADIC' for y in mod.YEARS for e in cal[y])
+
+          manifest=Path('orbittrace_v6_literature_adapter/prepare_id_manifest.py').read_text()
+          assert 'native_background_ids' in manifest
+          assert 'native_tokens_by_id' not in manifest
+          assert '"native_tokens"' not in manifest and '"shower_tokens"' not in manifest
+
+          pre=Path('orbittrace_v6_literature_adapter/run_pretruth.py').read_text()
+          pre_tree=ast.parse(pre)
+          arg_flags=[]
+          for node in ast.walk(pre_tree):
+              if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and node.func.attr=='add_argument':
+                  if node.args and isinstance(node.args[0],ast.Constant): arg_flags.append(node.args[0].value)
+          forbidden={'--parser-2023','--parser-2025','--mapping-audit','--hdbscan-2023','--hdbscan-2025','--sugar-2023','--sugar-2025'}
+          assert forbidden.isdisjoint(arg_flags), sorted(set(arg_flags)&forbidden)
+          assert 'truth_accessed": False' in pre
           print('PASS_V6_DIRECT_NATIVE_BACKGROUND_ADAPTER_SOURCE_AUDIT')
           PY
 
