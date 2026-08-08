@@ -1,0 +1,244 @@
+name: OrbitTrace v8 MAARSY RCS first HDF5 schema-only audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-maarsy-rcs-first-hdf5-schema
+    paths:
+      - 'orbittrace_v8_maarsy_2016_2023_preaccess/RUN_MAARSY_RCS_STAGE0G.md'
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen Stage-0G parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-maarsy-rcs-first-hdf5-schema
+          fetch-depth: 1
+
+      - name: Enforce exact schema-only protocol and source guard
+        run: |
+          set -euo pipefail
+          test -f orbittrace_v8_maarsy_2016_2023_preaccess/MAARSY_RCS_STAGE0G_FIRST_HDF5_SCHEMA.md
+          mkdir -p input output
+          ! find . -type f -iname 'kep_collect.h5' -print -quit | grep -q .
+          # Value-reading syntax is forbidden in the workflow's HDF5 inspection source.
+          ! grep -Fq 'read_direct' .github/workflows/orbittrace-v8-maarsy-rcs-first-hdf5-schema.yml
+          ! grep -Fq '.asstr(' .github/workflows/orbittrace-v8-maarsy-rcs-first-hdf5-schema.yml
+
+      - name: Install frozen structural HDF5 reader before data transport
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'h5py==3.11.0'
+          python - <<'PY'
+          import h5py
+          assert h5py.__version__ == '3.11.0'
+          print(h5py.version.info)
+          PY
+
+      - name: Request only first 256 MiB compressed range
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            --range 0-268435455 \
+            --max-filesize 268435456 \
+            -D output/http_headers.txt \
+            'https://zenodo.org/api/records/15553437/files/silseth_thesis_data.tar.gz/content' \
+            -o input/head256.gz
+          size=$(stat -c '%s' input/head256.gz)
+          test "$size" -gt 0
+          test "$size" -le 268435456
+          cr=$(grep -i '^content-range:' output/http_headers.txt | tail -1 | tr -d '\r')
+          test "$cr" = 'content-range: bytes 0-268435455/21485785089' || test "$cr" = 'Content-Range: bytes 0-268435455/21485785089'
+          printf '%s\n' "$size" > output/transported_compressed_bytes.txt
+          sha256sum input/head256.gz > output/bounded_range_sha256.txt
+
+      - name: Materialize exact first HDF5 member only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,zlib
+
+          EXPECTED_NAME='data/2016/03/kep_collect.h5'
+          EXPECTED_SIZE=139028822
+          comp=Path('input/head256.gz').read_bytes()
+          dec=zlib.decompressobj(16+zlib.MAX_WBITS)
+          buf=bytearray()
+          pos=0
+          out_path=Path('input/kep_collect.h5')
+          out=None
+          payload_written=0
+          header_offset=0
+          first_payload_started=False
+
+          def parse_octal(bs):
+              s=bs.split(b'\0',1)[0].strip(b' ')
+              return int(s or b'0',8)
+          def parse_header(block):
+              if len(block)!=512:
+                  raise RuntimeError('short tar header')
+              name=block[0:100].split(b'\0',1)[0].decode('utf-8','replace')
+              prefix=block[345:500].split(b'\0',1)[0].decode('utf-8','replace')
+              if prefix: name=f'{prefix}/{name}'
+              stored=parse_octal(block[148:156])
+              chk=bytearray(block); chk[148:156]=b'        '
+              if stored != sum(chk):
+                  raise RuntimeError(f'tar checksum mismatch for {name!r}')
+              return name,parse_octal(block[124:136]),block[156:157]
+
+          # Stream compressed bytes through zlib and consume only enough uncompressed bytes
+          # to validate the two leading zero-size directory headers and write the exact first file.
+          CHUNK=1024*1024
+          state='header'
+          expected_dirs=['data/2016/','data/2016/03/']
+          dir_index=0
+          target_remaining=None
+          for c0 in range(0,len(comp),CHUNK):
+              raw=dec.decompress(comp[c0:c0+CHUNK])
+              if raw:
+                  buf.extend(raw)
+              while True:
+                  if state=='header':
+                      if len(buf)<512: break
+                      block=bytes(buf[:512]); del buf[:512]
+                      name,size,tflag=parse_header(block)
+                      if dir_index < len(expected_dirs):
+                          if name!=expected_dirs[dir_index] or size!=0 or tflag!=b'5':
+                              raise RuntimeError(f'leading tar structure changed at {dir_index}: {(name,size,tflag)!r}')
+                          dir_index += 1
+                          header_offset += 512
+                          continue
+                      if name!=EXPECTED_NAME or size!=EXPECTED_SIZE or tflag not in (b'0',b'\0'):
+                          raise RuntimeError(f'first nonempty member changed: {(name,size,tflag)!r}')
+                      if header_offset!=1024:
+                          raise RuntimeError(f'first HDF5 header offset changed: {header_offset}')
+                      out=out_path.open('wb')
+                      target_remaining=EXPECTED_SIZE
+                      first_payload_started=True
+                      state='payload'
+                      header_offset += 512
+                      continue
+                  if state=='payload':
+                      if not buf: break
+                      take=min(len(buf),target_remaining)
+                      out.write(memoryview(buf)[:take])
+                      del buf[:take]
+                      payload_written += take
+                      target_remaining -= take
+                      if target_remaining==0:
+                          out.close(); out=None
+                          state='done'
+                          break
+                      continue
+                  break
+              if state=='done':
+                  break
+          if out is not None:
+              out.close()
+          if not first_payload_started or state!='done' or payload_written!=EXPECTED_SIZE:
+              raise RuntimeError(f'bounded compressed range insufficient for exact first HDF5: state={state} written={payload_written}')
+          if out_path.stat().st_size!=EXPECTED_SIZE:
+              raise RuntimeError('materialized HDF5 size mismatch')
+          Path('output/materialization.json').write_text(json.dumps({
+              'member_name':EXPECTED_NAME,
+              'member_size':EXPECTED_SIZE,
+              'header_offset_uncompressed':1024,
+              'member_payload_materialized':True,
+              'bytes_materialized':payload_written,
+              'continued_to_next_tar_header':False,
+              'dataset_value_read':False,
+              'attribute_value_read':False
+          },indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Enumerate HDF5 structure only, never values
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,h5py
+
+          path=Path('input/kep_collect.h5')
+          records=[]
+          with h5py.File(path,'r') as f:
+              records.append({
+                  'path':'/',
+                  'object_type':'group',
+                  'attribute_names':sorted(str(k) for k in f.attrs.keys()),
+              })
+              def visitor(name,obj):
+                  rec={
+                      'path':'/'+name,
+                      'object_type':'dataset' if isinstance(obj,h5py.Dataset) else 'group' if isinstance(obj,h5py.Group) else type(obj).__name__,
+                      'attribute_names':sorted(str(k) for k in obj.attrs.keys()),
+                  }
+                  if isinstance(obj,h5py.Dataset):
+                      rec.update({
+                          'shape':[int(x) for x in obj.shape],
+                          'rank':len(obj.shape),
+                          'dtype':str(obj.dtype),
+                          'chunks':None if obj.chunks is None else [int(x) for x in obj.chunks],
+                          'compression':obj.compression,
+                          'shuffle':bool(obj.shuffle),
+                          'fletcher32':bool(obj.fletcher32),
+                      })
+                  records.append(rec)
+              f.visititems(visitor)
+
+          result={
+              'schema':'orbittrace-v8-maarsy-rcs-stage0g-hdf5-structure-v1',
+              'member_name':'data/2016/03/kep_collect.h5',
+              'member_size':139028822,
+              'h5py_version':h5py.__version__,
+              'objects':records,
+              'scientific_member_payload_materialized':True,
+              'hdf5_structural_metadata_inspected':True,
+              'hdf5_dataset_value_read':False,
+              'hdf5_attribute_value_read':False,
+              'event_scientific_value_interpreted':False,
+              'v8_scientific_evaluation_performed':False,
+              'target_information_access':False,
+              'gmn_stage_a_or_b_access':False,
+          }
+          Path('output/hdf5_schema.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          Path('output/result.json').write_text(json.dumps({
+              'verdict':'PASS_MAARSY_RCS_FIRST_HDF5_SCHEMA_ONLY',
+              'object_count':len(records),
+              'dataset_paths':[r['path'] for r in records if r['object_type']=='dataset'],
+              'hdf5_dataset_value_read':False,
+              'hdf5_attribute_value_read':False,
+              'event_scientific_value_interpreted':False,
+              'target_information_access':False,
+              'next_step':'adjudicate dataset/attribute names only and freeze exact public coordinate/unit semantics before any value access'
+          },indent=2,sort_keys=True)+'\n')
+          PY
+          rm -f input/kep_collect.h5 input/head256.gz
+          test ! -e input/kep_collect.h5
+
+      - name: Enforce schema-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/hdf5_schema.json').read_text())
+          assert r['hdf5_dataset_value_read'] is False
+          assert r['hdf5_attribute_value_read'] is False
+          assert r['event_scientific_value_interpreted'] is False
+          assert r['v8_scientific_evaluation_performed'] is False
+          assert r['target_information_access'] is False
+          assert r['gmn_stage_a_or_b_access'] is False
+          PY
+
+      - name: Upload schema-only artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-maarsy-rcs-stage0g-first-hdf5-schema
+          path: output
+          if-no-files-found: error
+          retention-days: 90
