@@ -1,0 +1,154 @@
+name: OrbitTrace v6 SonotaCo 2017/2019 transfer source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_v6_sonotaco_2017_2019_transfer/PROTOCOL.md
+      - orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py
+      - orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer.py
+      - orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py
+      - .github/workflows/orbittrace_v6_sonotaco_transfer_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-sonotaco-transfer-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+      - name: Compile and prove complete transfer boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py
+          sha256sum \
+            orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          parser=Path('orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py').read_text()
+          assert 'ee81d66b318ed2fa473ddfcee4c1cea0ef8ba08cba33da47103fd7c53ee625dc' in parser
+          assert '301a711e4de43566ba434f2d4a94fc38a85714a33dcee45e26cb19340101ea43' in parser
+          assert '1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf' in parser
+          assert 'd49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4' in parser
+          assert 'OBSOLETE_GATE_LINE' in parser and 'V6_NONBINDING_LINE' in parser
+          assert 'transported.replace(V6_NONBINDING_LINE, OBSOLETE_GATE_LINE, 1) == text' in parser
+          assert 'obsolete_supported_code_gate_imported_into_v6": False' in parser
+
+          path=Path('orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer.py')
+          text=path.read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          constants={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: constants[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert constants['YEARS']==(2017,2019)
+          assert constants['CURRENT_V6_FROZEN_SHA256']=='a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9'
+          assert constants['CURRENT_V6_REPAIRED_SHA256']=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          assert constants['V8_SOURCE_COMMIT']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert constants['MIN_SCAN_EVENTS']==1000
+          assert constants['MIN_CALIBRATION_EVENTS']==1000
+          assert constants['MIN_SUPPORTED_BINS']==24
+          assert constants['MIN_RECURRENT_FAMILIES']==50
+          assert constants['TOP_K']==100
+          assert constants['MIN_TOP100_PRECISION']==0.50
+          assert constants['QUALIFIED_RATIO_TO_V8']==0.90
+
+          hidden=ast.get_source_segment(text,defs['hidden_geometry'])
+          assert '"iau": 0' in hidden
+          assert '"HIDDEN"' in hidden and '"SPORADIC" if calibration' in hidden
+
+          current=ast.get_source_segment(text,defs['current_v6_transfer'])
+          assert current.count('v6.scan_year_v6(')==1
+          assert 'proposal_cap_per_window' in current and '512' in current
+          assert 'max_primary_proposals_per_year' in current and '36864' in current
+          assert 'v6.build_family_track_v6(old, all_components, base, "v3")' in current
+          assert 'v6.build_family_track_v6(old, all_components, base, "fixed4_rescue")' in current
+
+          v8=ast.get_source_segment(text,defs['exact_v8_transfer'])
+          assert 'v8.v6.label_free_scan_year' in v8
+          assert 'calibration_events_used' in v8 and '== 0' in v8
+          assert 'source_labels_used_for_proposals' in v8
+          assert 'score_threshold_applied' in v8
+          assert 'support.build_families' in v8
+          assert 'v8.repair_year_centroids' in v8
+          assert 'v8.mult.score_families' in v8
+          assert 'v8.mult.rank_scored(scored, "multiplicity")' in v8
+
+          main=ast.get_source_segment(text,defs['main'])
+          current_freeze=main.index('current_pretruth_sha = canonical_sha(current_pretruth)')
+          v8_freeze=main.index('true_v8_pretruth_sha = canonical_sha(true_v8_pretruth)')
+          truth_marker=main.index('# FIRST TRUTH USE')
+          current_eval=main.index('current_metrics_full = v6.evaluate_families_v6(hidden_labels')
+          v8_eval=main.index('true_v8_metrics_full = v8.mult.evaluate_order(hidden_labels')
+          assert current_freeze < v8_freeze < truth_marker < current_eval < v8_eval
+          pretruth=main[:truth_marker]
+          # Hidden labels are constructed and held opaque, never used by detector/ranker pretruth.
+          assert 'evaluate_families_v6(hidden_labels' not in pretruth
+          assert 'evaluate_order(hidden_labels' not in pretruth
+          assert 'eligible_labels(hidden_labels' not in pretruth
+          assert 'current_v6_mrr_at_least_development_v6' in main
+          assert 'current_v6_recovery100_at_least_same_universe_true_v8' in main
+          assert 'current_v6_qualified_at_least_90pct_true_v8' in main
+          assert 'current_v6_top100_precision_at_least_050' in main
+          assert 'PASS_V6_SONOTACO_2017_2019_ARCHITECTURE_PREFROZEN_TRANSFER' in main
+          assert 'parameter_search": False' in main
+
+          portable_path=Path('orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py')
+          portable=portable_path.read_text(); ptree=ast.parse(portable)
+          pdefs={n.name:n for n in ptree.body if isinstance(n,ast.FunctionDef)}
+          shim=ast.get_source_segment(portable,pdefs['portable_repair_year_centroids'])
+          for token in (
+              'v8.structural_snapshot', 'v8.pooled_centroid', 'support.centroid_distance',
+              'circular_mean_deg', 'median', 'non_centroid_family_structure_unchanged',
+          ):
+              assert token in shim, token
+          assert 'duplicate_family_count > 0' not in shim
+          assert 'changed_duplicate_year_centroids > 0' not in shim
+          guarded=ast.get_source_segment(portable,pdefs['guarded_load_module'])
+          assert 'if name == "orbittrace_transfer_true_v8"' in guarded
+          assert 'module.repair_year_centroids = portable_repair_year_centroids(module)' in guarded
+
+          exact=Path('exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py').read_text()
+          assert '"sol": float(support.circular_mean_deg' in exact
+          assert '"sun_lon": float(support.circular_mean_deg' in exact
+          assert '"ecl_lat": float(np.median' in exact
+          assert '"vg": float(np.median' in exact
+          assert 'before == after' in exact
+          assert 'max_single <= 1e-12' in exact
+          assert 'duplicate_family_count > 0 and duplicate_family_year_count > 0' in exact
+          assert 'changed_duplicate_year_centroids > 0' in exact
+          print('PASS_V6_SONOTACO_2017_2019_TRANSFER_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e archive
+          test ! -e output
+          echo NO_SONOTACO_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
