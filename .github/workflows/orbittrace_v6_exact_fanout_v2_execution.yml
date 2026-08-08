@@ -1,0 +1,331 @@
+name: OrbitTrace v6 exact fanout v2 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-exact-fanout-v2
+    paths:
+      - orbittrace_v6_exact_fanout_v2/RUN_FANOUT_V2.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-v6-exact-fanout-v2-development
+  cancel-in-progress: false
+
+env:
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Require exact one-file marker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$BASE_REF" = 'agent/orbittrace-v6-exact-fanout-v2'
+          files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          test "$files" = 'orbittrace_v6_exact_fanout_v2/RUN_FANOUT_V2.md'
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_exact_fanout_v2/RUN_FANOUT_V2.md?ref=$HEAD_SHA" --jq .content | tr -d '\n' | base64 --decode)"
+          test "$content" = 'EXECUTE_EXACT_FANOUT_V2_ONLY_IF_NEEDED'
+          echo PASS_V6_FANOUT_V2_AUTHORIZATION
+
+  preexact:
+    needs: authorize
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2022, 2023]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-exact-fanout-v2
+          path: execution
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v6/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r frozen-v6/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Reconstruct exact repaired source
+        run: |
+          set -euo pipefail
+          cd frozen-v6
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
+          cd ..
+          PYTHONPATH=execution python - <<'PY'
+          from pathlib import Path
+          from orbittrace_v6_checkpointed_fallback.common import apply_exact_two_line_repair
+          d=apply_exact_two_line_repair(Path('/tmp/v6.frozen.py'),Path('/tmp/v6.repaired.py'))
+          assert d=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          PY
+      - name: Capture immutable preexact inputs
+        env:
+          PYTHONPATH: execution:frozen-v6/orbittrace_wavelet_catalogue_v3:frozen-v6/orbittrace_multi_anchor_energy_v3:/tmp
+        run: |
+          set -euo pipefail
+          mkdir -p preexact
+          python -u execution/orbittrace_v6_exact_fanout_v2/capture_preexact_year.py \
+            --year '${{ matrix.year }}' \
+            --repaired-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v6/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v6/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v6/mondrian_clique_development/source_parts_v2 \
+            --output preexact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-fanout-preexact-${{ matrix.year }}
+          path: preexact
+          if-no-files-found: error
+          retention-days: 90
+
+  exact:
+    needs: preexact
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2022, 2023]
+        shard: [0, 1, 2, 3, 4, 5]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-exact-fanout-v2
+          path: execution
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v6/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r frozen-v6/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v6-fanout-preexact-${{ matrix.year }}
+          path: preexact
+      - name: Reconstruct exact repaired source
+        run: |
+          set -euo pipefail
+          cd frozen-v6
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          cd ..
+          PYTHONPATH=execution python - <<'PY'
+          from pathlib import Path
+          from orbittrace_v6_checkpointed_fallback.common import apply_exact_two_line_repair
+          d=apply_exact_two_line_repair(Path('/tmp/v6.frozen.py'),Path('/tmp/v6.repaired.py'))
+          assert d=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          PY
+      - name: Execute assigned exact centers
+        env:
+          PYTHONPATH: execution:frozen-v6/orbittrace_wavelet_catalogue_v3:frozen-v6/orbittrace_multi_anchor_energy_v3:/tmp
+        run: |
+          set -euo pipefail
+          mkdir -p exact
+          python -u execution/orbittrace_v6_exact_fanout_v2/run_exact_center_shard.py \
+            --year '${{ matrix.year }}' --shard-index '${{ matrix.shard }}' --shard-count 6 --workers 4 \
+            --preexact-checkpoint preexact/v6_preexact_${{ matrix.year }}.pkl \
+            --repaired-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v6/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v6/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v6/mondrian_clique_development/source_parts_v2 \
+            --output exact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-fanout-exact-${{ matrix.year }}-${{ matrix.shard }}
+          path: exact
+          if-no-files-found: error
+          retention-days: 90
+
+  replay-year:
+    needs: exact
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2022, 2023]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-exact-fanout-v2
+          path: execution
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v6/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r frozen-v6/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v6-fanout-preexact-${{ matrix.year }}
+          path: preexact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-v6-fanout-exact-${{ matrix.year }}-*
+          path: exact
+          merge-multiple: true
+      - name: Reconstruct exact repaired source
+        run: |
+          set -euo pipefail
+          cd frozen-v6
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          cd ..
+          PYTHONPATH=execution python - <<'PY'
+          from pathlib import Path
+          from orbittrace_v6_checkpointed_fallback.common import apply_exact_two_line_repair
+          d=apply_exact_two_line_repair(Path('/tmp/v6.frozen.py'),Path('/tmp/v6.repaired.py'))
+          assert d=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          PY
+      - name: Replay exact centers through immutable year scan
+        env:
+          PYTHONPATH: execution:frozen-v6/orbittrace_wavelet_catalogue_v3:frozen-v6/orbittrace_multi_anchor_energy_v3:/tmp
+        run: |
+          set -euo pipefail
+          mkdir -p year
+          python -u execution/orbittrace_v6_exact_fanout_v2/replay_exact_year.py \
+            --year '${{ matrix.year }}' \
+            --preexact-checkpoint preexact/v6_preexact_${{ matrix.year }}.pkl \
+            --exact-shards-dir exact \
+            --repaired-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v6/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v6/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v6/mondrian_clique_development/source_parts_v2 \
+            --output year
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-fanout-year-${{ matrix.year }}
+          path: year
+          if-no-files-found: error
+          retention-days: 90
+
+  combine:
+    needs: replay-year
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-exact-fanout-v2
+          path: execution
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v6/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r frozen-v6/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-v6-fanout-year-*
+          path: checkpoints
+          merge-multiple: true
+      - name: Reconstruct exact repaired sources and fixed4 baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd frozen-v6
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          cd ..
+          PYTHONPATH=execution python - <<'PY'
+          from pathlib import Path
+          from orbittrace_v6_checkpointed_fallback.common import apply_exact_two_line_repair
+          d=apply_exact_two_line_repair(Path('/tmp/v6.frozen.py'),Path('/tmp/v6.repaired.py'))
+          assert d=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          PY
+          mkdir -p frozen-v6/input/fixed4 frozen-v6/output_fanout_v2
+          gh run download 31106001133 --repo "$GITHUB_REPOSITORY" --name orbittrace-fixed4-support-normalized-wrapper-development --dir frozen-v6/input/fixed4
+      - name: Replay year checkpoints through unchanged repaired main
+        env:
+          PYTHONPATH: execution:frozen-v6/orbittrace_wavelet_catalogue_v3:frozen-v6/orbittrace_multi_anchor_energy_v3:/tmp
+        run: |
+          set -euo pipefail
+          python -u execution/orbittrace_v6_checkpointed_fallback/combine_with_checkpoints.py \
+            --repaired-source /tmp/v6.repaired.py \
+            --checkpoint-2022 checkpoints/v6_year_2022.pkl \
+            --checkpoint-2023 checkpoints/v6_year_2023.pkl \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v6/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v6/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v6/mondrian_clique_development/source_parts_v2 \
+            --fixed4-baseline-json frozen-v6/input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            --output frozen-v6/output_fanout_v2
+          cat frozen-v6/output_fanout_v2/V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('frozen-v6/output_fanout_v2/v3_primary_catalogue_v6_development.json').read_text())
+          assert r['verdict'] in {'PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT','FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert all(a['proposal_cap_per_window']==512 for a in r['year_audits'])
+          assert all(a['max_primary_proposals_per_year']==36864 for a in r['year_audits'])
+          print('ORBITTRACE_V6_FANOUT_V2_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'evaluation':{k:v for k,v in r['evaluation'].items() if k!='per_label'},'gates':r['gates'],'year_audits':r['year_audits']},indent=2))
+          print('ORBITTRACE_V6_FANOUT_V2_RESULT_END')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-fanout-v2-development
+          path: frozen-v6/output_fanout_v2
+          if-no-files-found: error
+          retention-days: 90
