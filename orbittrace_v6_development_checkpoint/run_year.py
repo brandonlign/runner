@@ -22,6 +22,14 @@ def load_module(path: Path, name: str) -> Any:
     return module
 
 
+def ordered_ids_sha(events: list[dict[str, Any]]) -> str:
+    h = hashlib.sha256()
+    for event in events:
+        h.update(str(event["id"]).encode())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--year", required=True, type=int, choices=(2022, 2023))
@@ -44,19 +52,14 @@ def main() -> int:
 
     require(set(scan_by_year) == {2022, 2023}, "development scan years changed")
     require(set(calibration_by_year) == {2022, 2023}, "development calibration years changed")
+    scan = scan_by_year[args.year]
+    calibration = calibration_by_year[args.year]
     print(
-        f"V6_DEVELOPMENT_YEAR_START year={args.year} scan={len(scan_by_year[args.year])} calibration={len(calibration_by_year[args.year])}",
+        f"V6_DEVELOPMENT_YEAR_START year={args.year} scan={len(scan)} calibration={len(calibration)}",
         flush=True,
     )
     audit, anchors, components = v6.scan_year_v6(
-        old,
-        args.year,
-        scan_by_year[args.year],
-        calibration_by_year[args.year],
-        candidate,
-        base,
-        scorer,
-        support,
+        old, args.year, scan, calibration, candidate, base, scorer, support
     )
     require(len(audit["supported_bins"]) >= 30, "supported-bin gate failed in checkpoint")
     require(audit["proposal_cap_per_window"] == 512, "proposal cap changed")
@@ -69,6 +72,10 @@ def main() -> int:
         "catalogue_sources": sources,
         "truth_used_for_scan": False,
         "target_access": False,
+        "scan_count": len(scan),
+        "calibration_count": len(calibration),
+        "ordered_scan_ids_sha256": ordered_ids_sha(scan),
+        "ordered_calibration_ids_sha256": ordered_ids_sha(calibration),
         "audit": audit,
         "anchors": anchors,
         "components": components,
