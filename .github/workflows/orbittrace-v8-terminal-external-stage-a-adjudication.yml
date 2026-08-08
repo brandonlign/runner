@@ -1,0 +1,94 @@
+name: OrbitTrace v8 terminal external Stage A adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-final-blind-terminal-external-adjudication
+    paths:
+      - 'orbittrace_v8_final_blind_discovery/TERMINAL_EXTERNAL_ADJUDICATION_RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen adjudication parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-final-blind-terminal-external-adjudication
+          fetch-depth: 1
+
+      - name: Enforce exact adjudication source and no execution requests
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v8_final_blind_discovery/TERMINAL_EXTERNAL_ADJUDICATION.md)" = "81af17be7f059cdd23b943c9b1a03fd4e99fef68"
+          test "$(git hash-object orbittrace_v8_final_blind_discovery/adjudicate_terminal_external.py)" = "d1faa5ae9e2bfb1e08bd0e795fe7a5d645bd1e76"
+          test ! -e orbittrace_v8_final_blind_discovery/STAGE_A_EXECUTION_REQUEST.json
+          test ! -e orbittrace_v8_final_blind_discovery/STAGE_B_EXECUTION_REQUEST.json
+          python -m py_compile orbittrace_v8_final_blind_discovery/adjudicate_terminal_external.py
+
+      - name: Fetch exact immutable audit/result artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/freeze input/terminal input/amor output
+          f() { id="$1"; sha="$2"; n="$3"; curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" -o "input/$n.zip"; echo "$sha  input/$n.zip" | sha256sum -c -; unzip -q "input/$n.zip" -d "input/$n"; }
+          f 9012415460 164e651ddbc00bfc47888adc880c9704aa370b6f3ed52b4fe135bd8983a743aa freeze
+          f 9013690230 19e07c870a403ba017e7b320266a0f3ffd46b94d6205f52760c821096b0b3c6a terminal
+          f 9010704319 474cbd33dab03b7866da1e0b4c5640824347655e2d1ad336076a752291146763 amor
+
+      - name: Adjudicate terminal external result against frozen authorization rule
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_final_blind_discovery/adjudicate_terminal_external.py \
+            --freeze-manifest input/freeze/FREEZE_MANIFEST.json \
+            --freeze-audit input/freeze/v8_final_blind_source_audit.json \
+            --terminal-result input/terminal/v8_external_validation_terminal_synthesis.json \
+            --amor-result input/amor/v8_amor_1996_1998_external_validation.json \
+            --output output
+          cat output/TERMINAL_EXTERNAL_STAGE_A_ADJUDICATION.md
+
+      - name: Enforce blocked Stage A and continued blindness
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/terminal_external_stage_a_adjudication.json').read_text())
+          assert r['verdict']=='BLOCK_STAGE_A_EXTERNAL_VALIDATION_INCONCLUSIVE'
+          assert r['powered_external_pass_obtained'] is False
+          assert r['powered_external_scientific_fail_obtained'] is False
+          assert r['stage_a_scientifically_authorized'] is False
+          assert r['stage_a_execution_request_may_be_created'] is False
+          assert r['external_validation_authorization_may_be_issued'] is False
+          assert r['stage_b_scientifically_authorized'] is False
+          assert r['target_reveal_authorized'] is False
+          assert r['successor_detector_authorized'] is False
+          assert r['v8_method_changed'] is False
+          assert r['external_power_floors_lowered'] is False
+          assert r['catalogue_access_this_adjudication'] is False
+          assert r['target_region_data_access_this_adjudication'] is False
+          assert r['withheld_reference_access_this_adjudication'] is False
+          assert r['mechanical_authorizer_nonempty_verdict_is_not_scientific_authorization'] is True
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/adjudication_commit.txt
+          sha256sum orbittrace_v8_final_blind_discovery/TERMINAL_EXTERNAL_ADJUDICATION.md orbittrace_v8_final_blind_discovery/adjudicate_terminal_external.py > output/source_sha256.txt
+          sha256sum input/*.zip > output/input_artifact_sha256.txt 2>/dev/null || true
+
+      - name: Upload adjudication artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-terminal-external-stage-a-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90
