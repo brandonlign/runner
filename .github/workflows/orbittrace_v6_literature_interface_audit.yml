@@ -30,52 +30,51 @@ jobs:
           ref: agent/orbittrace-v8-literature-matched-sonotaco
           path: lit
 
-      - name: Reconstruct exact v6 source and inspect interfaces only
+      - name: Reconstruct exact sources and inspect calibration interface only
         run: |
           set -euo pipefail
           test ! -e input
           cat v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
-            | tr -d '\n\r' \
-            | base64 --decode \
-            | gzip --decompress \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress \
             > /tmp/run_v3_primary_catalogue_v6.py
           echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/run_v3_primary_catalogue_v6.py' | sha256sum -c -
+
+          cat v6/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress \
+            > /tmp/frozen_support.py
+          sha256sum /tmp/frozen_support.py
 
           python - <<'PY'
           import ast
           from pathlib import Path
-          text=Path('/tmp/run_v3_primary_catalogue_v6.py').read_text()
-          lines=text.splitlines()
-          tree=ast.parse(text)
-          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
-          for name in ['calibrate_year_v6','scan_year_v6','main']:
-              fn=defs[name]
-              print(f'V6_FUNCTION {name} lines={fn.lineno}-{fn.end_lineno} args={[a.arg for a in fn.args.args]}')
-              if name == 'calibrate_year_v6':
-                  lo,hi=fn.lineno,fn.end_lineno
-              elif name == 'main':
-                  lo,hi=max(fn.lineno,680),min(fn.end_lineno,720)
-              else:
-                  lo,hi=fn.lineno,min(fn.end_lineno,290)
-              for i in range(lo,hi+1): print(f'{i:04d}: {lines[i-1]}')
+
+          def print_fn(path,name):
+              text=Path(path).read_text(); lines=text.splitlines(); tree=ast.parse(text)
+              fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name)
+              print(f'FUNCTION {path}:{name} lines={fn.lineno}-{fn.end_lineno} args={[a.arg for a in fn.args.args]}')
+              for i in range(fn.lineno,fn.end_lineno+1): print(f'{i:04d}: {lines[i-1]}')
               print('---')
 
+          print_fn('/tmp/run_v3_primary_catalogue_v6.py','calibrate_year_v6')
+          print_fn('/tmp/frozen_support.py','parse_catalogue')
+
+          support=Path('/tmp/frozen_support.py').read_text().splitlines()
+          print('SUPPORT_RESERVOIR_INTERFACE_LINES')
+          for i,line in enumerate(support,1):
+              low=line.lower()
+              if any(t in low for t in ['calibration_by_year','scan_by_year','hidden_labels','calibration','sporadic','shower']):
+                  if i < 900:
+                      print(f'{i:04d}: {line}')
+
           ex=Path('lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py').read_text()
-          exlines=ex.splitlines()
-          extree=ast.parse(ex)
-          exdefs={n.name:n for n in extree.body if isinstance(n,ast.FunctionDef)}
-          for name in ['read_exact_geometry','parse_common_truth','run_v8_panel','main']:
-              fn=exdefs[name]
-              print(f'EXACT_FUNCTION {name} lines={fn.lineno}-{fn.end_lineno} args={[a.arg for a in fn.args.args]}')
-              if name == 'main':
-                  lo,hi=max(fn.lineno,360),min(fn.end_lineno,430)
-              else:
-                  lo,hi=fn.lineno,fn.end_lineno
-              for i in range(lo,hi+1):
-                  if name != 'main' or any(t in exlines[i-1].lower() for t in ['assignment','scan_panel','read_exact','truth','run_v8','archive','parser','year']):
-                      print(f'{i:04d}: {exlines[i-1]}')
+          exlines=ex.splitlines(); extree=ast.parse(ex)
+          for name in ['read_exact_geometry','parse_common_truth']:
+              fn=next(n for n in extree.body if isinstance(n,ast.FunctionDef) and n.name==name)
+              print(f'EXACT_FUNCTION {name} lines={fn.lineno}-{fn.end_lineno}')
+              for i in range(fn.lineno,fn.end_lineno+1): print(f'{i:04d}: {exlines[i-1]}')
               print('---')
-          print('PASS_V6_LITERATURE_ADAPTER_BOUNDARY_AUDIT')
+
+          print('PASS_V6_CALIBRATION_RESERVOIR_SOURCE_AUDIT')
           PY
 
       - name: Assert source-only boundary
