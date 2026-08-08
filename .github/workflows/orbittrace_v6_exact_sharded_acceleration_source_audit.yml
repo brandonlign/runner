@@ -36,10 +36,10 @@ jobs:
           bash audit/orbittrace_v6_exact_sharded_acceleration/reconstruct_exact_sources.sh
 
           PYTHONPATH=audit python - <<'PY'
+          import ast
           import hashlib
           from pathlib import Path
-          from orbittrace_v6_checkpointed_fallback.common import load_module
-          from orbittrace_v6_exact_sharded_acceleration.common import SHARD_COUNT, assign_centers, shard_plan_summary, locate_proposal_owner
+          from orbittrace_v6_exact_sharded_acceleration.common import SHARD_COUNT, assign_centers, shard_plan_summary
 
           root=Path('audit/orbittrace_v6_exact_sharded_acceleration')
           files=[root/'common.py',root/'build_catalogue_cache.py',root/'prepare_year.py',root/'run_exact_shard.py',root/'replay_year.py']
@@ -65,18 +65,31 @@ jobs:
           for forbidden in ('build_family_track_v6','evaluate_families_v6','PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT'):
               assert forbidden not in common, forbidden
 
-          # Verify source-only that the helper now resolves the actual inherited
-          # proposal function used by the repaired scan rather than assuming it
-          # belongs to the v6 wrapper module.
-          v6=load_module(Path('/tmp/run_v3_primary_catalogue_v6.repaired.py'),'audit_v6_owner')
-          old=v6.load_base_runner(Path('/tmp/run_wavelet_catalogue_v3_development.py'))
-          # A lightweight object is sufficient because locate_proposal_owner only
-          # inspects scan source and attributes; it does not access catalogue data.
-          class EmptySupport: pass
-          owner_name,owner=locate_proposal_owner(v6,old,EmptySupport())
-          assert owner is not None and hasattr(owner,'proposal_window_v6')
-          assert owner_name in {'old','v6','support'}
-          print('PROPOSAL_OWNER='+str(owner_name))
+          # Dependency-free AST inspection of the exact repaired scan proves which
+          # object owns proposal_window_v6. No scientific module import or catalogue
+          # access is needed for this check.
+          repaired_text=Path('/tmp/run_v3_primary_catalogue_v6.repaired.py').read_text()
+          repaired_tree=ast.parse(repaired_text)
+          scan=next(n for n in repaired_tree.body if isinstance(n,ast.FunctionDef) and n.name=='scan_year_v6')
+          proposal_calls=[]
+          for node in ast.walk(scan):
+              if not isinstance(node,ast.Call):
+                  continue
+              f=node.func
+              if isinstance(f,ast.Attribute) and f.attr=='proposal_window_v6' and isinstance(f.value,ast.Name):
+                  proposal_calls.append(f.value.id)
+              elif isinstance(f,ast.Name) and f.id=='proposal_window_v6':
+                  proposal_calls.append('v6')
+          assert proposal_calls and len(set(proposal_calls))==1, proposal_calls
+          proposal_owner=proposal_calls[0]
+          assert proposal_owner in {'old','support','v6'}, proposal_owner
+          print('PROPOSAL_OWNER='+proposal_owner)
+          if proposal_owner=='old':
+              old_tree=ast.parse(Path('/tmp/run_wavelet_catalogue_v3_development.py').read_text())
+              assert any(isinstance(n,ast.FunctionDef) and n.name=='proposal_window_v6' for n in old_tree.body)
+          elif proposal_owner=='v6':
+              assert any(isinstance(n,ast.FunctionDef) and n.name=='proposal_window_v6' for n in repaired_tree.body)
+          # support ownership is checked at runtime after the frozen support module is loaded.
 
           cache=(root/'build_catalogue_cache.py').read_text()
           assert 'del hidden_labels' in cache
