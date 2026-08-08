@@ -1,0 +1,99 @@
+name: OrbitTrace bilateral core-halo v3 transfer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-core-halo-membership-v2
+    paths:
+      - 'orbittrace_bilateral_core_halo_v3/**'
+      - '.github/workflows/orbittrace-bilateral-core-halo-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-bilateral-core-halo-v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Enforce pre-data guards
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v6 input/centroid output
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo "3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip" | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
+          echo "a1faacf51e1f4ca2a3a92b20e27d1f07f00e1d32ab33993916379ff36acea062  input/centroid.zip" | sha256sum -c -
+          unzip -q input/centroid.zip -d input/centroid
+          python -m py_compile orbittrace_bilateral_core_halo_v3/run_transfer.py
+          rm -rf output/*
+      - name: Run frozen 2024-2025 bilateral transfer
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_bilateral_core_halo_v3/run_transfer.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v6-result-json input/v6/label_free_sparse_support_v6_development.json \
+            --centroid-audit-json input/centroid/component_centroid_source_audit.json \
+            --output output
+          cat output/BILATERAL_CORE_HALO_V3_TRANSFER.md
+      - name: Enforce result schema
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/bilateral_core_halo_v3_transfer.json').read_text())
+          assert r['verdict'] in {'PASS_BILATERAL_CORE_HALO_V3_TRANSFER','FAIL_BILATERAL_CORE_HALO_V3_TRANSFER'}
+          assert r['configuration']['years']==[2024,2025]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['halo_changes_discovery'] is False
+          assert r['configuration']['radius_search'] is False and r['configuration']['threshold_search'] is False
+          assert len(r['prelabel_sha256'])==64
+          assert 'No OrbitTrace target information' in r['claim_boundary']
+          print(json.dumps(r,indent=2,sort_keys=True))
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/transfer_commit.txt
+          sha256sum orbittrace_bilateral_core_halo_v3/PROTOCOL.md orbittrace_bilateral_core_halo_v3/run_transfer.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-bilateral-core-halo-v3-transfer
+          path: output
+          if-no-files-found: error
+          retention-days: 90
