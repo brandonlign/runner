@@ -103,10 +103,12 @@ def main() -> int:
     assert_target_free_claim(v8, "v8 development")
 
     # Inherited SAAMER power context: clean external architecture, but not direct v8 verdicts.
-    require(int(s20["family_count"]) == 19 and orbital_q(s20) == 19, "SAAMER 2020/21 counts changed")
+    require(int(s20["family_count"]) == 69 and orbital_q(s20) == 29, "SAAMER 2020/21 counts changed")
     require(s20["configuration"]["blind_exclusion"] == [20.0, 55.0], "SAAMER 2020/21 blindness changed")
     require(s20["configuration"]["no_source_labels"] is True, "SAAMER 2020/21 labels used")
     require(s20["configuration"]["no_orbits_in_candidate_or_ranking"] is True, "SAAMER 2020/21 orbit boundary changed")
+    require(s20["integrity_gates"]["at_least_100_recurrent_families"] is False, "SAAMER 2020/21 N power reason changed")
+    require(s20["integrity_gates"]["at_least_30_orbitally_corroborated_families"] is False, "SAAMER 2020/21 Q power reason changed")
     assert_target_free_claim(s20, "SAAMER 2020/21")
 
     require(int(s22["family_count"]) == 66 and orbital_q(s22) == 33, "SAAMER 2022/23 counts changed")
@@ -170,7 +172,7 @@ def main() -> int:
             "target_excluded_years": [2022, 2023],
         },
         "external_record": {
-            "saamer_2020_2021": {"role": "inherited_v6_external_power_context", "verdict": SAAMER20, "N": 19, "Q": 19},
+            "saamer_2020_2021": {"role": "inherited_v6_external_power_context", "verdict": SAAMER20, "N": 69, "Q": 29},
             "saamer_2022_2023": {"role": "inherited_v6_external_power_context", "verdict": SAAMER22, "N": 66, "Q": 33},
             "amor_1996_1998": {"role": "direct_v8_external_test", "verdict": AMOR, "N": 19, "Q": 19},
             "ukmon_2020_2021": {"role": "pre_scientific_panel", "verdict": "HISTORICAL_INTERFACE_INCOMPATIBLE_BEFORE_SCIENCE"},
