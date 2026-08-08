@@ -9,6 +9,7 @@ on:
       - orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py
       - orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer.py
       - orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py
+      - .github/workflows/orbittrace_v6_sonotaco_2017_2019_transfer_execution.yml
       - .github/workflows/orbittrace_v6_sonotaco_transfer_source_audit.yml
 
 permissions:
@@ -108,7 +109,6 @@ jobs:
           v8_eval=main.index('true_v8_metrics_full = v8.mult.evaluate_order(hidden_labels')
           assert current_freeze < v8_freeze < truth_marker < current_eval < v8_eval
           pretruth=main[:truth_marker]
-          # Hidden labels are constructed and held opaque, never used by detector/ranker pretruth.
           assert 'evaluate_families_v6(hidden_labels' not in pretruth
           assert 'evaluate_order(hidden_labels' not in pretruth
           assert 'eligible_labels(hidden_labels' not in pretruth
@@ -143,6 +143,21 @@ jobs:
           assert 'max_single <= 1e-12' in exact
           assert 'duplicate_family_count > 0 and duplicate_family_year_count > 0' in exact
           assert 'changed_duplicate_year_centroids > 0' in exact
+
+          workflow=Path('.github/workflows/orbittrace_v6_sonotaco_2017_2019_transfer_execution.yml').read_text()
+          assert 'agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze' in workflow
+          assert 'orbittrace_v6_sonotaco_2017_2019_transfer/RUN.md' in workflow
+          assert 'EXECUTE_AFTER_FANOUT_V6_LITERATURE_SUPERIORITY' in workflow
+          assert 'gh run download 31282128101' in workflow
+          assert '--name orbittrace-v6-fanout-v2-development' in workflow
+          assert '--name orbittrace-v6-fanout-matched-literature-result' in workflow
+          assert "l['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}" in workflow
+          assert '1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf' in workflow
+          assert 'd49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4' in workflow
+          assert '257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24' in workflow
+          assert 'c9d6c44704013ba0c9430100e98a29a56b453304' in workflow
+          assert 'run_transfer_portable.py' in workflow
+          assert '--development-v6-result /tmp/v6dev/v3_primary_catalogue_v6_development.json' in workflow
           print('PASS_V6_SONOTACO_2017_2019_TRANSFER_SOURCE_AUDIT')
           PY
       - name: Assert source-only boundary
