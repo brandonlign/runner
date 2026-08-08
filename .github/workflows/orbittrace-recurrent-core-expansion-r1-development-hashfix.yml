@@ -34,6 +34,7 @@ jobs:
           git checkout --detach "$BASE_SHA"
           test ! -e orbittrace_recurrent_core_expansion_r1/RUN_HASHFIX.md
           test -f orbittrace_recurrent_core_expansion_r1/run_schemafixed_execution.sh
+          test -f orbittrace_recurrent_core_expansion_r1/fix_schema_wrapper_regex.py
           echo "execution_base_sha=$BASE_SHA"
 
       - uses: actions/setup-python@v5
@@ -53,6 +54,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          mkdir -p output
+          python orbittrace_recurrent_core_expansion_r1/fix_schema_wrapper_regex.py
           bash orbittrace_recurrent_core_expansion_r1/run_schemafixed_execution.sh
 
       - name: Record immutable provenance
@@ -63,6 +66,7 @@ jobs:
           git rev-parse HEAD > output/development_base_commit.txt
           sha256sum \
             orbittrace_recurrent_core_expansion_r1/PROTOCOL.md \
+            orbittrace_recurrent_core_expansion_r1/fix_schema_wrapper_regex.py \
             orbittrace_recurrent_core_expansion_r1/run_schemafixed_execution.sh \
             input/r1/run_development.py \
             input/dsh/literature_comparators.py \
