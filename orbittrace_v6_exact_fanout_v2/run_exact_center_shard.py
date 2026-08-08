@@ -66,10 +66,10 @@ def balanced_center_shards(pre: dict[str, Any], shard_count: int) -> tuple[list[
     # still calls the immutable exact_rescore_window_v6 once and replay restores
     # the original scientific center/proposal order with hash checks.
     for center, proposal_count, _window_count, cost in sorted(items, key=lambda item: (-item[3], item[0])):
-        target = min(range(shard_count), key=lambda index: (cost_loads[index], proposal_loads[index], index))
-        bins[target].append(center)
-        proposal_loads[target] += proposal_count
-        cost_loads[target] += cost
+        shard_index = min(range(shard_count), key=lambda index: (cost_loads[index], proposal_loads[index], index))
+        bins[shard_index].append(center)
+        proposal_loads[shard_index] += proposal_count
+        cost_loads[shard_index] += cost
 
     for values in bins:
         values.sort()
