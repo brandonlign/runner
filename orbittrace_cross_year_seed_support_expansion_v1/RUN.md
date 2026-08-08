@@ -1,0 +1,1 @@
+Execution trigger only. The scientific protocol, exact inherited radius 1.5, other-year seed-support rule, exclusive assignment, blindness boundary, and promotion gates are frozen in the parent branch.
