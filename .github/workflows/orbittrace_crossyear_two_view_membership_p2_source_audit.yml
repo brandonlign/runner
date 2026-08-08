@@ -1,0 +1,115 @@
+name: OrbitTrace P2 frozen source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/PROTOCOL.md
+      - orbittrace_crossyear_two_view_membership_p2/IMPLEMENTATION_FREEZE.md
+      - orbittrace_crossyear_two_view_membership_p2/source_parts/**
+      - .github/workflows/orbittrace_crossyear_two_view_membership_p2_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-p2-frozen-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact P2 source
+        run: |
+          set -euo pipefail
+          parts=(orbittrace_crossyear_two_view_membership_p2/source_parts/part*.b64)
+          test "${#parts[@]}" -eq 2
+          test "${parts[0]}" = 'orbittrace_crossyear_two_view_membership_p2/source_parts/part00.b64'
+          test "${parts[1]}" = 'orbittrace_crossyear_two_view_membership_p2/source_parts/part01.b64'
+          cat "${parts[@]}" | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/run_p2.py
+          echo '1b1b748cbb1c57adf4c22558efd44eef02d49ad143dfc31ab50c7e3c530d2c3f  /tmp/run_p2.py' | sha256sum -c -
+          python -m py_compile /tmp/run_p2.py
+
+      - name: Prove frozen architecture and pre-truth boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          p=Path('/tmp/run_p2.py')
+          text=p.read_text()
+          tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          constants={n.targets[0].id: ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name) and isinstance(n.value,(ast.Constant,ast.Tuple))}
+
+          assert constants['YEARS']==(2022,2023)
+          assert constants['WINDOW_HALF_WIDTH_DEG']==5.0
+          assert constants['MIN_NEGATIVES_PER_DIRECTION']==128
+          assert constants['RESPONSIBILITY_THRESHOLD']==0.5
+          assert constants['MACRO_F1_GAIN_GATE']==0.08
+          assert constants['TOP100_PRECISION_FLOOR']==0.65
+          assert constants['LARGE_RECALL_MULTIPLIER']==1.5
+          assert constants['LARGE_PRECISION_FLOOR']==0.85
+          assert constants['LOGISTIC_C']==1.0
+          assert constants['LOGISTIC_MAX_ITER']==1000
+          assert constants['LOGISTIC_TOL']==1e-10
+          assert constants['V8_SOURCE_COMMIT']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert constants['DSH_COMPARATOR_SHA256']=='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+
+          required=(
+              'OAS(assume_centered=False).fit(x)',
+              'np.linalg.pinv(cov)',
+              'np.linalg.inv(cov)',
+              'return np.column_stack((d_sol, d_lon, d_lat, d_vg))',
+              'return np.column_stack((d_obs, d_orb))',
+              'for source_year, target_year in ((2022, 2023), (2023, 2022))',
+              'abs(float(base.wrap180(float(event["sol"]) - float(target_center["sol"])))) <= WINDOW_HALF_WIDTH_DEG',
+              'np.full(len(pos_x), 0.5 / len(pos_x)',
+              'np.full(len(neg_x), 0.5 / len(neg_x)',
+              'scaler.fit(x_train, sample_weight=w_train)',
+              'penalty="l2", C=LOGISTIC_C, solver="lbfgs", max_iter=LOGISTIC_MAX_ITER',
+              'tol=LOGISTIC_TOL, class_weight=None, fit_intercept=True',
+              'classifier.fit(x_scaled, y_train, sample_weight=w_train)',
+              'denom = 1.0 + float(sum(p["odds"] for p in proposals))',
+              'if best["responsibility"] <= RESPONSIBILITY_THRESHOLD:',
+              'rank_by_family[str(r["family_id"])]',
+              'p2_classifier_pretruth.sha256',
+              'p2_membership_pretruth.sha256',
+              'v8.mult.evaluate_order(hidden_labels, families, v8_order)',
+              'v8.mult.evaluate_order(hidden_labels, expanded, v8_order)',
+              'require(not missing_seed_orbits',
+              'require(not missing_local_orbits',
+          )
+          for token in required:
+              assert token in text, token
+
+          main=defs['main']
+          # In main(), known-shower labels may be returned by the inherited parser but
+          # cannot be read until after both classifier and memberships are frozen.
+          freeze_line=max(
+              n.lineno for n in ast.walk(main)
+              if isinstance(n,ast.Constant) and isinstance(n.value,str) and n.value=='p2_expanded_families.json.gz'
+          )
+          label_loads=[n.lineno for n in ast.walk(main) if isinstance(n,ast.Name) and isinstance(n.ctx,ast.Load) and n.id=='hidden_labels']
+          assert label_loads and min(label_loads) > freeze_line, (freeze_line,label_loads)
+
+          # Seeds cannot compete and additions are a one-shot terminal membership update.
+          assert 'require(eid not in global_seed_ids, "seed entered P2 competition")' in text
+          assert 'new_members_can_seed_or_refit": False' in text
+          assert 'no_parameter_feature_model_threshold_variant_search": True' in text
+          print('PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_SOURCE_AUDIT')
+          PY
+
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e output_p2
+          echo 'NO_METEOR_CATALOGUE_NO_LABEL_VALUE_NO_TARGET_REGION_NO_P2_SCIENCE'
