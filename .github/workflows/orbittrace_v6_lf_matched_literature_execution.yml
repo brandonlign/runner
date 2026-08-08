@@ -1,0 +1,248 @@
+name: OrbitTrace v6-LF matched Sugar HDBSCAN execution
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-literature-freeze
+    paths:
+      - orbittrace_v6_literature_adapter/RUN_V6_LF.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-v6-lf-matched-literature
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: .:exact:exact/orbittrace_multi_anchor_energy_v3:orbittrace_wavelet_catalogue_v3:orbittrace_multi_anchor_energy_v3:/tmp
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+      - name: Require one-file child and exact v6-LF PASS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          test "$files" = 'orbittrace_v6_literature_adapter/RUN_V6_LF.md'
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          content="$(git show "$HEAD_SHA":orbittrace_v6_literature_adapter/RUN_V6_LF.md)"
+          first="$(printf '%s\n' "$content" | sed -n '1p')"
+          dev_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$first" = 'EXECUTE_AFTER_V6_LF_DEVELOPMENT_PASS'
+          [[ "$dev_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+          rm -rf /tmp/v6lf && mkdir -p /tmp/v6lf
+          gh run download "$dev_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-lf-all-event-null-development-v2 --dir /tmp/v6lf
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/v6lf/v6_label_free_all_event_null_development.json').read_text())
+          assert r['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT', r['verdict']
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert r['configuration']['parameter_search'] is False and r['configuration']['null_trimming'] is False
+          assert r['configuration']['exact_fanout'] is True and r['configuration']['exact_shards_per_year']==6
+          assert all(r['gates'].values()), r['gates']
+          print('PASS_V6_LF_DEVELOPMENT_AUTHORIZATION')
+          PY
+
+  scan:
+    needs: authorize
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        panel: [hdbscan, sugar]
+        year: [2023, 2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Reconstruct pinned runtime and exact-row ID manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash orbittrace_v6_literature_adapter/bootstrap_optimized_runtime.sh
+          bash orbittrace_v6_literature_adapter/prepare_optimized_manifest.sh
+      - name: Execute v6-LF pre-truth matched scan
+        run: |
+          set -euo pipefail
+          mkdir -p output_scan
+          if [ '${{ matrix.year }}' = '2023' ]; then archive='input/archives/023a.zip'; else archive='input/archives/025a.zip'; fi
+          python -u orbittrace_v6_literature_adapter/run_pretruth_year_v6_lf.py \
+            --panel '${{ matrix.panel }}' --year '${{ matrix.year }}' \
+            --v6-source runtime/run_v3_primary_catalogue_v6.repaired.py \
+            --base-runner runtime/run_wavelet_catalogue_v3_development.py \
+            --exact-row-runner runtime/run_exact_row_blind_safe.py \
+            --id-manifest output_manifest/id_manifest.json \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --archive "$archive" --parallel-exact-workers 4 \
+            --output output_scan/checkpoint.pkl
+          python - <<'PY'
+          import pickle
+          from pathlib import Path
+          r=pickle.loads(Path('output_scan/checkpoint.pkl').read_bytes())
+          assert r['method_variant']=='v6-LF all-event Mondrian null'
+          assert r['truth_accessed'] is False and r['mapping_accessed'] is False
+          assert r['competitor_cluster_labels_accessed'] is False
+          assert r['native_background_membership_used_for_calibration'] is False
+          assert r['calibration_reservoir']=='all exact matched scan rows'
+          assert r['calibration_count']==r['scan_count']
+          assert r['execution']['parallel_exact_enabled'] is True
+          print('PASS_V6_LF_MATCHED_PRETRUTH_CHECKPOINT')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v6-lf-checkpoint-${{ matrix.panel }}-${{ matrix.year }}
+          path: output_scan
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: [authorize, scan]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Reconstruct pinned runtime and exact ID manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash orbittrace_v6_literature_adapter/bootstrap_optimized_runtime.sh
+          bash orbittrace_v6_literature_adapter/prepare_optimized_manifest.sh
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-checkpoint-hdbscan-2023, path: input/checkpoints/hdbscan2023}
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-checkpoint-hdbscan-2025, path: input/checkpoints/hdbscan2025}
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-checkpoint-sugar-2023, path: input/checkpoints/sugar2023}
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-checkpoint-sugar-2025, path: input/checkpoints/sugar2025}
+      - name: Freeze recurrent rankings before truth
+        run: |
+          set -euo pipefail
+          mkdir -p output_pretruth
+          python orbittrace_v6_literature_adapter/combine_pretruth.py \
+            --v6-source runtime/run_v3_primary_catalogue_v6.repaired.py \
+            --base-runner runtime/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --id-manifest output_manifest/id_manifest.json \
+            --hdbscan-2023-checkpoint input/checkpoints/hdbscan2023/checkpoint.pkl \
+            --hdbscan-2025-checkpoint input/checkpoints/hdbscan2025/checkpoint.pkl \
+            --sugar-2023-checkpoint input/checkpoints/sugar2023/checkpoint.pkl \
+            --sugar-2025-checkpoint input/checkpoints/sugar2025/checkpoint.pkl \
+            --output output_pretruth/pretruth.json
+          test -f output_pretruth/pretruth.json
+      - name: Download truth metadata only after v6-LF ranking freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{parser,mapping} output_literature
+          gh run download 30920687116 --repo "$GITHUB_REPOSITORY" --name sonotaco-2023-confirmation-source-repair-v2 --dir input/parser
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input/mapping
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/parser/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
+      - name: Evaluate exact pairwise matched comparison
+        run: |
+          set -euo pipefail
+          python orbittrace_v6_literature_adapter/evaluate_frozen.py \
+            --pretruth output_pretruth/pretruth.json \
+            --exact-row-runner runtime/run_exact_row_blind_safe.py \
+            --base-runner runtime/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --parser-2023 input/parser/run_sonotaco_2023_fixed4_confirmation.py \
+            --parser-2025 exact/orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
+            --mapping-audit input/mapping/audit.json \
+            --archive-2023 input/archives/023a.zip --archive-2025 input/archives/025a.zip \
+            --hdbscan-2023 input/hdbscan2023/full_catalogue_assignments.jsonl.gz \
+            --hdbscan-2025 input/hdbscan2025/full_catalogue_assignments.jsonl.gz \
+            --sugar-2023 input/sugar2023/sugar_uncertainty_assignments.json.gz \
+            --sugar-2025 input/sugar2025/sugar_uncertainty_assignments.json.gz \
+            --output output_literature/v6_lf_matched_literature.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output_literature/v6_lf_matched_literature.json').read_text())
+          assert r['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY','NO_LITERATURE_SUPERIORITY'}
+          assert r['years']==[2023,2025] and r['blind_exclusion']==[20.0,55.0]
+          assert r['pairwise_only_no_cross_denominator_comparison'] is True
+          assert r['panels']['hdbscan']['exact_event_rows']=={'2023':26460,'2025':19658}
+          assert r['panels']['sugar']['exact_event_rows']=={'2023':30414,'2025':23200}
+          print('ORBITTRACE_V6_LF_MATCHED_RESULT_BEGIN')
+          print(json.dumps({'classification':r['classification'],'broad_catalogue_superiority':r['broad_catalogue_superiority'],'sparse_stream_superiority':r['sparse_stream_superiority'],'panels':{p:{'broad':r['panels'][p]['broad_pairwise_pass'],'sparse':r['panels'][p]['sparse_pairwise_pass']} for p in ('hdbscan','sugar')}},indent=2,sort_keys=True))
+          print('ORBITTRACE_V6_LF_MATCHED_RESULT_END')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output_literature
+          sha256sum orbittrace_v6_literature_adapter/* .github/workflows/orbittrace_v6_lf_matched_literature_execution.yml runtime/*.py > output_literature/source_sha256.txt 2>/dev/null || true
+          python --version > output_literature/python_version.txt
+          python -m pip freeze > output_literature/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: orbittrace-v6-lf-matched-literature-result, path: output_literature, if-no-files-found: error, retention-days: 90}
