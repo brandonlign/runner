@@ -37,6 +37,27 @@ jobs:
           print('P1_SOURCE_SHA256',digest)
           PY
           python -m py_compile /tmp/run_probabilistic_membership_p1.py
+      - name: Show only freeze and truth-binding source contexts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          lines=Path('/tmp/run_probabilistic_membership_p1.py').read_text().splitlines()
+          for needle in ('membership_pretruth_sha256','hidden_labels'):
+              print(f'--- {needle} contexts ---')
+              seen=set()
+              for index,line in enumerate(lines,1):
+                  if needle not in line:
+                      continue
+                  lo=max(1,index-3); hi=min(len(lines),index+3)
+                  key=(lo,hi)
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  for lineno in range(lo,hi+1):
+                      print(f'{lineno:04d}: {lines[lineno-1]}')
+                  print()
+          PY
       - name: Prove truth is evaluation-only after immutable membership hash
         run: |
           set -euo pipefail
