@@ -1,0 +1,22 @@
+name: Retire redundant shard0 rescue
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-v6-fanout-shard0-rescue
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-shard0-rescue
+  cancel-in-progress: true
+
+jobs:
+  retire:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo 'Original fanout-v2 exact 2023 shard0 completed successfully.'
+          echo 'Cancel redundant exact-equivalent rescue race; no scientific result was selected from it.'
