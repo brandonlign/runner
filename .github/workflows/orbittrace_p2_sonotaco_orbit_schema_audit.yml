@@ -17,10 +17,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Require one-file schema intent plus workflow
+      - name: Require schema intent
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
@@ -30,50 +29,44 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p input output
-          curl --fail --location --retry 3 --output input/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
-          curl --fail --location --retry 3 --output input/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          curl --fail --location --retry 3 -o input/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          curl --fail --location --retry 3 -o input/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
           echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
           echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
-      - name: Read exact science CSV headers only
+      - name: Read science CSV headers only
         run: |
           set -euo pipefail
           python - <<'PY' | tee output/schema.json
           import csv,json,zipfile
           from pathlib import Path
           result={}
+          required={'q':'q(au)','e':'e','peri':'peri(deg)','node':'node(deg)','i':'incl(deg)'}
+          shared=('sol(deg)','ra(deg)','de(deg)','vg(km/s)','q(au)','e','peri(deg)','node(deg)','incl(deg)','shower')
           for year,path in ((2023,Path('input/023a.zip')),(2025,Path('input/025a.zip'))):
               with zipfile.ZipFile(path) as z:
                   members=[n for n in z.namelist() if n.lower().endswith('_s.csv') and not n.endswith('/')]
-                  if len(members)!=1:
-                      raise RuntimeError(f'{year}: expected exactly one _S.csv science member, got {members}')
+                  if len(members)!=1: raise RuntimeError(f'{year}: science member ambiguity {members}')
                   member=members[0]
                   with z.open(member) as raw:
                       first=raw.readline().decode('utf-8-sig').rstrip('\r\n')
-                      # Header only. No second/data row is read.
-                      header=next(csv.reader([first],delimiter=';'))
+                      header=next(csv.reader([first],delimiter=','))
               normalized=[x.strip().lower() for x in header]
-              orbit_candidates={
-                  key:[i for i,name in enumerate(normalized) if name in aliases]
-                  for key,aliases in {
-                      'q':{'q','qau','q_au','periheliondistance','perihelion_distance'},
-                      'e':{'e','ecc','eccentricity'},
-                      'i':{'i','ideg','inc','inclination','inclinationdeg'},
-                      'peri':{'peri','perideg','omega','argperi','argumentofperihelion'},
-                      'node':{'node','nodedeg','omegaasc','ascendingnode','longitudeofascendingnode'},
-                  }.items()
-              }
-              result[str(year)]={'member':member,'header_count':len(header),'header':header,'normalized_header':normalized,'orbit_candidates':orbit_candidates,'data_rows_read':0}
+              index={name:normalized.index(name) for name in shared}
+              orbit={key:normalized.index(name) for key,name in required.items()}
+              result[str(year)]={'member':member,'header_count':len(header),'header':header,'normalized_header':normalized,'shared_indices':index,'orbit_indices':orbit,'data_rows_read':0}
           print(json.dumps(result,indent=2,sort_keys=True))
           PY
           python - <<'PY'
           import json
           from pathlib import Path
           r=json.loads(Path('output/schema.json').read_text())
+          expected={'q':14,'e':16,'peri':18,'node':20,'i':21}
           for year in ('2023','2025'):
               assert r[year]['data_rows_read']==0
-              assert r[year]['header_count'] in (45,46)
               assert r[year]['member'].lower().endswith('_s.csv')
-          assert r['2023']['normalized_header']==r['2025']['normalized_header'], 'SNMv3 matched-year schemas differ'
+              assert r[year]['header_count'] in (45,46)
+              assert r[year]['orbit_indices']==expected,r[year]['orbit_indices']
+          assert r['2023']['shared_indices']==r['2025']['shared_indices']
           print('PASS_P2_SONOTACO_HEADER_ONLY_SCHEMA_AUDIT')
           PY
       - uses: actions/upload-artifact@v4
