@@ -1,0 +1,252 @@
+name: OrbitTrace v6 SonotaCo 2017/2019 architecture-pre-frozen transfer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-sonotaco-2017-2019-transfer-freeze
+    paths:
+      - orbittrace_v6_sonotaco_2017_2019_transfer/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v6-sonotaco-2017-2019-transfer
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  transfer:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Require one-file child, fanout-v6 PASS, and matched literature superiority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_v6_sonotaco_2017_2019_transfer/RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_v6_sonotaco_2017_2019_transfer/RUN.md)"
+          first="$(printf '%s\n' "$content" | sed -n '1p')"
+          literature_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$first" = 'EXECUTE_AFTER_FANOUT_V6_LITERATURE_SUPERIORITY'
+          [[ "$literature_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+
+          rm -rf /tmp/v6dev /tmp/literature
+          mkdir -p /tmp/v6dev /tmp/literature
+          gh run download 31282128101 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-fanout-v2-development \
+            --dir /tmp/v6dev
+          gh run download "$literature_run" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-fanout-matched-literature-result \
+            --dir /tmp/literature
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/v6dev/v3_primary_catalogue_v6_development.json').read_text())
+          assert d['verdict']=='PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT', d['verdict']
+          assert d['configuration']['years']==[2022,2023]
+          assert d['configuration']['blind_exclusion']==[20.0,55.0]
+          assert d['configuration']['primary_alpha']==0.05
+          assert all(d['gates'].values()), d['gates']
+          assert isinstance(d['evaluation']['mrr'],(int,float))
+
+          l=json.loads(Path('/tmp/literature/v3_primary_matched_literature.json').read_text())
+          assert l['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}, l['classification']
+          assert l['years']==[2023,2025]
+          assert l['blind_exclusion']==[20.0,55.0]
+          assert l['pairwise_only_no_cross_denominator_comparison'] is True
+          if l['classification']=='BROAD_CATALOGUE_SUPERIORITY':
+              assert l['broad_catalogue_superiority'] is True
+          else:
+              assert l['sparse_stream_superiority'] is True
+          print('PASS_V6_TRANSFER_PREREQUISITES',l['classification'])
+          PY
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_v6_sonotaco_2017_2019_transfer/RUN.md
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-current-v6
+          fetch-depth: 1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact current-v6 runtime and frozen transport inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{parser17,parser19,mapping,archives} output
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+
+          cat frozen-current-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress \
+            > /tmp/current_v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/current_v6.frozen.py' | sha256sum -c -
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          frozen=Path('/tmp/current_v6.frozen.py')
+          repaired=Path('/tmp/current_v6.repaired.py')
+          original=frozen.read_text()
+          before='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    components = primary_components + rescue_components
+'''
+          after='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    primary_components = component_records_track_v6(old, year, primary_capped, event_lookup, base, "v3")
+    rescue_components = component_records_track_v6(old, year, rescue_capped, event_lookup, base, "fixed4_rescue")
+    components = primary_components + rescue_components
+'''
+          assert original.count(before)==1
+          patched=original.replace(before,after,1)
+          assert patched.replace(after,before,1)==original
+          repaired.write_text(patched)
+          assert hashlib.sha256(original.encode()).hexdigest()=='a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9'
+          assert hashlib.sha256(patched.encode()).hexdigest()=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          print('PASS_EXACT_CURRENT_V6_REPAIR')
+          PY
+
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+
+          gh run download 31199214174 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2015-2017-parser-transport --dir input/parser17
+          gh run download 31203088669 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2019-parser-transport --dir input/parser19
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input/mapping
+          echo 'ee81d66b318ed2fa473ddfcee4c1cea0ef8ba08cba33da47103fd7c53ee625dc  input/parser17/run_sonotaco_2017_transport_parser.py' | sha256sum -c -
+          echo '301a711e4de43566ba434f2d4a94fc38a85714a33dcee45e26cb19340101ea43  input/parser19/run_sonotaco_2019_transport_parser.py' | sha256sum -c -
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
+
+          curl --fail --location --retry 3 --output input/archives/017a.zip https://www.astro.sk/iaumdcDB/PDA/SNMv3/017a.zip
+          curl --fail --location --retry 3 --output input/archives/019a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/019a.zip
+          echo '1db43348806a44490fde8936529541754411b16825f2caea240378cda11c77cf  input/archives/017a.zip' | sha256sum -c -
+          echo 'd49c37f5a9f7f089973d7029b840283f26ca9d915c137152a6f4368bbf5aabb4  input/archives/019a.zip' | sha256sum -c -
+          echo PASS_V6_TRANSFER_FROZEN_INPUTS
+
+      - name: Execute fixed no-retuning transfer
+        env:
+          PYTHONPATH: .:exact-v8:orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py \
+            --current-v6-source /tmp/current_v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --parser-2017 input/parser17/run_sonotaco_2017_transport_parser.py \
+            --parser-2019 input/parser19/run_sonotaco_2019_transport_parser.py \
+            --mapping-audit input/mapping/audit.json \
+            --archive-2017 input/archives/017a.zip \
+            --archive-2019 input/archives/019a.zip \
+            --development-v6-result /tmp/v6dev/v3_primary_catalogue_v6_development.json \
+            --output output
+          cat output/V6_SONOTACO_2017_2019_TRANSFER.md
+
+      - name: Enforce frozen transfer result identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v6_sonotaco_2017_2019_transfer.json').read_text())
+          assert r['verdict'] in {
+            'PASS_V6_SONOTACO_2017_2019_ARCHITECTURE_PREFROZEN_TRANSFER',
+            'FAIL_V6_SONOTACO_2017_2019_ARCHITECTURE_PREFROZEN_TRANSFER',
+          }
+          assert r['configuration']['years']==[2017,2019]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['current_v6_source_sha256']=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          assert r['configuration']['promoted_v8_source_commit']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert r['configuration']['top_k']==100
+          assert r['configuration']['min_supported_bins']==24
+          assert r['configuration']['min_recurrent_families']==50
+          assert r['configuration']['minimum_top100_precision']==0.5
+          assert r['configuration']['minimum_qualified_ratio_to_v8']==0.9
+          assert r['configuration']['old_fixed4_supported_code_gate_imported'] is False
+          assert r['configuration']['parameter_search'] is False
+          assert len(r['current_v6_pretruth_sha256'])==64
+          assert len(r['true_v8_pretruth_sha256'])==64
+          assert all(r['integrity_gates'].values()), r['integrity_gates']
+          print('ORBITTRACE_V6_SONOTACO_TRANSFER_RESULT_BEGIN')
+          print(json.dumps({
+            'verdict':r['verdict'],
+            'development_v6_mrr':r['development_v6_mrr'],
+            'current_v6':r['current_v6'],
+            'true_promoted_v8_same_universe':r['true_promoted_v8_same_universe'],
+            'scientific_gates':r['scientific_gates'],
+          },indent=2,sort_keys=True))
+          print('ORBITTRACE_V6_SONOTACO_TRANSFER_RESULT_END')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_v6_sonotaco_2017_2019_transfer/PROTOCOL.md \
+            orbittrace_v6_sonotaco_2017_2019_transfer/parser_transport.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer.py \
+            orbittrace_v6_sonotaco_2017_2019_transfer/run_transfer_portable.py \
+            .github/workflows/orbittrace_v6_sonotaco_2017_2019_transfer_execution.yml \
+            /tmp/current_v6.repaired.py \
+            > output/source_sha256.txt 2>/dev/null || true
+          git -C exact-v8 rev-parse HEAD > output/exact_v8_commit.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-sonotaco-2017-2019-prefrozen-transfer
+          path: output
+          if-no-files-found: error
+          retention-days: 90
