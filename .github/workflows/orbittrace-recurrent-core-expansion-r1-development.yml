@@ -87,7 +87,7 @@ jobs:
 
           git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
           git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
-          echo "ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2  input/dsh/literature_comparators.py" | sha256sum -c -
+          test "$(git hash-object input/dsh/literature_comparators.py)" = "ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2"
 
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
