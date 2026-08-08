@@ -76,6 +76,31 @@ def center_key(center: float) -> str:
     return f"{float(center):.1f}"
 
 
+def locate_proposal_owner(v6: Any, old: Any, support: Any) -> tuple[str | None, Any | None]:
+    """Locate the module actually referenced by scan_year_v6 for proposal_window_v6.
+
+    The repaired v6 source delegates some catalogue helpers through its inherited
+    base runner. This function is implementation plumbing only; it never changes
+    which proposal function scan_year_v6 calls.
+    """
+    source = inspect.getsource(v6.scan_year_v6)
+    candidates = (("v6", v6), ("old", old), ("support", support))
+    explicit = (
+        ("old.proposal_window_v6", "old", old),
+        ("support.proposal_window_v6", "support", support),
+        ("v6.proposal_window_v6", "v6", v6),
+    )
+    for token, name, owner in explicit:
+        if token in source:
+            require(hasattr(owner, "proposal_window_v6"), f"scan references missing {token}")
+            return name, owner
+    if "proposal_window_v6" in source:
+        matches = [(name, owner) for name, owner in candidates if hasattr(owner, "proposal_window_v6")]
+        require(len(matches) == 1, "cannot uniquely resolve proposal_window_v6 owner")
+        return matches[0]
+    return None, None
+
+
 def capture_scan_prefix(
     v6: Any,
     old: Any,
@@ -89,11 +114,13 @@ def capture_scan_prefix(
 ) -> dict[str, Any]:
     """Run the exact repaired scan prefix and stop at its first exact-rescore call."""
     original = v6.exact_rescore_window_v6
-    original_proposal = v6.proposal_window_v6
+    proposal_owner_name, proposal_owner = locate_proposal_owner(v6, old, support)
+    original_proposal = getattr(proposal_owner, "proposal_window_v6") if proposal_owner is not None else None
     captured: dict[str, Any] = {}
     proposal_calls: list[dict[str, Any]] = []
 
     def proposal_capture(*args: Any, **kwargs: Any) -> Any:
+        require(original_proposal is not None, "proposal capture invoked without original function")
         fingerprint = call_fingerprint(original_proposal, args, kwargs)
         result = original_proposal(*args, **kwargs)
         frozen_result = pickle.loads(pickle.dumps(result, protocol=pickle.HIGHEST_PROTOCOL))
@@ -140,6 +167,7 @@ def capture_scan_prefix(
             "proposal_count": sum(len(rows) for rows in by_center.values()),
             "proposal_calls": proposal_calls,
             "proposal_call_count": len(proposal_calls),
+            "proposal_owner": proposal_owner_name,
             "scan_rows_sha256": event_rows_sha256(events),
             "calibration_rows_sha256": event_rows_sha256(calibration_events),
             "frozen_v6_sha256": FROZEN_V6_SHA256,
@@ -148,13 +176,14 @@ def capture_scan_prefix(
                 "target_interval_remains_excluded": True,
                 "hidden_labels_not_saved": True,
                 "exact_rescore_not_executed_in_prepare": True,
-                "proposal_outputs_captured_from_original_function": True,
+                "proposal_outputs_captured_from_original_function": proposal_owner is not None,
             },
         })
         captured["records_by_center_sha256"] = canonical_json_sha256(captured["records_by_center"])
         raise _PrefixCaptured("exact boundary reached")
 
-    v6.proposal_window_v6 = proposal_capture
+    if proposal_owner is not None:
+        setattr(proposal_owner, "proposal_window_v6", proposal_capture)
     v6.exact_rescore_window_v6 = sentinel
     try:
         v6.scan_year_v6(old, year, events, calibration_events, candidate, base, scorer, support)
@@ -162,10 +191,14 @@ def capture_scan_prefix(
         pass
     finally:
         v6.exact_rescore_window_v6 = original
-        v6.proposal_window_v6 = original_proposal
+        if proposal_owner is not None:
+            setattr(proposal_owner, "proposal_window_v6", original_proposal)
     require(captured, "scan prefix did not reach exact boundary")
     require(captured["proposal_cap"] == 512, "proposal cap changed")
-    require(0 < captured["proposal_call_count"] <= captured["window_count"], "proposal capture count invalid")
+    if proposal_owner is not None:
+        require(0 < captured["proposal_call_count"] <= captured["window_count"], "proposal capture count invalid")
+    else:
+        require(captured["proposal_call_count"] == 0, "unexpected proposal capture without owner")
     return captured
 
 

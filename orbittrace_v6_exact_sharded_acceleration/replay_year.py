@@ -19,6 +19,7 @@ from orbittrace_v6_exact_sharded_acceleration.common import (
     proposal_anchor_ids,
     call_fingerprint,
     load_sidecar_pickle,
+    locate_proposal_owner,
 )
 
 
@@ -80,10 +81,17 @@ def main() -> int:
     candidate, base, scorer = support.load_sources(args)
 
     original_calibrate = v6.calibrate_year_v6
-    original_proposal = v6.proposal_window_v6
+    proposal_owner_name, proposal_owner = locate_proposal_owner(v6, old, support)
+    original_proposal = getattr(proposal_owner, "proposal_window_v6") if proposal_owner is not None else None
     original_exact = v6.exact_rescore_window_v6
     replay_centers: list[str] = []
     proposal_replay_index = 0
+    captured_proposal_count = int(prep.get("proposal_call_count", 0))
+    if captured_proposal_count > 0:
+        require(proposal_owner is not None, "captured proposal outputs but proposal owner is unavailable")
+        require(prep.get("proposal_owner") == proposal_owner_name, "proposal owner changed between prepare and replay")
+    else:
+        require(len(prep.get("proposal_calls", [])) == 0, "proposal replay metadata inconsistent")
 
     def replay_calibration(
         old_arg: Any,
@@ -105,6 +113,7 @@ def main() -> int:
 
     def replay_proposal(*call_args: Any, **call_kwargs: Any) -> Any:
         nonlocal proposal_replay_index
+        require(original_proposal is not None, "proposal replay invoked without original function")
         require(proposal_replay_index < len(prep["proposal_calls"]), "too many proposal replay calls")
         expected = prep["proposal_calls"][proposal_replay_index]
         actual_fingerprint = call_fingerprint(original_proposal, call_args, call_kwargs)
@@ -132,15 +141,17 @@ def main() -> int:
         return [dict(row) for row in exact_by_center[key]]
 
     v6.calibrate_year_v6 = replay_calibration
-    v6.proposal_window_v6 = replay_proposal
+    if captured_proposal_count > 0:
+        setattr(proposal_owner, "proposal_window_v6", replay_proposal)
     v6.exact_rescore_window_v6 = replay_exact
     try:
         audit, anchors, components = v6.scan_year_v6(old, args.year, events, calibration, candidate, base, scorer, support)
     finally:
         v6.calibrate_year_v6 = original_calibrate
-        v6.proposal_window_v6 = original_proposal
+        if captured_proposal_count > 0:
+            setattr(proposal_owner, "proposal_window_v6", original_proposal)
         v6.exact_rescore_window_v6 = original_exact
-    require(proposal_replay_index == len(prep["proposal_calls"]), "not all proposal calls replayed")
+    require(proposal_replay_index == captured_proposal_count, "not all captured proposal calls replayed")
     require(replay_centers == expected_centers, "replay center order changed")
     require(int(audit["year"]) == args.year, "audit year changed")
     require(int(audit["proposal_cap_per_window"]) == 512, "proposal cap changed")
@@ -170,7 +181,8 @@ def main() -> int:
             "original_exact_scalar_function_used_in_shards": True,
             "original_repaired_scan_year_used_for_post_exact_logic": True,
             "calibration_replayed_from_exact_prefix_capture": True,
-            "proposal_windows_replayed_from_original_prepare_outputs": True,
+            "proposal_owner": proposal_owner_name,
+            "proposal_windows_replayed_from_original_prepare_outputs": captured_proposal_count > 0,
         },
     }
     raw = pickle.dumps(checkpoint, protocol=pickle.HIGHEST_PROTOCOL)
