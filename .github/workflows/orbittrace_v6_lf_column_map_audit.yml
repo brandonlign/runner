@@ -1,0 +1,74 @@
+name: OrbitTrace v6-LF column-map label firewall audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - .github/workflows/orbittrace_v6_lf_column_map_audit.yml
+      - orbittrace_v6_label_free_all_event_null/run_development.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-column-map-firewall-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-label-free-all-event-null-freeze
+          path: candidate
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - name: Prove schema mapping is header-only and candidate parser never reads label values
+        run: |
+          set -euo pipefail
+          cat frozen-v6/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/support.py
+          echo 'fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62  /tmp/support.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          support=Path('/tmp/support.py').read_text(); stree=ast.parse(support)
+          sdefs={n.name:n for n in stree.body if isinstance(n,ast.FunctionDef)}
+          column=sdefs['column_map']
+          column_text=ast.get_source_segment(support,column)
+          # Schema resolution may inspect only the column-name Index, never Series/cell values.
+          assert 'frame.columns' in column_text
+          for forbidden in ('frame.iloc','frame.loc','to_numpy','tolist','unique','value_counts','normalize_label'):
+              assert forbidden not in column_text, (forbidden,column_text)
+          subs=[]
+          for n in ast.walk(column):
+              if isinstance(n,ast.Subscript):
+                  segment=ast.get_source_segment(support,n) or ''
+                  if segment.startswith('frame['): subs.append(segment)
+          assert subs==[], subs
+
+          candidate=Path('candidate/orbittrace_v6_label_free_all_event_null/run_development.py').read_text(); ctree=ast.parse(candidate)
+          cdefs={n.name:n for n in ctree.body if isinstance(n,ast.FunctionDef)}
+          geom=cdefs['parse_geometry_only']
+          label_value_reads=[]
+          for n in ast.walk(geom):
+              if isinstance(n,ast.Subscript):
+                  segment=ast.get_source_segment(candidate,n) or ''
+                  if 'frame[' in segment and ('label' in segment or 'columns' in segment):
+                      label_value_reads.append(segment)
+              if isinstance(n,ast.Attribute) and n.attr in {'iloc','loc','iat','at'}:
+                  label_value_reads.append(ast.get_source_segment(candidate,n) or n.attr)
+          assert label_value_reads==[], label_value_reads
+          print('PASS_V6_LF_COLUMN_MAP_HEADER_ONLY_FIREWALL')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_GMN_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
