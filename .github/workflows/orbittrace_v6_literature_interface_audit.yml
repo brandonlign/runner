@@ -1,0 +1,97 @@
+name: OrbitTrace v6 literature exact-row interface audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - .github/workflows/orbittrace_v6_literature_interface_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-literature-interface-audit
+          path: audit
+
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: v6
+
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-literature-matched-sonotaco
+          path: lit
+
+      - name: Reconstruct exact v6 source and inspect interfaces only
+        run: |
+          set -euo pipefail
+          test ! -e input
+          cat v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' \
+            | base64 --decode \
+            | gzip --decompress \
+            > /tmp/run_v3_primary_catalogue_v6.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/run_v3_primary_catalogue_v6.py' | sha256sum -c -
+
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          def describe(path, interesting):
+              text=Path(path).read_text()
+              tree=ast.parse(text)
+              print(f'FILE={path}')
+              defs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+              print('TOP_LEVEL_FUNCTIONS=',sorted(defs))
+              for name in interesting:
+                  if name not in defs:
+                      continue
+                  fn=defs[name]
+                  args=[a.arg for a in fn.args.args]
+                  print(f'FUNCTION {name} lines={fn.lineno}-{fn.end_lineno} args={args}')
+                  calls=[]
+                  for node in ast.walk(fn):
+                      if isinstance(node,ast.Call):
+                          f=node.func
+                          cname=f.id if isinstance(f,ast.Name) else (f.attr if isinstance(f,ast.Attribute) else '<dynamic>')
+                          if any(k in cname.lower() for k in ('load','scan','label','evalu','famil','parse','event','year')):
+                              calls.append((node.lineno,cname))
+                  print('RELEVANT_CALLS=',sorted(set(calls)))
+              return text,tree
+
+          v6_text,v6_tree=describe('/tmp/run_v3_primary_catalogue_v6.py',[
+              'main','scan_year_v6','build_families_v6','evaluate_primary_v6','load_gmn_year'
+          ])
+          ex_text,ex_tree=describe('lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py',[
+              'main','load_competitor_rows','load_sonotaco_geometry','evaluate_annual','evaluate_panel'
+          ])
+
+          # Print only source lines containing the exact-row ID universe and detector invocation plumbing.
+          for label,text in [('V6',v6_text),('EXACT_ROW',ex_text)]:
+              print(f'{label}_INTERFACE_LINES_BEGIN')
+              for i,line in enumerate(text.splitlines(),1):
+                  low=line.lower()
+                  if any(token in low for token in [
+                      'scan_year_v6(', 'load_gmn_year', 'event_ids', 'allowed', 'assignment',
+                      'sonotaco', 'year_results', 'all_components', 'build_families', 'evaluate_'
+                  ]):
+                      print(f'{i:04d}: {line}')
+              print(f'{label}_INTERFACE_LINES_END')
+
+          print('PASS_V6_LITERATURE_INTERFACE_SOURCE_AUDIT')
+          PY
+
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          echo 'NO_CATALOGUE_ACCESS_NO_LABEL_ACCESS_NO_TARGET_ACCESS'
