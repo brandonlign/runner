@@ -22,7 +22,7 @@ jobs:
         with:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen
-      - name: Print source-only family contract
+      - name: Print source-only family and evaluator contracts
         run: |
           set -euo pipefail
           test ! -e input
@@ -34,21 +34,12 @@ jobs:
           python - <<'PY'
           import ast
           from pathlib import Path
-          text=Path('/tmp/v3.py').read_text()
-          tree=ast.parse(text)
-          names=['build_family_track_v6','evaluate_primary']
+          text=Path('/tmp/v3.py').read_text(); tree=ast.parse(text)
+          names=['build_family_track_v6','evaluate_families_v6']
           for name in names:
-              nodes=[n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name==name]
-              if nodes:
-                  n=nodes[0]
-                  print(f'BEGIN_{name}')
-                  print(ast.get_source_segment(text,n))
-                  print(f'END_{name}')
-          main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
-          print('BEGIN_MAIN_TAIL')
-          lines=text.splitlines()
-          for i in range(max(main.lineno, main.end_lineno-90), main.end_lineno+1):
-              print(f'{i:04d}: {lines[i-1]}')
-          print('END_MAIN_TAIL')
+              n=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name)
+              print(f'BEGIN_{name}')
+              print(ast.get_source_segment(text,n))
+              print(f'END_{name}')
           print('NO_DATA_NO_LABEL_NO_TARGET_ACCESS')
           PY
