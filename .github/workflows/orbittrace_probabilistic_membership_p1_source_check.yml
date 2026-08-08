@@ -31,20 +31,25 @@ jobs:
           encoded=''.join(''.join(p.read_text().split()) for p in parts)
           src=gzip.decompress(base64.b64decode(encoded,validate=True))
           digest=hashlib.sha256(src).hexdigest()
-          assert digest=='4075934cac8b8d2934f3d7580ad29cc5826c83a4b4e2153714b57c0673379cde',digest
+          assert digest=='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',digest
           Path('/tmp/run_probabilistic_membership_p1.py').write_bytes(src)
           print('P1_SOURCE_SHA256',digest)
           PY
           python -m py_compile /tmp/run_probabilistic_membership_p1.py
-      - name: Check frozen architecture markers
+      - name: Check frozen architecture and exact-v8 reconstruction markers
         run: |
           set -euo pipefail
           python - <<'PY'
           import ast
           from pathlib import Path
-          p=Path('/tmp/run_probabilistic_membership_p1.py')
-          t=p.read_text()
+          t=Path('/tmp/run_probabilistic_membership_p1.py').read_text()
           for marker in [
+            'V8_SOURCE_COMMIT = "c9d6c44704013ba0c9430100e98a29a56b453304"',
+            'V8_RESULT_SHA256 = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"',
+            'v8.pooled_centroid(rows, support)',
+            'v8.mult.score_families',
+            'v8.mult.rank_scored(scored_v8, "multiplicity")',
+            'v8.mult.evaluate_order(hidden_labels, expanded, v8_order)',
             'INNER_PROB = 0.99',
             'OUTER_PROB = 0.9999',
             'BACKGROUND_UPPER_CONFIDENCE = 0.95',
@@ -58,7 +63,6 @@ jobs:
           ]:
             assert marker in t,marker
           tree=ast.parse(t)
-          calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call)]
-          assert any(isinstance(c.func,ast.Name) and c.func.id=='evaluate' for c in calls)
+          assert not any(isinstance(n,ast.FunctionDef) and n.name=='evaluate' for n in ast.walk(tree))
           print('PASS_P1_FROZEN_SOURCE_CHECK')
           PY
