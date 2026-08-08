@@ -1,0 +1,1 @@
+Execution-only trigger for the frozen R1 run after restoring the audited event-ID mapping and adding a static check of every raw-header position key used by parse_target_excluded_orbits. No scientific parameters, target information, or promotion gates are supplied by this file.
