@@ -1,0 +1,89 @@
+name: OrbitTrace v6 exact fanout v2 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-performance-optimization-v1
+    paths:
+      - orbittrace_v6_exact_fanout_v2/**
+      - .github/workflows/orbittrace_v6_exact_fanout_v2_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-exact-fanout-v2-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-exact-fanout-v2
+          path: execution
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+      - name: Compile and prove decomposition boundaries
+        run: |
+          set -euo pipefail
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.py' | sha256sum -c -
+          python -m py_compile \
+            execution/orbittrace_v6_exact_fanout_v2/capture_preexact_year.py \
+            execution/orbittrace_v6_exact_fanout_v2/run_exact_center_shard.py \
+            execution/orbittrace_v6_exact_fanout_v2/replay_exact_year.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          vtext=Path('/tmp/v6.py').read_text(); vtree=ast.parse(vtext)
+          scan=next(n for n in vtree.body if isinstance(n,ast.FunctionDef) and n.name=='scan_year_v6')
+          exact_calls=[n for n in ast.walk(scan) if isinstance(n,ast.Call) and ((isinstance(n.func,ast.Name) and n.func.id=='exact_rescore_window_v6') or (isinstance(n.func,ast.Attribute) and n.func.attr=='exact_rescore_window_v6'))]
+          assert len(exact_calls)==1
+          exact_line=exact_calls[0].lineno
+          assert exact_line==376, exact_line
+          assert 'for record in provisional.values()' in ast.get_source_segment(vtext,scan)
+          assert 'for center, records in sorted(records_by_center.items())' in ast.get_source_segment(vtext,scan)
+
+          def read(name):
+              text=Path('execution/orbittrace_v6_exact_fanout_v2/'+name).read_text()
+              return text, ast.parse(text)
+
+          ctext,ctree=read('capture_preexact_year.py')
+          assert ctext.count('v6.scan_year_v6(')==1
+          assert 'v6.exact_rescore_window_v6 = capture_exact' in ctext
+          cdefs={n.name:n for n in ast.walk(ctree) if isinstance(n,ast.FunctionDef)}
+          capture=ast.get_source_segment(ctext,cdefs['capture_exact'])
+          assert 'return []' in capture
+          assert not any(token in capture for token in ('v3_details','exact_anchor_distances','quartet_score','empirical_upper_pvalue'))
+
+          stext,stree=read('run_exact_center_shard.py')
+          assert stext.count('v6.exact_rescore_window_v6(')==1
+          assert 'install(v6, workers=args.workers' in stext
+          assert 'window_events = [event_lookup[event_id] for event_id in ids]' in stext
+          assert "[str(row[\"id\"]) for row in canonical_window] == ids" in stext
+
+          rtext,rtree=read('replay_exact_year.py')
+          assert rtext.count('v6.scan_year_v6(')==1
+          assert 'v6.exact_rescore_window_v6 = replay_exact' in rtext
+          rdefs={n.name:n for n in ast.walk(rtree) if isinstance(n,ast.FunctionDef)}
+          replay=ast.get_source_segment(rtext,rdefs['replay_exact'])
+          assert 'return outputs' in replay
+          assert not any(token in replay for token in ('v3_details','exact_anchor_distances','quartet_score','empirical_upper_pvalue'))
+          assert 'proposal_cap_per_window' in rtext and '== 512' in rtext
+          assert 'max_primary_proposals_per_year' in rtext and '== 36864' in rtext
+
+          print('PASS_V6_EXACT_FANOUT_V2_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABEL_NO_TARGET_ACCESS
