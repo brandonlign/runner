@@ -35,6 +35,33 @@ def canonical_sha(value: Any) -> str:
     return sha256_bytes(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8"))
 
 
+def calibration_sha(proposal_cal: Any, v3_cal: Any, fixed4_cal: Any, calibration_summary: Any) -> str:
+    # Calibration arrays may be NumPy arrays. Normalize them to ordinary lists
+    # before hashing so the checkpoint identity is independent of pickle details.
+    def normalize(value: Any) -> Any:
+        if hasattr(value, "tolist"):
+            return normalize(value.tolist())
+        if isinstance(value, dict):
+            return {str(key): normalize(item) for key, item in sorted(value.items(), key=lambda kv: str(kv[0]))}
+        if isinstance(value, (list, tuple)):
+            return [normalize(item) for item in value]
+        if hasattr(value, "item"):
+            try:
+                return normalize(value.item())
+            except (ValueError, TypeError):
+                pass
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        raise TypeError(f"unsupported calibration hash type: {type(value)!r}")
+
+    return canonical_sha(normalize({
+        "proposal_cal": proposal_cal,
+        "v3_cal": v3_cal,
+        "fixed4_cal": fixed4_cal,
+        "calibration_summary": calibration_summary,
+    }))
+
+
 def main() -> int:
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -53,7 +80,7 @@ def main() -> int:
     calibration = calibration_by_year[args.year]
     require(all(not (20.0 <= float(row["sol"]) <= 55.0) for row in scan), "blind interval present in scan")
     scan_sha = event_rows_sha256(scan)
-    calibration_sha = event_rows_sha256(calibration)
+    calibration_sha_rows = event_rows_sha256(calibration)
     source_rows = [row for row in sources if str(row.get("key", "")).startswith(str(args.year))]
     source_sha = hashlib.sha256(json.dumps(source_rows, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
@@ -70,12 +97,7 @@ def main() -> int:
         calibration_state["v3_cal"] = v3_cal
         calibration_state["fixed4_cal"] = fixed4_cal
         calibration_state["calibration_summary"] = calibration_summary
-        calibration_state["sha256"] = canonical_sha({
-            "proposal_cal": proposal_cal,
-            "v3_cal": v3_cal,
-            "fixed4_cal": fixed4_cal,
-            "calibration_summary": calibration_summary,
-        })
+        calibration_state["sha256"] = calibration_sha(proposal_cal, v3_cal, fixed4_cal, calibration_summary)
         return result
 
     def capture_exact(old_arg, records, window_events, event_lookup, support_arg, base_arg):
@@ -133,7 +155,7 @@ def main() -> int:
         "frozen_v6_sha256": FROZEN_V6_SHA256,
         "repaired_v6_sha256": repaired_sha,
         "scan_rows_sha256": scan_sha,
-        "calibration_rows_sha256": calibration_sha,
+        "calibration_rows_sha256": calibration_sha_rows,
         "year_sources_sha256": source_sha,
         "ordered_centers": ordered_centers,
         "centers": centers,
@@ -159,7 +181,7 @@ def main() -> int:
         "total_records": total_records,
         "calibration_state_sha256": calibration_state["sha256"],
         "scan_rows_sha256": scan_sha,
-        "calibration_rows_sha256": calibration_sha,
+        "calibration_rows_sha256": calibration_sha_rows,
     }, indent=2, sort_keys=True) + "\n")
     print(f"PASS_V6_REPLAY_V4_PREEXACT_CAPTURE year={args.year} centers={len(ordered_centers)} records={total_records:,} sha={digest}", flush=True)
     return 0
