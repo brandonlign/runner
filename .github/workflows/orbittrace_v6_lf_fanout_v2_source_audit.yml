@@ -1,0 +1,102 @@
+name: OrbitTrace v6-LF fanout v2 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-label-free-all-event-null-freeze
+    paths:
+      - orbittrace_v6_label_free_all_event_null/run_development.py
+      - orbittrace_v6_label_free_all_event_null_fanout/**
+      - .github/workflows/orbittrace_v6_lf_fanout_execution_v2.yml
+      - .github/workflows/orbittrace_v6_lf_fanout_v2_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-fanout-v2-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-fanout-v1
+      - name: Compile and prove exact label-free fanout v2 boundary
+        run: |
+          set -euo pipefail
+          bash -n orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+          python -m py_compile orbittrace_v6_label_free_all_event_null/run_development.py orbittrace_v6_label_free_all_event_null_fanout/*.py
+          test "$(git hash-object orbittrace_v6_label_free_all_event_null/run_development.py)" = 'd91a1bb22361536c770a8c3786e598586d89b70e'
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          science=Path('orbittrace_v6_label_free_all_event_null/run_development.py').read_text()
+          stree=ast.parse(science); sdefs={n.name:n for n in stree.body if isinstance(n,ast.FunctionDef)}
+          geom=ast.get_source_segment(science,sdefs['parse_geometry_only'])
+          assert 'support.dd.get_monthly_file_content_by_date(key)' in geom
+          assert 'support.read_gmn_frame(text)' in geom
+          assert 'support.column_map(frame)' in geom
+          assert 'frame[columns["label"]]' not in geom and 'frame.iloc' not in geom and 'normalize_label' not in geom
+          assert 'base.wrap180(float(lam[int(index)])-s)' in geom
+          assert 'dict(event,complex_key="SPORADIC")' in geom
+          truth=ast.get_source_segment(science,sdefs['parse_truth_after_freeze'])
+          assert 'support.normalize_label(frame.iloc[int(index)][columns["label"]])' in truth
+
+          capture=Path('orbittrace_v6_label_free_all_event_null_fanout/capture_preexact_year.py').read_text()
+          assert 'lf.parse_geometry_only(support,base)' in capture
+          assert 'support.parse_catalogue' not in capture
+          assert 'v6.exact_rescore_window_v6=capture_exact' in capture and 'return []' in capture
+          assert 'label_values_not_accessed":True' in capture and 'all_event_calibration":True' in capture
+
+          shard=Path('orbittrace_v6_label_free_all_event_null_fanout/run_exact_center_shard.py').read_text()
+          assert 'lf.parse_geometry_only(support,base)' in shard
+          assert 'support.parse_catalogue' not in shard
+          assert 'install(v6,workers=args.workers,min_parallel_records=256)' in shard
+          assert 'balanced(pre,args.shard_count)' in shard
+          assert 'v6.exact_rescore_window_v6(old,records,window,event_lookup,support,base)' in shard
+
+          replay=Path('orbittrace_v6_label_free_all_event_null_fanout/replay_exact_year.py').read_text()
+          assert 'lf.parse_geometry_only(support,base)' in replay
+          assert 'support.parse_catalogue' not in replay
+          assert 'v6.exact_rescore_window_v6=replay' in replay
+          assert 'scientific_result_not_evaluated":True' in replay
+
+          combine=Path('orbittrace_v6_label_free_all_event_null_fanout/combine_and_evaluate.py').read_text()
+          assert 'lf.parse_geometry_only(support,base)' in combine
+          freeze=combine.index('(args.output/"v6_lf_pretruth.sha256").write_text')
+          truthcall=combine.index('lf.parse_truth_after_freeze(support,pretruth_ids)')
+          evaluate=combine.index('v6.evaluate_families_v6(hidden_labels,primary,rescue,lf.YEARS)')
+          assert freeze < truthcall < evaluate
+          assert 'v6.build_family_track_v6(old,components,base,"v3")' in combine
+          assert 'v6.build_family_track_v6(old,components,base,"fixed4_rescue")' in combine
+
+          bootstrap=Path('orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh').read_text()
+          assert 'd91a1bb22361536c770a8c3786e598586d89b70e' in bootstrap
+          assert 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9' in bootstrap
+          assert '257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24' in bootstrap
+          assert 'PASS_V6_LF_EXACT_RUNTIME_BOOTSTRAP' in bootstrap
+
+          workflow=Path('.github/workflows/orbittrace_v6_lf_fanout_execution_v2.yml').read_text()
+          assert 'agent/orbittrace-v6-lf-fanout-v1' in workflow
+          assert 'orbittrace_v6_label_free_all_event_null_fanout/RUN_V2.md' in workflow
+          assert 'EXECUTE_FROZEN_V6_LF_ALL_EVENT_NULL_FANOUT_V2' in workflow
+          assert workflow.count('bootstrap_runtime.sh')==4
+          assert 'max-parallel: 12' in workflow
+          for token in ('{year: 2022, shard: 0}','{year: 2022, shard: 5}','{year: 2023, shard: 0}','{year: 2023, shard: 5}'):
+              assert token in workflow, token
+          assert '--shard-count 6 --workers 4' in workflow
+          assert "pattern: 'v6-lf-v2-exact-${{ matrix.year }}-*'" in workflow
+          assert 'combine_and_evaluate.py' in workflow
+          assert 'orbittrace-v6-lf-all-event-null-development-v2' in workflow
+          print('PASS_V6_LF_FANOUT_V2_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
