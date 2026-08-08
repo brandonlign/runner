@@ -1,0 +1,1 @@
+The already-exposed v8/Sugar/HDBSCAN comparison may be used only to identify the broad problem class (final membership is weak for larger showers). It may not be used to choose or optimize any R1 numerical threshold, radius, weight, scale, candidate family, or acceptance endpoint.
