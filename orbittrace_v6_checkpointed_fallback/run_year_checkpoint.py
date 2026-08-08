@@ -27,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--baseline-payload", required=True, type=Path)
     p.add_argument("--scorer-parts", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
+    p.add_argument("--parallel-exact-workers", type=int, default=0)
     return p.parse_args()
 
 
@@ -39,6 +40,14 @@ def main() -> int:
     v6 = load_module(args.repaired_source, f"orbittrace_v6_checkpoint_year_{args.year}")
     require(all(v6.v3.self_test().values()), "v3 self-test failed")
     require(all(v6.v3_membership_self_test().values()), "v3 membership self-test failed")
+
+    execution = {"parallel_exact_workers": 0, "parallel_exact_enabled": False}
+    if args.parallel_exact_workers > 0:
+        from orbittrace_v6_checkpointed_fallback.parallel_exact_rescore import install
+        execution.update(install(v6, workers=args.parallel_exact_workers, min_parallel_records=256))
+        execution["parallel_exact_enabled"] = True
+        execution["parallel_exact_workers"] = int(execution["workers"])
+        print(f"V6_CHECKPOINT_PARALLEL_EXACT year={args.year} config={execution}", flush=True)
 
     old = v6.load_base_runner(args.base_runner)
     require(list(old.YEARS) == [2022, 2023], "frozen base years changed")
@@ -79,6 +88,7 @@ def main() -> int:
         "scan_rows_sha256": scan_sha,
         "calibration_rows_sha256": calibration_sha,
         "year_sources_sha256": source_sha,
+        "execution": execution,
         "audit": audit,
         "anchors": anchors,
         "components": components,
@@ -105,6 +115,7 @@ def main() -> int:
         "scan_rows_sha256": scan_sha,
         "calibration_rows_sha256": calibration_sha,
         "year_sources_sha256": source_sha,
+        "execution": execution,
     }
     (args.output / f"v6_year_{args.year}.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     print(
