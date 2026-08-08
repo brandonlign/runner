@@ -7,6 +7,7 @@ on:
     paths:
       - orbittrace_crossyear_two_view_membership_p2/PROTOCOL.md
       - orbittrace_crossyear_two_view_membership_p2/run_development.py
+      - .github/workflows/orbittrace_crossyear_two_view_p2_development.yml
       - .github/workflows/orbittrace_crossyear_two_view_p2_source_audit.yml
 
 permissions:
@@ -96,6 +97,19 @@ jobs:
           assert 'new_members_can_seed_growth": False' in main
           assert 'PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT' in main
           assert 'FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO' in main
+
+          workflow=Path('.github/workflows/orbittrace_crossyear_two_view_p2_development.yml').read_text()
+          assert 'agent/orbittrace-crossyear-two-view-membership-p2-freeze' in workflow
+          assert 'orbittrace_crossyear_two_view_membership_p2/RUN.md' in workflow
+          assert 'EXECUTE_AFTER_EXACT_P1_NO_GO' in workflow
+          assert '--name orbittrace-probabilistic-membership-p1-development' in workflow
+          assert "r['verdict']=='FAIL_PROBABILISTIC_MEMBERSHIP_P1_NO_GO'" in workflow
+          assert "not all(r['gates'].values())" in workflow
+          assert '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd' in workflow
+          assert 'c9d6c44704013ba0c9430100e98a29a56b453304' in workflow
+          assert '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a' in workflow
+          assert '--dsh-comparator input/dsh/literature_comparators.py' in workflow
+          assert 'orbittrace-crossyear-two-view-membership-p2-development' in workflow
           print('PASS_CROSSYEAR_TWO_VIEW_P2_SOURCE_AUDIT')
           PY
       - name: Assert source-only firewall
