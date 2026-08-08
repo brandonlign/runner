@@ -1,0 +1,109 @@
+name: OrbitTrace v8 terminal synthesis exact AMOR result correction
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v8-external-terminal-amor-q-correction
+    paths:
+      - 'orbittrace_v8_external_validation_terminal_synthesis/AMOR_Q_RETRY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  synthesize:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen AMOR-result correction parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v8-external-terminal-amor-q-correction
+          fetch-depth: 1
+
+      - name: Enforce frozen synthesis and correction chain
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/PROTOCOL.md)" = "1556d3e16d1333f04438b00e8c945c4b23b080bf"
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/SCHEMA_CORRECTION.md)" = "b473a74bc427a120fd4053129e117a9ada7fb69d"
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/PROVENANCE_CORRECTION.md)" = "b209fdeb50a8b6ab5f5dff64891b435cbb6a507f"
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/ARTIFACT_METADATA_CORRECTION.md)" = "ff299104462e956f138cb7cad39ebd201efd3671"
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/AMOR_RESULT_CORRECTION.md)" = "d6aa0cafbf36388c6f2db3c9d8be2f456ad06147"
+          test "$(git hash-object orbittrace_v8_external_validation_terminal_synthesis/synthesize.py)" = "11f7cb3fb4e372701f5da40f62102eeafa5f1c5a"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/PROTOCOL.md)" = "8b0a1dc8565a702af6188d42dcebe6b1b71002b6"
+          python -m py_compile orbittrace_v8_external_validation_terminal_synthesis/synthesize.py
+
+      - name: Fetch repository branch-name inventory only
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          git for-each-ref --format='%(refname)' refs/remotes/origin | grep -v '/HEAD$' | sort > input/remote_refs.txt
+
+      - name: Fetch hash-pinned immutable result artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          f() { id="$1"; sha="$2"; n="$3"; mkdir -p "input/$n"; curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" -o "input/$n.zip"; echo "$sha  input/$n.zip" | sha256sum -c -; unzip -q "input/$n.zip" -d "input/$n"; }
+          f 9009728299 88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e v8
+          f 9006709213 e96e736b4e1d541fb4334d57bf20692404920e616857b783c88d1acba17a77f0 saamer20
+          f 9007437717 0e4482d750d8dea93ef56205180b4d456aaedc4adb6dc04d9239a35ab32cab50 saamer22
+          f 9010704319 474cbd33dab03b7866da1e0b4c5640824347655e2d1ad336076a752291146763 amor
+          f 9011943529 d44e0673683045683ca78fd79642b4afa1b9495e3586aa6a3e4bd29a1445424a ukmon
+          f 9012522244 7d9e68ec6f5f9790613869316839f9b6e5cb29c3a0c17f360dd244b0d6531c67 harvard
+          f 9012820047 e4251f178a8a47ac11a4d99b5470badb6f589bc3c897ac8fcebc70f381b85428 fripon
+          f 9012940108 b9dbc7374184c00cf39906c53a1ac13c17c30429c04f6184a2a7931c6208a0de hissar
+
+      - name: Run zero-catalogue immutable terminal synthesis
+        run: |
+          set -euo pipefail
+          python orbittrace_v8_external_validation_terminal_synthesis/synthesize.py \
+            --v8 input/v8 --saamer20 input/saamer20 --saamer22 input/saamer22 \
+            --amor input/amor --ukmon input/ukmon --harvard input/harvard \
+            --fripon input/fripon --hissar input/hissar \
+            --remote-refs input/remote_refs.txt --output output
+          cat output/V8_EXTERNAL_VALIDATION_TERMINAL_SYNTHESIS.md
+
+      - name: Enforce terminal verdict and exact AMOR result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v8_external_validation_terminal_synthesis.json').read_text())
+          assert r['verdict']=='INCONCLUSIVE_V8_EXTERNAL_VALIDATION_NO_POWERED_PRISTINE_PANEL'
+          assert r['external_record']['amor_1996_1998']['N']==19
+          assert r['external_record']['amor_1996_1998']['Q']==0
+          assert r['powered_external_pass_obtained'] is False
+          assert r['powered_external_scientific_fail_obtained'] is False
+          assert r['v8_method_changed_from_external_results'] is False
+          assert r['external_power_floors_lowered'] is False
+          assert r['new_detector_developed_from_external_results'] is False
+          assert r['successor_detector_authorized'] is False
+          assert r['target_reveal_authorized'] is False
+          assert r['orbittrace_target_information_access'] is False
+          assert r['catalogue_or_web_access_this_synthesis'] is False
+          assert r['scientific_value_access_this_synthesis'] is False
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/synthesis_commit.txt
+          sha256sum orbittrace_v8_external_validation_terminal_synthesis/*.md orbittrace_v8_external_validation_terminal_synthesis/synthesize.py orbittrace_pooled_year_centroid_v8/PROTOCOL.md > output/source_sha256.txt 2>/dev/null || true
+          sha256sum input/*.zip > output/input_artifact_sha256.txt 2>/dev/null || true
+          sha256sum input/remote_refs.txt > output/remote_refs_sha256.txt 2>/dev/null || true
+
+      - name: Upload terminal synthesis artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v8-external-validation-terminal-synthesis-final
+          path: output
+          if-no-files-found: error
+          retention-days: 90
