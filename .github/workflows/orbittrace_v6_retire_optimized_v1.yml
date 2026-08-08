@@ -1,0 +1,22 @@
+name: Retire redundant optimized v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-v6-performance-optimization-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-optimized-development
+  cancel-in-progress: true
+
+jobs:
+  retire:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo 'Fanout-v2 is now the exact source-audited execution path.'
+          echo 'This run exists only to cancel the redundant optimized-v1 concurrency group.'
