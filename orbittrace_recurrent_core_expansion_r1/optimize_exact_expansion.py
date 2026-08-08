@@ -21,9 +21,11 @@ end = sum(len(x) for x in lines[: node.end_lineno])
 old = text[start:end]
 
 for token in (
+    'scan_lookup = {year: {str(e["id"]): e for e in scan_by_year[year]} for year in YEARS}',
     'medoid_cache = {cid: component_orbit_medoid(c, orbit_by_id, dsh) for cid, c in component_by_id.items()}',
     'for family in families:',
     'for event in local_events:',
+    'geom = float(support.centroid_distance(event_center(event), comp["centroid"], base))',
     'distance = scalar_dsh(orbit_by_id[eid], medoid["orbit"], dsh)',
     'assignment_rule',
     'new_members_never_become_seeds',
@@ -50,24 +52,45 @@ def _expand_memberships_optimized_core(
     require(len(component_by_id) == len(components), "component IDs not unique")
     family_rank = {fid: i for i, fid in enumerate(order, 1)}
     all_seed_ids = set().union(*(set(map(str, f["event_ids"])) for f in families))
+
+    # Frozen `scan_lookup` is intentionally omitted: static inspection proves it is
+    # assigned but never read anywhere in expand_memberships.
     sol_bins: dict[int, dict[int, list[dict[str, Any]]]] = {year: defaultdict(list) for year in YEARS}
     for year in YEARS:
         for event in scan_by_year[year]:
             sol_bins[year][int(math.floor(float(event["sol"]))) % 360].append(event)
 
-    # Exact dead-work elimination only: components never referenced by a recurrent
-    # family can never be `comp` or `partner` below, so their medoids cannot affect
-    # any proposal, assignment, ranking, diagnostic, or gate.
+    # Exact dead-work elimination only. Frozen-source static proof establishes that
+    # medoid_cache is read only as medoid_cache[str(partner["component_id"])], with
+    # partner bound by `for partner in comps` and comps constructed solely from the
+    # current recurrent family's component_ids.
     active_component_ids = sorted({str(cid) for family in families for cid in family["component_ids"]})
     require(set(active_component_ids).issubset(component_by_id), "family references unknown component")
     medoid_cache: dict[str, dict[str, Any] | None] = {}
     print(
         f"R1_EXPANSION_START families={len(families)} components_total={len(components)} "
-        f"components_active={len(active_component_ids)} seeds={len(all_seed_ids)}",
+        f"components_active={len(active_component_ids)} components_skipped={len(components)-len(active_component_ids)} "
+        f"seeds={len(all_seed_ids)}",
         flush=True,
     )
     for medoid_i, cid in enumerate(active_component_ids, 1):
-        medoid_cache[cid] = component_orbit_medoid(component_by_id[cid], orbit_by_id, dsh)
+        component = component_by_id[cid]
+        seed_count = len(component.get("event_ids", []))
+        if seed_count >= 100:
+            print(
+                f"R1_MEDOID_LARGE_BEGIN {medoid_i}/{len(active_component_ids)} "
+                f"component={cid} seed_events={seed_count} elapsed_s={_time.perf_counter()-_t0:.1f}",
+                flush=True,
+            )
+        medoid_cache[cid] = component_orbit_medoid(component, orbit_by_id, dsh)
+        if seed_count >= 100:
+            medoid = medoid_cache[cid]
+            valid_count = 0 if medoid is None else int(medoid["valid_orbit_count"])
+            print(
+                f"R1_MEDOID_LARGE_DONE {medoid_i}/{len(active_component_ids)} "
+                f"component={cid} valid_orbits={valid_count} elapsed_s={_time.perf_counter()-_t0:.1f}",
+                flush=True,
+            )
         if medoid_i % 25 == 0 or medoid_i == len(active_component_ids):
             print(
                 f"R1_MEDOID_PROGRESS {medoid_i}/{len(active_component_ids)} "
@@ -81,12 +104,10 @@ def _expand_memberships_optimized_core(
     geometry_candidates = 0
     physical_passes = 0
 
-    # Memoize pure computations without changing any numerical expression.
-    # Object identity is used for event centers so duplicate event IDs, if any,
-    # cannot alter frozen semantics.
-    event_center_cache: dict[int, dict[str, float]] = {}
-    event_center_cache_hits = 0
-    dsh_cache: dict[tuple[str, str], float] = {}
+    # Exact memoization of the unchanged frozen scalar_dsh call. The cache key uses
+    # the candidate event ID plus the identity of the exact orbit dict returned by
+    # component_orbit_medoid, so it cannot conflate different medoid orbit objects.
+    dsh_cache: dict[tuple[str, int], float] = {}
     dsh_cache_hits = 0
 
     for family_i, family in enumerate(families, 1):
@@ -118,25 +139,19 @@ def _expand_memberships_optimized_core(
                     continue
                 if abs(float(base.wrap180(float(event["sol"]) - float(comp["centroid"]["sol"])))) > 6.0 + 1e-12:
                     continue
-                center_key = id(event)
-                if center_key in event_center_cache:
-                    center = event_center_cache[center_key]
-                    event_center_cache_hits += 1
-                else:
-                    center = event_center(event)
-                    event_center_cache[center_key] = center
-                geom = float(support.centroid_distance(center, comp["centroid"], base))
+                # Preserve the exact frozen geometry expression byte-for-byte.
+                geom = float(support.centroid_distance(event_center(event), comp["centroid"], base))
                 if geom > FAMILY_LINK_RADIUS + 1e-12:
                     continue
                 geometry_candidates += 1
                 best_phys: tuple[float, str, dict[str, Any]] | None = None
                 for partner_cid, medoid in partner_medoid_rows:
-                    medoid_eid = str(medoid["event_id"])
-                    cache_key = (eid, medoid_eid)
+                    cache_key = (eid, id(medoid["orbit"]))
                     if cache_key in dsh_cache:
                         distance = dsh_cache[cache_key]
                         dsh_cache_hits += 1
                     else:
+                        # Preserve the exact frozen scalar D_SH implementation for every cache miss.
                         distance = scalar_dsh(orbit_by_id[eid], medoid["orbit"], dsh)
                         dsh_cache[cache_key] = distance
                     row = (distance, partner_cid, medoid)
@@ -161,9 +176,8 @@ def _expand_memberships_optimized_core(
             print(
                 f"R1_EXPANSION_PROGRESS families={family_i}/{len(families)} "
                 f"components={component_attempts} geom_pass={geometry_candidates} "
-                f"physical_pass={physical_passes} center_cache_hits={event_center_cache_hits} "
-                f"dsh_cache_entries={len(dsh_cache)} dsh_cache_hits={dsh_cache_hits} "
-                f"elapsed_s={_time.perf_counter()-_t0:.1f}",
+                f"physical_pass={physical_passes} dsh_cache_entries={len(dsh_cache)} "
+                f"dsh_cache_hits={dsh_cache_hits} elapsed_s={_time.perf_counter()-_t0:.1f}",
                 flush=True,
             )
 
@@ -188,8 +202,8 @@ def _expand_memberships_optimized_core(
     require(all(set(map(str, orig["event_ids"])).issubset(set(map(str, expanded_by_id[str(orig["family_id"])]["event_ids"]))) for orig in families), "R1 removed a frozen seed event")
     print(
         f"R1_EXPANSION_COMPLETE assigned={len(assignments)} proposals={len(proposals)} "
-        f"center_cache_hits={event_center_cache_hits} dsh_cache_entries={len(dsh_cache)} "
-        f"dsh_cache_hits={dsh_cache_hits} elapsed_s={_time.perf_counter()-_t0:.1f}",
+        f"dsh_cache_entries={len(dsh_cache)} dsh_cache_hits={dsh_cache_hits} "
+        f"elapsed_s={_time.perf_counter()-_t0:.1f}",
         flush=True,
     )
     return expanded, {
@@ -228,9 +242,9 @@ def expand_memberships(
     sample_component_ids = {str(cid) for family in sample_families for cid in family["component_ids"]}
     sample_components = [c for c in components if str(c["component_id"]) in sample_component_ids]
 
-    # Include one real target-excluded unreferenced component when available. This
-    # directly tests that eliminating its medoid computation leaves the complete
-    # frozen expansion return value unchanged.
+    # Include one real target-excluded unreferenced component when available. The
+    # frozen reference computes its medoid; the optimized function must skip it and
+    # still return an exactly equal complete result.
     extras = [c for c in components if str(c["component_id"]) not in sample_component_ids]
     valid_extras = [c for c in extras if len(c.get("event_ids", [])) >= MIN_VALID_PARTNER_ORBITS]
     extra = min(valid_extras or extras, key=lambda c: (len(c.get("event_ids", [])), str(c["component_id"]))) if extras else None
@@ -240,8 +254,9 @@ def expand_memberships(
 
     print(
         f"R1_EQUIVALENCE_CONTEXT families_total={len(families)} components_total={len(components)} "
-        f"components_active={len(full_active_component_ids)} sample_families={sample_n} "
-        f"sample_components={len(sample_components)} unreferenced_test_components={extra_count}",
+        f"components_active={len(full_active_component_ids)} components_skippable={len(components)-len(full_active_component_ids)} "
+        f"sample_families={sample_n} sample_components={len(sample_components)} "
+        f"unreferenced_test_components={extra_count}",
         flush=True,
     )
 
@@ -289,8 +304,8 @@ out.mkdir(exist_ok=True)
 record = {
     "optimization_scope": [
         "skip medoid construction for components not referenced by recurrent families",
-        "memoize unchanged event_center computation by event object identity",
-        "memoize exact scalar D_SH by event id and partner medoid event id",
+        "remove frozen scan_lookup assignment proven unused within expand_memberships",
+        "memoize unchanged scalar D_SH by candidate event id and exact medoid orbit object identity",
         "progress and timing logging only",
     ],
     "old_expand_sha256": hashlib.sha256(old.encode()).hexdigest(),
@@ -299,6 +314,7 @@ record = {
     "bounded_equivalence_includes_real_unreferenced_component_when_available": True,
     "numerical_approximation": False,
     "geometry_prefilter_added": False,
+    "event_center_memoization": False,
     "scientific_rule_changed": False,
     "distance_definition_changed": False,
     "dsh_definition_changed": False,
