@@ -1,0 +1,78 @@
+name: OrbitTrace v6-LF final Stage-A source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-final-exact-id-firewall-v2
+    paths:
+      - orbittrace_v6_lf_final_stage_a/PROTOCOL.md
+      - orbittrace_v6_lf_final_stage_a/run_stage_a.py
+      - .github/workflows/orbittrace_v6_lf_final_stage_a_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-final-stage-a-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-final-stage-a-freeze
+      - name: Compile and prove no-label/no-target Stage-A boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_lf_final_stage_a/run_stage_a.py
+          sha256sum orbittrace_v6_lf_final_stage_a/run_stage_a.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_v6_lf_final_stage_a/run_stage_a.py')
+          text=p.read_text(); tree=ast.parse(text); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          constants={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: constants[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert constants['YEARS']==(2022,2023)
+          assert constants['REPAIRED_V6_SHA256']=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          assert constants['STAGE_A_SCHEMA']=='orbittrace-final-stage-a-ranked-families-v2'
+          assert constants['METHOD_ID']=='v6-LF-all-event-Mondrian-null'
+          geom=ast.get_source_segment(text,defs['parse_full_geometry'])
+          assert 'support.dd.get_monthly_file_content_by_date(key)' in geom
+          assert 'support.read_gmn_frame(text)' in geom and 'support.column_map(frame)' in geom
+          assert 'frame[columns[' not in geom and 'frame.iloc' not in geom and 'normalize_label' not in geom
+          assert 'columns[\'label\']' in geom  # column name/provenance only
+          assert 'base.wrap180(float(lam[int(index)])-s)' in geom
+          assert "complex_key':'HIDDEN'" in geom and "dict(event,complex_key='SPORADIC')" in geom
+          assert 'BLIND_LOW' not in geom and 'BLIND_HIGH' not in geom
+          main=ast.get_source_segment(text,defs['main'])
+          assert "v6.scan_year_v6(old,year,scan[year],calibration[year]" in main
+          assert "v6.build_family_track_v6(old,components,base,'v3')" in main
+          assert "v6.build_family_track_v6(old,components,base,'fixed4_rescue')" in main
+          assert "wrapper.install(v6,workers=4,min_parallel_records=256)" in main
+          assert "'target_reference_accessed':False" in main
+          assert "'catalogue_shower_labels_used':False" in main
+          assert "'all_event_null':True" in main
+          assert "'parameter_search':False" in main and "'null_trimming':False" in main
+          assert 'evaluate_families' not in main and 'normalize_label' not in main
+          record=ast.get_source_segment(text,defs['family_record'])
+          assert set(('family_id','rank','years','event_ids_by_year')) <= {s.value for s in ast.walk(defs['family_record']) if isinstance(s,ast.Constant) and isinstance(s.value,str)}
+          protocol=Path('orbittrace_v6_lf_final_stage_a/PROTOCOL.md').read_text()
+          assert 'complete GMN **2022 and 2023** geometry' in protocol
+          assert 'does **not** remove solar longitude 20°–55°' in protocol
+          assert 'shower-label **values**' in protocol
+          assert 'orbittrace-final-stage-a-ranked-families-v2' in protocol
+          print('PASS_V6_LF_FINAL_STAGE_A_SOURCE_AUDIT')
+          PY
+      - name: Assert no-data boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_GMN_DATA_NO_LABEL_VALUES_NO_TARGET_REFERENCE
