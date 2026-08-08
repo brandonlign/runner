@@ -1,0 +1,1 @@
+Execution-only trigger for the bounded target-excluded exact-equivalence proof of the implementation-only R1 performance optimization. This diagnostic must terminate before a full R1 scientific verdict.
