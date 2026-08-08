@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/orbittrace_p1_matched_literature_execution.yml
       - .github/workflows/orbittrace_p1_matched_literature_execution_source_audit.yml
+      - orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py
+      - orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel_intermediate.py
 
 permissions:
   contents: read
@@ -21,10 +23,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-p1-matched-literature-implementation-freeze
-      - name: Prove guarded chronology and exact identities
+      - name: Prove guarded chronology, wrapper identity, and exact inputs
         run: |
           set -euo pipefail
           python - <<'PY'
+          import ast,hashlib
           from pathlib import Path
           w=Path('.github/workflows/orbittrace_p1_matched_literature_execution.yml').read_text()
           for token in (
@@ -52,7 +55,20 @@ jobs:
           assert 'P1_MATCHED_INPUT_INELIGIBLE_EXACT_V8_SUPPORT' in w
           assert "if r['matched_input_ineligible']:" in w
           assert "assert not r['broad_catalogue_superiority'] and not r['sparse_stream_superiority']" in w
-          print('PASS_P1_MATCHED_EXECUTION_CHRONOLOGY_AND_PROVENANCE')
+
+          wrapper=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel.py').read_text()
+          tree=ast.parse(wrapper); vals={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: vals[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert vals['INTERMEDIATE_SHA256']=='af0c48e185793514ea98e90bdeb0fcf18be60751deeb7c818fac0c2d11b1cb1e'
+          assert vals['RUNTIME_SHA256']=='127ff2af8cd2597736cedbb4eab19cecdf7985e89f65c5267eda46e97ed82dcb'
+          intermediate=Path('orbittrace_probabilistic_membership_p1_literature/run_pretruth_panel_intermediate.py').read_bytes()
+          assert hashlib.sha256(intermediate).hexdigest()==vals['INTERMEDIATE_SHA256']
+          assert "runpy.run_path(str(RUNTIME), run_name='__main__')" in wrapper
+          assert "support.CORPUS = 'sonotaco-exact-row-literature-pairwise'" not in wrapper
+          print('PASS_P1_MATCHED_EXECUTION_CHRONOLOGY_RUNTIME_AND_PROVENANCE')
           PY
       - name: Prove no activation on freeze branch
         run: |
