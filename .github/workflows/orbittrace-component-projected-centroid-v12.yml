@@ -1,0 +1,180 @@
+name: OrbitTrace component-projected centroid v12 development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-pooled-year-centroid-v8
+    paths:
+      - 'orbittrace_component_projected_centroid_v12/**'
+      - '.github/workflows/orbittrace-component-projected-centroid-v12.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out frozen v12 head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Enforce frozen clean-room source and predecessor boundary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v6 input/centroid input/representation output
+
+          git fetch --no-tags --depth=1 origin c9d6c44704013ba0c9430100e98a29a56b453304
+          git diff --name-only FETCH_HEAD HEAD | sort > /tmp/v12_paths.txt
+          printf '%s\n' \
+            '.github/workflows/orbittrace-component-projected-centroid-v12.yml' \
+            'orbittrace_component_projected_centroid_v12/PROTOCOL.md' \
+            'orbittrace_component_projected_centroid_v12/run_development.py' | sort > /tmp/expected_paths.txt
+          diff -u /tmp/expected_paths.txt /tmp/v12_paths.txt
+
+          test "$(git hash-object orbittrace_component_projected_centroid_v12/PROTOCOL.md)" = "b3b26c594c5913bd7e21e05177d81dcacc58948f"
+          test "$(git hash-object orbittrace_component_projected_centroid_v12/run_development.py)" = "73d3365a1cd3ca81c51ed4ba697ee71b3c746025"
+          test "$(git hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = "f248df78e1258b132b41aecca6a985a5eb782654"
+          test "$(git hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo "3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip" | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
+          echo "a1faacf51e1f4ca2a3a92b20e27d1f07f00e1d32ab33993916379ff36acea062  input/centroid.zip" | sha256sum -c -
+          unzip -q input/centroid.zip -d input/centroid
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9013581721/zip" -o input/representation.zip
+          echo "50590e37a674e9562c776c86820c870a775b2c8c76259873f1259fc804b31ac2  input/representation.zip" | sha256sum -c -
+          unzip -q input/representation.zip -d input/representation
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v6=json.loads(Path('input/v6/label_free_sparse_support_v6_development.json').read_text())
+          assert v6['verdict']=='PASS_LABEL_FREE_SPARSE_SUPPORT_V6_DEVELOPMENT'
+          assert v6['family_count']==226
+          assert v6['metrics']['multiplicity']['recovered_at_100']==60
+          assert v6['metrics']['label_free_persistence']['recovered_at_100']==59
+          assert v6['metrics']['label_free_persistence']['qualified_matches']==95
+          c=json.loads(Path('input/centroid/component_centroid_source_audit.json').read_text())
+          assert c['verdict']=='PASS_COMPONENT_CENTROID_SOURCE_AUDIT'
+          assert c['catalogue_access'] is False and c['scientific_value_access'] is False
+          assert c['target_information_access'] is False
+          a=json.loads(Path('input/representation/family_year_representation_source_only_audit.json').read_text())
+          assert a['verdict']=='PASS_FAMILY_YEAR_REPRESENTATION_SOURCE_ONLY_AUDIT'
+          assert a['configuration']['blind_exclusion']==[20.0,55.0]
+          assert a['family_count']==226 and a['family_year_count']==452
+          assert a['families_with_duplicate_same_year_components']==75
+          assert a['duplicate_family_years']==118
+          assert a['pooled_centroid_outside_every_constituent_1p5_neighborhood_count']==0
+          assert a['configuration']['label_use'].startswith('none')
+          assert 'No shower labels' in a['interpretation_boundary']
+          PY
+
+          python -m py_compile \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_component_projected_centroid_v12/run_development.py
+          rm -rf output/*
+          echo PASS_COMPONENT_PROJECTED_CENTROID_V12_PREDATA_GUARDS
+
+      - name: Run one-shot target-excluded v12 development
+        env:
+          PYTHONPATH: input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python orbittrace_component_projected_centroid_v12/run_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v6-result-json input/v6/label_free_sparse_support_v6_development.json \
+            --centroid-audit-json input/centroid/component_centroid_source_audit.json \
+            --output output
+          cat output/COMPONENT_PROJECTED_CENTROID_V12_DEVELOPMENT.md
+
+      - name: Enforce final decision and blindness boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/component_projected_centroid_v12_development.json').read_text())
+          assert r['verdict'] in {'PASS_COMPONENT_PROJECTED_CENTROID_V12_PROMOTE','FAIL_COMPONENT_PROJECTED_CENTROID_V12_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['family_count']==226
+          assert r['qualified_known_showers']==95
+          assert r['centroid_repair_diagnostics']['projected_duplicate_family_years']==118
+          assert r['centroid_repair_diagnostics']['projected_duplicate_families']==75
+          assert r['centroid_repair_diagnostics']['projection_uses_labels'] is False
+          assert r['centroid_repair_diagnostics']['projection_uses_episode_scores'] is False
+          assert r['configuration']['no_component_rule_search'] is True
+          assert r['configuration']['no_score_based_component_selection'] is True
+          assert r['configuration']['no_label_based_component_selection'] is True
+          assert r['representation_source_only_audit']['artifact_zip_digest']=='sha256:50590e37a674e9562c776c86820c870a775b2c8c76259873f1259fc804b31ac2'
+          assert 'No OrbitTrace target coordinates' in r['claim_boundary']
+          print('ORBITTRACE_COMPONENT_PROJECTED_CENTROID_V12_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_COMPONENT_PROJECTED_CENTROID_V12_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/development_commit.txt
+          sha256sum \
+            orbittrace_component_projected_centroid_v12/PROTOCOL.md \
+            orbittrace_component_projected_centroid_v12/run_development.py \
+            orbittrace_pooled_year_centroid_v8/run_development.py \
+            orbittrace_label_free_sparse_support_v6/run_development.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            input/v3/multi_anchor_energy_v3.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload v12 development artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-component-projected-centroid-v12-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
