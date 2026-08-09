@@ -41,8 +41,15 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
           mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-          test "${#files[@]}" -eq 1
-          test "${files[0]}" = 'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md'
+          test "${#files[@]}" -eq 2
+          test "${files[0]}" = '.github/workflows/orbittrace_p17_matched_pretruth.yml'
+          test "${files[1]}" = 'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md'
+          git show "$BASE_SHA":.github/workflows/orbittrace_p17_matched_pretruth.yml > /tmp/p17_base_workflow.yml
+          git show "$HEAD_SHA":.github/workflows/orbittrace_p17_matched_pretruth.yml > /tmp/p17_child_workflow.yml
+          test "$(tail -n 1 /tmp/p17_child_workflow.yml)" = '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1'
+          head -n -1 /tmp/p17_child_workflow.yml > /tmp/p17_child_without_nonce.yml
+          cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml
+          echo PASS_P17_CHILD_WORKFLOW_DIFF_IS_INERT_NONCE_ONLY
           marker="$(git show "$HEAD_SHA":orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md)"
           test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P17_MATCHED_PRETRUTH'
           test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31332157812'
@@ -52,6 +59,7 @@ jobs:
           test "$(printf '%s\n' "$marker" | wc -l)" -eq 5
           git checkout --detach "$BASE_SHA"
           test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
+          test "$(git hash-object .github/workflows/orbittrace_p17_matched_pretruth.yml)" = "$(git hash-object /tmp/p17_base_workflow.yml)"
 
           # Require exact promoted P17 source and exact artifact-only development vacuity PASS.
           test "$(git hash-object orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py)" = '60d371b46d330ccbd59a08598fd36be88881c23d'
