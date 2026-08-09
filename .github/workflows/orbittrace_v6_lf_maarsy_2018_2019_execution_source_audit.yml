@@ -1,0 +1,98 @@
+name: OrbitTrace v6-LF MAARSY 2018/2019 execution source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-maarsy-2018-2019-external-freeze
+    paths:
+      - orbittrace_v6_lf_maarsy_2018_2019_external/maarsy_transport.py
+      - orbittrace_v6_lf_maarsy_2018_2019_external/run_geometry_freeze.py
+      - orbittrace_v6_lf_maarsy_2018_2019_external/run_orbital_validation.py
+      - .github/workflows/orbittrace_v6_lf_maarsy_2018_2019_external_execution.yml
+      - .github/workflows/orbittrace_v6_lf_maarsy_2018_2019_execution_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile frozen external implementation
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v6_lf_maarsy_2018_2019_external/maarsy_transport.py \
+            orbittrace_v6_lf_maarsy_2018_2019_external/run_geometry_freeze.py \
+            orbittrace_v6_lf_maarsy_2018_2019_external/run_orbital_validation.py
+      - name: Prove preorbit and postranking firewalls statically
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          tpath=Path('orbittrace_v6_lf_maarsy_2018_2019_external/maarsy_transport.py'); t=tpath.read_text(); tree=ast.parse(t)
+          g=Path('orbittrace_v6_lf_maarsy_2018_2019_external/run_geometry_freeze.py').read_text()
+          o=Path('orbittrace_v6_lf_maarsy_2018_2019_external/run_orbital_validation.py').read_text()
+          w=Path('.github/workflows/orbittrace_v6_lf_maarsy_2018_2019_external_execution.yml').read_text()
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert "YEARS=(2018,2019)" in t and 'BLIND_LOW=20.0' in t and 'BLIND_HIGH=55.0' in t and 'MAX_EVENTS_PER_BIN=10_000' in t
+          assert 'EXPECTED_FILE_SIZE=21_485_785_089' in t and 'EXPECTED_FILE_MD5="01820c6a90ea1415b011bb013a4d9213"' in t
+          assert 'MONTH_RE=re.compile(r"^data/(2018|2019)/(0[1-9]|1[0-2])/kep_collect\\.h5$")' in t
+          assert 'STOP_PREFIX="data/2020/"' in t
+          geom=ast.get_source_segment(t,defs['parse_geometry_member']) or ''
+          orbit=ast.get_source_segment(t,defs['read_needed_orbits']) or ''
+          assert 'sol_all=np.asarray(h["sun_lon"][()]' in geom
+          assert 'blind=valid_sol&(sol_all>=BLIND_LOW)&(sol_all<=BLIND_HIGH)' in geom
+          assert '_read_retained(h["slat"],keep)' in geom and '_read_retained(h["slon"],keep)' in geom and '_read_retained(h["vels"],keep)' in geom
+          assert '"kepler"' not in geom and 'kepler_std' not in geom
+          assert 'h["kepler"]' in orbit
+          for forbidden in ('h["sun_lon"]','h["slat"]','h["slon"]','h["vels"]','h["kepler_std"]'):
+              assert forbidden not in orbit,forbidden
+          assert 'target_interval_radiant_speed_read":False' in t
+          assert 'orbital_dataset_opened":False' in t
+          assert 'kepler_std_opened":False' in t
+          assert 'geometry_fields_opened_this_stage":False' in t
+
+          assert 'V6LF_REPAIRED_SHA256="257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24"' in g
+          assert 'v6lf.scan_year_v6' in g and 'v6lf.build_family_track_v6(old,v6_components,base,"v3")' in g
+          assert 'complex_key="SPORADIC"' in g and 'complex_key="HIDDEN"' in g
+          assert 'proposal_cap_per_window' in g and 'max_primary_proposals_per_year' in g
+          assert 'v8core.label_free_scan_year' in g and 'v8comp.mult.score_families' in g and 'rank_scored(scored,"multiplicity")' in g
+          assert 'identical_dual_method_event_universe' in g
+          assert 'orbit_access":False' in g and 'label_access":False' in g and 'target_information_access":False' in g
+          assert 'MIN_FAMILIES=50' in g
+
+          for token in ('DSH_THRESHOLD=0.05','MIN_YEAR_ORBIT_MEMBERS=4','MIN_FAMILY_PRECISION=0.50','MIN_Q=10','MIN_VALID_ROW_FRACTION=0.90'):
+              assert token in o,token
+          assert 'transport.read_needed_orbits(needed,args.output)' in o
+          assert 'matrix=dsh.pairwise_dsh' in o
+          assert 'v6_metrics["Q"]>=math.ceil(0.80*v8_metrics["Q"])' in o
+          assert 'v6_metrics["T25"]>=max(2,math.ceil(0.80*v8_metrics["T25"]))' in o
+          assert 'v6_metrics["T50"]>=max(4,math.ceil(0.80*v8_metrics["T50"]))' in o
+          assert 'v6_metrics["MRR_Q"]>=0.80*v8_metrics["MRR_Q"]' in o
+          assert 'v6_summary["median_corroborated_precision"]>=0.60' in o
+          assert 'PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_VALIDATION' in o
+          assert 'alternate_year_or_subset_search":False' in o
+
+          assert 'EXECUTE_V6_LF_MAARSY_2018_2019_AFTER_DEVELOPMENT_AND_LITERATURE_PASS' in w
+          assert 'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT' in w
+          assert "{'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}" in w
+          assert 'PASS_MAARSY_2018_2019_PR_FRESHNESS' in w
+          assert "grep -Eiq 'maarsy.*2018.*2019.*(geometry|external|orbit)'" in w
+          assert "geometry_verdict != 'PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_GEOMETRY_FREEZE'" in w
+          assert "geometry_verdict == 'PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_GEOMETRY_FREEZE'" in w
+          assert w.index('Execute frozen geometry/ranking stage with zero orbit access') < w.index('Execute frozen post-ranking native-orbit validation')
+          assert 'orbittrace_v6_lf_maarsy_2018_2019_external/RUN.md' in w
+          print('PASS_V6_LF_MAARSY_2018_2019_EXECUTION_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only pristine boundary
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_v6_lf_maarsy_2018_2019_external/RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e geometry
+          echo NO_MAARSY_2018_2019_VALUES_NO_ORBIT_VALUES_NO_TARGET_ACCESS
