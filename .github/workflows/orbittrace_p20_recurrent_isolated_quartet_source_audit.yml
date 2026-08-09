@@ -98,7 +98,7 @@ jobs:
           ):
               assert x in main, x
 
-          # Permit literal names in the human-readable claim boundary, but forbid
+          # Permit literal survey names in the human-readable claim boundary, but forbid
           # any implementation surface capable of reaching external/target data.
           imported=set()
           for node in ast.walk(tree):
@@ -114,7 +114,14 @@ jobs:
               'SNMv3/','zenodo.org','silseth_thesis_data','kep_collect.h5','kepler',
           ):
               assert x not in s, x
-          assert 'No SonotaCo/MAARSY scientific value or OrbitTrace target information is accessed.' in s
+          string_constants=[
+              node.value for node in ast.walk(tree)
+              if isinstance(node,ast.Constant) and isinstance(node.value,str)
+          ]
+          assert any(
+              'No SonotaCo/MAARSY scientific value or OrbitTrace target information is accessed.' in value
+              for value in string_constants
+          )
 
           print('PASS_P20_AST_LABEL_FIREWALL')
           print('PASS_P20_EXACT_4PLUS4_RECIPROCAL_RULE')
