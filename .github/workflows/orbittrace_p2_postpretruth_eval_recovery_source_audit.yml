@@ -68,12 +68,12 @@ jobs:
       - name: Synthetic seed reconstruction leaves additions immutable
         run: |
           python - <<'PY'
-          import ast,copy
+          import ast,copy,typing
           from pathlib import Path
           source=Path('orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py').read_text()
           tree=ast.parse(source)
           fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='reconstruct_v8_seeds')
-          ns={'copy':copy,'EXPECTED_FAMILY_COUNT':226}
+          ns={'copy':copy,'Any':typing.Any,'EXPECTED_FAMILY_COUNT':226}
           def require(ok,message):
               if not ok: raise RuntimeError(message)
           ns['require']=require
