@@ -59,7 +59,8 @@ def main()->int:
     cps={}
     for panel,path in (('hdbscan',a.hdbscan_checkpoint),('sugar',a.sugar_checkpoint)):
         cp=pickle.loads(path.read_bytes())
-        require(cp.get('p15_halo_source_sha256')==P15_MATCHED_SHA,f'P15 matched source changed {panel}')
+        require(cp.get('p15_generated_matched_source_sha256')==P15_MATCHED_SHA,f'P15 matched source changed {panel}')
+        require(cp.get('p15_halo_availability_frozen_before_truth') is True,f'P15 halo availability not pretruth-frozen {panel}')
         require(cp.get('p15_secondary_characterization_only') is True,f'P15 halo became primary {panel}')
         cps[panel]={
             'availability_sha256':cp['p15_availability_sha256'],
