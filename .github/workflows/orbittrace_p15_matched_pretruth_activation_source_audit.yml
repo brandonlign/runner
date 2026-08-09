@@ -18,22 +18,36 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - name: Prove activation is gated by exact development PASS and generated shell stops pretruth
+      - name: Prove activation preserves failed-byte run, requires exact semantic PASS, and generated shell stops pretruth
         run: |
           set -euo pipefail
           wf=.github/workflows/orbittrace_p15_matched_pretruth.yml
           for x in \
+            'EXECUTE_P15_MATCHED_PRETRUTH_AFTER_SEMANTIC_DEVELOPMENT_PASS' \
             '31328065110' \
-            '90dc77fafd7586e9743d28228030c7eb7c908ceb' \
-            'PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT' \
+            '9042324169' \
+            'b49c7281387521762aeab454f0a5dd71addf318dbffeb3b5cb186cdee568913c' \
+            "r['conclusion']=='failure'" \
+            '31329252140' \
+            '9042432234' \
+            '071f86af61e6e7efdc61dccc20a387381a64cc1e0b275f8987183d9c5481d917' \
+            'PASS_P15_SUPPORT_SAFE_HALO_SEMANTIC_DEVELOPMENT_COMPATIBILITY' \
+            'NUMERICALLY_STABLE_EXACT_DECISION_COMPATIBILITY' \
+            "r['bitwise_json_identity'] is False" \
+            "r['bitwise_identity_failure_preserved'] is True" \
+            "r['fallback_vacuous_on_development'] is True" \
+            "r['exact_event_membership_ids'] is True" \
+            "r['continuous_abs_tolerance']==1e-12" \
+            "r['max_continuous_abs_difference']<=1e-12" \
             '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b' \
             '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6' \
-            'p15_parent_p12_exact_json_identity' \
-            'p15_fallback_vacuous_on_development' \
-            "r['directions']==452 and r['unavailable_directions']==0" \
             'orbittrace-p15-matched-pretruth-checkpoints'; do
             grep -F "$x" "$wf"
           done
+          if grep -Fq "r['status']=='completed' and r['conclusion']=='success'" "$wf" && grep -Fq '31328065110' "$wf"; then
+            echo 'obsolete requirement that failed-byte source run itself succeed survived' >&2
+            exit 1
+          fi
           test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
           test "$(git hash-object orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v3.py)" = 'af257d4b4902f9783acecd6df52f111415e5188c'
           test "$(git hash-object orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py)" = '372f1a57d97e1b0f0ac8f1303ef84f242245bdde'
@@ -53,5 +67,5 @@ jobs:
             exit 1
           fi
           test ! -e orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md
-          echo PASS_P15_MATCHED_PRETRUTH_ACTIVATION_SOURCE_FREEZE
+          echo PASS_P15_MATCHED_PRETRUTH_SEMANTIC_ACTIVATION_SOURCE_FREEZE
           echo NO_COMPARATOR_DOWNLOAD_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
