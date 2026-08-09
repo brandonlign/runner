@@ -1,0 +1,45 @@
+name: OrbitTrace P16 matched pretruth checkpoint transform
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p16-core-rank-halo-membership-freeze
+    paths:
+      - orbittrace_core_rank_halo_membership_p16/P16_MATCHED_PRETRUTH_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p16-matched-pretruth-transform
+  cancel-in-progress: false
+
+jobs:
+  transform:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Transform exact frozen P15 checkpoints to P16 only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          chmod +x orbittrace_core_rank_halo_membership_p16/run_matched_pretruth_transform.sh
+          orbittrace_core_rank_halo_membership_p16/run_matched_pretruth_transform.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p16-matched-pretruth-checkpoints
+          path: |
+            pretruth/p16
+            output/p16_matched_pretruth_manifest.json
+          if-no-files-found: error
+          retention-days: 90
