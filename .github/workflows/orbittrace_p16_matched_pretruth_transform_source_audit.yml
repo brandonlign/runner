@@ -1,0 +1,67 @@
+name: OrbitTrace P16 matched pretruth transform source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_core_rank_halo_membership_p16/run_matched_pretruth_transform.sh
+      - .github/workflows/orbittrace_p16_matched_pretruth_transform.yml
+      - .github/workflows/orbittrace_p16_matched_pretruth_transform_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove P16 transform is pretruth-only and pinned to exact development/P15 pretruth runs
+        run: |
+          set -euo pipefail
+          s=orbittrace_core_rank_halo_membership_p16/run_matched_pretruth_transform.sh
+          w=.github/workflows/orbittrace_p16_matched_pretruth_transform.yml
+          bash -n "$s"
+          test "$(git hash-object "$s")" = '2684eb498206ed41e6025e964362b02ddc8674ac'
+          test "$(git hash-object orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py)" = 'a143d59be30a03091ae9a46ce169ff9b12280c99'
+          python -m py_compile orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py
+          for x in \
+            'EXECUTE_P16_MATCHED_PRETRUTH_TRANSFORM_FROM_P15' \
+            '31331442750' '5d27be8095130484293df962618350e5f25712cc' \
+            '31331471689' '9043046136' \
+            'sha256:fc87c995b489d791b8df279002062b9df601140889f408d4ec3ec3222b91fdc8' \
+            '07afd4ecf3b0e6907ca70f62c31f72bc944b861ff7cd75b462acf9cec242b9bb' \
+            '5a73952c2f8903b7eddb752054cee5aa46fa48891bb88d6af4bb014bfb61186b' \
+            'PASS_P16_CORE_RANK_HALO_MEMBERSHIP_CANONICAL_DEVELOPMENT_IDENTITY' \
+            'P16_CORE_RANK_LABEL_FREE_HALO_MEMBERSHIP' \
+            'PASS_P16_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES'; do
+            grep -F "$x" "$s"
+          done
+          for x in \
+            "cp['competitor_cluster_values_accessed'] is False" \
+            "cp['known_shower_truth_accessed'] is False" \
+            "'external_data_access':False" \
+            "'target_information_access':False" \
+            "'new_detector_score_threshold_or_member_proposal':False"; do
+            grep -F "$x" "$s"
+          done
+          # This stage may download only P16 development and P15 pretruth artifacts.
+          # Comparator assignments, truth parsers/archives, evaluator execution, external panels,
+          # and target-specific discovery surfaces are forbidden.
+          for forbidden in \
+            '9012424187' '8955917326' '8957940764' '8957263372' \
+            'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' \
+            '023a.zip' '025a.zip' 'MAARSY' 'OrbitTrace-April' 'target_coordinate'; do
+            if grep -Fq "$forbidden" "$s" "$w"; then
+              echo "posttruth/external/target token leaked into P16 pretruth transform: $forbidden" >&2
+              exit 1
+            fi
+          done
+          grep -F 'orbittrace_core_rank_halo_membership_p16/P16_MATCHED_PRETRUTH_RUN.md' "$w"
+          grep -F 'orbittrace-p16-matched-pretruth-checkpoints' "$w"
+          test ! -e orbittrace_core_rank_halo_membership_p16/P16_MATCHED_PRETRUTH_RUN.md
+          echo PASS_P16_MATCHED_PRETRUTH_TRANSFORM_SOURCE_FREEZE
+          echo NO_COMPARATOR_ASSIGNMENTS_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
