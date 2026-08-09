@@ -10,7 +10,7 @@ from typing import Any
 
 PANELS=('hdbscan','sugar')
 YEARS=(2023,2025)
-P13_TRANSPORT_SOURCE_SHA256='7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c'
+P13_TRANSPORT_SOURCE_SHA256='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'
 ASSIGNMENT_SHA256={
     'hdbscan':{2023:'35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',2025:'8e7580c52e41e6996d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3'},
     'sugar':{2023:'2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389',2025:'77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e'},
@@ -69,38 +69,22 @@ def main()->int:
         broad=bool(q['broad_pairwise_pass'] and all(year_broad.values()))
         all_sparse &= sparse
         panels[panel]={
-            'status':'ELIGIBLE_EVALUATED',
-            'sparse_pairwise_pass':sparse,
-            'broad_pairwise_pass':broad,
-            'year_sparse_pass':year_sparse,
-            'year_broad_pass':year_broad,
-            'pairwise_gates':q['pairwise_gates'],
-            'p13_core_annual':q['p3_annual'],
-            'competitor_annual':q['competitor_annual'],
-            'core_false_positive_burden':q['p3_false_positive_burden'],
-            'competitor_false_positive_burden':q['competitor_false_positive_burden'],
-            'core_pretruth_sha256':cp['p13_core_pretruth_sha256'],
-            'halo_membership_pretruth_sha256':cp['p13_halo_membership_pretruth_sha256'],
-            'halo_family_count':cp['p3_diagnostics']['p13_halo_family_count'],
-            'halo_assigned_nonseed_events':cp['p3_diagnostics']['p13_halo_assigned_nonseed_events'],
-            'assignment_source_sha256':ASSIGNMENT_SHA256[panel],
-            'assignment_counts':EXPECTED_COUNTS[panel],
+            'status':'ELIGIBLE_EVALUATED','sparse_pairwise_pass':sparse,'broad_pairwise_pass':broad,
+            'year_sparse_pass':year_sparse,'year_broad_pass':year_broad,'pairwise_gates':q['pairwise_gates'],
+            'p13_core_annual':q['p3_annual'],'competitor_annual':q['competitor_annual'],
+            'core_false_positive_burden':q['p3_false_positive_burden'],'competitor_false_positive_burden':q['competitor_false_positive_burden'],
+            'core_pretruth_sha256':cp['p13_core_pretruth_sha256'],'halo_membership_pretruth_sha256':cp['p13_halo_membership_pretruth_sha256'],
+            'halo_family_count':cp['p3_diagnostics']['p13_halo_family_count'],'halo_assigned_nonseed_events':cp['p3_diagnostics']['p13_halo_assigned_nonseed_events'],
+            'assignment_source_sha256':ASSIGNMENT_SHA256[panel],'assignment_counts':EXPECTED_COUNTS[panel],
         }
     verdict='PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' if all_sparse else 'FAIL_P13_MATCHED_SPARSE_SUPERIORITY_NO_GO'
     out={
-        'verdict':verdict,
-        'classification':'SPARSE_STREAM_SUPERIORITY' if all_sparse else 'NO_LITERATURE_SUPERIORITY',
+        'verdict':verdict,'classification':'SPARSE_STREAM_SUPERIORITY' if all_sparse else 'NO_LITERATURE_SUPERIORITY',
         'years':list(YEARS),'blind_exclusion':[20.0,55.0],
-        'primary_discovery_output':'immutable P13 recurrent core only',
-        'secondary_characterization_output':'exact transported P12 halo; cannot affect superiority',
-        'sparse_superiority_required_against_both_comparators_in_both_years':True,
-        'pairwise_only_no_cross_denominator_comparison':True,
-        'broad_only_does_not_authorize_external':True,
-        'p3_evaluator_classification':r['classification'],
-        'p3_evaluator_sparse_stream_superiority':r['sparse_stream_superiority'],
-        'panels':panels,
-        'target_access_authorized':False,
-        'external_validation_authorized':bool(all_sparse),
+        'primary_discovery_output':'immutable P13 recurrent core only','secondary_characterization_output':'exact transported P12 halo; cannot affect superiority',
+        'sparse_superiority_required_against_both_comparators_in_both_years':True,'pairwise_only_no_cross_denominator_comparison':True,
+        'broad_only_does_not_authorize_external':True,'p3_evaluator_classification':r['classification'],'p3_evaluator_sparse_stream_superiority':r['sparse_stream_superiority'],
+        'panels':panels,'target_access_authorized':False,'external_validation_authorized':bool(all_sparse),
         'claim_boundary':'Matched SonotaCo 2023/2025 exact-row comparison only. P13 advances only if sparse superiority passes independently against both HDBSCAN and Sugar in both years. Halo is characterization-only. No target authorization.',
     }
     require(bool(r['sparse_stream_superiority'])==all_sparse,'P3 evaluator/P13 sparse verdict mismatch')
