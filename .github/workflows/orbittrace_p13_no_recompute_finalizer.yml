@@ -1,0 +1,180 @@
+name: OrbitTrace P13 no-recompute core-halo finalizer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-core-halo-pretruth-reservation
+    paths:
+      - orbittrace_core_halo_p13/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p13-no-recompute-finalizer
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require one-file child and pinned P13 finalizer
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_core_halo_p13/RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_core_halo_p13/RUN.md)"
+          test "$(printf '%s\n' "$content" | sed -n '1p')" = 'FINALIZE_P13_AFTER_AUTHORITATIVE_P12_SCIENTIFIC_NO_GO'
+          test "$(printf '%s\n' "$content" | sed -n '2p')" = '31302353678'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+          expected="$(tr -d '[:space:]' < orbittrace_core_halo_p13/FINALIZER_GIT_BLOB_SHA)"
+          test "$expected" = '04ff0422e9f2aaf374e051b1a67f25e23bead129'
+          test "$(git hash-object orbittrace_core_halo_p13/finalize_from_p12.py)" = "$expected"
+          ! grep -E 'requests|gmn_python_api|parse_catalogue|hidden_labels|known_shower' orbittrace_core_halo_p13/finalize_from_p12.py
+          echo PASS_P13_PINNED_NO_RECOMPUTE_FINALIZER
+
+      - name: Fetch immutable P12 result artifact and exact core artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/p12 input/core output
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9035003746" -o /tmp/p12-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('/tmp/p12-meta.json').read_text())
+          assert m['id']==9035003746,m
+          assert m['name']=='orbittrace-drift-conditioned-two-view-membership-p12-development',m
+          assert m['workflow_run']['id']==31302353678,m
+          assert m['digest']=='sha256:4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7',m
+          assert not m['expired'],m
+          print('PASS_P13_P12_ARTIFACT_METADATA')
+          PY
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9035003746/zip" -o /tmp/p12.zip
+          echo '4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7  /tmp/p12.zip' | sha256sum -c -
+          unzip -q /tmp/p12.zip -d input/p12
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/p12/drift_conditioned_two_view_membership_p12_development.json').read_text())
+          assert r['verdict']=='FAIL_DRIFT_CONDITIONED_TWO_VIEW_MEMBERSHIP_P12_NO_GO'
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert r['baseline_v8']['recovered_at_500']==95
+          assert abs(r['baseline_v8']['mrr']-0.045531138942766655)<1e-15
+          assert abs(r['baseline_v8']['macro_f1']-0.1736657194465356)<1e-12
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert r['p12']['qualified_matches']==91
+          assert r['p12']['recovered_at_100']==58
+          assert abs(r['p12']['macro_f1']-0.37661279333940806)<1e-12
+          assert abs(r['p12_large_shower']['mean_recall']-0.24179462579908398)<1e-12
+          assert abs(r['p12_large_shower']['mean_precision']-0.8778478363509471)<1e-12
+          assert r['membership_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert r['drift_pretruth_sha256']=='de5bf862a8997a561a0d9c71b0ec69930168d7bbe08febcea8d63e2126a1682a'
+          assert r['density_pretruth_sha256']=='3fe9757b922c5764519ebc5f946c03a828da1bfbb4252d0613cf2455e130a272'
+          assert r['decisions_pretruth_sha256']=='6e11671cfb176302a58dd329d9fb09fc380a19e4ff9669bc444d5ce9624f00f5'
+          scientific={
+              'qualified_matches_no_regression','recovery_at_100_no_regression','top100_dominant_precision_at_least_065',
+              'macro_f1_gain_at_least_008','large_shower_mean_recall_at_least_15x_v8','large_shower_mean_precision_at_least_085',
+          }
+          assert all(bool(v) for k,v in r['gates'].items() if k not in scientific), {k:v for k,v in r['gates'].items() if k not in scientific and not bool(v)}
+          print('PASS_P13_AUTHORITATIVE_P12_NO_GO_INPUT')
+          PY
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925" -o /tmp/core-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('/tmp/core-meta.json').read_text())
+          assert m['id']==9005846925,m
+          assert m['digest']=='sha256:3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b',m
+          assert not m['expired'],m
+          print('PASS_P13_CORE_ARTIFACT_METADATA')
+          PY
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o /tmp/core.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  /tmp/core.zip' | sha256sum -c -
+          unzip -q /tmp/core.zip -d input/core
+          echo 'f76b8448f299ccf078fc5978c0890b9a084f131080db8d2136b5e6dba77edc7b  input/core/label_free_sparse_support_v6_families.json.gz' | sha256sum -c -
+          echo PASS_P13_IMMUTABLE_INPUT_IDENTITIES
+
+      - name: Finalize P13 without detector or truth recomputation
+        run: |
+          set -euo pipefail
+          python orbittrace_core_halo_p13/finalize_from_p12.py \
+            --p12-result-json input/p12/drift_conditioned_two_view_membership_p12_development.json \
+            --core-families-json-gz input/core/label_free_sparse_support_v6_families.json.gz \
+            --output output
+          cat output/DUAL_OUTPUT_CORE_HALO_P13_DEVELOPMENT.md
+
+      - name: Enforce deterministic P13 result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/dual_output_core_halo_p13_development.json').read_text())
+          assert r['verdict'] in {'PASS_DUAL_OUTPUT_CORE_HALO_P13_DEVELOPMENT','FAIL_DUAL_OUTPUT_CORE_HALO_P13_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['p13_primary_discovery_metrics_use_core_only'] is True
+          assert r['configuration']['p13_membership_metrics_use_halo_only'] is True
+          assert r['configuration']['p13_detector_recomputed'] is False
+          assert r['configuration']['p13_new_numeric_thresholds'] is False
+          assert r['configuration']['p13_parameter_search'] is False
+          assert r['core_discovery']['qualified_matches']==95
+          assert r['core_discovery']['recovered_at_100']==58
+          assert r['core_discovery']['recovered_at_500']==95
+          assert abs(r['core_discovery']['mrr']-0.045531138942766655)<1e-15
+          assert abs(r['core_discovery']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert abs(r['halo_membership']['macro_f1']-0.37661279333940806)<1e-12
+          assert abs(r['halo_membership']['large_shower']['mean_recall']-0.24179462579908398)<1e-12
+          assert abs(r['halo_membership']['large_shower']['mean_precision']-0.8778478363509471)<1e-12
+          assert r['halo_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert r['p12_drift_pretruth_sha256']=='de5bf862a8997a561a0d9c71b0ec69930168d7bbe08febcea8d63e2126a1682a'
+          assert r['p12_density_pretruth_sha256']=='3fe9757b922c5764519ebc5f946c03a828da1bfbb4252d0613cf2455e130a272'
+          assert r['p12_decisions_pretruth_sha256']=='6e11671cfb176302a58dd329d9fb09fc380a19e4ff9669bc444d5ce9624f00f5'
+          assert r['no_new_truth_query'] is True
+          assert r['target_information_access'] is False
+          print('ORBITTRACE_P13_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_P13_RESULT_END')
+          PY
+
+      - name: Record immutable environment and inputs
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          python --version > output/python_version.txt
+          git hash-object orbittrace_core_halo_p13/finalize_from_p12.py > output/finalizer_git_blob_sha.txt
+          sha256sum /tmp/p12.zip /tmp/core.zip input/p12/drift_conditioned_two_view_membership_p12_development.json input/core/label_free_sparse_support_v6_families.json.gz > output/input_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-dual-output-core-halo-p13-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
