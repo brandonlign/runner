@@ -1,0 +1,141 @@
+name: OrbitTrace URC generator thinning stress v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_urc_generator_thinning_stress_v1/**'
+      - '.github/workflows/orbittrace_urc_generator_thinning_stress_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  panel:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - panel: A10
+            fraction: '0.10'
+            salt: URC-GENERATOR-STRESS-A
+          - panel: B10
+            fraction: '0.10'
+            salt: URC-GENERATOR-STRESS-B
+          - panel: C20
+            fraction: '0.20'
+            salt: URC-GENERATOR-STRESS-C
+          - panel: D20
+            fraction: '0.20'
+            salt: URC-GENERATOR-STRESS-D
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact development dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Restore exact promoted-v8 runtime and decode panel source
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py /tmp/run_generator_panel.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          base64 -d orbittrace_urc_generator_thinning_stress_v1/run_panel.py.gz.b64 | gzip -dc > /tmp/run_generator_panel.py
+          python -m py_compile /tmp/run_generator_panel.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Run deterministic thinning panel
+        env:
+          PYTHONPATH: .:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u /tmp/run_generator_panel.py \
+            --panel '${{ matrix.panel }}' \
+            --salt '${{ matrix.salt }}' \
+            --fraction '${{ matrix.fraction }}' \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+          cat output/PANEL.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-urc-generator-stress-${{ matrix.panel }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  finalize:
+    needs: panel
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-urc-generator-stress-*
+          path: panels
+      - name: Enforce four-panel robustness verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, pathlib
+          rows=[]
+          for p in sorted(pathlib.Path('panels').glob('*/panel_result.json')):
+              rows.append(json.loads(p.read_text()))
+          assert len(rows)==4, len(rows)
+          by={r['panel']:r for r in rows}
+          assert set(by)=={'A10','B10','C20','D20'}
+          all_panel_pass=all(r['verdict']=='PASS_URC_GENERATOR_THINNING_PANEL' for r in rows)
+          ten=[by['A10'],by['B10']]; twenty=[by['C20'],by['D20']]
+          gates={
+            'all_four_panel_gates_pass':all_panel_pass,
+            'mean_10pct_coverage_at_least_063':sum(r['coverage_fraction'] for r in ten)/2>=0.63,
+            'mean_20pct_coverage_at_least_055':sum(r['coverage_fraction'] for r in twenty)/2>=0.55,
+            'all_panels_candidate_count_not_explosive':all(r['family_counts']['union']<=9008 for r in rows),
+          }
+          verdict='PASS_URC_GENERATOR_THINNING_STRESS' if all(gates.values()) else 'FAIL_URC_GENERATOR_THINNING_STRESS'
+          out={'verdict':verdict,'panels':rows,'gates':gates,'integrity':{'settings_fixed_before_panel_values':True,'sonotaco_2013_2014_access':False,'maarsy_access':False,'target_information_access':False}}
+          pathlib.Path('final').mkdir()
+          pathlib.Path('final/urc_generator_thinning_stress_v1.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          pathlib.Path('final/URC_GENERATOR_THINNING_STRESS_V1.md').write_text('# URC generator thinning stress v1\n\n- verdict: `'+verdict+'`\n'+''.join(f"- {r['panel']}: qualified `{r['qualified_labels']}`, coverage `{r['coverage_fraction']:.4f}`, families `{r['family_counts']['union']}`\n" for r in rows))
+          print(verdict); print(gates)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-urc-generator-thinning-stress-final-v1
+          path: final
+          if-no-files-found: error
+          retention-days: 90
