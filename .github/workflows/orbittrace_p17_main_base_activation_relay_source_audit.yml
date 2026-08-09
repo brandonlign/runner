@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Prove dual trigger changes only event delivery while relay executes authenticated frozen methodology-base run block
+      - name: Prove relay is zero-write and executes only authenticated frozen methodology-base run block
         run: |
           set -euo pipefail
           wf=.github/workflows/orbittrace_p17_main_base_activation_relay.yml
@@ -34,8 +34,7 @@ jobs:
             'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
             '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
             'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
-            'P17_MAIN_RELAY_RUN_ID=$GITHUB_RUN_ID' \
-            'EVENT=$GITHUB_EVENT_NAME' \
+            'P17_MAIN_RELAY_AUTHENTICATED RUN_ID=$GITHUB_RUN_ID EVENT=$GITHUB_EVENT_NAME METHOD_PR=760' \
             "step='      - name: Bind exact P17 development PASS, freeze both checkpoints, stop pretruth'" \
             "Path('/tmp/p17_exact_base_run.sh').write_text(out)" \
             '/tmp/p17_exact_base_run.sh' \
@@ -43,7 +42,6 @@ jobs:
             grep -F "$x" "$wf"
           done
           test "$(grep -Fc 'branches: [main]' "$wf")" -eq 2
-          # Relay never checks out activation-PR code; trusted main plus exact pinned git-show bytes only.
           test "$(grep -Fc 'uses: actions/checkout@v4' "$wf")" -eq 2
           test "$(grep -Fc 'git show 62fb6c2eda5a11ed06af5025c413269edb1fbb09:' "$wf")" -ge 1
           test "$(grep -Fc 'git show 0e70de7dc40be3437751933258d469fc8c65ca6c:' "$wf")" -ge 1
@@ -51,13 +49,17 @@ jobs:
             echo 'relay checks out untrusted activation PR head' >&2
             exit 1
           fi
-          grep -F 'issues: write' "$wf"
+          # No write permission or write command remains; failed telemetry cannot block science.
           grep -F 'contents: read' "$wf"
           grep -F 'actions: read' "$wf"
-          test "$(grep -Fc 'gh pr comment ' "$wf")" -eq 1
+          grep -F 'pull-requests: read' "$wf"
+          if grep -Eq 'issues: write|contents: write|actions: write|pull-requests: write|gh pr comment|issues/.*/comments' "$wf"; then
+            echo 'write surface survived in zero-write relay' >&2
+            exit 1
+          fi
           for sentinel in 'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do
             test "$(grep -Fc "$sentinel" "$wf")" -eq 1
           done
           test ! -e orbittrace_reciprocal_support_closure_p17/MAIN_RELAY_ACTIVATE.md
-          echo PASS_P17_MAIN_BASE_DUAL_TRIGGER_RELAY_SOURCE_AUDIT
-          echo TRIGGER_ONLY_INFRASTRUCTURE_CHANGE_NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
+          echo PASS_P17_MAIN_BASE_ZERO_WRITE_RELAY_SOURCE_AUDIT
+          echo TELEMETRY_REMOVAL_ONLY_NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
