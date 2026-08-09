@@ -1,0 +1,110 @@
+name: OrbitTrace P10 floor-consistent geometry source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p9-bidirectional-reliability-freeze
+    paths:
+      - orbittrace_floor_consistent_geometry_p10/**
+      - .github/workflows/orbittrace_p10_floor_consistent_geometry_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct exact P9 and audit P10 transform
+        run: |
+          set -euo pipefail
+          python -m pip install requests
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/p5.py' | sha256sum -c -
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          echo 'd32648136b58e2f777912d6403d9de3cbd091a8c23e16aedcda0b146f09f38c2  /tmp/p6.py' | sha256sum -c -
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          echo '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54  /tmp/p7.py' | sha256sum -c -
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          echo 'd3bdcdaf18639e36cc02f5106b3a3c816f5e51eb19543f425717ba1c48a26470  /tmp/p8.py' | sha256sum -c -
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          echo '58330c61cf4039f07e80a9746d00eb7281b4e28e674a131d6333e6378695ae31  /tmp/p9.py' | sha256sum -c -
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/p10.py
+          python -m py_compile /tmp/p10.py orbittrace_floor_consistent_geometry_p10/run_header_compatible.py
+          echo "P10_GENERATED_SOURCE_SHA256=$(sha256sum /tmp/p10.py | awk '{print $1}')"
+
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/p10.py').read_text()
+          protocol=Path('orbittrace_floor_consistent_geometry_p10/PROTOCOL.md').read_text()
+          wrapper=Path('orbittrace_floor_consistent_geometry_p10/run_header_compatible.py').read_text()
+          required=(
+              'geometry_retained_seed_mask = np.asarray(pp >= membership_floor, dtype=bool)',
+              'geometry_retained_seed_rows = np.asarray(xp[geometry_retained_seed_mask], dtype=np.float64)',
+              'P10 retained a seed below the exact P8 membership floor',
+              'if membership_floor_rank == 1:',
+              'np.array_equal(joint_seed_support, inherited_joint_seed_support)',
+              'p10_geometry_uses_only_floor_retained_seeds',
+              'p10_rank_one_seed_sets_and_frontiers_exactly_inherited',
+              'p10_every_surviving_proposal_supported_by_floor_retained_frontier',
+              'p10_no_non_bidirectionally_reliable_family_can_propose',
+              'p10_exactly_50_reliable_rank_gt1_directions_changed_geometry',
+              'PASS_FLOOR_CONSISTENT_GEOMETRY_MEMBERSHIP_P10_DEVELOPMENT',
+              'FAIL_FLOOR_CONSISTENT_GEOMETRY_MEMBERSHIP_P10_NO_GO',
+              '"p10_new_numeric_thresholds": False',
+              '"p10_geometry_tuning": False',
+              '"p10_parameter_search": False',
+              'floor_consistent_geometry_membership_p10_development.json',
+              'p10_membership_pretruth.sha256',
+              'p10_decisions_pretruth.sha256',
+          )
+          for token in required:
+              assert token in p,token
+          inherited=(
+              'P3_FOLD_COUNT = 5','P3_NEGATIVE_TAIL_MAX = 0.10','P3_SEED_FLOOR_MIN = 0.5','RESPONSIBILITY_THRESHOLD = 0.5',
+              'int(math.floor(P3_NEGATIVE_TAIL_MAX * (len(sorted_seed_probabilities) + 1)))',
+              'feature_ceiling = np.max(xp, axis=0).astype(np.float64, copy=False)',
+              'scoring_scaler, scoring_classifier = crossfit_runtime_models[scoring_fold]',
+              'if not (bool(gate["reliable"]) and bool(reciprocal_gate["reliable"])):',
+              '"p9_bidirectional_reliability": True','new_members_can_seed_growth','ranking_after_membership',
+          )
+          for token in inherited:
+              assert token in p,token
+          for token in (
+              'comment `5230084892`','71/125','50 P3-reliable directions','no numeric threshold',
+              'qualified known-shower matches >=95','both Sugar and catalogue HDBSCAN','Solar longitude 20°–55°',
+          ):
+              assert token in protocol,token
+          for token in (
+              "EXPECTED_P10_SOURCE = Path('/tmp/run_p10.py')",
+              'for attempt in range(3):','P10_GMN_FETCH_ATTEMPT={attempt + 1}/3',
+              'requests.exceptions.ConnectionError, requests.exceptions.Timeout',
+              'module.exact_header_positions = compatible_exact_header_positions',
+              'PASS_P10_HEADER_WHITESPACE_COMPAT_SELF_TEST',
+          ):
+              assert token in wrapper,token
+          assert 'for attempt in range(6):' not in wrapper
+          for token in ('OrbitTrace-April','target_coordinate'):
+              assert token not in p and token not in protocol,token
+          assert 'probabilities = classifier.predict_proba(scaler.transform(features))[:, 1]' not in p
+          print('PASS_P10_FLOOR_CONSISTENT_GEOMETRY_SOURCE_AUDIT')
+          PY
+
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_floor_consistent_geometry_p10/RUN.md
+          test ! -e target
+          echo NO_P10_TRUTH_EXECUTION_NO_TARGET_ACCESS
