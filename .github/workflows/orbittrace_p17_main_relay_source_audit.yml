@@ -1,0 +1,87 @@
+name: OrbitTrace P17 fixed-main relay source audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/orbittrace_p17_main_relay.yml
+      - .github/workflows/orbittrace_p17_main_relay_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove fixed-main relay executes exact frozen methodology-base block only
+        run: |
+          set -euo pipefail
+          r=.github/workflows/orbittrace_p17_main_relay.yml
+          test "$(git hash-object "$r")" = 'e8f52cfdf9d234d1d67aff50db5fbc29c729f4a2'
+          for x in \
+            'push:' "branches: [main]" 'orbittrace_relay/P17_TRIGGER_V1.txt' \
+            "cron: '*/15 * * * *'" \
+            'issues: write' \
+            'EXECUTE_P17_MAIN_RELAY_V1' 'PR=760' \
+            'BASE=62fb6c2eda5a11ed06af5025c413269edb1fbb09' \
+            'HEAD=0e70de7dc40be3437751933258d469fc8c65ca6c' \
+            "p['base']['sha']=='62fb6c2eda5a11ed06af5025c413269edb1fbb09'" \
+            "p['head']['sha']=='0e70de7dc40be3437751933258d469fc8c65ca6c'" \
+            "p['head']['repo']['full_name']=='brandonlign/runner'" \
+            'P17_MAIN_RELAY_CLAIM=$GITHUB_RUN_ID' \
+            'test "${#files[@]}" -eq 2' \
+            '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
+            'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
+            'EXECUTE_P17_MATCHED_PRETRUTH' \
+            '31332157812' '9043232586' \
+            'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" \
+            "Path('/tmp/p17_exact_base_run.sh').write_text(out)" \
+            '/tmp/p17_exact_base_run.sh' \
+            'orbittrace-p17-matched-pretruth-checkpoints-main-relay'; do
+            grep -F "$x" "$r"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          t=Path('.github/workflows/orbittrace_p17_main_relay.yml').read_text()
+          assert '  push:\n    branches: [main]\n    paths:\n      - orbittrace_relay/P17_TRIGGER_V1.txt' in t
+          assert "  schedule:\n    - cron: '*/15 * * * *'" in t
+          # Schedule is only a fallback: trigger file must exist and match exact fixed content.
+          assert 'if [ ! -f "$trigger" ]; then' in t
+          assert 'cmp -s "$trigger" /tmp/expected-trigger' in t
+          # Exact PR metadata and exact two-file child are independently required.
+          for x in (
+            "p['number']==760 and p['state']=='open' and not p['draft']",
+            "p['base']['ref']=='agent/orbittrace-p15-support-safe-halo-freeze'",
+            "p['base']['sha']=='62fb6c2eda5a11ed06af5025c413269edb1fbb09'",
+            "p['head']['ref']=='agent/orbittrace-p17-matched-pretruth-run-v6-target-relay'",
+            "p['head']['sha']=='0e70de7dc40be3437751933258d469fc8c65ca6c'",
+            'test "${#files[@]}" -eq 2',
+            'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml',
+          ): assert x in t,x
+          # One exact claim prevents repeated scheduled executions for this base/head.
+          assert t.count("startswith('P17_MAIN_RELAY_CLAIM=')")==1
+          assert "echo 'should_run=false' >> \"$GITHUB_OUTPUT\"" in t
+          assert "echo 'should_run=true' >> \"$GITHUB_OUTPUT\"" in t
+          assert "if: steps.claim.outputs.should_run == 'true'" in t
+          # PR-supplied code is never checked out/executed; science comes only from BASE workflow.
+          assert 'git checkout --detach "$HEAD_SHA"' not in t
+          assert 'git show "$BASE_SHA:$wf" > /tmp/p17_base_workflow.yml' in t
+          assert "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" in t
+          # Sole write is claim/run-ID telemetry.
+          assert t.count('gh pr comment 760')==1
+          forbidden=(
+            'MIN_DIRECTION_NEGATIVES','P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE',
+            'SPARSE_STREAM_SUPERIORITY','macro_f1_delta','MAARSY',
+          )
+          for x in forbidden: assert x not in t,x
+          for x in ('evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
+              assert t.count(x)==1,(x,t.count(x))
+          print('PASS_P17_FIXED_MAIN_PUSH_SCHEDULE_RELAY_SOURCE_AUDIT')
+          PY
+          echo PUSH_TRIGGER_PLUS_SCHEDULE_FALLBACK_EXACT_CLAIM_ONCE
+          echo RELAY_EXECUTES_AUTHENTICATED_FROZEN_BASE_RUN_BLOCK_NOT_PR_SCIENCE
+          echo NO_MATCHED_RESULT_NO_EXTERNAL_NO_TARGET_ACCESS
