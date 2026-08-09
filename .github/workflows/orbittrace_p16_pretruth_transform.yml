@@ -1,0 +1,115 @@
+name: OrbitTrace P16 transform frozen P15 pretruth checkpoints
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p16-core-rank-halo-membership-freeze
+    paths:
+      - orbittrace_core_rank_halo_membership_p16/PRETRUTH_TRANSFORM_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  transform:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Bind exact P16 development and transform frozen P15 checkpoints only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_core_rank_halo_membership_p16/PRETRUTH_TRANSFORM_RUN.md'
+          marker="$(git show "$HEAD_SHA":orbittrace_core_rank_halo_membership_p16/PRETRUTH_TRANSFORM_RUN.md)"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P16_FROM_FROZEN_P15_PRETRUTH'
+          p15_run="$(printf '%s\n' "$marker" | sed -n '2p')"
+          p15_artifact="$(printf '%s\n' "$marker" | sed -n '3p')"
+          p15_digest="$(printf '%s\n' "$marker" | sed -n '4p')"
+          [[ "$p15_run" =~ ^[0-9]+$ ]]
+          [[ "$p15_artifact" =~ ^[0-9]+$ ]]
+          [[ "$p15_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 4
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_core_rank_halo_membership_p16/PRETRUTH_TRANSFORM_RUN.md
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/31329487091" -o /tmp/p16-dev-run.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/artifacts/9042496657" -o /tmp/p16-dev-artifact.json
+          python - <<'PY_DEV'
+          import json
+          r=json.load(open('/tmp/p16-dev-run.json')); a=json.load(open('/tmp/p16-dev-artifact.json'))
+          assert r['id']==31329487091 and r['status']=='completed' and r['conclusion']=='success'
+          assert a['id']==9042496657 and a['name']=='orbittrace-p16-core-rank-halo-membership-canonical-development'
+          assert a['digest']=='sha256:1d470dcd2034e8b693d80117380f544f43cf6c6d581574a356dc11a04bb91040' and not a['expired']
+          assert a['workflow_run']['id']==31329487091
+          print('PASS_P16_PRETRUTH_CANONICAL_DEVELOPMENT_GATE')
+          PY_DEV
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/$p15_run" -o /tmp/p15-run.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/artifacts/$p15_artifact" -o /tmp/p15-artifact.json
+          python - "$p15_run" "$p15_artifact" "$p15_digest" <<'PY_P15'
+          import json,sys
+          run_id=int(sys.argv[1]); aid=int(sys.argv[2]); digest=sys.argv[3]
+          r=json.load(open('/tmp/p15-run.json')); a=json.load(open('/tmp/p15-artifact.json'))
+          assert r['id']==run_id and r['status']=='completed' and r['conclusion']=='success'
+          assert a['id']==aid and a['name']=='orbittrace-p15-matched-pretruth-checkpoints'
+          assert a['digest']==digest and not a['expired']
+          assert a['workflow_run']['id']==run_id
+          print('PASS_P16_BOUND_EXACT_P15_PRETRUTH_ARTIFACT')
+          PY_P15
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/artifacts/$p15_artifact/zip" -o /tmp/p15-pretruth.zip
+          echo "${p15_digest#sha256:}  /tmp/p15-pretruth.zip" | sha256sum -c -
+          rm -rf /tmp/p15-pretruth pretruth_p16 && mkdir -p /tmp/p15-pretruth pretruth_p16/checkpoints
+          unzip -q /tmp/p15-pretruth.zip -d /tmp/p15-pretruth
+          mapfile -t hp < <(find /tmp/p15-pretruth -type f -path '*/checkpoints/hdbscan.pkl' -print | sort)
+          mapfile -t sp < <(find /tmp/p15-pretruth -type f -path '*/checkpoints/sugar.pkl' -print | sort)
+          test "${#hp[@]}" -eq 1
+          test "${#sp[@]}" -eq 1
+          test -f "${hp[0]}.sha256" -a -f "${sp[0]}.sha256"
+          cp "${hp[0]}" /tmp/hdbscan.pkl; cp "${hp[0]}.sha256" /tmp/hdbscan.pkl.sha256
+          cp "${sp[0]}" /tmp/sugar.pkl; cp "${sp[0]}.sha256" /tmp/sugar.pkl.sha256
+
+          test "$(git hash-object orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py)" = 'd8653b898ca8c106d79df01c855783797294c30c'
+          python -m py_compile orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py
+          python orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py --hdbscan /tmp/hdbscan.pkl --sugar /tmp/sugar.pkl
+          python orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py --input /tmp/hdbscan.pkl --output pretruth_p16/checkpoints/hdbscan.pkl
+          python orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py --input /tmp/sugar.pkl --output pretruth_p16/checkpoints/sugar.pkl
+          python - <<'PY_P16'
+          import hashlib,pickle
+          from pathlib import Path
+          for panel in ('hdbscan','sugar'):
+              src=pickle.loads(Path(f'/tmp/{panel}.pkl').read_bytes())
+              p=Path(f'pretruth_p16/checkpoints/{panel}.pkl'); raw=p.read_bytes(); out=pickle.loads(raw)
+              assert p.with_suffix(p.suffix+'.sha256').read_text().strip()==hashlib.sha256(raw).hexdigest()
+              assert out['panel']==panel and out['years']==[2023,2025] and out['blind_exclusion']==[20.0,55.0]
+              assert out['competitor_cluster_values_accessed'] is False and out['known_shower_truth_accessed'] is False
+              assert out['p16_architecture']=='P16_CORE_RANK_LABEL_FREE_HALO_MEMBERSHIP'
+              assert out['p16_core_order_unchanged'] is True and out['p16_membership_frozen_before_truth'] is True
+              assert out['p16_no_new_detector_score_threshold_or_proposal'] is True and out['p16_new_members_can_seed_growth'] is False
+              assert out['v8_multiplicity_order']==src['v8_multiplicity_order']
+              assert out['v8_order_pretruth_sha256']==src['v8_order_pretruth_sha256']==out['p16_core_order_pretruth_sha256']
+              assert out['p15_unavailable_direction_count']==src['p15_unavailable_direction_count']
+              print('P16_PRETRUTH_TRANSFORM_VALID',panel,'families',len(out['v8_multiplicity_order']),'halo_additions',out['p16_total_already_frozen_halo_additions'],'p15_unavailable',out['p15_unavailable_direction_count'])
+          print('PASS_P16_BOTH_CHECKPOINTS_TRANSFORMED_BEFORE_TRUTH')
+          PY_P16
+          printf '%s\n' "$p15_run" > pretruth_p16/p15_source_run_id.txt
+          printf '%s\n' "$p15_artifact" > pretruth_p16/p15_source_artifact_id.txt
+          printf '%s\n' "$p15_digest" > pretruth_p16/p15_source_artifact_digest.txt
+          echo NO_COMPARATOR_CLUSTER_VALUES_NO_KNOWN_SHOWER_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS > pretruth_p16/firewall.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p16-pretruth-checkpoints
+          path: pretruth_p16
+          if-no-files-found: error
+          retention-days: 90
