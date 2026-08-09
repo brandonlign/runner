@@ -6,6 +6,7 @@ on:
       - agent/orbittrace-p2-header-compat-recovery-freeze
     paths:
       - orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py
+      - .github/workflows/orbittrace_p2_pretruth_finalize_execution.yml
       - .github/workflows/orbittrace_p2_pretruth_finalize_source_audit.yml
 
 permissions:
@@ -25,6 +26,7 @@ jobs:
           import ast
           from pathlib import Path
           p=Path('orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py').read_text()
+          w=Path('.github/workflows/orbittrace_p2_pretruth_finalize_execution.yml').read_text()
           required=(
             "P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'",
             "EXPECTED_MODEL_SHA256='0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'",
@@ -55,6 +57,29 @@ jobs:
           assert "not(20.0<=float(e['sol'])<=55.0)" in p
           assert "membership_frozen_before_truth_evaluation" in p
           assert "model_frozen_before_truth_evaluation" in p
+
+          # The execution wrapper may only restore exact runtime dependencies and
+          # evaluate the already-frozen model/membership artifact.
+          for token in (
+              'EXECUTE_P2_DIRECT_FINALIZE_FROM_IMMUTABLE_PRETRUTH',
+              '31289791712',
+              '9031107930',
+              '0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f',
+              'b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e',
+              'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb',
+              'd8258581af143308495bd97bedcc142abbbd951a',
+              "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2",
+              'PYTHONPATH: input/v3:exact-v8:orbittrace_wavelet_catalogue_v3:.',
+              '--expanded-families input/pretruth/p2_expanded_families.json.gz',
+              '--model-json input/pretruth/p2_model_pretruth.json',
+          ):
+              assert token in w, token
+          for token in ('classifier.fit(', 'predict_proba(', 'LogisticRegression(', 'source_observation_model(', 'min_exact_dsh_to_source('):
+              assert token not in w, token
+          auth=w.index('Require one-file child and exact immutable failed-run pretruth')
+          runtime=w.index('Reconstruct exact P2/v8/evaluator identities')
+          finalize=w.index('Finalize exact frozen P2 memberships against unchanged target-excluded truth')
+          assert auth < runtime < finalize
           print('PASS_P2_PRETRUTH_DIRECT_FINALIZER_SOURCE_AUDIT')
           PY
       - name: Assert no-data boundary
