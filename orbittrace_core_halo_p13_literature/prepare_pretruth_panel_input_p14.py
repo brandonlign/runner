@@ -135,14 +135,14 @@ def main()->int:
         tail=sorted(str(x['family_id']) for x in rank_audit['unscorable_families']); require(order[-len(tail):]==tail,'P14 unscorable core not at fail-closed tail')
     core_payload=[{'family_id':str(f['family_id']),'event_ids':sorted(map(str,f['event_ids']))} for f in families]; core_payload.sort(key=lambda r:r['family_id'])
     payload={
-        'classification':'P13 matched-literature strict core transport with promoted P14 support-safe rank','architecture':'P14_SUPPORT_SAFE_MULTIPLICITY_RANK',
+        'classification':'P13 matched-literature pretruth core panel input','architecture':'P14_SUPPORT_SAFE_MULTIPLICITY_RANK',
         'p14_source_commit':P14_COMMIT,'p14_support_blob':P14_SUPPORT_BLOB,'panel':a.panel,'years':list(YEARS),'blind_exclusion':[BLIND_LOW,BLIND_HIGH],
         'competitor_cluster_values_accessed':False,'known_shower_truth_accessed':False,'parameter_search':False,
         'manifest_sha256':manifest_hashes,'scan_by_year':{str(y):scan[y] for y in YEARS},'orbit_by_id':orbit_by_id,
         'geometry_audits':geometry_audits,'orbit_audits':orbit_audits,'core_families':families,'multiplicity_order':order,
         'core_family_count':len(families),'core_pretruth_sha256':canonical_sha(core_payload),'p14_support_safe_rank':rank_audit,
         'exact_v8_panel_summary':{k:v for k,v in v8_panel.items() if k not in {'families','multiplicity_order'}},
-        'transport_interface':'exact P13 core transport plus promoted P14 fail-closed total-order completion; freeze before any truth/cluster value',
+        'transport_interface':'exact P13-compatible core transport schema plus promoted P14 fail-closed total-order completion; freeze before any truth/cluster value',
     }
     raw=json.dumps(payload,sort_keys=True,separators=(',',':'),allow_nan=False).encode(); out=a.output/f'p13_{a.panel}_core_panel_input.json.gz'; out.write_bytes(gzip.compress(raw))
     (a.output/f'p13_{a.panel}_core_panel_input.sha256').write_text(hashlib.sha256(raw).hexdigest()+'\n'); (a.output/f'p13_{a.panel}_core_ids.sha256').write_text(payload['core_pretruth_sha256']+'\n')
