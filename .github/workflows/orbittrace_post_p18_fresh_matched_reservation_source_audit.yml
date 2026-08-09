@@ -1,0 +1,47 @@
+name: OrbitTrace post-P18 fresh matched reservation source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_post_p18_fresh_matched/FRESH_MATCHED_RESERVATION.md
+      - .github/workflows/orbittrace_post_p18_fresh_matched_reservation_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify fixed fresh years, unchanged superiority gates, and no data-access surface
+        run: |
+          set -euo pipefail
+          p=orbittrace_post_p18_fresh_matched/FRESH_MATCHED_RESERVATION.md
+          for x in \
+            'SonotaCo 2014 and SonotaCo 2016' \
+            '2023/2025 matched panel is permanently diagnostic-only' \
+            'no prior OrbitTrace scientific-result lineage naming SonotaCo 2014 or SonotaCo 2016' \
+            'No 2014/2016 archive is downloaded by this reservation' \
+            'catalogue HDBSCAN' 'Sugar' \
+            '20°–55°' \
+            '4–9-member mean F1 gain >= +0.10' \
+            'combined 4–24-member mean F1 gain >= +0.10' \
+            'overall macro-F1 delta >= -0.10' \
+            'retain at least 80%' \
+            'Broad-only superiority is insufficient' \
+            'ARCHITECTURE_INCOMPATIBLE_FRESH_MATCHED_PANEL' \
+            'SonotaCo 2014/2016 may not be used to choose or tune the successor architecture' \
+            'MAARSY 2020/2021' \
+            'target reference and all 20°–55° target-region discovery data remain inaccessible'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'curl|wget|requests\.|gh run download|014a\.zip|016a\.zip|EXECUTE_|RUN\.md|target_coordinate|OrbitTrace-April|247\.|-14\.|37\.62|prior.*rank 59' "$p"; then
+            echo 'data-access/activation/target-specific surface leaked into fresh matched reservation' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_post_p18_fresh_matched/RUN.md
+          echo PASS_POST_P18_FRESH_MATCHED_2014_2016_RESERVATION_SOURCE_FREEZE
+          echo NO_2014_2016_ARCHIVE_NO_LABEL_NO_SCORE_NO_COMPARATOR_CLUSTER_NO_TARGET_ACCESS
