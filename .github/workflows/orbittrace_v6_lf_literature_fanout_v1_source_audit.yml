@@ -7,6 +7,7 @@ on:
     paths:
       - orbittrace_v6_lf_literature_fanout_v1/**
       - .github/workflows/orbittrace_v6_lf_literature_fanout_v1_source_audit.yml
+      - .github/workflows/orbittrace_v6_lf_literature_fanout_v1_real_equivalence.yml
 
 permissions:
   contents: read
@@ -33,7 +34,7 @@ jobs:
           from orbittrace_v6_lf_literature_fanout_v1.scheduler import build_slices
 
           root=Path('orbittrace_v6_lf_literature_fanout_v1')
-          common=(root/'common.py').read_text(); capture=(root/'capture_preexact.py').read_text(); runner=(root/'run_exact_slice.py').read_text(); replay=(root/'replay_pretruth.py').read_text(); protocol=(root/'PROTOCOL.md').read_text()
+          common=(root/'common.py').read_text(); capture=(root/'capture_preexact.py').read_text(); runner=(root/'run_exact_slice.py').read_text(); replay=(root/'replay_pretruth.py').read_text(); real=(root/'audit_real_equivalence.py').read_text(); protocol=(root/'PROTOCOL.md').read_text()
 
           assert 'calibration = [dict(event, complex_key="SPORADIC") for event in scan_events]' in common
           assert 'native_ids' in common and 'native_ids <= scan_ids' in common
@@ -64,6 +65,12 @@ jobs:
           assert 'native_background_membership_used_for_calibration":False' in replay
           assert 'calibration_reservoir":"all exact matched scan rows"' in replay
 
+          assert 'full=scalar(' in real
+          assert 'split.extend(exact)' in real
+          assert 'require(split==full' in real
+          assert 'require(full_bytes==split_bytes' in real
+          assert 'native_background_membership_used_for_calibration":False' in real
+
           pre={
               'ordered_centers':[10.0,20.0,30.0],
               'centers':{
@@ -77,6 +84,17 @@ jobs:
           assert sum(loads1)==1300*1000+420*700+180*200
           assert len({i for i,values in enumerate(bins1) if any(float(p['center'])==10.0 for p in values)})>=2
           assert max(loads1)<sum(loads1)
+
+          workflow=Path('.github/workflows/orbittrace_v6_lf_literature_fanout_v1_real_equivalence.yml').read_text()
+          assert 'EXECUTE_V6_LF_LITERATURE_FANOUT_EQUIVALENCE_AFTER_DEVELOPMENT_PASS' in workflow
+          assert 'orbittrace-v6-lf-all-event-null-development-v2' in workflow
+          assert 'orbittrace-v6-lf-strict-semantic-development' in workflow
+          assert "test \"${#candidates[@]}\" -eq 1" in workflow
+          assert "r['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'" in workflow
+          assert 'all(r[' in workflow and "['gates'].values())" in workflow
+          assert '--panel hdbscan --year 2023 --split-records 512 --workers 4' in workflow
+          assert 'PASS_V6_LF_LITERATURE_REAL_EXACT_EQUIVALENCE' in workflow
+          assert '"native_background_membership_used_for_calibration": false' in workflow
 
           assert 'every exact matched scan row' in protocol
           assert 'relative and absolute tolerance `1e-12`' in protocol
