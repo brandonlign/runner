@@ -100,9 +100,9 @@ jobs:
           test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
           git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
-          echo '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2  input/v3/multi_anchor_energy_v3.py' | sha256sum -c -
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
           cp exact-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
-          echo '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8  input/v3/wavelet_episode_comparator.py' | sha256sum -c -
+          test "$(git hash-object input/v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
 
           curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
           echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
