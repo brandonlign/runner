@@ -1,0 +1,81 @@
+name: OrbitTrace P3 matched-literature executable source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-matched-literature-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py
+      - orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py
+      - orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen_blindsafe.py
+      - .github/workflows/orbittrace_p3_matched_literature_source_audit.yml
+      - .github/workflows/orbittrace_p3_matched_literature_execution.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove exact pretruth and posttruth source split
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py)" = '1db03c9fef7e38fc95f6e7d47884d60be33b34b3'
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py)" = '23275e4a59e1a5dab3934ea63c4f73381c627912'
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen_blindsafe.py)" = '2fdc051dd6e4f5d42d3f20e8c35390a57a26fb34'
+          python -m py_compile orbittrace_crossfit_seed_floor_membership_p3_literature/*.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          pre=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py').read_text()
+          ev=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py').read_text()
+          wrap=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen_blindsafe.py').read_text()
+          protocol=Path('orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_PROTOCOL.md').read_text()
+          correction=Path('orbittrace_crossfit_seed_floor_membership_p3/HDBSCAN_2023_PROVENANCE_CORRECTION.md').read_text()
+          for token in (
+              "P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'",
+              "P3_DEVELOPMENT_SOURCE_SHA256='f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185'",
+              "P3_FOLD_COUNT=5","P3_NEGATIVE_TAIL_MAX=0.10","P3_SEED_FLOOR_MIN=0.5",
+              "family_fold={str(f['family_id']):int.from_bytes(hashlib.sha256(str(f['family_id']).encode('utf-8')).digest()[:8],'big')%P3_FOLD_COUNT",
+              "floor>P3_SEED_FLOOR_MIN and tail<=P3_NEGATIVE_TAIL_MAX",
+              "if float(pr)<float(gate['seed_floor']): continue",
+              "r<=float(p2.RESPONSIBILITY_THRESHOLD)",
+              "'competitor_cluster_values_accessed':False",
+              "'known_shower_truth_accessed':False",
+              "'crossfit_model_decisions_membership_and_rank_frozen_before_truth':True",
+          ):
+              assert token in pre,token
+          assert 'parse_common_truth' not in pre
+          assert 'load_hdbscan' not in pre and 'load_sugar' not in pre
+          for token in (
+              "classification=INELIGIBLE if any_ineligible else ('SPARSE_STREAM_SUPERIORITY' if sparse else 'NO_LITERATURE_SUPERIORITY')",
+              "'sparse_stream_superiority_required_for_promotion':True",
+              "'broad_only_does_not_authorize_external':True",
+              "'macro_f1_gain_ge_0_05':all_delta>=0.05",
+              "'four_to_nine_gain_ge_0_10'",
+              "'four_to_twentyfour_gain_ge_0_10'",
+              "'retain_at_least_80pct_f1_gt_0_5_count'",
+          ):
+              assert token in ev,token
+          assert "EXPECTED_BLINDSAFE_HDBSCAN_2023_SHA256='35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761'" in wrap
+          assert "module.ASSIGNMENT_SHA256['hdbscan'][2023]=EXPECTED_BLINDSAFE_HDBSCAN_2023_SHA256" in wrap
+          assert '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761' in correction
+          assert 'only if `SPARSE_STREAM_SUPERIORITY` passes separately against BOTH Sugar and HDBSCAN' in protocol
+          assert 'A broad-only result does not' in protocol
+          # Verify pretruth writes all five immutable payload hashes before any evaluator exists in this process.
+          tree=ast.parse(pre)
+          names={n.id for n in ast.walk(tree) if isinstance(n,ast.Name)}
+          assert {'crossfit_sha','model_sha','decision_sha','membership_sha','order_sha'} <= names
+          print('PASS_P3_MATCHED_LITERATURE_EXECUTABLE_SOURCE_AUDIT')
+          PY
+      - name: Assert no-data/no-result boundary
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_P3_LITERATURE_EXECUTION_NO_TARGET_ACCESS
