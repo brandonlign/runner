@@ -7,6 +7,7 @@ on:
     paths:
       - orbittrace_v6_lf_final_stage_a/PROTOCOL.md
       - orbittrace_v6_lf_final_stage_a/run_stage_a.py
+      - orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py
       - .github/workflows/orbittrace_v6_lf_final_stage_a_source_audit.yml
 
 permissions:
@@ -27,8 +28,15 @@ jobs:
       - name: Compile and prove no-label/no-target Stage-A boundary
         run: |
           set -euo pipefail
-          python -m py_compile orbittrace_v6_lf_final_stage_a/run_stage_a.py
-          sha256sum orbittrace_v6_lf_final_stage_a/run_stage_a.py
+          python -m py_compile orbittrace_v6_lf_final_stage_a/run_stage_a.py orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py
+          PYTHONPATH=. python - <<'PY'
+          import orbittrace_v6_lf_final_stage_a.run_stage_a as stage_a
+          import orbittrace_v6_lf_final_stage_a.parallel_exact_rescore as wrapper
+          assert callable(wrapper.install)
+          assert stage_a.wrapper is wrapper
+          print('PASS_STAGE_A_PARALLEL_RUNTIME_IMPORT')
+          PY
+          sha256sum orbittrace_v6_lf_final_stage_a/run_stage_a.py orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py
           python - <<'PY'
           import ast
           from pathlib import Path
@@ -62,6 +70,18 @@ jobs:
           assert "'parameter_search':False" in main and "'null_trimming':False" in main
           assert 'evaluate_families' not in main and 'normalize_label' not in main
           assert set(('family_id','rank','years','event_ids_by_year')) <= {s.value for s in ast.walk(defs['family_record']) if isinstance(s,ast.Constant) and isinstance(s.value,str)}
+
+          w=Path('orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py').read_text(); wtree=ast.parse(w)
+          wdefs={n.name:n for n in ast.walk(wtree) if isinstance(n,ast.FunctionDef)}
+          install=ast.get_source_segment(w,wdefs['install'])
+          split=ast.get_source_segment(w,wdefs['_split_contiguous'])
+          assert 'worker_count = min(max(1, int(workers)), cpu_count, 4)' in install
+          assert 'threshold = max(1, int(min_parallel_records))' in install
+          assert 'mp.get_context("fork")' in install
+          assert '[str(row["proposal_anchor_id"]) for row in merged] != [str(row["proposal_anchor_id"]) for row in records]' in install
+          assert '[row for chunk in chunks for row in chunk] != records' in split
+          assert 'exact_rescore_window_v6' in install
+
           protocol=Path('orbittrace_v6_lf_final_stage_a/PROTOCOL.md').read_text()
           assert 'complete GMN **2022 and 2023** geometry' in protocol
           assert 'does **not** remove solar longitude 20°–55°' in protocol
