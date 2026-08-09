@@ -12,7 +12,7 @@ from typing import Any
 P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'
 P3_EVALUATOR_COMPAT_SOURCE_SHA256='f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185'
 DSH_SOURCE_SHA256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
-P13_TRANSPORT_SOURCE_SHA256='7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c'
+P13_TRANSPORT_SOURCE_SHA256='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'
 YEARS=(2023,2025)
 
 
@@ -45,7 +45,6 @@ def main()->int:
     compat_crossfit={'fold_count':5,'seed_floor_min_strict':0.5,'negative_tail_max':0.10,'no_known_shower_truth_used':True,'role':'generic evaluator compatibility metadata only; primary candidate is P13 immutable core'}
     compat_model={'role':'P13 primary core benchmark uses no membership model in primary discovery scoring','halo_model_pretruth_sha256':halo['model_pretruth_sha256']}
     compat_decisions={'role':'P13 primary evaluator receives immutable cores only','core_pretruth_sha256':halo['core_pretruth_sha256'],'halo_membership_pretruth_sha256':halo['halo_membership_pretruth_sha256']}
-    # The dormant evaluator names this field p3_expanded_families; for P13 it is deliberately exact core families.
     candidate_families=json.loads(json.dumps(core_families))
     cp={
         'classification':'P3 matched-literature pretruth panel checkpoint',
