@@ -1,0 +1,46 @@
+name: OrbitTrace v6-LF final Stage-A runtime dependency audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-final-stage-a-freeze
+    paths:
+      - orbittrace_v6_lf_final_stage_a/wavelet_episode_comparator.py
+      - .github/workflows/orbittrace_v6_lf_final_stage_a_runtime_dependency_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-final-stage-a-runtime-dependency-audit-execution
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-final-stage-a-execution-freeze
+      - name: Prove exact comparator compatibility shim
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_lf_final_stage_a/wavelet_episode_comparator.py orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          cd orbittrace_v6_lf_final_stage_a
+          PYTHONPATH="..:/tmp" python - <<'PY'
+          import wavelet_episode_comparator as w
+          assert callable(getattr(w,'radiant_unit_vectors',None))
+          assert callable(getattr(w,'wavelet_episode_score',None))
+          assert w.EXPECTED_GIT_BLOB=='493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          print('PASS_V6_LF_FINAL_STAGE_A_EXACT_COMPARATOR_SHIM')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_GMN_DATA_NO_TARGET_REFERENCE
