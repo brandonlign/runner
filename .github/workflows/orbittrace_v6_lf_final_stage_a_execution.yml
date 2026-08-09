@@ -106,13 +106,19 @@ jobs:
           else:
               assert lit['sparse_stream_superiority'] is True
 
-          hold=json.loads(Path('/tmp/stage-a-auth/holdout/v6_lf_gmn_2024_2025_holdout.json').read_text())
+          hold=json.loads(Path('/tmp/stage-a-auth/holdout/v6_lf_gmn_2024_2025_temporal_holdout.json').read_text())
           assert hold['verdict']=='PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT',hold['verdict']
-          assert hold['years']==[2024,2025]
-          assert hold['blind_exclusion']==[20.0,55.0]
-          assert hold['all_event_null'] is True
-          assert hold['parameter_search'] is False and hold['null_trimming'] is False
-          assert all(hold['gates'].values()),hold['gates']
+          hold_cfg=hold['configuration']
+          assert hold_cfg['years']==[2024,2025]
+          assert hold_cfg['blind_exclusion']==[20.0,55.0]
+          assert hold_cfg['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert hold_cfg['proposal_cap_per_window']==512
+          assert hold_cfg['max_primary_proposals_per_year']==36864
+          assert hold_cfg['parameter_search'] is False and hold_cfg['null_trimming'] is False
+          assert all(hold['pretruth_integrity_power_gates'].values()),hold['pretruth_integrity_power_gates']
+          assert hold['scientific_gates'] is not None and all(hold['scientific_gates'].values()),hold['scientific_gates']
+          assert hold['truth_accessed'] is True
+          assert hold['truth_event_universe_exact'] is True
           print('PASS_V6_LF_FINAL_STAGE_A_ALL_PREREQUISITES')
           PY
 
