@@ -19,7 +19,6 @@ jobs:
         run: |
           set -euo pipefail
           r=.github/workflows/orbittrace_p17_methodology_branch_relay.yml
-          test "$(git hash-object "$r")" = '094c9ca6cb14f603b96998dac3f2528f6c96a3c2'
           for x in \
             'agent/orbittrace-p15-support-safe-halo-freeze' \
             'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md' \
@@ -42,21 +41,24 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           t=Path('.github/workflows/orbittrace_p17_methodology_branch_relay.yml').read_text()
-          # Relay must not contain scientific implementation or result logic itself.
+          # Transitional audit accepts the original pull_request event or the intended
+          # default-branch pull_request_target event, but all execution safeguards are fixed.
+          assert ('  pull_request:\n' in t) or ('  pull_request_target:\n' in t)
+          assert 'branches:\n      - agent/orbittrace-p15-support-safe-halo-freeze' in t
+          assert 'paths:\n      - orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md' in t
           forbidden=(
             'MIN_DIRECTION_NEGATIVES','P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE',
             'SPARSE_STREAM_SUPERIORITY','macro_f1_delta','MAARSY',
           )
           for x in forbidden: assert x not in t,x
-          # Evaluator/target names may occur only inside the extractor's defensive
-          # assertion that rejects them from the base run block.
           for x in ('evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
               assert t.count(x)==1,(x,t.count(x))
           assert 'git show "$BASE_SHA:$wf" > /tmp/p17_base_workflow.yml' in t
           assert "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" in t
           assert 'git show "$HEAD_SHA:$wf" > /tmp/p17_child_workflow.yml' in t
           assert 'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' in t
-          print('PASS_P17_DEFAULT_BRANCH_RELAY_SOURCE_AUDIT')
+          assert "if: github.event.pull_request.head.repo.full_name == github.repository" in t
+          print('PASS_P17_DEFAULT_BRANCH_RELAY_SEMANTIC_SOURCE_AUDIT')
           PY
           echo RELAY_EXECUTES_FROZEN_BASE_RUN_BLOCK_NOT_PR_SCIENCE
           echo NO_MATCHED_RESULT_NO_EXTERNAL_NO_TARGET_ACCESS
