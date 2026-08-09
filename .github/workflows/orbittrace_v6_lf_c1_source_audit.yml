@@ -25,6 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile orbittrace_v6_lf_core_probabilistic_membership_c1/run_development.py
+          sha256sum orbittrace_v6_lf_core_probabilistic_membership_c1/run_development.py
       - name: Prove succession, pretruth and label firewall statically
         run: |
           set -euo pipefail
@@ -60,7 +61,6 @@ jobs:
           evaluation=one('evaluate_families_v6')
           assert geometry < membership < truth < evaluation, (geometry,membership,truth,evaluation)
 
-          # The complete membership payload must be hashed and durably written before truth access.
           hash_lines=[node.lineno for node in ast.walk(main) if isinstance(node,ast.Assign)
                       and any(isinstance(t,ast.Name) and t.id=='membership_sha' for t in node.targets)]
           assert len(hash_lines)==1 and hash_lines[0] < truth
@@ -72,7 +72,6 @@ jobs:
                       writes.append(node.lineno)
           assert writes and max(writes) < truth, (writes,truth)
 
-          # Primary rank is immutable and fixed4 rescue is not supplied to the membership engine.
           membership_calls=[node for node in ast.walk(main) if isinstance(node,ast.Call)
                             and isinstance(node.func,ast.Attribute) and node.func.attr=='apply_exact_p1_membership']
           assert len(membership_calls)==1
@@ -81,7 +80,6 @@ jobs:
           assert 'ranking_after_membership' in text and 'unchanged exact v6-LF primary order' in text
           assert 'fixed4_rescue_can_seed_c1_lf' in text
 
-          # No direct catalogue-label parser or comparator assignment enters this wrapper.
           for forbidden in ('normalize_label(', 'hidden_labels = support.', 'Sugar', 'HDBSCAN', 'OrbitTrace-April'):
               assert forbidden not in text, forbidden
           print('PASS_V6_LF_C1_SOURCE_PRETRUTH_AUDIT')
