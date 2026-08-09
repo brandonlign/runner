@@ -38,20 +38,25 @@ def validate(path:Path,panel:str)->dict:
     require(cp.get('p14_p12_snm_id_transport_repair_audit_run')==31326543587,f'P14 transport repair audit changed {panel}')
     require(cp.get('p14_p12_snm_id_transport_scientific_delta') is False,f'P14 transport became scientific {panel}')
 
+    # Authoritative merged P15 checkpoint schema from PRs #704/#713.
     require(cp.get('p15_architecture')=='P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY',f'P15 architecture changed {panel}')
     require(cp.get('p15_parent_source_sha256')==P14_TECH,f'P15 parent source changed {panel}')
-    require(cp.get('p15_halo_source_sha256')==P15_MATCHED,f'P15 matched halo source changed {panel}')
+    require(cp.get('p15_generated_matched_source_sha256')==P15_MATCHED,f'P15 matched halo source changed {panel}')
     require(cp.get('p15_min_direction_negatives_unchanged')==128,f'P15 128-negative rule changed {panel}')
     require(cp.get('p15_no_padding_resampling_or_relaxation') is True,f'P15 relaxation enabled {panel}')
     require(cp.get('p15_secondary_characterization_only') is True,f'P15 halo became primary {panel}')
-    require(cp.get('p15_matched_pretruth_frozen_before_truth') is True,f'P15 halo not frozen before truth {panel}')
+    require(cp.get('p15_halo_availability_frozen_before_truth') is True,f'P15 halo availability not frozen before truth {panel}')
     ledger=cp.get('p15_unavailable_directions')
     require(isinstance(ledger,list),f'P15 availability ledger missing {panel}')
     require(cp.get('p15_unavailable_direction_count')==len(ledger),f'P15 availability count mismatch {panel}')
     require(cp.get('p15_availability_sha256')==canonical_sha(ledger),f'P15 availability hash mismatch {panel}')
     for row in ledger:
+        require(set(row)=={'family_id','source_year','target_year','observed_negative_count','required_negative_count','status'},f'P15 availability schema changed {panel}')
         require(row.get('status')=='CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES',f'P15 availability status changed {panel}')
         require(int(row.get('required_negative_count'))==128 and int(row.get('observed_negative_count'))<128,f'P15 availability count semantics changed {panel}')
+    require(cp.get('p3_diagnostics',{}).get('p15_unavailable_direction_count')==len(ledger),f'P15 diagnostic availability count mismatch {panel}')
+    require(cp.get('p3_diagnostics',{}).get('p15_availability_sha256')==canonical_sha(ledger),f'P15 diagnostic availability hash mismatch {panel}')
+    require(cp.get('p3_diagnostics',{}).get('p15_secondary_characterization_only') is True,f'P15 diagnostic role changed {panel}')
     return cp
 
 
