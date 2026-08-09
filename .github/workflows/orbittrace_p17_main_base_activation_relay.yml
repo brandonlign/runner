@@ -1,6 +1,8 @@
 name: OrbitTrace P17 main-base activation relay
 
 on:
+  pull_request:
+    branches: [main]
   pull_request_target:
     branches: [main]
 
@@ -83,7 +85,7 @@ jobs:
           test "$(printf '%s\n' "$marker" | sed -n '4p')" = 'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd'
           test "$(printf '%s\n' "$marker" | sed -n '5p')" = 'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a'
           test "$(printf '%s\n' "$marker" | wc -l)" -eq 5
-          gh pr comment "$ACT_PR" --repo "$REPO" --body "P17_MAIN_RELAY_RUN_ID=$GITHUB_RUN_ID METHOD_PR=760 BASE_SHA=62fb6c2eda5a11ed06af5025c413269edb1fbb09 HEAD_SHA=0e70de7dc40be3437751933258d469fc8c65ca6c EVENT=pull_request_target"
+          gh pr comment "$ACT_PR" --repo "$REPO" --body "P17_MAIN_RELAY_RUN_ID=$GITHUB_RUN_ID METHOD_PR=760 BASE_SHA=62fb6c2eda5a11ed06af5025c413269edb1fbb09 HEAD_SHA=0e70de7dc40be3437751933258d469fc8c65ca6c EVENT=$GITHUB_EVENT_NAME"
       - name: Execute exact frozen methodology-base pretruth run block
         env:
           GH_TOKEN: ${{ github.token }}

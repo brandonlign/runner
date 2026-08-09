@@ -15,11 +15,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Prove relay executes only authenticated frozen methodology-base run block
+      - name: Prove dual trigger changes only event delivery while relay executes authenticated frozen methodology-base run block
         run: |
           set -euo pipefail
           wf=.github/workflows/orbittrace_p17_main_base_activation_relay.yml
           for x in \
+            'pull_request:' \
             'pull_request_target:' \
             "github.event.pull_request.head.ref == 'agent/orbittrace-p17-main-activation-run-v1'" \
             'orbittrace_reciprocal_support_closure_p17/MAIN_RELAY_ACTIVATE.md' \
@@ -34,14 +35,15 @@ jobs:
             '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
             'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
             'P17_MAIN_RELAY_RUN_ID=$GITHUB_RUN_ID' \
+            'EVENT=$GITHUB_EVENT_NAME' \
             "step='      - name: Bind exact P17 development PASS, freeze both checkpoints, stop pretruth'" \
             "Path('/tmp/p17_exact_base_run.sh').write_text(out)" \
             '/tmp/p17_exact_base_run.sh' \
             'orbittrace-p17-matched-pretruth-checkpoints-main-relay'; do
             grep -F "$x" "$wf"
           done
-          # Relay must never checkout or execute activation-PR code; only trusted main plus
-          # exact git-show bytes from the pinned methodology commits are used.
+          test "$(grep -Fc 'branches: [main]' "$wf")" -eq 2
+          # Relay never checks out activation-PR code; trusted main plus exact pinned git-show bytes only.
           test "$(grep -Fc 'uses: actions/checkout@v4' "$wf")" -eq 2
           test "$(grep -Fc 'git show 62fb6c2eda5a11ed06af5025c413269edb1fbb09:' "$wf")" -ge 1
           test "$(grep -Fc 'git show 0e70de7dc40be3437751933258d469fc8c65ca6c:' "$wf")" -ge 1
@@ -49,15 +51,13 @@ jobs:
             echo 'relay checks out untrusted activation PR head' >&2
             exit 1
           fi
-          # Exactly one write capability: telemetry comment. Repository/actions remain read-only.
           grep -F 'issues: write' "$wf"
           grep -F 'contents: read' "$wf"
           grep -F 'actions: read' "$wf"
           test "$(grep -Fc 'gh pr comment ' "$wf")" -eq 1
-          # Posttruth/target strings occur only as rejection sentinels in the extractor.
           for sentinel in 'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do
             test "$(grep -Fc "$sentinel" "$wf")" -eq 1
           done
           test ! -e orbittrace_reciprocal_support_closure_p17/MAIN_RELAY_ACTIVATE.md
-          echo PASS_P17_MAIN_BASE_ACTIVATION_RELAY_SOURCE_AUDIT
-          echo INFRASTRUCTURE_ONLY_NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
+          echo PASS_P17_MAIN_BASE_DUAL_TRIGGER_RELAY_SOURCE_AUDIT
+          echo TRIGGER_ONLY_INFRASTRUCTURE_CHANGE_NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
