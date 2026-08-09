@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Prove relay is zero-write and executes only authenticated frozen methodology-base run block
+      - name: Prove zero-write relay permits negative guard literals but forbids posttruth execution
         run: |
           set -euo pipefail
           wf=.github/workflows/orbittrace_p17_main_base_activation_relay.yml
@@ -35,8 +35,11 @@ jobs:
             '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
             'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
             'P17_MAIN_RELAY_AUTHENTICATED RUN_ID=$GITHUB_RUN_ID EVENT=$GITHUB_EVENT_NAME METHOD_PR=760' \
-            "step='      - name: Bind exact P17 development PASS, freeze both checkpoints, stop pretruth'" \
-            "Path('/tmp/p17_exact_base_run.sh').write_text(out)" \
+            "for token in ('evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py')" \
+            "line.lstrip().startswith(('python ','python -u '))" \
+            "for token in ('OrbitTrace-April','target_coordinate')" \
+            "all('grep -E' in line for line in occurrences)" \
+            'PASS_P17_MAIN_RELAY_EXTRACTED_EXACT_BASE_RUN_BLOCK_EXECUTION_AWARE_FIREWALL' \
             '/tmp/p17_exact_base_run.sh' \
             'orbittrace-p17-matched-pretruth-checkpoints-main-relay'; do
             grep -F "$x" "$wf"
@@ -49,7 +52,6 @@ jobs:
             echo 'relay checks out untrusted activation PR head' >&2
             exit 1
           fi
-          # No write permission or write command remains; failed telemetry cannot block science.
           grep -F 'contents: read' "$wf"
           grep -F 'actions: read' "$wf"
           grep -F 'pull-requests: read' "$wf"
@@ -57,9 +59,16 @@ jobs:
             echo 'write surface survived in zero-write relay' >&2
             exit 1
           fi
-          for sentinel in 'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do
-            test "$(grep -Fc "$sentinel" "$wf")" -eq 1
+          # The old over-broad `assert x not in out` posttruth-token loop must be gone.
+          if grep -Fq "for x in ('OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE','evaluate_frozen_blindsafe.py'" "$wf"; then
+            echo 'over-broad literal firewall survived' >&2
+            exit 1
+          fi
+          # Negative guard literals remain visible in the authenticated methodology source,
+          # but relay logic now distinguishes them from executable Python invocations.
+          for sentinel in 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do
+            grep -F "$sentinel" "$wf"
           done
           test ! -e orbittrace_reciprocal_support_closure_p17/MAIN_RELAY_ACTIVATE.md
-          echo PASS_P17_MAIN_BASE_ZERO_WRITE_RELAY_SOURCE_AUDIT
-          echo TELEMETRY_REMOVAL_ONLY_NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
+          echo PASS_P17_MAIN_BASE_EXECUTION_AWARE_ZERO_WRITE_RELAY_SOURCE_AUDIT
+          echo SAFETY_ASSERTION_REPAIR_ONLY_NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
