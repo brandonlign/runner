@@ -23,7 +23,11 @@ jobs:
       - name: Audit P16 transformation source before development artifacts
         run: |
           set -euo pipefail
-          python -m py_compile orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py orbittrace_core_rank_halo_membership_p16/adjudicate_canonical_development.py
+          python -m py_compile \
+            orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py \
+            orbittrace_core_rank_halo_membership_p16/adjudicate_canonical_development.py \
+            orbittrace_core_rank_halo_membership_p16/prepare_p16_compatible_p13_finalizer.py \
+            orbittrace_core_rank_halo_membership_p16/finalize_p16_matched_result.py
           proto=orbittrace_core_rank_halo_membership_p16/P16_PROTOCOL.md
           adapter=orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py
           for x in \
@@ -44,6 +48,34 @@ jobs:
             "cp['p16_no_new_detector_score_threshold_or_proposal']=True" \
             "cp['p16_membership_frozen_before_truth']=True"; do
             grep -F "$x" "$adapter"
+          done
+
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py)" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
+          python orbittrace_core_rank_halo_membership_p16/prepare_p16_compatible_p13_finalizer.py \
+            orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py /tmp/p16_p13_finalizer.py
+          python -m py_compile /tmp/p16_p13_finalizer.py
+          python - <<'PY_PATCH'
+          from pathlib import Path
+          old=Path('orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py').read_text()
+          new=Path('/tmp/p16_p13_finalizer.py').read_text()
+          parent="P13_TRANSPORT_SOURCE_SHA256='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'\n"
+          tech="P13_TRANSPORT_SOURCE_SHA256='55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415'\n"
+          olddiag="        require(q['p3_diagnostics']['primary_candidate_is_core_only'] is True and q['p3_diagnostics']['halo_can_affect_primary_evaluation'] is False,f'halo entered primary evaluator {panel}')\n"
+          newdiag="        require(q['p3_diagnostics']['primary_candidate_is_core_only'] is False and q['p3_diagnostics']['halo_can_affect_primary_evaluation'] is True and q['p3_diagnostics']['family_existence_and_rank_core_only'] is True and q['p3_diagnostics']['reported_membership_is_exact_label_free_halo'] is True and q['p3_diagnostics']['p16_no_new_member_proposal'] is True,f'P16 output semantics changed {panel}')\n"
+          assert new.replace(newdiag,olddiag,1).replace(tech,parent,1)==old
+          gates=('four_to_nine_gain_ge_0_10','four_to_twentyfour_gain_ge_0_10','macro_f1_not_more_than_0_10_lower','retain_at_least_80pct_f1_gt_0_5_count')
+          assert all(new.count(x)==old.count(x)>0 for x in gates)
+          print('PASS_P16_FINALIZER_GATE_MATH_BYTE_PRESERVED')
+          PY_PATCH
+          final=orbittrace_core_rank_halo_membership_p16/finalize_p16_matched_result.py
+          for x in \
+            'PASS_P14_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'FAIL_P14_MATCHED_SPARSE_SUPERIORITY_NO_GO' \
+            'PASS_P16_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'FAIL_P16_MATCHED_SPARSE_SUPERIORITY_NO_GO' \
+            "out['external_validation_authorized']=passed" \
+            "out['target_access_authorized']=False"; do
+            grep -F "$x" "$final"
           done
           if grep -Eq '8955917326|9012424187|8957940764|8957263372|9041833656|evaluate_frozen_blindsafe|MAARSY|OrbitTrace-April|target_coordinate' orbittrace_core_rank_halo_membership_p16/*.py; then
             echo 'matched/external/target surface leaked into P16 development source' >&2
