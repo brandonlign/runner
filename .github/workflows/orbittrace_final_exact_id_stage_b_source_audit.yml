@@ -61,7 +61,7 @@ jobs:
           assert 'SEALED_SCHEMA = "orbittrace-withheld-exact-ids-v2"' in scrub
           assert 'set(row) == {"event_id", "month_key"}' in scrub
           assert 'sealed_events.append({"id": event_id, "year": year})' in scrub
-          for forbidden in ('ra', 'dec', 'radiant', 'orbit', 'velocity', 'score', 'suggested_family'):
+          for forbidden in ('radiant', 'orbital', 'velocity', 'suggested_family', 'd_criterion', 'nearest_neighbor'):
               assert forbidden not in scrub.lower(), forbidden
 
           assert 'pull_request_target:' in stage and 'STAGE_B_EXECUTION_REQUEST.json' in stage
@@ -82,7 +82,9 @@ jobs:
           for token in ('FULL_RANK_MAX=25','PARTIAL_RANK_MAX=100','MIN_OVERLAP_PER_YEAR=4','MIN_OVERLAP_TOTAL=8'):
               assert token in evaluator, token
           assert 'by_year[year]&target[year]' in evaluator
-          for forbidden in ('d_criterion','nearest_neighbor','rerank','radiant_distance','orbit_distance'):
+          assert '"post_reveal_geometry_search":False' in evaluator
+          assert '"post_reveal_reranking":False' in evaluator
+          for forbidden in ('d_criterion','nearest_neighbor','radiant_distance','orbit_distance','family_merge','member_expansion'):
               assert forbidden not in evaluator.lower(), forbidden
           print('PASS_ORBITTRACE_EXACT_ID_STAGE_B_SOURCE_AUDIT')
           PY
