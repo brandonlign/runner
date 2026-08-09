@@ -61,7 +61,6 @@ jobs:
           test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
           test "$(git hash-object .github/workflows/orbittrace_p17_matched_pretruth.yml)" = "$(git hash-object /tmp/p17_base_workflow.yml)"
 
-          # Require exact promoted P17 source and exact artifact-only development vacuity PASS.
           test "$(git hash-object orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py)" = '60d371b46d330ccbd59a08598fd36be88881c23d'
           test "$(git hash-object orbittrace_reciprocal_support_closure_p17/adjudicate_p17_development_vacuity.py)" = '5400c522b60dfaec7afcb803859b829e8582b279'
           test "$(git hash-object orbittrace_reciprocal_support_closure_p17/augment_pretruth_checkpoint_p17.py)" = '89a2e408aca91261eb5c5e1d5e5a5490d7e50b1e'
@@ -118,8 +117,6 @@ jobs:
           chmod +x /tmp/p17_pretruth.sh
           /tmp/p17_pretruth.sh
 
-          # P15 barrier has frozen both checkpoint objects. Add only P17 fail-closed
-          # closure provenance from each still-pretruth halo object.
           for panel in hdbscan sugar; do
             mapfile -t halos < <(find "pretruth/$panel" -type f -name '*halo_pretruth.pkl' -print | sort)
             test "${#halos[@]}" -eq 1
@@ -145,7 +142,6 @@ jobs:
                   assert x['p17_reciprocal_fail_closed'] is True
                   assert x['p9_reliable'] is False and x['proposal_count']==0
               manifest[panel]={'checkpoint_sha256':digest,'closure_count':cp['p17_reciprocal_closure_count'],'closure_sha256':cp['p17_reciprocal_closure_sha256']}
-              print('P17_PRETRUTH_PANEL_VALID',panel,'closures',cp['p17_reciprocal_closure_count'],'sha',digest)
           Path('pretruth/P17_MANIFEST.json').write_text(json.dumps({'classification':'P17_MATCHED_PRETRUTH','matched_source_sha256':'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a','competitor_cluster_values_accessed':False,'known_shower_truth_accessed':False,'external_data_access':False,'target_information_access':False,'panels':manifest},indent=2,sort_keys=True)+'\n')
           print('PASS_P17_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH')
           PY_CP
@@ -157,3 +153,4 @@ jobs:
           path: pretruth
           if-no-files-found: warn
           retention-days: 90
+# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1
