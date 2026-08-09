@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import math
+import pickle
+from pathlib import Path
+from typing import Any
+
+YEARS=(2023,2025)
+BLIND_LOW=20.0
+BLIND_HIGH=55.0
+BINS=('4-9','10-24','25-49','50-99','100+')
+ELIGIBLE='P3 matched-literature pretruth panel checkpoint'
+INELIGIBLE='P3_MATCHED_INPUT_INELIGIBLE'
+P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'
+P3_DEVELOPMENT_SOURCE_SHA256='f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185'
+DSH_SOURCE_SHA256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+
+
+def require(ok:bool,message:str)->None:
+    if not ok: raise RuntimeError(message)
+
+
+def load_module(path:Path,name:str)->Any:
+    spec=importlib.util.spec_from_file_location(name,path)
+    require(spec is not None and spec.loader is not None,f'cannot import {path}')
+    m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def canonical_sha(value:Any)->str:
+    return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
+
+
+def load_checkpoint(path:Path,panel:str)->dict[str,Any]:
+    raw=path.read_bytes(); side=path.with_suffix(path.suffix+'.sha256'); require(side.exists() and side.read_text().strip()==hashlib.sha256(raw).hexdigest(),f'checkpoint SHA mismatch {panel}')
+    o=pickle.loads(raw); require(o['classification'] in {ELIGIBLE,INELIGIBLE},f'wrong checkpoint class {panel}'); require(o['panel']==panel and o['years']==list(YEARS) and o['blind_exclusion']==[BLIND_LOW,BLIND_HIGH],f'checkpoint universe changed {panel}'); require(o['competitor_cluster_values_accessed'] is False and o['known_shower_truth_accessed'] is False,f'labels entered pretruth {panel}')
+    if o['classification']==ELIGIBLE:
+        require(o['p2_source_sha256']==P2_SOURCE_SHA256 and o['p3_development_source_sha256']==P3_DEVELOPMENT_SOURCE_SHA256 and o['dsh_source_sha256']==DSH_SOURCE_SHA256,f'P3 source identity changed {panel}')
+        require(o['crossfit_model_decisions_membership_and_rank_frozen_before_truth'] is True and o['parameter_search'] is False and o['new_members_can_seed_growth'] is False,f'P3 freeze flags changed {panel}')
+        for key in ('p3_crossfit_pretruth_sha256','p3_model_pretruth_sha256','p3_decisions_pretruth_sha256','p3_membership_pretruth_sha256','v8_order_pretruth_sha256'): require(len(o[key])==64,f'pretruth hash missing {panel} {key}')
+        require(canonical_sha(o['p3_crossfit_pretruth'])==o['p3_crossfit_pretruth_sha256'],f'crossfit hash changed {panel}'); require(canonical_sha(o['p3_model_pretruth'])==o['p3_model_pretruth_sha256'],f'model hash changed {panel}'); require(canonical_sha(o['p3_decisions_pretruth'])==o['p3_decisions_pretruth_sha256'],f'decision hash changed {panel}'); require(canonical_sha(o['p3_expanded_families'])==o['p3_membership_pretruth_sha256'],f'membership hash changed {panel}'); require(hashlib.sha256(json.dumps(o['v8_multiplicity_order'],separators=(',',':')).encode()).hexdigest()==o['v8_order_pretruth_sha256'],f'order hash changed {panel}')
+        cf=o['p3_crossfit_pretruth']; require(cf['fold_count']==5 and cf['seed_floor_min_strict']==0.5 and cf['negative_tail_max']==0.10 and cf['no_known_shower_truth_used'] is True,f'P3 crossfit settings changed {panel}')
+    else:
+        require(o['p3_membership_executed'] is False and o['no_support_or_background_relaxation'] is True,f'ineligible P3 panel mutated {panel}')
+    return o
+
+
+def subset_mean(rows:list[dict[str,Any]],bins:set[str])->float|None:
+    vals=[float(r['f1']) for r in rows if str(r['size_bin']) in bins]
+    return float(sum(vals)/len(vals)) if vals else None
+
+
+def annual_gates(p3_rows:list[dict[str,Any]],p3_summary:dict[str,Any],comp_rows:list[dict[str,Any]],comp_summary:dict[str,Any])->dict[str,Any]:
+    require({r['label'] for r in p3_rows}=={r['label'] for r in comp_rows} and len(p3_rows)==len(comp_rows),'annual truth denominator differs')
+    for b in BINS: require(p3_summary[b]['showers']==comp_summary[b]['showers'],f'size-bin denominator differs {b}')
+    all_delta=float(p3_summary['all']['mean_f1']-comp_summary['all']['mean_f1']); bins={}; nonempty=[]
+    for b in BINS:
+        x=p3_summary[b]['mean_f1']; y=comp_summary[b]['mean_f1']; d=None if x is None or y is None else float(x-y); bins[b]=d
+        if d is not None: nonempty.append(d)
+    p24=subset_mean(p3_rows,{'4-9','10-24'}); c24=subset_mean(comp_rows,{'4-9','10-24'}); d24=None if p24 is None or c24 is None else float(p24-c24)
+    broad={'macro_f1_gain_ge_0_05':all_delta>=0.05,'no_size_stratum_regression_gt_0_05':bool(nonempty) and min(nonempty)>=-0.05,'at_least_two_strata_gain_ge_0_10':sum(d>=0.10 for d in nonempty)>=2,'f1_gt_0_5_count_not_lower':int(p3_summary['all']['f1_gt_0_5'])>=int(comp_summary['all']['f1_gt_0_5'])}
+    sparse={'four_to_nine_gain_ge_0_10':bins['4-9'] is not None and float(bins['4-9'])>=0.10,'four_to_twentyfour_gain_ge_0_10':d24 is not None and d24>=0.10,'macro_f1_not_more_than_0_10_lower':all_delta>=-0.10,'retain_at_least_80pct_f1_gt_0_5_count':int(p3_summary['all']['f1_gt_0_5'])>=0.80*int(comp_summary['all']['f1_gt_0_5'])}
+    return {'macro_f1_delta_p3_minus_comparator':all_delta,'size_bin_delta_p3_minus_comparator':bins,'combined_4_24':{'p3_mean_f1':p24,'comparator_mean_f1':c24,'delta':d24},'broad_gates':broad,'sparse_gates':sparse,'broad_pass':all(broad.values()),'sparse_pass':all(sparse.values())}
+
+
+def reconstruct_v8(expanded:list[dict[str,Any]])->list[dict[str,Any]]:
+    out=[]
+    for f in expanded:
+        row=json.loads(json.dumps(f)); additions=set(map(str,row.get('p3_added_event_ids',[]))); members=set(map(str,row['event_ids'])); require(additions<=members,f'P3 additions outside family {row["family_id"]}'); seeds=sorted(members-additions); require(seeds,f'empty v8 family {row["family_id"]}'); row['event_ids']=seeds; row['event_count']=len(seeds); row.pop('p3_added_event_ids',None); row.pop('p3_added_event_count',None); out.append(row)
+    return out
+
+
+def internal_v8(exact:Any,families:list[dict[str,Any]],truth:dict[str,str],years:dict[str,int])->dict[str,Any]:
+    seeds=reconstruct_v8(families); p_rows,p_sum=exact.v8_annual_with_richer_summary(families,truth,years); v_rows,v_sum=exact.v8_annual_with_richer_summary(seeds,truth,years); delta={}
+    for y in YEARS:
+        yy=str(y); delta[yy]={}
+        for b in (*BINS,'all'):
+            a=p_sum[yy][b]['mean_f1']; c=v_sum[yy][b]['mean_f1']; delta[yy][b]=None if a is None or c is None else float(a-c)
+    return {'p3_annual':p_sum,'v8_annual':v_sum,'mean_f1_delta_p3_minus_v8':delta,'p3_per_label':p_rows,'v8_per_label':v_rows}
+
+
+def evaluate_panel(panel:str,cp:dict[str,Any],exact:Any,base:Any,parsers:dict[int,Any],archives:dict[int,Path],mapping:Path,assign_paths:dict[str,dict[int,Path]])->dict[str,Any]:
+    assignments={y:(exact.load_hdbscan(assign_paths[panel][y],y) if panel=='hdbscan' else exact.load_sugar(assign_paths[panel][y],y)) for y in YEARS}; expected={y:set(assignments[y]) for y in YEARS}; require({str(y):len(expected[y]) for y in YEARS}==cp['exact_event_rows'],f'exact-row count changed {panel}')
+    truth=exact.parse_common_truth(parsers,archives,mapping,base,{panel:expected})[panel]; years={eid:int(eid[3:7]) for eid in truth}; families=cp['p3_expanded_families']; require({str(eid) for f in families for eid in f['event_ids']}<=set(truth),f'P3 member outside truth {panel}')
+    p_rows,p_sum=exact.v8_annual_with_richer_summary(families,truth,years); comp_rows={}; comp_sum={}; gates={}
+    for y in YEARS:
+        rows,summary=exact.best_competitor_matches(assignments[y],truth,y); comp_rows[str(y)]=rows; comp_sum[str(y)]=summary; gates[str(y)]=annual_gates(p_rows[str(y)],p_sum[str(y)],rows,summary)
+    return {'status':'ELIGIBLE_EVALUATED','exact_event_rows':cp['exact_event_rows'],'p3_family_count':len(families),'v8_order_pretruth_sha256':cp['v8_order_pretruth_sha256'],'p3_crossfit_pretruth_sha256':cp['p3_crossfit_pretruth_sha256'],'p3_model_pretruth_sha256':cp['p3_model_pretruth_sha256'],'p3_decisions_pretruth_sha256':cp['p3_decisions_pretruth_sha256'],'p3_membership_pretruth_sha256':cp['p3_membership_pretruth_sha256'],'p3_diagnostics':cp['p3_diagnostics'],'p3_annual':p_sum,'competitor_annual':comp_sum,'pairwise_gates':gates,'broad_pairwise_pass':all(gates[str(y)]['broad_pass'] for y in YEARS),'sparse_pairwise_pass':all(gates[str(y)]['sparse_pass'] for y in YEARS),'p3_false_positive_burden':exact.burden_for_families(families,truth),'competitor_false_positive_burden':{str(y):exact.burden_for_clusters(assignments[y],truth) for y in YEARS},'internal_v8_nonregression':internal_v8(exact,families,truth,years),'p3_per_label':p_rows,'competitor_per_label':comp_rows}
+
+
+def main()->int:
+    p=argparse.ArgumentParser(); p.add_argument('--hdbscan-pretruth',required=True,type=Path); p.add_argument('--sugar-pretruth',required=True,type=Path); p.add_argument('--exact-row-runner',required=True,type=Path); p.add_argument('--base-runner',required=True,type=Path); p.add_argument('--support-source-parts',required=True,type=Path); p.add_argument('--candidate-payload',required=True,type=Path); p.add_argument('--baseline-payload',required=True,type=Path); p.add_argument('--scorer-parts',required=True,type=Path); p.add_argument('--parser-2023',required=True,type=Path); p.add_argument('--parser-2025',required=True,type=Path); p.add_argument('--mapping-audit',required=True,type=Path); p.add_argument('--archive-2023',required=True,type=Path); p.add_argument('--archive-2025',required=True,type=Path); p.add_argument('--hdbscan-2023',required=True,type=Path); p.add_argument('--hdbscan-2025',required=True,type=Path); p.add_argument('--sugar-2023',required=True,type=Path); p.add_argument('--sugar-2025',required=True,type=Path); p.add_argument('--output',required=True,type=Path); a=p.parse_args()
+    cps={'hdbscan':load_checkpoint(a.hdbscan_pretruth,'hdbscan'),'sugar':load_checkpoint(a.sugar_pretruth,'sugar')}; exact=load_module(a.exact_row_runner,'p3_posttruth_exact'); old=load_module(a.base_runner,'p3_posttruth_base'); support=old.load_support_module(a.support_source_parts); _c,base,_s=support.load_sources(a); archives={2023:a.archive_2023,2025:a.archive_2025}; require(exact.sha256_file(a.mapping_audit)==exact.MAPPING_AUDIT_SHA256,'mapping audit hash changed'); [require(exact.sha256_file(archives[y])==exact.ARCHIVE_SHA256[y],f'archive hash changed {y}') for y in YEARS]; parsers={2023:load_module(a.parser_2023,'p3_truth_2023'),2025:load_module(a.parser_2025,'p3_truth_2025')}; ap={'hdbscan':{2023:a.hdbscan_2023,2025:a.hdbscan_2025},'sugar':{2023:a.sugar_2023,2025:a.sugar_2025}}; results={}; any_ineligible=False
+    for panel in ('hdbscan','sugar'):
+        cp=cps[panel]
+        if cp['classification']==INELIGIBLE:
+            any_ineligible=True; results[panel]={'status':INELIGIBLE,'ineligibility_kind':cp['ineligibility_kind'],'detail':cp['detail'],'competitor_cluster_values_accessed':False,'known_shower_truth_accessed':False,'broad_pairwise_pass':False,'sparse_pairwise_pass':False}
+        else: results[panel]=evaluate_panel(panel,cp,exact,base,parsers,archives,a.mapping_audit,ap)
+    broad=(not any_ineligible) and all(results[x]['broad_pairwise_pass'] for x in results); sparse=(not any_ineligible) and all(results[x]['sparse_pairwise_pass'] for x in results); classification=INELIGIBLE if any_ineligible else ('SPARSE_STREAM_SUPERIORITY' if sparse else 'NO_LITERATURE_SUPERIORITY')
+    for panel in results:
+        if results[panel]['status']=='ELIGIBLE_EVALUATED':
+            for y in YEARS: require(math.isfinite(float(results[panel]['pairwise_gates'][str(y)]['macro_f1_delta_p3_minus_comparator'])),f'nonfinite endpoint {panel} {y}')
+    result={'classification':classification,'years':list(YEARS),'blind_exclusion':[BLIND_LOW,BLIND_HIGH],'p2_source_sha256':P2_SOURCE_SHA256,'p3_development_source_sha256':P3_DEVELOPMENT_SOURCE_SHA256,'dsh_source_sha256':DSH_SOURCE_SHA256,'pairwise_only_no_cross_denominator_comparison':True,'matched_input_ineligible':any_ineligible,'broad_catalogue_superiority':broad,'sparse_stream_superiority':sparse,'sparse_stream_superiority_required_for_promotion':True,'broad_only_does_not_authorize_external':True,'panels':results,'claim_boundary':'Matched SonotaCo exact-row comparison only. Input ineligibility cannot count as superiority and is not repaired. P3 advances only if the frozen SPARSE_STREAM_SUPERIORITY standard passes against both comparators in both years; broad superiority is supplementary. This is not external validation or target authorization.'}; a.output.parent.mkdir(parents=True,exist_ok=True); a.output.write_text(json.dumps(result,indent=2,sort_keys=True)+'\n'); a.output.with_suffix(a.output.suffix+'.sha256').write_text(canonical_sha(result)+'\n'); print('ORBITTRACE_P3_MATCHED_RESULT_BEGIN'); print(json.dumps({'classification':classification,'matched_input_ineligible':any_ineligible,'broad_catalogue_superiority':broad,'sparse_stream_superiority':sparse,'panel_status':{p:results[p]['status'] for p in results}},indent=2,sort_keys=True)); print('ORBITTRACE_P3_MATCHED_RESULT_END'); return 0
+
+
+if __name__=='__main__': raise SystemExit(main())
