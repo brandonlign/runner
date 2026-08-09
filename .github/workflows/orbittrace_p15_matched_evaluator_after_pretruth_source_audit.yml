@@ -1,0 +1,102 @@
+name: OrbitTrace P15 matched evaluator after pretruth source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/run_matched_evaluator_after_pretruth.sh
+      - .github/workflows/orbittrace_p15_matched_evaluator_after_pretruth.yml
+      - .github/workflows/orbittrace_p15_matched_evaluator_after_pretruth_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove exact prerequisite artifacts, inherited evaluator gates, single truth opening, and target firewall
+        run: |
+          set -euo pipefail
+          launcher=orbittrace_support_safe_halo_p15/run_matched_evaluator_after_pretruth.sh
+          wf=.github/workflows/orbittrace_p15_matched_evaluator_after_pretruth.yml
+          bash -n "$launcher"
+
+          for pair in \
+            'orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py d8653b898ca8c106d79df01c855783797294c30c' \
+            'orbittrace_support_safe_halo_p15/finalize_p15_matched_result.py 17e446565aa324e3de374246abc5a0693fc8467b' \
+            'orbittrace_support_safe_rank_p14/prepare_transport_compatible_p13_finalizer.py ee932b83ad63d10fb81c5b8c85bb151c4467f8f7' \
+            'orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py 1e9160c7beb5bc7651dc2b9f03db6211bc639ac6' \
+            'orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py a5d812b9956742b51e7e3995a71eb308afa7d095' \
+            'orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py d1ce98f443b2039d70421e76dadb6ada77d1b0d5'; do
+            set -- $pair
+            test "$(git hash-object "$1")" = "$2"
+          done
+          python -m py_compile \
+            orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py \
+            orbittrace_support_safe_halo_p15/finalize_p15_matched_result.py \
+            orbittrace_support_safe_rank_p14/prepare_transport_compatible_p13_finalizer.py \
+            orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py
+
+          for x in \
+            'EXECUTE_P15_MATCHED_EVALUATOR_AFTER_PRETRUTH_FREEZE' \
+            '31329529635' '9042508082' \
+            'sha256:f6bee693dfd64f86fcbb7fa2b3760a9258d712d5df29c59e270233d87a6a160f' \
+            '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e' \
+            'orbittrace-p15-matched-pretruth-checkpoints' \
+            'validate_p15_pretruth_checkpoints.py' \
+            'PASS_P15_MATCHED_EVALUATOR_PREREQUISITES_FROZEN_BEFORE_TRUTH' \
+            'PASS_P15_MATCHED_POSTFREEZE_SOURCE_STAGING_COMPLETE' \
+            "progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'" \
+            'evaluate_frozen_blindsafe.py' \
+            'prepare_transport_compatible_p13_finalizer.py' \
+            'finalize_p15_matched_result.py' \
+            'PASS_P15_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'FAIL_P15_MATCHED_SPARSE_SUPERIORITY_NO_GO' \
+            "r['target_access_authorized'] is False" \
+            'p15_matched_execution_provenance.json'; do
+            grep -F "$x" "$launcher"
+          done
+
+          # The scientific advancement bars remain inherited and cannot be weakened here.
+          grep -F "sparse_superiority_required_against_both_comparators_in_both_years'] is True" "$launcher"
+          grep -F "pairwise_only_no_cross_denominator_comparison'] is True" "$launcher"
+          grep -F "broad_only_does_not_authorize_external'] is True" "$launcher"
+          test "$(grep -Fc "progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'" "$launcher")" -eq 1
+          test "$(grep -Fc 'python -u input/evaluator/evaluate_frozen_blindsafe.py' "$launcher")" -eq 1
+          prereq_line="$(grep -n 'PASS_P15_MATCHED_EVALUATOR_PREREQUISITES_FROZEN_BEFORE_TRUTH' "$launcher" | cut -d: -f1)"
+          truth_line="$(grep -n "progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'" "$launcher" | cut -d: -f1)"
+          test "$prereq_line" -lt "$truth_line"
+
+          # All comparator/source identities used by the frozen P13 benchmark are exact-pinned.
+          for x in \
+            '9012424187' '8955917326' '8957940764' '8957263372' \
+            '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761' \
+            '8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3' \
+            '2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389' \
+            '77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e' \
+            '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430' \
+            'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52'; do
+            grep -F "$x" "$launcher"
+          done
+
+          # Inadmissible development evidence and target-specific tokens must be absent.
+          for forbidden in \
+            '31328065110' '9042324169' '31329252140' '9042432234' \
+            'continuous_abs_tolerance' 'continuous_scaled_tolerance' \
+            'math.isclose' 'np.isclose' 'allclose' \
+            'OrbitTrace-April' 'target_coordinate'; do
+            if grep -Fq "$forbidden" "$launcher" "$wf"; then
+              echo "forbidden token in P15 evaluator activation: $forbidden" >&2
+              exit 1
+            fi
+          done
+          grep -F 'orbittrace_support_safe_halo_p15/MATCHED_EVALUATOR_RUN.md' "$wf"
+          grep -F 'orbittrace-p15-matched-literature-result' "$wf"
+          test ! -e orbittrace_support_safe_halo_p15/MATCHED_EVALUATOR_RUN.md
+          echo PASS_P15_MATCHED_EVALUATOR_AFTER_PRETRUTH_SOURCE_AUDIT
+          echo NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
