@@ -1,0 +1,118 @@
+name: OrbitTrace P8 full finite-sample coverage source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p7-finite-sample-robust-floor-freeze
+    paths:
+      - orbittrace_full_finite_sample_coverage_p8/**
+      - .github/workflows/orbittrace_p8_full_finite_sample_coverage_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact P7 and audit P8 transform
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py \
+            /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py \
+            /tmp/run_p3.py /tmp/run_p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/run_p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py \
+            /tmp/run_p4.py /tmp/run_p5.py
+          echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/run_p5.py' | sha256sum -c -
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py \
+            /tmp/run_p5.py /tmp/run_p6.py
+          echo 'd32648136b58e2f777912d6403d9de3cbd091a8c23e16aedcda0b146f09f38c2  /tmp/run_p6.py' | sha256sum -c -
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py \
+            /tmp/run_p6.py /tmp/run_p7.py
+          echo '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54  /tmp/run_p7.py' | sha256sum -c -
+          python orbittrace_full_finite_sample_coverage_p8/apply_p8_patch.py \
+            /tmp/run_p7.py /tmp/run_p8.py
+          python -m py_compile /tmp/run_p8.py orbittrace_full_finite_sample_coverage_p8/run_header_compatible.py
+          echo "P8_GENERATED_SOURCE_SHA256=$(sha256sum /tmp/run_p8.py | awk '{print $1}')"
+
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/run_p8.py').read_text()
+          protocol=Path('orbittrace_full_finite_sample_coverage_p8/PROTOCOL.md').read_text()
+          wrapper=Path('orbittrace_full_finite_sample_coverage_p8/run_header_compatible.py').read_text()
+          required=(
+              'P8_COVERAGE_ALPHA = P3_NEGATIVE_TAIL_MAX',
+              'membership_floor_rank = max(1, int(np.floor(P8_COVERAGE_ALPHA * (len(sorted_seed_probabilities) + 1))))',
+              'membership_floor = float(sorted_seed_probabilities[membership_floor_rank - 1])',
+              'allowed = membership_floor_allowed & jointly_supported',
+              'p8_coverage_alpha_exactly_inherited_p3_tail',
+              'p8_maximal_finite_sample_rank_exact',
+              'p8_coverage_bound_when_feasible',
+              'p8_every_surviving_proposal_meets_membership_floor',
+              'PASS_FULL_FINITE_SAMPLE_COVERAGE_MEMBERSHIP_P8_DEVELOPMENT',
+              'FAIL_FULL_FINITE_SAMPLE_COVERAGE_MEMBERSHIP_P8_NO_GO',
+              '"p8_parameter_search": False',
+              'full_finite_sample_coverage_membership_p8_development.json',
+              'p8_membership_pretruth.sha256',
+              'p8_decisions_pretruth.sha256',
+          )
+          for token in required:
+              assert token in p, token
+          inherited=(
+              'P3_FOLD_COUNT = 5',
+              'P3_NEGATIVE_TAIL_MAX = 0.10',
+              'P3_SEED_FLOOR_MIN = 0.5',
+              'RESPONSIBILITY_THRESHOLD = 0.5',
+              'p4_two_view_seed_envelope',
+              'p5_joint_seed_support',
+              'scoring_scaler, scoring_classifier = crossfit_runtime_models[scoring_fold]',
+              'probabilities = scoring_classifier.predict_proba(scoring_scaler.transform(features))[:, 1]',
+              'new_members_can_seed_growth',
+              'ranking_after_membership',
+          )
+          for token in inherited:
+              assert token in p, token
+          protocol_required=(
+              'k = max(1, floor(alpha * (n + 1)))',
+              'alpha = P3_NEGATIVE_TAIL_MAX = 0.10',
+              '27 reliable directions',
+              'largest permitted rank is 26',
+              'qualified known-shower matches >=95',
+              'Sparse-stream superiority separately against both Sugar and catalogue HDBSCAN',
+              'sole primary successor',
+          )
+          for token in protocol_required:
+              assert token in protocol, token
+          wrapper_required=(
+              "EXPECTED_P8_SOURCE = Path('/tmp/run_p8.py')",
+              "spec_from_file_location('orbittrace_p8_runtime', EXPECTED_P8_SOURCE)",
+              'module.exact_header_positions = compatible_exact_header_positions',
+              'PASS_P8_HEADER_WHITESPACE_COMPAT_SELF_TEST',
+          )
+          for token in wrapper_required:
+              assert token in wrapper, token
+          forbidden=('OrbitTrace-April','target_coordinate')
+          for token in forbidden:
+              assert token not in p, token
+          assert 'probabilities = classifier.predict_proba(scaler.transform(features))[:, 1]' not in p
+          assert 'negative_tail = float(np.mean(pn >= seed_floor))' in p
+          assert '"reliable": bool(len(xp) >= 4 and seed_floor > P3_SEED_FLOOR_MIN and negative_tail <= P3_NEGATIVE_TAIL_MAX)' in p
+          print('PASS_P8_FULL_FINITE_SAMPLE_COVERAGE_SOURCE_AUDIT')
+          PY
+
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_full_finite_sample_coverage_p8/RUN.md
+          test ! -e target
+          echo NO_P8_TRUTH_EXECUTION_NO_TARGET_ACCESS
