@@ -1,0 +1,195 @@
+name: OrbitTrace v6-LF strict semantic replay recovery
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-fanout-v1
+    paths:
+      - orbittrace_v6_label_free_all_event_null_fanout/RUN_SEMANTIC_RECOVERY.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-v6-lf-strict-semantic-recovery
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    outputs:
+      source_run: ${{ steps.auth.outputs.source_run }}
+    steps:
+      - name: Require one-file child and technical no-result source run
+        id: auth
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$BASE_REF" = 'agent/orbittrace-v6-lf-fanout-v1'
+          files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          test "$files" = 'orbittrace_v6_label_free_all_event_null_fanout/RUN_SEMANTIC_RECOVERY.md'
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_label_free_all_event_null_fanout/RUN_SEMANTIC_RECOVERY.md?ref=$HEAD_SHA" --jq .content | tr -d '\n' | base64 --decode)"
+          mode="$(printf '%s\n' "$content" | sed -n '1p')"
+          source_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$mode" = 'EXECUTE_V6_LF_STRICT_SEMANTIC_REPLAY_AFTER_TECHNICAL_NO_RESULT'
+          [[ "$source_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+          conclusion="$(gh run view "$source_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)"
+          test "$conclusion" = 'failure' -o "$conclusion" = 'cancelled'
+          mapfile -t names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$source_run/artifacts" --jq '.artifacts[].name')
+          printf '%s\n' "${names[@]}" | grep -qx 'v6-lf-v2-preexact-2022'
+          printf '%s\n' "${names[@]}" | grep -qx 'v6-lf-v2-preexact-2023'
+          for year in 2022 2023; do
+            for shard in 0 1 2 3 4 5; do
+              printf '%s\n' "${names[@]}" | grep -qx "v6-lf-v2-exact-${year}-${shard}"
+            done
+          done
+          if printf '%s\n' "${names[@]}" | grep -qx 'orbittrace-v6-lf-all-event-null-development-v2'; then
+            echo 'source run already emitted a final scientific result artifact' >&2
+            exit 1
+          fi
+          echo "source_run=$source_run" >> "$GITHUB_OUTPUT"
+          echo PASS_V6_LF_STRICT_RECOVERY_AUTHORIZATION
+
+  replay:
+    needs: authorize
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2022, 2023]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Download immutable preexact and exact source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ needs.authorize.outputs.source_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p preexact exact
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name "v6-lf-v2-preexact-${{ matrix.year }}" --dir preexact
+          for shard in 0 1 2 3 4 5; do
+            gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name "v6-lf-v2-exact-${{ matrix.year }}-$shard" --dir exact
+          done
+      - name: Bootstrap exact frozen runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Replay with strict semantic-equivalence fallback
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          set -euo pipefail
+          mkdir -p year
+          python -u execution/orbittrace_v6_label_free_all_event_null_fanout/replay_exact_year.py \
+            --year '${{ matrix.year }}' \
+            --preexact-checkpoint preexact/v6_lf_preexact_${{ matrix.year }}.pkl \
+            --exact-shards-dir exact \
+            --repaired-v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 \
+            --output year
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v6-lf-strict-year-${{ matrix.year }}
+          path: year
+          if-no-files-found: error
+          retention-days: 90
+
+  combine:
+    needs: replay
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-strict-year-2022, path: years}
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-strict-year-2023, path: years}
+      - name: Bootstrap exact frozen runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Freeze families, then read truth and evaluate
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u execution/orbittrace_v6_label_free_all_event_null_fanout/combine_and_evaluate.py \
+            --year-2022 years/v6_lf_year_2022.pkl \
+            --year-2023 years/v6_lf_year_2023.pkl \
+            --repaired-v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v6_label_free_all_event_null_development.json').read_text())
+          assert r['verdict'] in {'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT','FAIL_V6_LABEL_FREE_ALL_EVENT_NULL_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert r['configuration']['parameter_search'] is False and r['configuration']['null_trimming'] is False
+          assert r['configuration']['exact_fanout'] is True and r['configuration']['exact_shards_per_year']==6
+          print('ORBITTRACE_V6_LF_STRICT_RECOVERY_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'evaluation':{k:v for k,v in r['evaluation'].items() if k!='per_label'},'gates':r['gates']},indent=2))
+          print('ORBITTRACE_V6_LF_STRICT_RECOVERY_RESULT_END')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum execution/orbittrace_v6_label_free_all_event_null/*.py execution/orbittrace_v6_label_free_all_event_null_fanout/* > output/source_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-lf-strict-semantic-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
