@@ -61,10 +61,11 @@ jobs:
           from pathlib import Path
           r=json.loads(Path('output/schema.json').read_text())
           expected={'q':14,'e':16,'peri':18,'node':20,'i':21}
+          assert r['2023']['header_count']==46
+          assert r['2025']['header_count']==43
           for year in ('2023','2025'):
               assert r[year]['data_rows_read']==0
               assert r[year]['member'].lower().endswith('_s.csv')
-              assert r[year]['header_count'] in (45,46)
               assert r[year]['orbit_indices']==expected,r[year]['orbit_indices']
           assert r['2023']['shared_indices']==r['2025']['shared_indices']
           print('PASS_P2_SONOTACO_HEADER_ONLY_SCHEMA_AUDIT')
