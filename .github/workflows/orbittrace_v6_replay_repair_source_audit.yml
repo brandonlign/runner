@@ -1,0 +1,38 @@
+name: OrbitTrace v6 replay repair source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-exact-fanout-v2
+    paths:
+      - 'orbittrace_v6_exact_fanout_v2/**'
+      - 'orbittrace_v6_replay_repair/**'
+      - '.github/workflows/orbittrace_v6_replay_repair_source_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct frozen v6 and expose scan-year suffix
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast,base64,gzip,hashlib
+          from pathlib import Path
+          root=Path('orbittrace_v3_catalogue_v6/exact_parts')
+          parts=sorted(root.glob('part*.b64'))
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          src=gzip.decompress(base64.b64decode(encoded,validate=True)).decode()
+          assert hashlib.sha256(src.encode()).hexdigest()=='a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9'
+          tree=ast.parse(src)
+          fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='scan_year_v6')
+          lines=src.splitlines()
+          print('--- scan_year_v6 ---')
+          for i in range(fn.lineno,fn.end_lineno+1):
+              print(f'{i:04d}: {lines[i-1]}')
+          print('PASS_V6_REPLAY_REPAIR_SOURCE_EXTRACT')
+          PY
