@@ -1,0 +1,27 @@
+name: OrbitTrace P16 pretruth transform source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p16-core-rank-halo-membership-freeze
+    paths:
+      - .github/workflows/orbittrace_p16_pretruth_transform.yml
+      - .github/workflows/orbittrace_p16_pretruth_transform_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify P16 transform is artifact-only, pretruth, and rank-preserving
+        run: |
+          set -euo pipefail
+          wf=.github/workflows/orbittrace_p16_pretruth_transform.yml
+          for x in 'EXECUTE_P16_FROM_FROZEN_P15_PRETRUTH' '31329487091' '9042496657' '1d470dcd2034e8b693d80117380f544f43cf6c6d581574a356dc11a04bb91040' 'orbittrace-p15-matched-pretruth-checkpoints' 'd8653b898ca8c106d79df01c855783797294c30c' 'promote_halo_membership_checkpoint.py' 'P16_CORE_RANK_LABEL_FREE_HALO_MEMBERSHIP' "out['v8_multiplicity_order']==src['v8_multiplicity_order']" "out['p16_no_new_detector_score_threshold_or_proposal'] is True" 'PASS_P16_BOTH_CHECKPOINTS_TRANSFORMED_BEFORE_TRUTH'; do grep -F "$x" "$wf"; done
+          for x in 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OPEN TRUTH' 'MAARSY' 'OrbitTrace-April' 'target_coordinate'; do if grep -Fq "$x" "$wf"; then echo "posttruth/external/target token leaked into P16 transform: $x" >&2; exit 1; fi; done
+          test ! -e orbittrace_core_rank_halo_membership_p16/PRETRUTH_TRANSFORM_RUN.md
+          echo PASS_P16_PRETRUTH_TRANSFORM_SOURCE_FREEZE
+          echo NO_DETECTOR_RERUN_NO_COMPARATOR_VALUES_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
