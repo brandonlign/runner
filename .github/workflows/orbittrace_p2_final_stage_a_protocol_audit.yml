@@ -1,0 +1,63 @@
+name: OrbitTrace P2 final Stage-A protocol audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-final-exact-id-firewall-v2
+    paths:
+      - orbittrace_p2_final_stage_a/PROTOCOL.md
+      - .github/workflows/orbittrace_p2_final_stage_a_protocol_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove frozen P2 final authorization and exact-ID firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_p2_final_stage_a/PROTOCOL.md').read_text()
+          required=(
+            'PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT',
+            '`BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY`',
+            'PASS_P2_MAARSY_2020_2021_EXTERNAL_VALIDATION',
+            'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb',
+            'two cross-year predictive features only',
+            'responsibility `>0.5`',
+            'complete geometrically valid GMN 2022 and 2023 rows',
+            'catalogue shower-label values remain unavailable',
+            'target reference unavailable throughout Stage A',
+            'orbittrace-final-stage-a-ranked-families-v2',
+            'method_id = "P2-crossyear-two-view-membership"',
+            'model pretruth SHA',
+            'expanded-membership pretruth SHA',
+            '`target_reference_accessed = false`',
+            '`catalogue_shower_labels_used = false`',
+            'FULL_BLIND_RECOVERY',
+            'rank <=25',
+            'PARTIAL_BLIND_RECOVERY',
+            'rank <=100',
+            '>=4 exact withheld IDs in each of 2022 and 2023',
+            '>=8 total',
+          )
+          for token in required: assert token in p, token
+          assert 'No known-shower truth evaluation occurs in final Stage A.' in p
+          assert 'No coordinate/orbit/radiant/activity matching' in p
+          assert 'may not be changed because of the P2 development result' in p
+          assert 'before any authoritative P2 development verdict' in p
+          print('PASS_P2_FINAL_STAGE_A_PROTOCOL_AUDIT')
+          PY
+      - name: Assert protocol-only target boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          test ! -e orbittrace_p2_final_stage_a/RUN.md
+          echo NO_FINAL_GMN_DATA_NO_TARGET_REFERENCE_NO_STAGE_A_EXECUTION
