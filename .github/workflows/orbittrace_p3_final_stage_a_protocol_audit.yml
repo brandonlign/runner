@@ -1,0 +1,60 @@
+name: OrbitTrace P3 final Stage-A protocol audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/FINAL_STAGE_A_PROTOCOL.md
+      - .github/workflows/orbittrace_p3_final_stage_a_protocol_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove final deployment and reveal firewall frozen pre-result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_crossfit_seed_floor_membership_p3/FINAL_STAGE_A_PROTOCOL.md').read_text()
+          required=(
+              'authoritative P3 target-excluded development run `31291214704` is unresolved',
+              'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
+              'PR #626',
+              'PR #627',
+              'PASS_P3_MAARSY_2020_2021_EXTERNAL_GENERALIZATION',
+              'complete geometrically valid GMN 2022 and 2023',
+              'including the previously inaccessible solar-longitude 20°–55° interval',
+              'first eight bytes of SHA256(family_id UTF-8) mod 5',
+              'minimum held-out seed probability strictly >0.5',
+              'negative tail at/above that floor <=0.10',
+              'strict maximum family responsibility >0.5',
+              'withheld_target_reference_access=false',
+              'schema = orbittrace-final-stage-a-ranked-families-v2',
+              'method = P3_CROSSFIT_SEED_FLOOR',
+              'FULL_BLIND_RECOVERY',
+              'PARTIAL_BLIND_RECOVERY',
+              'NO_BLIND_RECOVERY',
+              '>=4 exact target IDs in 2022 and >=4 in 2023',
+              'seal predates the Stage-A run',
+          )
+          for token in required: assert token in p,token
+          assert 'No catalogue known-shower label is read, normalized, stored or used by Stage A.' in p
+          assert 'Stage A receives no target artifact locator.' in p
+          assert 'exact set intersection only' in p
+          print('PASS_P3_FINAL_STAGE_A_PREREGISTRATION_AUDIT')
+          PY
+      - name: Assert protocol-only target firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/FINAL_STAGE_A_RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_FINAL_STAGE_A_EXECUTION_NO_TARGET_ACCESS
