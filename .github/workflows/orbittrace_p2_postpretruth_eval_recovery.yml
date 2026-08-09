@@ -1,0 +1,181 @@
+name: OrbitTrace P2 post-pretruth evaluation recovery
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p2-postpretruth-eval-recovery-freeze
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/RUN_POSTPRETRUTH_EVAL.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p2-postpretruth-eval-recovery
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require one-file child and exact frozen post-pretruth technical no-result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_crossyear_two_view_membership_p2/RUN_POSTPRETRUTH_EVAL.md'
+          content="$(git show "$HEAD_SHA":orbittrace_crossyear_two_view_membership_p2/RUN_POSTPRETRUTH_EVAL.md)"
+          marker="$(printf '%s\n' "$content" | sed -n '1p')"
+          source_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          frozen_run="$(printf '%s\n' "$content" | sed -n '3p')"
+          test "$marker" = 'EXECUTE_P2_POSTPRETRUTH_EVALUATION_ONLY_RECOVERY'
+          test "$source_run" = '31289333209'
+          test "$frozen_run" = '31289791712'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 3
+
+          test "$(gh run view "$source_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = failure
+          test "$(gh run view "$frozen_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = failure
+          artifact_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$frozen_run/artifacts")"
+          test "$(printf '%s' "$artifact_json" | jq -r '[.artifacts[]|select(.name=="orbittrace-crossyear-two-view-membership-p2-header-recovery-development")]|length')" -eq 1
+          test "$(printf '%s' "$artifact_json" | jq -r '.artifacts[]|select(.name=="orbittrace-crossyear-two-view-membership-p2-header-recovery-development")|.id')" = '9031107930'
+          test "$(printf '%s' "$artifact_json" | jq -r '.artifacts[]|select(.name=="orbittrace-crossyear-two-view-membership-p2-header-recovery-development")|.digest')" = 'sha256:62f3d547c1abd2f329b1d4a59f6603640ef11dba0497c1d63e1c4656e28d0486'
+
+          rm -rf /tmp/frozen-p2 && mkdir -p /tmp/frozen-p2
+          gh run download "$frozen_run" --repo "$GITHUB_REPOSITORY" --name orbittrace-crossyear-two-view-membership-p2-header-recovery-development --dir /tmp/frozen-p2
+          test ! -e /tmp/frozen-p2/crossyear_two_view_membership_p2_development.json
+          test "$(cat /tmp/frozen-p2/p2_membership_pretruth.sha256)" = 'b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e'
+          test "$(cat /tmp/frozen-p2/p2_model_pretruth.sha256)" = '0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          grep -Fq 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/run_p2_canonical_v2.py' /tmp/frozen-p2/source_sha256.txt
+          grep -Fq 'b24d8801e37b238abb116e5b105e87d308059d7af4da827f3975a51c70804b7b  orbittrace_crossyear_two_view_membership_p2/run_header_compatible.py' /tmp/frozen-p2/source_sha256.txt
+          test "$(cat /tmp/frozen-p2/exact_v8_commit.txt)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          gh run view "$frozen_run" --repo "$GITHUB_REPOSITORY" --log-failed > /tmp/frozen_failed.log
+          grep -Fq 'P2 scoring direction 452/452' /tmp/frozen_failed.log
+          grep -Fq "NameError: name 'valid_nonseed_by_year' is not defined" /tmp/frozen_failed.log
+          ! grep -Fq 'ORBITTRACE_P2_HEADER_RECOVERY_RESULT_BEGIN' /tmp/frozen_failed.log
+          echo PASS_P2_POSTPRETRUTH_FROZEN_MEMBERSHIP_TECHNICAL_BOUNDARY
+
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_crossyear_two_view_membership_p2/RUN_POSTPRETRUTH_EVAL.md
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact target-excluded evaluator environment
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,dsh} output
+          test "$(git hash-object orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py)" = '186cbe5607f610e9111b7253a51ad5aa58bf9829'
+          python -m py_compile orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git -C exact-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          cp exact-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+          test "$(git hash-object input/v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py' | sha256sum -c -
+          echo PASS_P2_POSTPRETRUTH_EXACT_EVALUATOR_ENVIRONMENT
+
+      - name: Evaluate immutable P2 membership without recomputation
+        env:
+          PYTHONPATH: exact-v8:input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py \
+            --p2-families /tmp/frozen-p2/p2_expanded_families.json.gz \
+            --p2-membership-sha /tmp/frozen-p2/p2_membership_pretruth.sha256 \
+            --p2-model /tmp/frozen-p2/p2_model_pretruth.json \
+            --p2-model-sha /tmp/frozen-p2/p2_model_pretruth.sha256 \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --dsh-comparator input/dsh/literature_comparators.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --output output
+          cat output/CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT.md
+
+      - name: Enforce exact P2 scientific result boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/crossyear_two_view_membership_p2_development.json').read_text())
+          assert r['verdict'] in {'PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT','FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['window_half_width_deg']==5.0
+          assert r['configuration']['negative_minimum_per_direction']==128
+          assert r['configuration']['responsibility_threshold']==0.5
+          assert r['configuration']['parameter_search'] is False
+          assert r['configuration']['new_members_can_seed_growth'] is False
+          assert r['model_pretruth_sha256']=='0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          assert r['membership_pretruth_sha256']=='b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e'
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert r['gates']['v8_baseline_reproduced'] is True
+          assert r['recovery_provenance']['membership_recomputed'] is False
+          assert r['recovery_provenance']['model_refit'] is False
+          print('ORBITTRACE_P2_POSTPRETRUTH_RECOVERY_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'baseline_v8':r['baseline_v8'],'p2':r['p2'],'baseline_large_shower':r['baseline_large_shower'],'p2_large_shower':r['p2_large_shower'],'gates':r['gates'],'diagnostics':r['diagnostics']},indent=2,sort_keys=True))
+          print('ORBITTRACE_P2_POSTPRETRUTH_RECOVERY_RESULT_END')
+          PY
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py /tmp/frozen-p2/p2_expanded_families.json.gz /tmp/frozen-p2/p2_model_pretruth.json input/dsh/literature_comparators.py > output/recovery_source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/recovery_python_version.txt
+          python -m pip freeze > output/recovery_environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p2-postpretruth-evaluation-recovery-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
