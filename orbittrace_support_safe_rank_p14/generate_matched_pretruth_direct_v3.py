@@ -55,8 +55,16 @@ python -m py_compile /tmp/prepare_p13_panel_v2.py /tmp/finalize_p14_checkpoint_b
 '''
     text = once(text, finalizer_old, finalizer_new, 'transport-aware checkpoint finalizer')
 
-    barrier_old = "    assert c['competitor_cluster_values_accessed'] is False and c['known_shower_truth_accessed'] is False\n"
-    barrier_new = f"""    assert c['p13_transport_parent_source_sha256']=='{PARENT_SHA}'\n    assert c['p13_transport_source_sha256']=='{TECH_SHA}'\n    assert c['p14_p12_snm_id_transport_repair_audit_run']=={REPAIR_AUDIT_RUN}\n    assert c['p14_p12_snm_id_transport_scientific_delta'] is False\n    assert c['competitor_cluster_values_accessed'] is False and c['known_shower_truth_accessed'] is False\n"""
+    barrier_old = """    assert c['p14_rank_frozen_before_truth'] is True and c['p14_no_fabricated_score'] is True and c['p14_episode_size_128_unchanged'] is True
+    assert c['competitor_cluster_values_accessed'] is False and c['known_shower_truth_accessed'] is False
+"""
+    barrier_new = f"""    assert c['p14_rank_frozen_before_truth'] is True and c['p14_no_fabricated_score'] is True and c['p14_episode_size_128_unchanged'] is True
+    assert c['p13_transport_parent_source_sha256']=='{PARENT_SHA}'
+    assert c['p13_transport_source_sha256']=='{TECH_SHA}'
+    assert c['p14_p12_snm_id_transport_repair_audit_run']=={REPAIR_AUDIT_RUN}
+    assert c['p14_p12_snm_id_transport_scientific_delta'] is False
+    assert c['competitor_cluster_values_accessed'] is False and c['known_shower_truth_accessed'] is False
+"""
     text = once(text, barrier_old, barrier_new, 'pretruth transport provenance barrier')
 
     source_hash_old = 'sha256sum /tmp/prepare_p13_panel_v2.py /tmp/p14_support_safe_rank.py /tmp/finalize_p14_checkpoint.py > pretruth/p14_source_sha256.txt\n'
