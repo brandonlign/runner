@@ -1,0 +1,97 @@
+name: OrbitTrace v6-LF GMN holdout execution source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-gmn-2024-2025-holdout-fanout-freeze
+    paths:
+      - orbittrace_v6_lf_gmn_2024_2025_holdout/**
+      - .github/workflows/orbittrace_v6_lf_gmn_holdout_execution.yml
+      - .github/workflows/orbittrace_v6_lf_gmn_holdout_execution_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile holdout execution adapters
+        run: |
+          python -m py_compile \
+            orbittrace_v6_lf_gmn_2024_2025_holdout/holdout_context.py \
+            orbittrace_v6_lf_gmn_2024_2025_holdout/capture_preexact_year.py \
+            orbittrace_v6_lf_gmn_2024_2025_holdout/run_exact_holdout_shard.py \
+            orbittrace_v6_lf_gmn_2024_2025_holdout/replay_holdout_year.py \
+            orbittrace_v6_lf_gmn_2024_2025_holdout/combine_evaluate_holdout.py
+      - name: Prove year-only transport and generic exact/replay reuse
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          ctx=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/holdout_context.py').read_text()
+          assert 'HOLDOUT_YEARS=(2024,2025)' in ctx
+          assert 'HOLDOUT_CORPUS="orbittrace-v6-lf-gmn-2024-2025-temporal-holdout"' in ctx
+          exact=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/run_exact_holdout_shard.py').read_text()
+          assert 'ctx.activate()' in exact
+          assert 'run_exact_center_shard as exact' in exact
+          replay=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/replay_holdout_year.py').read_text()
+          assert 'ctx.configure_runtime(v6, old, support)' in replay
+          assert 'replay_exact_year as replay' in replay
+          capture=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/capture_preexact_year.py').read_text()
+          assert "'format':'orbittrace-v6-lf-preexact-fanout-v1'" in capture
+          assert "f'v6_lf_preexact_{args.year}.pkl'" in capture
+          assert "'target_interval_remains_excluded':True" in capture
+          assert "'label_values_not_accessed':True" in capture
+          assert "'all_event_calibration':True" in capture
+          print('PASS_HOLDOUT_YEAR_ONLY_GENERIC_FANOUT_REUSE')
+          PY
+      - name: Prove frozen holdout gates and truth ordering
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/combine_evaluate_holdout.py')
+          text=p.read_text(); tree=ast.parse(text)
+          main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+          body=ast.get_source_segment(text,main)
+          for token in (
+              'MIN_FAMILIES = 50','MIN_QUALIFIED = 90','MIN_RECOVERY100 = 55','MIN_MRR = 0.040',
+              'MIN_TOP100_PRECISION = 0.60','MIN_MACRO_F1 = 0.15',
+              'complete_12_months_each_year','all_event_calibration_exact','at_least_30_supported_bins_each_year',
+              'proposal_budget_exact','at_least_50_recurrent_primary_families','all_primary_families_span_both_holdout_years',
+              'POWER_INCONCLUSIVE_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT',
+              'PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT','FAIL_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT',
+          ):
+              assert token in text,token
+          assert body.index('v6_lf_gmn_holdout_pretruth.sha256') < body.index('lf.parse_truth_after_freeze')
+          assert body.index('if not all(pretruth_integrity.values())') < body.index('lf.parse_truth_after_freeze')
+          assert 'base_result["truth_accessed"] = False' in body
+          assert 'ctx.configure_runtime(v6, old, support)' in body
+          assert 'parameter_search": False' in body and 'null_trimming": False' in body
+          print('PASS_HOLDOUT_FROZEN_GATES_AND_TRUTH_FIREWALL')
+          PY
+      - name: Prove workflow hard-gated by exact v6-LF development PASS
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_v6_lf_gmn_holdout_execution.yml').read_text()
+          assert "EXECUTE_AFTER_V6_LF_DEVELOPMENT_PASS" in w
+          assert "orbittrace-v6-lf-all-event-null-development-v2" in w
+          assert "PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT" in w
+          assert "all(r['gates'].values())" in w
+          assert 'year: [2024, 2025]' in w
+          assert "--year-2024 years/v6_lf_year_2024.pkl" in w
+          assert "--year-2025 years/v6_lf_year_2025.pkl" in w
+          print('PASS_HOLDOUT_EXECUTION_PREREQUISITE_AND_YEARS')
+          PY
+      - name: Assert source-only no-holdout boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_GMN_2024_2025_DATA_NO_LABEL_VALUES_NO_TARGET_ACCESS
