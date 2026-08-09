@@ -1,0 +1,61 @@
+name: OrbitTrace P18 checkpoint-transform source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/promote_p17_checkpoint_to_p18.py
+      - .github/workflows/orbittrace_p18_checkpoint_transform_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove P18 transform changes only evaluator-facing membership and preserves P17 closure
+        run: |
+          set -euo pipefail
+          s=orbittrace_p17_rank_halo_membership_p18/promote_p17_checkpoint_to_p18.py
+          python -m py_compile "$s"
+          test "$(git hash-object "$s")" = '3f53e1ffeabb1b32d2de124cbf903d193012b9af'
+          for x in \
+            "P17_RULE='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'" \
+            "P18_RULE='P18_P17_RANK_LABEL_FREE_HALO_MEMBERSHIP'" \
+            "P17_MATCHED_SOURCE='c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a'" \
+            "P16_ADAPTER_BLOB='a143d59be30a03091ae9a46ce169ff9b12280c99'" \
+            "cp['competitor_cluster_values_accessed'] is False" \
+            "cp['known_shower_truth_accessed'] is False" \
+            "p17_before=p17_snapshot(cp)" \
+            "canonical_sha(p17_snapshot(cp))==p17_before_sha" \
+            "cids<=hids" \
+            "stored==set(added)" \
+            "row['p3_added_event_ids']=added" \
+            "cp['p3_expanded_families']=evaluator" \
+            "cp['p18_primary_candidate_for_matched_verdict']=True" \
+            "cp['p18_p17_core_only_is_diagnostic_ablation']=True" \
+            "cp['p18_no_new_detector_score_distance_threshold_family_proposal_growth_merge_or_rank']=True" \
+            "cp['p18_new_members_can_seed_growth']=False" \
+            "cp['p18_core_order_unchanged']=True" \
+            "cp['p18_membership_frozen_before_truth']=True"; do
+            grep -F "$x" "$s"
+          done
+          # P18 may not embed evaluator execution, matched-result selection, external data,
+          # or target-specific discovery logic in its pretruth transform.
+          for forbidden in \
+            'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' \
+            'SPARSE_STREAM_SUPERIORITY' 'macro_f1_delta' \
+            'MAARSY' 'OrbitTrace-April' 'target_coordinate'; do
+            if grep -Fq "$forbidden" "$s"; then
+              echo "result/external/target logic leaked into P18 pretruth transform: $forbidden" >&2
+              exit 1
+            fi
+          done
+          echo PASS_P18_CHECKPOINT_TRANSFORM_SOURCE_FREEZE
+          echo P17_CLOSURE_AND_CORE_RANK_IMMUTABLE_HALO_MEMBERSHIP_ONLY
+          echo NO_MATCHED_RESULT_NO_EXTERNAL_NO_TARGET_ACCESS
