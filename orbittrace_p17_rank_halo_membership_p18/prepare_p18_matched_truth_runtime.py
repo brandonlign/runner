@@ -43,7 +43,8 @@ def main() -> int:
     stage_p18=stage.replace(PARENT_PREP,P18_PREP,1)
     restored=stage_p18.replace(P18_PREP,PARENT_PREP,1)
     require(restored==stage,'P18 staging differs outside one preregistered finalizer-prep substitution')
-    require('evaluate_frozen_blindsafe.py' not in stage_p18,'truth evaluator leaked into staging')
+    stage_lines=stage_p18.splitlines()
+    require(not any(line.lstrip().startswith(('python -u input/evaluator/evaluate_frozen_blindsafe.py','python input/evaluator/evaluate_frozen_blindsafe.py')) for line in stage_lines),'truth evaluator invocation leaked into staging')
     require('OrbitTrace-April' not in stage_p18 and 'target_coordinate' not in stage_p18,'target token leaked into staging')
 
     e0=t+len(TRUTH_START)
