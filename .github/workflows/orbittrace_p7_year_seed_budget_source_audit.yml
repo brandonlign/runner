@@ -1,0 +1,105 @@
+name: OrbitTrace P7 year seed-budget source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p6-bidirectional-reliability-freeze
+    paths:
+      - orbittrace_year_seed_budget_p7/**
+      - .github/workflows/orbittrace_p7_year_seed_budget_source_audit.yml
+      - .github/workflows/orbittrace_p7_year_seed_budget_development.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reproduce exact P7 pretruth transform from canonical P6 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_year_seed_budget_p7/transform_frozen_p6.py orbittrace_year_seed_budget_p7/evaluate_frozen_p7.py
+          rm -rf /tmp/p6 /tmp/p7 && mkdir -p /tmp/p6 /tmp/p7
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9032590228/zip" -o /tmp/p6.zip
+          echo '3b55fa59d3a92802f2ee7802101e6ca67eac8b6f4a026d4d3aedf1f1a68ebffa  /tmp/p6.zip' | sha256sum -c -
+          unzip -q /tmp/p6.zip -d /tmp/p6
+          python orbittrace_year_seed_budget_p7/transform_frozen_p6.py \
+            --p6-expanded-families /tmp/p6/p6_expanded_families.json.gz \
+            --p6-membership-sha /tmp/p6/p6_membership_pretruth.sha256 \
+            --p6-decisions /tmp/p6/p6_decisions_pretruth.json.gz \
+            --p6-decisions-sha /tmp/p6/p6_decisions_pretruth.sha256 \
+            --output /tmp/p7
+          test "$(cat /tmp/p7/p7_membership_pretruth.sha256)" = 'c68dcf21761cdad3048508902a7382039ea543df5b58a6b95a094c7c17f2db7a'
+          test "$(cat /tmp/p7/p7_decisions_pretruth.sha256)" = '4ffb9a4a4735788322825aaa24a1adee50ac7f5d13d0aba61c579d4b7b206ba5'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/p7/p7_pretruth_transform.json').read_text())
+          assert r['family_count']==226
+          assert r['p6_assignments']==21626
+          assert r['retained_assignments']==4463
+          assert r['dropped_assignments']==17163
+          assert r['families_gaining_members']==214
+          assert r['budget_binding_family_year_cells']==283
+          assert r['budget_binding_families']==174
+          assert r['known_shower_truth_accessed'] is False
+          assert r['target_information_accessed'] is False
+          assert r['membership_pretruth_sha256']=='c68dcf21761cdad3048508902a7382039ea543df5b58a6b95a094c7c17f2db7a'
+          assert r['decisions_pretruth_sha256']=='4ffb9a4a4735788322825aaa24a1adee50ac7f5d13d0aba61c579d4b7b206ba5'
+          print('PASS_P7_EXACT_PRETRUTH_TRANSFORM_IDENTITY')
+          PY
+
+      - name: Assert P7 protocol, execution hierarchy and source-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          protocol=Path('orbittrace_year_seed_budget_p7/PROTOCOL.md').read_text()
+          transform=Path('orbittrace_year_seed_budget_p7/transform_frozen_p6.py').read_text()
+          evaluator=Path('orbittrace_year_seed_budget_p7/evaluate_frozen_p7.py').read_text()
+          workflow=Path('.github/workflows/orbittrace_p7_year_seed_budget_development.yml').read_text()
+          for token in (
+              'unlabeled expansion may not outvote the immutable recurrent evidence within the same survey year',
+              'P7 retained additions: 4,463',
+              'dropped P6 assignments: 17,163',
+              'budget-binding family-year cells: 283',
+              'c68dcf21761cdad3048508902a7382039ea543df5b58a6b95a094c7c17f2db7a',
+              '4ffb9a4a4735788322825aaa24a1adee50ac7f5d13d0aba61c579d4b7b206ba5',
+              'qualified known-shower matches >=95',
+              'large-shower mean precision >=0.85',
+              'sole primary P7 configuration',
+          ):
+              assert token in protocol,token
+          for token in ('EXPECTED_P7_ASSIGNMENTS=4463','EXPECTED_DROPPED_ASSIGNMENTS=17163','EXPECTED_BINDING_CELLS=283','EXPECTED_BINDING_FAMILIES=174'):
+              assert token in transform,token
+          for token in ('PASS_YEAR_SEED_BUDGET_MEMBERSHIP_P7_DEVELOPMENT','FAIL_YEAR_SEED_BUDGET_MEMBERSHIP_P7_NO_GO','parameter_search'):
+              assert token in evaluator,token
+          for token in (
+              'EXECUTE_P7_AFTER_AUTHORITATIVE_P6_SCIENTIFIC_NO_GO','31294731265','9032590228',
+              '3b55fa59d3a92802f2ee7802101e6ca67eac8b6f4a026d4d3aedf1f1a68ebffa',
+              'c68dcf21761cdad3048508902a7382039ea543df5b58a6b95a094c7c17f2db7a',
+              '4ffb9a4a4735788322825aaa24a1adee50ac7f5d13d0aba61c579d4b7b206ba5',
+              'Freeze exact P7 membership before any known-shower truth is reopened.',
+              'Evaluate exact frozen P7 membership against unchanged target-excluded truth',
+              'orbittrace-year-seed-budget-membership-p7-development',
+          ):
+              assert token in workflow,token
+          assert workflow.index('transform_frozen_p6.py') < workflow.index('evaluate_frozen_p7.py')
+          for text in (transform,evaluator,workflow):
+              assert 'OrbitTrace-April' not in text
+              assert 'target_coordinate' not in text
+          print('PASS_P7_YEAR_SEED_BUDGET_SOURCE_AUDIT')
+          PY
+          test ! -e orbittrace_year_seed_budget_p7/RUN.md
+          test ! -e target
+          echo NO_P7_TRUTH_EXECUTION_NO_TARGET_ACCESS
