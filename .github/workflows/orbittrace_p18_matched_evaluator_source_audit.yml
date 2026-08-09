@@ -1,0 +1,86 @@
+name: OrbitTrace P18 matched evaluator source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py
+      - orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py
+      - .github/workflows/orbittrace_p18_matched_evaluator_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove P18 evaluator changes only frozen output semantics and provenance
+        run: |
+          set -euo pipefail
+          prep=orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py
+          final=orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py
+          base=orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py
+          p14=orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py
+          transport=orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py
+
+          python -m py_compile "$prep" "$final" "$base" "$p14" "$transport"
+          test "$(git hash-object "$prep")" = '370d4d289e6072a9e3d4035013e946bec1d4f886'
+          test "$(git hash-object "$final")" = '8ea6b744f2f017ccaac43c6219c09232842af9e1'
+          test "$(git hash-object "$base")" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
+          test "$(git hash-object "$p14")" = 'd1ce98f443b2039d70421e76dadb6ada77d1b0d5'
+          test "$(git hash-object "$transport")" = '1e9160c7beb5bc7651dc2b9f03db6211bc639ac6'
+
+          python "$prep" "$base" /tmp/p18_p13_finalizer.py
+          python -m py_compile /tmp/p18_p13_finalizer.py
+          for x in \
+            "P13_TRANSPORT_SOURCE_SHA256='55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415'" \
+            "cp['p3_diagnostics']['primary_candidate_is_core_only'] is False" \
+            "cp['p3_diagnostics']['p18_no_new_member_proposal'] is True" \
+            "q['p3_diagnostics']['primary_candidate_is_core_only'] is False" \
+            "q['p3_diagnostics']['p18_no_new_member_proposal'] is True" \
+            'four_to_nine_gain_ge_0_10' \
+            'four_to_twentyfour_gain_ge_0_10' \
+            'macro_f1_not_more_than_0_10_lower' \
+            'retain_at_least_80pct_f1_gt_0_5_count' \
+            'PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'FAIL_P13_MATCHED_SPARSE_SUPERIORITY_NO_GO'; do grep -F "$x" /tmp/p18_p13_finalizer.py; done
+          if grep -Fq "cp['p3_diagnostics']['primary_candidate_is_core_only'] is True" /tmp/p18_p13_finalizer.py; then
+            echo 'stale core-only checkpoint compatibility assertion survived' >&2; exit 1
+          fi
+          if grep -Fq "q['p3_diagnostics']['primary_candidate_is_core_only'] is True" /tmp/p18_p13_finalizer.py; then
+            echo 'stale core-only evaluated-result compatibility assertion survived' >&2; exit 1
+          fi
+
+          # Gate tokens and all non-compatibility source are mechanically preserved by
+          # the patcher's reversibility proof. P18 wrapper may only relabel provenance.
+          for x in \
+            "P18_RULE='P18_P17_RANK_LABEL_FREE_HALO_MEMBERSHIP'" \
+            "P17_RULE='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'" \
+            "out['verdict']='PASS_P18_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' if passed else 'FAIL_P18_MATCHED_SPARSE_SUPERIORITY_NO_GO'" \
+            "out['p18_primary_candidate_for_matched_verdict']=True" \
+            "out['p18_p17_core_only_is_diagnostic_ablation']=True" \
+            "out['p18_no_new_detector_score_distance_threshold_family_proposal_growth_merge_or_rank']=True" \
+            "out['external_validation_authorized']=passed" \
+            "out['target_access_authorized']=False" \
+            "out['sparse_superiority_required_against_both_comparators_in_both_years'] is True" \
+            "out['pairwise_only_no_cross_denominator_comparison'] is True" \
+            "out['broad_only_does_not_authorize_external'] is True"; do grep -F "$x" "$final"; done
+
+          # P18 evaluator source contains no assignment IDs, no result-dependent tuning,
+          # no external transport, and no target-specific logic.
+          for forbidden in \
+            '9012424187' '8955917326' '8957940764' '8957263372' \
+            'MAARSY' 'OrbitTrace-April' 'target_coordinate' \
+            'parameter_search=True' 'retune' 'grid_search'; do
+            if grep -Fq "$forbidden" "$prep" "$final"; then
+              echo "forbidden postfreeze/tuning/target surface in P18 evaluator freeze: $forbidden" >&2
+              exit 1
+            fi
+          done
+          echo PASS_P18_MATCHED_EVALUATOR_THREE_SURFACE_COMPATIBILITY_AND_GATE_FREEZE
+          echo NO_MATCHED_VALUES_NO_EXTERNAL_NO_TARGET_ACCESS
