@@ -1,0 +1,94 @@
+name: OrbitTrace C1-LF source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-core-probabilistic-membership-c1-freeze
+    paths:
+      - orbittrace_v6_lf_core_probabilistic_membership_c1/**
+      - .github/workflows/orbittrace_v6_lf_c1_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-c1-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile frozen C1-LF implementation
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_lf_core_probabilistic_membership_c1/run_development.py
+      - name: Prove succession, pretruth and label firewall statically
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          path=Path('orbittrace_v6_lf_core_probabilistic_membership_c1/run_development.py')
+          text=path.read_text(); tree=ast.parse(text)
+          assert 'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT' in text
+          assert 'PASS_V6_LF_CORE_PROBABILISTIC_MEMBERSHIP_C1_DEVELOPMENT' in text
+          assert 'FAIL_V6_LF_CORE_PROBABILISTIC_MEMBERSHIP_C1_NO_GO' in text
+          assert 'all geometrically valid target-excluded scan events; no shower-label selection' in text
+          assert '257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24' in text
+          assert 'e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508' in text
+
+          funcs={node.name:node for node in tree.body if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          main=funcs['main']
+          calls=[]
+          for node in ast.walk(main):
+              if not isinstance(node,ast.Call):
+                  continue
+              fn=node.func
+              name=fn.attr if isinstance(fn,ast.Attribute) else fn.id if isinstance(fn,ast.Name) else ''
+              calls.append((node.lineno,name))
+          def one(name):
+              rows=[line for line,called in calls if called==name]
+              assert rows, name
+              return min(rows)
+          geometry=one('parse_geometry_only')
+          membership=one('apply_exact_p1_membership')
+          truth=one('parse_truth_after_freeze')
+          evaluation=one('evaluate_families_v6')
+          assert geometry < membership < truth < evaluation, (geometry,membership,truth,evaluation)
+
+          # The complete membership payload must be hashed and durably written before truth access.
+          hash_lines=[node.lineno for node in ast.walk(main) if isinstance(node,ast.Assign)
+                      and any(isinstance(t,ast.Name) and t.id=='membership_sha' for t in node.targets)]
+          assert len(hash_lines)==1 and hash_lines[0] < truth
+          writes=[]
+          for node in ast.walk(main):
+              if isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute) and node.func.attr=='write_text':
+                  src=ast.get_source_segment(text,node) or ''
+                  if 'c1_lf_membership_pretruth' in src:
+                      writes.append(node.lineno)
+          assert writes and max(writes) < truth, (writes,truth)
+
+          # Primary rank is immutable and fixed4 rescue is not supplied to the membership engine.
+          membership_calls=[node for node in ast.walk(main) if isinstance(node,ast.Call)
+                            and isinstance(node.func,ast.Attribute) and node.func.attr=='apply_exact_p1_membership']
+          assert len(membership_calls)==1
+          call_src=ast.get_source_segment(text,membership_calls[0]) or ''
+          assert 'primary_families' in call_src and 'rescue_families' not in call_src
+          assert 'ranking_after_membership' in text and 'unchanged exact v6-LF primary order' in text
+          assert 'fixed4_rescue_can_seed_c1_lf' in text
+
+          # No direct catalogue-label parser or comparator assignment enters this wrapper.
+          for forbidden in ('normalize_label(', 'hidden_labels = support.', 'Sugar', 'HDBSCAN', 'OrbitTrace-April'):
+              assert forbidden not in text, forbidden
+          print('PASS_V6_LF_C1_SOURCE_PRETRUTH_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION_NO_SCIENTIFIC_RESULT
