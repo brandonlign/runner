@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import pickle
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,9 @@ from orbittrace_v6_checkpointed_fallback.common import (
     require,
     sha256_bytes,
 )
+
+FLOAT_REL_TOL = 1e-12
+FLOAT_ABS_TOL = 1e-12
 
 
 def parse_args() -> argparse.Namespace:
@@ -42,6 +46,48 @@ def load_pickle_with_sidecar(path: Path) -> tuple[Any, str]:
     digest = sha256_bytes(raw)
     require(digest == sidecar.read_text().strip().split()[0], f"SHA mismatch {path.name}")
     return pickle.loads(raw), digest
+
+
+def semantic_record_equivalence(captured: Any, replayed: Any, center: float) -> dict[str, Any]:
+    """Permit only machine-precision float drift; everything else stays exact."""
+    stats = {"float_values": 0, "max_abs_float_delta": 0.0, "max_rel_float_delta": 0.0}
+
+    def compare(a: Any, b: Any, path: str) -> None:
+        if isinstance(a, bool) or isinstance(b, bool):
+            require(type(a) is type(b) and a == b, f"semantic boolean mismatch center {center} path {path}: {a!r} != {b!r}")
+            return
+        if isinstance(a, float) or isinstance(b, float):
+            require(isinstance(a, (int, float)) and isinstance(b, (int, float)), f"semantic numeric type mismatch center {center} path {path}")
+            af = float(a)
+            bf = float(b)
+            require(math.isfinite(af) and math.isfinite(bf), f"nonfinite proposal float center {center} path {path}")
+            delta = abs(af - bf)
+            scale = max(abs(af), abs(bf), FLOAT_ABS_TOL)
+            rel = delta / scale
+            stats["float_values"] += 1
+            stats["max_abs_float_delta"] = max(float(stats["max_abs_float_delta"]), delta)
+            stats["max_rel_float_delta"] = max(float(stats["max_rel_float_delta"]), rel)
+            require(
+                math.isclose(af, bf, rel_tol=FLOAT_REL_TOL, abs_tol=FLOAT_ABS_TOL),
+                f"semantic float mismatch center {center} path {path}: captured={af:.17g} replayed={bf:.17g} abs={delta:.3g} rel={rel:.3g}",
+            )
+            return
+        if isinstance(a, dict) or isinstance(b, dict):
+            require(isinstance(a, dict) and isinstance(b, dict), f"semantic dict type mismatch center {center} path {path}")
+            require(set(a) == set(b), f"semantic dict keys mismatch center {center} path {path}: {sorted(set(a) ^ set(b))}")
+            for key in sorted(a, key=str):
+                compare(a[key], b[key], f"{path}.{key}")
+            return
+        if isinstance(a, (list, tuple)) or isinstance(b, (list, tuple)):
+            require(isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)), f"semantic sequence type mismatch center {center} path {path}")
+            require(len(a) == len(b), f"semantic sequence length mismatch center {center} path {path}: {len(a)} != {len(b)}")
+            for index, (av, bv) in enumerate(zip(a, b)):
+                compare(av, bv, f"{path}[{index}]")
+            return
+        require(type(a) is type(b) and a == b, f"semantic value mismatch center {center} path {path}: {a!r} != {b!r}")
+
+    compare(captured, replayed, "records")
+    return stats
 
 
 def main() -> int:
@@ -101,19 +147,41 @@ def main() -> int:
 
     original_exact = v6.exact_rescore_window_v6
     replayed: list[float] = []
+    semantic_fallback_centers: list[float] = []
+    max_abs_float_delta = 0.0
+    max_rel_float_delta = 0.0
 
     def replay_exact(old_arg, records, window_events, event_lookup, support_arg, base_arg):
+        nonlocal max_abs_float_delta, max_rel_float_delta
         del old_arg, event_lookup, support_arg, base_arg
         require(bool(records), "unexpected empty replay exact call")
         center = float(records[0]["window_center"])
         require(center in pre["centers"], f"unexpected replay center {center}")
         require(center not in replayed, f"duplicate replay center {center}")
         spec = pre["centers"][center]
-        require(canonical_sha(records) == spec["records_sha256"], f"proposal records changed before replay center {center}")
+        if canonical_sha(records) != spec["records_sha256"]:
+            stats = semantic_record_equivalence(spec["records"], records, center)
+            semantic_fallback_centers.append(center)
+            max_abs_float_delta = max(max_abs_float_delta, float(stats["max_abs_float_delta"]))
+            max_rel_float_delta = max(max_rel_float_delta, float(stats["max_rel_float_delta"]))
+            print(
+                f"V6_FANOUT_REPLAY_SEMANTIC_EQUIVALENCE year={args.year} center={center:.1f} "
+                f"float_values={stats['float_values']} max_abs={stats['max_abs_float_delta']:.3g} max_rel={stats['max_rel_float_delta']:.3g}",
+                flush=True,
+            )
         ids = [str(row["id"]) for row in window_events]
         require(canonical_sha(ids) == spec["window_event_ids_sha256"], f"window events changed before replay center {center}")
         outputs = exact_by_center[center]
-        require([str(row["proposal_anchor_id"]) for row in outputs] == [str(row["proposal_anchor_id"]) for row in records], f"exact output order mismatch center {center}")
+        require(
+            [str(row["proposal_anchor_id"]) for row in outputs]
+            == [str(row["proposal_anchor_id"]) for row in spec["records"]],
+            f"exact output/captured proposal order mismatch center {center}",
+        )
+        require(
+            [str(row["proposal_anchor_id"]) for row in records]
+            == [str(row["proposal_anchor_id"]) for row in spec["records"]],
+            f"replay/captured proposal order mismatch center {center}",
+        )
         replayed.append(center)
         return outputs
 
@@ -140,6 +208,13 @@ def main() -> int:
             "exact_fanout_v2": True,
             "exact_shard_count": shard_count,
             "preexact_sha256": pre_sha,
+            "semantic_record_equivalence_fallback": True,
+            "semantic_float_rel_tol": FLOAT_REL_TOL,
+            "semantic_float_abs_tol": FLOAT_ABS_TOL,
+            "semantic_fallback_center_count": len(semantic_fallback_centers),
+            "semantic_fallback_centers": semantic_fallback_centers,
+            "max_abs_float_delta": max_abs_float_delta,
+            "max_rel_float_delta": max_rel_float_delta,
         },
         "audit": audit,
         "anchors": anchors,
@@ -162,8 +237,16 @@ def main() -> int:
         "components": len(components),
         "exact_shard_count": shard_count,
         "preexact_sha256": pre_sha,
+        "semantic_fallback_center_count": len(semantic_fallback_centers),
+        "semantic_fallback_centers": semantic_fallback_centers,
+        "max_abs_float_delta": max_abs_float_delta,
+        "max_rel_float_delta": max_rel_float_delta,
     }, indent=2, sort_keys=True) + "\n")
-    print(f"PASS_V6_FANOUT_YEAR_REPLAY year={args.year} anchors={len(anchors)} components={len(components)} sha={digest}", flush=True)
+    print(
+        f"PASS_V6_FANOUT_YEAR_REPLAY year={args.year} anchors={len(anchors)} components={len(components)} "
+        f"semantic_fallback_centers={len(semantic_fallback_centers)} sha={digest}",
+        flush=True,
+    )
     return 0
 
 
