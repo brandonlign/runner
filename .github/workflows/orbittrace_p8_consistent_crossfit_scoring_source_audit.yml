@@ -24,28 +24,26 @@ jobs:
       - name: Reconstruct exact P5 and audit sole P8 scientific transform
         run: |
           set -euo pipefail
-          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
-            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
-          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
-            /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2_canonical_v2.py
           echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
-          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py \
-            /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2_canonical_v2.py /tmp/run_p3.py
           echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
-          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py \
-            /tmp/run_p3.py /tmp/run_p4.py
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/run_p3.py /tmp/run_p4.py
           echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/run_p4.py' | sha256sum -c -
-          python orbittrace_joint_seed_support_p5/apply_p5_patch.py \
-            /tmp/run_p4.py /tmp/run_p5.py
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/run_p4.py /tmp/run_p5.py
           echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/run_p5.py' | sha256sum -c -
-          python orbittrace_consistent_crossfit_scoring_p8/apply_p8_patch.py \
-            /tmp/run_p5.py /tmp/run_p8.py
+          python orbittrace_consistent_crossfit_scoring_p8/apply_p8_patch.py /tmp/run_p5.py /tmp/run_p8.py
+          expected_p8="$(tr -d '[:space:]' < orbittrace_consistent_crossfit_scoring_p8/SOURCE_SHA256)"
+          test "$expected_p8" = 'f176f5e9f5e7f1e08ba4068b539802bf24079b0a77118b89deddaaa645c0dc51'
+          echo "$expected_p8  /tmp/run_p8.py" | sha256sum -c -
           python -m py_compile /tmp/run_p8.py orbittrace_consistent_crossfit_scoring_p8/run_header_compatible.py
 
           python - <<'PY'
           from pathlib import Path
           p=Path('/tmp/run_p8.py').read_text()
           protocol=Path('orbittrace_consistent_crossfit_scoring_p8/PROTOCOL.md').read_text()
+          workflow=Path('.github/workflows/orbittrace_p8_consistent_crossfit_scoring_development.yml').read_text()
           required=(
               'crossfit_runtime: dict[int, tuple[Any, Any]] = {}',
               'crossfit_runtime[held_fold] = (scf, clf)',
@@ -66,18 +64,21 @@ jobs:
               assert token in p,token
           assert 'classifier.predict_proba(scaler.transform(features))' not in p
           for token in (
-              'The final all-family P2 model is still fit and frozen',
-              'reference-only',
+              'The final all-family P2 model is still fit and frozen','reference-only',
               'same model that generated that direction\'s frozen held-out seed scores',
-              'There is exactly one primary P8 configuration',
-              'qualified known-shower matches >=95',
-              'recovery@100 >=58',
-              'top-100 dominant precision >=0.65',
-              'large-shower mean precision >=0.85',
-              'P6/P7 filter',
+              'There is exactly one primary P8 configuration','qualified known-shower matches >=95',
+              'recovery@100 >=58','top-100 dominant precision >=0.65','large-shower mean precision >=0.85','P6/P7 filter',
           ):
               assert token in protocol,token
-          for text in (p,protocol):
+          for token in (
+              'EXECUTE_P8_AFTER_AUTHORITATIVE_P7_SCIENTIFIC_NO_GO','31295099335','9032707069',
+              '7c72291837f096873711110e0ff5181a23ddf9d233ce638ddc9de6dd286a3948',
+              'f176f5e9f5e7f1e08ba4068b539802bf24079b0a77118b89deddaaa645c0dc51',
+              'Execute one-shot target-excluded P8 development','p8_all_family_model_zero_membership_scores',
+              'orbittrace-consistent-crossfit-scoring-p8-development',
+          ):
+              assert token in workflow,token
+          for text in (p,protocol,workflow):
               assert 'OrbitTrace-April' not in text
               assert 'target_coordinate' not in text
           print('PASS_P8_CONSISTENT_CROSSFIT_SCORING_SOURCE_AUDIT')
