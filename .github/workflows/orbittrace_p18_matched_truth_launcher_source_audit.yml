@@ -79,9 +79,9 @@ jobs:
             'p18_matched_execution_provenance.json'; do
             grep -F "$x" "$launcher"
           done
-          test "$(grep -Fc '/tmp/p18_evaluator_once.sh' "$launcher")" -eq 3
           test "$(grep -Fc "progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'" "$launcher")" -eq 1
           test "$(grep -Ec '^/tmp/p18_evaluator_once\.sh$' "$launcher")" -eq 1
+          test "$(grep -Fc ' --evaluator-output /tmp/p18_evaluator_once.sh' "$launcher")" -eq 1
           test "$(grep -Fc 'python orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py' "$launcher")" -eq 1
           grep -F 'orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md' "$wf"
           grep -F 'orbittrace-p18-matched-literature-result' "$wf"
