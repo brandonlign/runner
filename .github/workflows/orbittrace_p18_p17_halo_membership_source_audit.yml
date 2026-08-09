@@ -93,12 +93,12 @@ jobs:
             '31332157812' '9043232586' \
             'PASS_P18_CANONICAL_DEVELOPMENT_COMPOSITION_PREREQUISITES' \
             'PASS_P18_P17_PRETRUTH_ARTIFACT_EXACT_MARKER_BINDING' \
-            'printf '\''%s  %s\\n'\'' "$HDB_SHA" pretruth/hdbscan.p17.pkl | sha256sum -c -' \
-            'printf '\''%s  %s\\n'\'' "$SUGAR_SHA" pretruth/sugar.p17.pkl | sha256sum -c -' \
+            '"$HDB_SHA" pretruth/hdbscan.p17.pkl | sha256sum -c -' \
+            '"$SUGAR_SHA" pretruth/sugar.p17.pkl | sha256sum -c -' \
             'PASS_P18_BOTH_CHECKPOINTS_TRANSFORMED_AND_FROZEN_PRETRUTH' \
             'orbittrace-p18-matched-pretruth-checkpoints'; do grep -F "$x" "$transform"; done
           test "$(grep -Fc 'python "$adapter" --input' "$transform")" -eq 1
-          grep -F 'for panel in hdbscan sugar; do' "$transform"
+          test "$(grep -Fc 'for panel in hdbscan sugar; do' "$transform")" -eq 2
 
           # Executable P18 source and transform contain no evaluator, comparator assignment
           # artifact, external fetch/transport, or target/reveal operation.
