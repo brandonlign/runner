@@ -1,0 +1,247 @@
+name: OrbitTrace v6-LF final blind Stage-A execution
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-final-stage-a-execution-freeze
+    paths:
+      - orbittrace_v6_lf_final_stage_a/RUN_STAGE_A.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-v6-lf-final-stage-a-execution
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  stage_a:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          sparse-checkout: |
+            orbittrace_v6_lf_final_stage_a
+            orbittrace_wavelet_catalogue_v3
+            orbittrace_fixed4_support_wrapper_development
+            sonotaco_fixed4_final_development
+            real_shower_meta_stage0
+            mondrian_clique_development
+            ghoststream_fixed4_application/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Require one-file child and all three frozen authorization gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
+          test "$files" = 'orbittrace_v6_lf_final_stage_a/RUN_STAGE_A.md'
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          content="$(git show "$HEAD_SHA":orbittrace_v6_lf_final_stage_a/RUN_STAGE_A.md)"
+          mode="$(printf '%s\n' "$content" | sed -n '1p')"
+          dev_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          literature_run="$(printf '%s\n' "$content" | sed -n '3p')"
+          holdout_run="$(printf '%s\n' "$content" | sed -n '4p')"
+          test "$mode" = 'EXECUTE_V6_LF_FINAL_STAGE_A_AFTER_ALL_GATES'
+          [[ "$dev_run" =~ ^[0-9]+$ ]]
+          [[ "$literature_run" =~ ^[0-9]+$ ]]
+          [[ "$holdout_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 4
+          test "$(gh run view "$dev_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$literature_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$holdout_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+
+          mapfile -t dev_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$dev_run/artifacts" --jq '.artifacts[].name')
+          dev_candidates=()
+          for name in orbittrace-v6-lf-all-event-null-development-v2 orbittrace-v6-lf-strict-semantic-development; do
+            if printf '%s\n' "${dev_names[@]}" | grep -qx "$name"; then dev_candidates+=("$name"); fi
+          done
+          test "${#dev_candidates[@]}" -eq 1
+
+          mapfile -t lit_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$literature_run/artifacts" --jq '.artifacts[].name')
+          printf '%s\n' "${lit_names[@]}" | grep -qx 'orbittrace-v6-lf-matched-literature-fanout-v1-result'
+          mapfile -t holdout_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$holdout_run/artifacts" --jq '.artifacts[].name')
+          printf '%s\n' "${holdout_names[@]}" | grep -qx 'orbittrace-v6-lf-gmn-2024-2025-holdout'
+
+          rm -rf /tmp/stage-a-auth && mkdir -p /tmp/stage-a-auth/{dev,lit,holdout}
+          gh run download "$dev_run" --repo "$GITHUB_REPOSITORY" --name "${dev_candidates[0]}" --dir /tmp/stage-a-auth/dev
+          gh run download "$literature_run" --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-lf-matched-literature-fanout-v1-result --dir /tmp/stage-a-auth/lit
+          gh run download "$holdout_run" --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-lf-gmn-2024-2025-holdout --dir /tmp/stage-a-auth/holdout
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          dev=json.loads(Path('/tmp/stage-a-auth/dev/v6_label_free_all_event_null_development.json').read_text())
+          assert dev['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT',dev['verdict']
+          assert dev['configuration']['years']==[2022,2023]
+          assert dev['configuration']['blind_exclusion']==[20.0,55.0]
+          assert dev['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert dev['configuration']['parameter_search'] is False and dev['configuration']['null_trimming'] is False
+          assert all(dev['gates'].values()),dev['gates']
+
+          lit=json.loads(Path('/tmp/stage-a-auth/lit/v6_lf_matched_literature.json').read_text())
+          assert lit['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'},lit['classification']
+          assert lit['years']==[2023,2025]
+          assert lit['blind_exclusion']==[20.0,55.0]
+          assert lit['pairwise_only_no_cross_denominator_comparison'] is True
+          assert lit['panels']['hdbscan']['exact_event_rows']=={'2023':26460,'2025':19658}
+          assert lit['panels']['sugar']['exact_event_rows']=={'2023':30414,'2025':23200}
+          if lit['classification']=='BROAD_CATALOGUE_SUPERIORITY':
+              assert lit['broad_catalogue_superiority'] is True
+          else:
+              assert lit['sparse_stream_superiority'] is True
+
+          hold=json.loads(Path('/tmp/stage-a-auth/holdout/v6_lf_gmn_2024_2025_holdout.json').read_text())
+          assert hold['verdict']=='PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT',hold['verdict']
+          assert hold['years']==[2024,2025]
+          assert hold['blind_exclusion']==[20.0,55.0]
+          assert hold['all_event_null'] is True
+          assert hold['parameter_search'] is False and hold['null_trimming'] is False
+          assert all(hold['gates'].values()),hold['gates']
+          print('PASS_V6_LF_FINAL_STAGE_A_ALL_PREREQUISITES')
+          PY
+
+          rm -rf /tmp/stage-a-auth
+          test ! -e target
+          test ! -e input
+          echo NO_TARGET_REFERENCE_ARTIFACT_PRESENT
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
+          fetch-depth: 1
+          sparse-checkout: |
+            orbittrace_v3_catalogue_v6/exact_parts
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py
+            orbittrace_wavelet_catalogue_v3
+            ghoststream_fixed4_application/requirements.txt
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact v6-LF runtime without target reference
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v6_lf_final_stage_a/run_stage_a.py)" = 'a77e967a8079827728156c82452651796211bede'
+          test "$(git hash-object orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py)" = 'f91590a8110904a2a72bd9573bd6e54599709528'
+          python -m py_compile orbittrace_v6_lf_final_stage_a/run_stage_a.py orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          original=Path('/tmp/v6.frozen.py').read_text()
+          before='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    components = primary_components + rescue_components
+'''
+          after='''    primary_capped = cap_anchor_track(list(primary_by_anchor.values()), "v3")
+    rescue_capped = cap_anchor_track(list(rescue_by_anchor.values()), "fixed4_rescue")
+    capped = primary_capped + rescue_capped
+
+    primary_components = component_records_track_v6(old, year, primary_capped, event_lookup, base, "v3")
+    rescue_components = component_records_track_v6(old, year, rescue_capped, event_lookup, base, "fixed4_rescue")
+    components = primary_components + rescue_components
+'''
+          assert original.count(before)==1
+          repaired=original.replace(before,after,1)
+          assert repaired.replace(after,before,1)==original
+          assert hashlib.sha256(repaired.encode()).hexdigest()=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          Path('/tmp/v6.repaired.py').write_text(repaired)
+          PY
+          test "$(git -C frozen-v6 hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          ln -sf "$PWD/frozen-v6/orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py" /tmp/multi_anchor_energy_v3.py
+          python -m py_compile /tmp/v6.repaired.py /tmp/multi_anchor_energy_v3.py
+          test ! -e target
+          test ! -e input
+          echo PASS_V6_LF_FINAL_STAGE_A_EXACT_RUNTIME
+
+      - name: Execute target-uninformed full-region Stage A
+        env:
+          PYTHONPATH: .:/tmp
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_v6_lf_final_stage_a/run_stage_a.py \
+            --v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --parallel-exact-wrapper orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('output/stage_a_ranked_families.json')
+          r=json.loads(p.read_text())
+          assert r['classification']=='target-uninformed full-region Stage A ranking'
+          assert r['method_id']=='v6-LF-all-event-Mondrian-null'
+          assert r['years']==[2022,2023]
+          assert r['blind_interval_reopened']==[20.0,55.0]
+          assert r['ranking_metric']=='primary v3 score descending; family_id ascending tie-break'
+          assert r['firewall']['target_reference_accessed'] is False
+          assert r['firewall']['catalogue_shower_labels_used'] is False
+          assert r['firewall']['all_event_null'] is True
+          assert r['firewall']['parameter_search'] is False
+          assert r['firewall']['null_trimming'] is False
+          assert len(r['primary_rank_order'])==r['primary_family_count']
+          assert len(set(r['primary_rank_order']))==r['primary_family_count']
+          assert [f['family_id'] for f in r['primary_families']]==r['primary_rank_order']
+          assert len(r['ranking_sha256'])==64
+          print('ORBITTRACE_V6_LF_FINAL_STAGE_A_RESULT_BEGIN')
+          print(json.dumps({'primary_family_count':r['primary_family_count'],'rescue_family_count':r['rescue_family_count'],'ranking_sha256':r['ranking_sha256'],'firewall':r['firewall']},indent=2,sort_keys=True))
+          print('ORBITTRACE_V6_LF_FINAL_STAGE_A_RESULT_END')
+          PY
+          test ! -e target
+          test ! -e input
+
+      - name: Record immutable Stage-A provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_v6_lf_final_stage_a/run_stage_a.py orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py orbittrace_v6_lf_final_stage_a/PROTOCOL.md /tmp/v6.repaired.py /tmp/run_wavelet_catalogue_v3_development.py > output/source_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v6-lf-final-stage-a
+          path: output
+          if-no-files-found: error
+          retention-days: 90
