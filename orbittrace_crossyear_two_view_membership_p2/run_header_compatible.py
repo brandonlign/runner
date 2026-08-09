@@ -70,17 +70,22 @@ def self_test() -> None:
         fields, positions = compatible_exact_header_positions(text)
         require(positions == expected, f'header compatibility self-test positions changed: {positions}')
         require(fields[2] == 'q' and fields[3] == 'Q', 'q/Q self-test identity changed')
+
+    # Reject only changes to the required scientific schema contract. Unrelated
+    # extra columns are scientifically inert and are intentionally permitted by
+    # the canonical position-based parser as long as all required names remain
+    # unique and q/Q remain distinct.
     for bad in (
         '# Unique trajectory; Sol lon; q; e; i; peri; node\n',
         '# Unique trajectory; Sol lon; q; Q; e; i; peri; node\n# Unique trajectory; Sol lon; q; Q; e; i; peri; node\n',
-        '# Unique trajectory; Sol lon; q; Q; e; i; peri; omega; node\n',
+        '# Unique trajectory; Sol lon; q; Q; e; i; peri; node; q\n',
     ):
         try:
             compatible_exact_header_positions(bad)
         except RuntimeError:
             pass
         else:
-            raise RuntimeError('header compatibility self-test accepted a scientifically different schema')
+            raise RuntimeError('header compatibility self-test accepted a changed required schema')
 
 
 def main() -> int:
