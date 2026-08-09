@@ -11,6 +11,7 @@ permissions:
   contents: read
   actions: read
   pull-requests: read
+  issues: write
 
 concurrency:
   group: orbittrace-p17-methodology-branch-pretruth-relay
@@ -32,6 +33,16 @@ jobs:
           fetch-depth: 1
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
+      - name: Publish relay run identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "P17_RELAY_RUN_ID=$GITHUB_RUN_ID BASE_SHA=$BASE_SHA HEAD_SHA=$HEAD_SHA EVENT=pull_request_target"
       - name: Verify child and execute exact frozen base workflow run block
         env:
           GH_TOKEN: ${{ github.token }}
