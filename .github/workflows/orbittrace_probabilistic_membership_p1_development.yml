@@ -43,8 +43,16 @@ jobs:
 
           gh run download "$v6_run" --repo "$GITHUB_REPOSITORY" \
             --name orbittrace-v6-semantic-replay-development --dir /tmp/p1-prereq/v6
+
+          mapfile -t lf_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$lf_run/artifacts" --jq '.artifacts[].name')
+          lf_candidates=()
+          for name in orbittrace-v6-lf-all-event-null-development-v2 orbittrace-v6-lf-strict-semantic-development; do
+            if printf '%s\n' "${lf_names[@]}" | grep -qx "$name"; then lf_candidates+=("$name"); fi
+          done
+          test "${#lf_candidates[@]}" -eq 1
           gh run download "$lf_run" --repo "$GITHUB_REPOSITORY" \
-            --name orbittrace-v6-lf-all-event-null-development-v2 --dir /tmp/p1-prereq/lf
+            --name "${lf_candidates[0]}" --dir /tmp/p1-prereq/lf
+
           python - <<'PY'
           import json
           from pathlib import Path
