@@ -50,10 +50,13 @@ def main()->int:
     finally: v6.exact_rescore_window_v6=original
     lf.require(bool(centers),'no holdout exact centers captured')
     ordered=sorted(centers); total=sum(len(centers[c]['records']) for c in ordered)
-    payload={'format':'orbittrace-v6-lf-gmn-holdout-preexact-v1','year':args.year,'years':list(ctx.HOLDOUT_YEARS),'corpus':ctx.HOLDOUT_CORPUS,'repaired_v6_sha256':lf.REPAIRED_V6_SHA256,'scan_rows_sha256':scan_sha,'calibration_rows_sha256':cal_sha,'geometry_audit_sha256':audit_sha,'ordered_centers':ordered,'centers':centers,'total_records':total,'firewall':{'blind_exclusion':[20.0,55.0],'label_values_not_accessed':True,'all_event_calibration':True,'scientific_result_not_evaluated':True}}
-    raw=pickle.dumps(payload,protocol=pickle.HIGHEST_PROTOCOL); path=args.output/f'v6_lf_holdout_preexact_{args.year}.pkl'; path.write_bytes(raw)
+    # Use the already-audited generic v6-LF fanout envelope so the immutable
+    # exact/replay engines can be reused unchanged. Holdout identity remains
+    # explicit in years/corpus and in the source-audited runtime namespace.
+    payload={'format':'orbittrace-v6-lf-preexact-fanout-v1','year':args.year,'years':list(ctx.HOLDOUT_YEARS),'corpus':ctx.HOLDOUT_CORPUS,'repaired_v6_sha256':lf.REPAIRED_V6_SHA256,'scan_rows_sha256':scan_sha,'calibration_rows_sha256':cal_sha,'geometry_audit_sha256':audit_sha,'ordered_centers':ordered,'centers':centers,'total_records':total,'firewall':{'blind_exclusion':[20.0,55.0],'target_interval_remains_excluded':True,'label_values_not_accessed':True,'all_event_calibration':True,'scientific_result_not_evaluated':True}}
+    raw=pickle.dumps(payload,protocol=pickle.HIGHEST_PROTOCOL); path=args.output/f'v6_lf_preexact_{args.year}.pkl'; path.write_bytes(raw)
     digest=hashlib.sha256(raw).hexdigest(); path.with_suffix('.sha256').write_text(digest+'\n')
-    (args.output/f'v6_lf_holdout_preexact_{args.year}.json').write_text(json.dumps({'year':args.year,'checkpoint_sha256':digest,'centers':len(ordered),'total_records':total,'scan_rows':len(scan),'calibration_rows':len(calibration)},indent=2,sort_keys=True)+'\n')
+    (args.output/f'v6_lf_preexact_{args.year}.json').write_text(json.dumps({'year':args.year,'checkpoint_sha256':digest,'centers':len(ordered),'total_records':total,'scan_rows':len(scan),'calibration_rows':len(calibration),'corpus':ctx.HOLDOUT_CORPUS},indent=2,sort_keys=True)+'\n')
     print(f'PASS_V6_LF_HOLDOUT_PREEXACT year={args.year} centers={len(ordered)} records={total:,} sha={digest}',flush=True); return 0
 
 
