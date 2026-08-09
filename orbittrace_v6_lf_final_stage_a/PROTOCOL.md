@@ -5,12 +5,14 @@
 This Stage-A protocol is dormant unless **all three** pre-result method-selection gates have already passed:
 
 1. v6-LF has passed all frozen target-excluded GMN 2022/2023 development gates;
-2. the no-retuning exact-row external SonotaCo comparison is classified `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against the frozen Sugar/HDBSCAN panels;
-3. the prospectively frozen no-retuning GMN 2024/2025 temporal holdout has returned `PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT` under its frozen integrity/power and scientific gates.
+2. the no-retuning exact-row SonotaCo comparison is classified `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against the frozen Sugar/HDBSCAN panels;
+3. the prospectively frozen, event-value-unexposed MAARSY 2018/2019 cross-survey validation has returned exact `PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_VALIDATION` under PR #589's frozen integrity, power and scientific generalization gates.
 
-Development PASS alone, literature superiority alone, a `POWER_INCONCLUSIVE` holdout, or a scientific holdout FAIL cannot authorize Stage A. No target-region deployment may occur before all three artifacts are durably available and verified.
+Development PASS alone, literature superiority alone, any MAARSY power-inconclusive result, or a scientific MAARSY FAIL cannot authorize Stage A. No target-region deployment may occur before all three artifacts are durably available and verified.
 
-No development, comparator, holdout, or final-search parameter may be changed after those results.
+The earlier GMN 2024/2025 temporal-holdout proposal is explicitly **not** an authorization artifact: repository history showed that target-excluded 2024/2025 scientific values, known-shower labels and F1 endpoints had already been consumed in PR #453 / run `31235104333`. That panel cannot be relabeled as prospective external evidence.
+
+No development, comparator, external-validation, or final-search parameter may be changed after those results.
 
 ## Frozen method
 
@@ -109,7 +111,7 @@ Fanout/checkpointing is implementation-only and may be used exactly as in the au
 
 Infrastructure may be repaired only for technical correctness/equivalence and must never inspect target-reference data or alter scientific output.
 
-Any execution workflow must verify the exact development PASS artifact, exact matched-literature superiority artifact, and exact temporal-holdout PASS artifact **before** the first full-region GMN row is requested. Marker text alone is insufficient authorization.
+Any execution workflow must verify the exact development PASS artifact, exact matched-literature superiority artifact, and exact `PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_VALIDATION` artifact **before** the first full-region GMN row is requested. It must also reject the invalidated GMN 2024/2025 holdout lineage as an external authorization source. Marker text alone is insufficient authorization.
 
 ## Transition to reveal
 
