@@ -45,6 +45,10 @@ jobs:
             'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' \
             'fetch_exact_assignment_artifact 9012424187' \
             'fetch_exact_assignment_artifact 8955917326' \
+            'fetch_exact_assignment_artifact 8957940764' \
+            'fetch_exact_assignment_artifact 8957263372' \
+            'prepare_strict_id_manifest.py' \
+            'PASS_P14_DIRECT_ASSIGNMENT_IDS_FROZEN_CLUSTER_VALUES_UNREAD' \
             'exit 0'; do grep -F "$x" /tmp/p17_pretruth.sh; done
           for x in \
             '31332157812' '9043232586' \
@@ -56,14 +60,16 @@ jobs:
             'p17_fail_closed_no_proposals' \
             'orbittrace-p17-matched-pretruth-checkpoints'; do grep -F "$x" "$wf"; done
 
-          # The two inherited fetch_exact_assignment_artifact calls above are the
-          # preregistered pretruth ID/universe inputs. The generated shell must still
-          # contain no posttruth evaluator, cluster-valued truth payload, external panel,
-          # or target surface.
+          # All four assignment artifacts are inherited, preregistered row-universe inputs.
+          # The only pretruth consumer is prepare_strict_id_manifest.py, and the inherited
+          # barrier explicitly certifies cluster values remain unread. The generated shell
+          # must contain no postfreeze truth/evaluator stage, external panel, or target surface.
+          test "$(grep -Fc 'fetch_exact_assignment_artifact ' /tmp/p17_pretruth.sh)" -eq 5
+          # One count is the function definition; four are the exact HDBSCAN/Sugar calls.
           for forbidden in \
             'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' \
             'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' \
-            '8957940764' '8957263372' \
+            "progress 'POSTFREEZE TRUTH PARSERS + EVALUATOR SOURCE'" \
             'MAARSY' 'OrbitTrace-April' 'target_coordinate'; do
             if grep -Fq "$forbidden" /tmp/p17_pretruth.sh; then
               echo "posttruth/external/target surface leaked into generated P17 shell: $forbidden" >&2
@@ -77,4 +83,5 @@ jobs:
           done
           test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
           echo PASS_P17_MATCHED_PRETRUTH_LAUNCHER_SOURCE_FREEZE
+          echo FOUR_ASSIGNMENT_ARTIFACTS_ID_UNIVERSE_ONLY_CLUSTER_VALUES_UNREAD
           echo NO_COMPARATOR_CLUSTER_VALUES_NO_KNOWN_SHOWER_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
