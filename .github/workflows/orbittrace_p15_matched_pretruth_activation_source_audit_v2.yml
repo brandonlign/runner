@@ -1,0 +1,83 @@
+name: OrbitTrace P15 matched pretruth activation source audit v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py
+      - orbittrace_support_safe_halo_p15/run_matched_pretruth_artifact_pass.sh
+      - .github/workflows/orbittrace_p15_matched_pretruth.yml
+      - .github/workflows/orbittrace_p15_matched_pretruth_activation_source_audit_v2.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove corrected generator and launcher are strictly pretruth-only
+        run: |
+          set -euo pipefail
+          gen=orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py
+          launcher=orbittrace_support_safe_halo_p15/run_matched_pretruth_artifact_pass.sh
+          wf=.github/workflows/orbittrace_p15_matched_pretruth.yml
+
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v3.py)" = 'af257d4b4902f9783acecd6df52f111415e5188c'
+          test "$(git hash-object "$gen")" = '737801dcb4aebbeba274b68a1aff06aafa8e73ab'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py)" = '42fac298751179e5e629431060a1c9d803b1f19d'
+          bash -n "$launcher"
+          python -m py_compile "$gen" orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py
+
+          for x in \
+            "P15_GEN_BLOB='737801dcb4aebbeba274b68a1aff06aafa8e73ab'" \
+            'EXECUTE_P15_MATCHED_PRETRUTH_AFTER_ARTIFACT_ONLY_DEVELOPMENT_PASS' \
+            '31329529635' '9042508082' \
+            'sha256:f6bee693dfd64f86fcbb7fa2b3760a9258d712d5df29c59e270233d87a6a160f' \
+            '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e' \
+            'artifact_only_from_immutable_canonical_P12_P13' \
+            "r['canonical_direction_count']==452" \
+            "r['canonical_minimum_negative_count']==2197" \
+            "r['p15_unavailable_direction_count']==0" \
+            "r['p15_fallback_vacuous_on_development'] is True" \
+            'PASS_P15_MATCHED_EXPLICIT_SOURCE_GUARDS' \
+            'PASS_P15_MATCHED_GENERATED_SHELL_PRETRUTH_ONLY'; do
+            grep -F "$x" "$launcher"
+          done
+          for forbidden in \
+            '31328065110' '9042324169' '31329252140' '9042432234' \
+            'continuous_abs_tolerance' 'continuous_scaled_tolerance' \
+            'math.isclose' 'np.isclose' 'allclose'; do
+            if grep -Fq "$forbidden" "$launcher"; then
+              echo "inadmissible evidence survived launcher: $forbidden" >&2
+              exit 1
+            fi
+          done
+
+          python "$gen" orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p15_pretruth_v2.sh
+          bash -n /tmp/p15_pretruth_v2.sh
+          for x in \
+            'PASS_P15_MATCHED_PRETRUTH_GENERATOR_SOURCE_FREEZE' \
+            'PASS_P15_MATCHED_SUPPORT_SAFE_HALO_SOURCE_ACTIVE' \
+            'PASS_P15_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' \
+            "p15_halo_availability_frozen_before_truth'] is True" \
+            'exit 0'; do
+            if [ "$x" = 'PASS_P15_MATCHED_PRETRUTH_GENERATOR_SOURCE_FREEZE' ]; then
+              continue
+            fi
+            grep -F "$x" /tmp/p15_pretruth_v2.sh
+          done
+          if grep -Eq 'OPEN TRUTH \+ COMPETITOR CLUSTER VALUES EXACTLY ONCE|evaluate_frozen_blindsafe.py|finalize_p3_evaluator_result.py|OrbitTrace-April|target_coordinate' /tmp/p15_pretruth_v2.sh; then
+            echo 'posttruth/evaluator/target token survived corrected generator' >&2
+            exit 1
+          fi
+          grep -F 'run_matched_pretruth_artifact_pass.sh' "$wf"
+          grep -F 'orbittrace-p15-matched-pretruth-checkpoints' "$wf"
+          test ! -e orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md
+          echo PASS_P15_MATCHED_PRETRUTH_CORRECTED_GENERATOR_SOURCE_AUDIT_V2
+          echo NO_COMPARATOR_DOWNLOAD_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
