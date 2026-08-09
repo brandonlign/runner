@@ -39,7 +39,8 @@ jobs:
 
           # Reservation PR #792 was created at 2026-08-09T21:32:21Z.
           # Search all branch/PR commit history strictly before that reservation.
-          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pull/*'
+          # PR heads use a dedicated namespace so checkout's refs/remotes/pull/<n>/merge cannot conflict.
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pull-heads/*'
           cutoff='2026-08-09T21:32:20Z'
           regex='SonotaCo 2014|SonotaCo 2016|sonotaco[_-]2014|sonotaco[_-]2016|014a\.zip|016a\.zip|SNMv3/014|SNMv3/016'
           git log --all --before="$cutoff" -G "$regex" --format='EXPOSURE_COMMIT %H %cI %s' --name-only -- . > /tmp/history_hits.txt || true

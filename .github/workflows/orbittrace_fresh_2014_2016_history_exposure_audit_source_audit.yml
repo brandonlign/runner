@@ -23,6 +23,7 @@ jobs:
           for x in \
             'AUDIT_PRE_RESERVATION_SONOTACO_2014_2016_EXPOSURE' \
             "cutoff='2026-08-09T21:32:20Z'" \
+            "'+refs/pull/*/head:refs/remotes/pull-heads/*'" \
             '014a\.zip' '016a\.zip' \
             'gh api --method GET --paginate --slurp "repos/$REPO/issues?state=all&per_page=100"' \
             'gh api --method GET --paginate --slurp "repos/$REPO/issues/comments?per_page=100&sort=created&direction=asc"' \
@@ -44,9 +45,14 @@ jobs:
             "'target_information_access':False"; do
             grep -F "$x" "$w"
           done
+          # The checkout action may create refs/remotes/pull/<n>/merge. PR heads must not use that parent namespace.
+          if grep -Fq "'+refs/pull/*/head:refs/remotes/pull/*'" "$w"; then
+            echo 'conflicting PR-head ref namespace survived in history audit' >&2
+            exit 1
+          fi
           # The flaky Search API is retired completely; all matching happens locally.
           if grep -Eq 'search/issues|api\.github\.com/search|gh search' "$w"; then
-            echo 'GitHub Search API surface survived in v3 history audit' >&2
+            echo 'GitHub Search API surface survived in v4 history audit' >&2
             exit 1
           fi
           # Network is limited to Git/GitHub repository metadata/history. No scientific archive or comparator artifact download surface.
@@ -63,5 +69,5 @@ jobs:
             exit 1
           fi
           test ! -e orbittrace_post_p18_fresh_matched/HISTORY_AUDIT_RUN.md
-          echo PASS_FRESH_2014_2016_HISTORY_AUDIT_LOCAL_ENUMERATION_SOURCE_FREEZE
+          echo PASS_FRESH_2014_2016_HISTORY_AUDIT_REF_NAMESPACE_REPAIR_SOURCE_FREEZE
           echo GIT_GITHUB_METADATA_ONLY_NO_RESERVED_SCIENTIFIC_DATA_ACCESS
