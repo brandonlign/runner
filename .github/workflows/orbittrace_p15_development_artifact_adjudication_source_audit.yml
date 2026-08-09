@@ -6,6 +6,8 @@ on:
       - agent/orbittrace-p15-support-safe-halo-freeze
     paths:
       - orbittrace_support_safe_halo_p15/adjudicate_development_artifact_only.py
+      - orbittrace_support_safe_halo_p15/run_development_artifact_adjudication.sh
+      - .github/workflows/orbittrace_p15_development_artifact_adjudication.yml
       - .github/workflows/orbittrace_p15_development_artifact_adjudication_source_audit.yml
 
 permissions:
@@ -18,10 +20,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - name: Reconstruct exact P15 development source and audit canonical-only gate
+      - name: Reconstruct exact P15 development source and audit canonical-only activation gate
         run: |
           set -euo pipefail
           python -m py_compile orbittrace_support_safe_halo_p15/adjudicate_development_artifact_only.py orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          bash -n orbittrace_support_safe_halo_p15/run_development_artifact_adjudication.sh
+          test "$(git hash-object orbittrace_support_safe_halo_p15/adjudicate_development_artifact_only.py)" = '84cda1e10fedc750fff03c29b3d91c356483b4f7'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/run_development_artifact_adjudication.sh)" = '517ac8f4331100377bd7cabe543156d5878ef550'
+          test "$(git hash-object .github/workflows/orbittrace_p15_development_artifact_adjudication.yml)" = 'd88ac704afa46a17a63943f3917121a8bd84bc37'
+
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
           python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
@@ -39,10 +46,13 @@ jobs:
           python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12.py /tmp/p15_dev.py
           echo '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b  /tmp/p15_dev.py' | sha256sum -c -
           python -m py_compile /tmp/p15_dev.py
+
           python - <<'PY'
           from pathlib import Path
-          p=Path('orbittrace_support_safe_halo_p15/adjudicate_development_artifact_only.py').read_text()
-          required=(
+          adj=Path('orbittrace_support_safe_halo_p15/adjudicate_development_artifact_only.py').read_text()
+          run=Path('orbittrace_support_safe_halo_p15/run_development_artifact_adjudication.sh').read_text()
+          wf=Path('.github/workflows/orbittrace_p15_development_artifact_adjudication.yml').read_text()
+          required_adj=(
             "P15_DEV_SOURCE_SHA='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'",
             "P12_RESULT_SHA256='96698c1a7ba700716a79e7bc8b7bc9acb2f9aec653095a5d7e33b14000b87a38'",
             "P13_RESULT_SHA256='d298cebec624c991c4abda9dc809d92d8eea101baaf2b6edbb1862b7acc49739'",
@@ -60,15 +70,31 @@ jobs:
             "'external_data_access':False",
             "'target_information_access':False",
           )
-          for x in required: assert x in p,x
+          for x in required_adj: assert x in adj,x
+          required_run=(
+            'EXECUTE_P15_DEVELOPMENT_ARTIFACT_ONLY_ADJUDICATION',
+            'P12_9035003746_P13_9035081147',
+            '9035003746','31302353678','sha256:4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7',
+            '96698c1a7ba700716a79e7bc8b7bc9acb2f9aec653095a5d7e33b14000b87a38',
+            '9035081147','31303078223','sha256:efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a',
+            'd298cebec624c991c4abda9dc809d92d8eea101baaf2b6edbb1862b7acc49739',
+            'PASS_P15_ARTIFACT_ONLY_CANONICAL_INPUTS_PINNED',
+            'PASS_P15_ARTIFACT_ONLY_DEVELOPMENT_FINAL_GATE',
+          )
+          for x in required_run: assert x in run,x
+          assert run.count('curl -L --fail --retry 3')==2
+          assert 'run_header_compatible.py' not in run
+          assert 'apply_support_safe_halo_p15.py' not in run
+          assert 'evaluate_frozen_blindsafe' not in run
+          assert 'P15_DEVELOPMENT_ARTIFACT_ADJUDICATION_RUN.md' in wf
+          assert 'orbittrace-p15-support-safe-halo-development-artifact-adjudication' in wf
           forbidden=(
             '9042324169','31328065110','dbe621e66d7b6fcd7539a083789ca4b1be94425d468f04878e73d413c652d914',
             'math.isclose','np.isclose','allclose','tolerance','epsilon','1e-13','1e-12',
-            'evaluate_frozen_blindsafe','8955917326','9012424187','8957940764','8957263372',
-            'MAARSY','OrbitTrace-April','target_coordinate',
+            '8955917326','9012424187','8957940764','8957263372','MAARSY','OrbitTrace-April','target_coordinate',
           )
-          for x in forbidden: assert x not in p,x
-          assert 'direction_audits' in p and "row['negative_count']" in p
-          print('PASS_P15_ARTIFACT_ONLY_DEVELOPMENT_ADJUDICATION_SOURCE_AUDIT')
+          for x in forbidden: assert x not in adj+run+wf,x
+          print('PASS_P15_ARTIFACT_ONLY_DEVELOPMENT_ADJUDICATION_SOURCE_AND_ACTIVATION_AUDIT')
           PY
+          test ! -e orbittrace_support_safe_halo_p15/P15_DEVELOPMENT_ARTIFACT_ADJUDICATION_RUN.md
           echo NO_CANONICAL_ARTIFACT_DOWNLOAD_NO_NEW_TRUTH_NO_MATCHED_NO_EXTERNAL_NO_TARGET_ACCESS
