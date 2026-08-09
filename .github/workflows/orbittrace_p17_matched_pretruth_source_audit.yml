@@ -54,16 +54,22 @@ jobs:
             'p17_fail_closed_no_proposals' \
             'orbittrace-p17-matched-pretruth-checkpoints'; do grep -F "$x" "$wf"; done
 
-          # No posttruth evaluator, comparator assignment payload, external panel, or target surface.
+          # The generated execution shell itself must contain no posttruth evaluator,
+          # assignment payload, external-panel, or target surface.
           for forbidden in \
             'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' \
             'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' \
             '8955917326' '9012424187' '8957940764' '8957263372' \
             'MAARSY' 'OrbitTrace-April' 'target_coordinate'; do
-            if grep -Fq "$forbidden" /tmp/p17_pretruth.sh "$wf"; then
-              echo "posttruth/external/target surface leaked into P17 launcher: $forbidden" >&2
+            if grep -Fq "$forbidden" /tmp/p17_pretruth.sh; then
+              echo "posttruth/external/target surface leaked into generated P17 shell: $forbidden" >&2
               exit 1
             fi
+          done
+          # The workflow may name evaluator/target tokens only once, inside its own
+          # defensive generated-shell rejection regex; they are never commands or inputs.
+          for sentinel in 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do
+            test "$(grep -Fc "$sentinel" "$wf")" -eq 1
           done
           test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
           echo PASS_P17_MATCHED_PRETRUTH_LAUNCHER_SOURCE_FREEZE
