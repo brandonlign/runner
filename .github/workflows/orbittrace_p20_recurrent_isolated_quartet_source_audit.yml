@@ -97,18 +97,29 @@ jobs:
               '"no_target_information_access": True',
           ):
               assert x in main, x
-          forbidden=(
-              'F0059','247.17','-14.34','37.62',
-              'SonotaCo','MAARSY','OrbitTrace-April','target_coordinate',
+
+          # Permit literal names in the human-readable claim boundary, but forbid
+          # any implementation surface capable of reaching external/target data.
+          imported=set()
+          for node in ast.walk(tree):
+              if isinstance(node,ast.Import):
+                  imported.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node,ast.ImportFrom) and node.module:
+                  imported.add(node.module.split('.')[0])
+          assert not (imported & {'requests','urllib','httpx','h5py','pandas','subprocess'}), imported
+          for x in (
+              'F0059','247.17','-14.34','37.62','OrbitTrace-April','target_coordinate',
               'matched_2023','matched_2025','P18_MATCHED_TRUTH',
               '9044538272','9044444246','9044259813','9044142249',
-          )
-          for x in forbidden:
+              'SNMv3/','zenodo.org','silseth_thesis_data','kep_collect.h5','kepler',
+          ):
               assert x not in s, x
+          assert 'No SonotaCo/MAARSY scientific value or OrbitTrace target information is accessed.' in s
 
           print('PASS_P20_AST_LABEL_FIREWALL')
           print('PASS_P20_EXACT_4PLUS4_RECIPROCAL_RULE')
           print('PASS_P20_PRELABEL_PAYLOAD_FREEZE')
+          print('PASS_P20_NO_EXTERNAL_OR_TARGET_IO_SURFACE')
           PY
           grep -F 'P20 is a preregistered contingency successor frozen **while the exact P19 development run is still in progress' "$p"
           grep -F 'A P19 pass keeps P20 unexecuted.' "$p"
