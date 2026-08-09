@@ -1,0 +1,231 @@
+name: OrbitTrace P3 cross-fit seed-floor development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p3-crossfit-seed-floor-development
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require one-file child and authoritative P2 scientific no-go
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_crossfit_seed_floor_membership_p3/RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_crossfit_seed_floor_membership_p3/RUN.md)"
+          marker="$(printf '%s\n' "$content" | sed -n '1p')"
+          p2_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$marker" = 'EXECUTE_P3_AFTER_AUTHORITATIVE_P2_SCIENTIFIC_NO_GO'
+          test "$p2_run" = '31290580956'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+
+          rm -rf /tmp/p2-prereq && mkdir -p /tmp/p2-prereq
+          gh run download "$p2_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-crossyear-two-view-membership-p2-finalized-development --dir /tmp/p2-prereq
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/p2-prereq/crossyear_two_view_membership_p2_development.json').read_text())
+          assert r['verdict']=='FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO',r['verdict']
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['parameter_search'] is False
+          assert r['model_pretruth_sha256']=='0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          assert r['membership_pretruth_sha256']=='b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e'
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert r['p2']['qualified_matches']==27
+          assert r['p2']['recovered_at_100']==25
+          assert r['gates']['v8_baseline_reproduced'] is True
+          assert r['gates']['macro_f1_gain_at_least_008'] is True
+          assert r['gates']['qualified_matches_no_regression'] is False
+          assert r['gates']['recovery_at_100_no_regression'] is False
+          assert r['gates']['top100_dominant_precision_at_least_065'] is False
+          assert r['gates']['large_shower_mean_precision_at_least_085'] is False
+          print('PASS_P3_AUTHORITATIVE_P2_SCIENTIFIC_NO_GO_PREREQUISITE')
+          PY
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/RUN.md
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact audited P3 and frozen inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,v6,v8,dsh} output
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py \
+            /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py)" = '67f17772daa51ade7d943d7367463e48d2f70d07'
+          python -m py_compile /tmp/run_p3.py orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git -C exact-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          cp exact-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+          test "$(git hash-object input/v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          PYTHONPATH="input/v3" python - <<'PY'
+          import multi_anchor_energy_v3 as v3
+          import wavelet_episode_comparator as brown
+          assert callable(getattr(brown,'radiant_unit_vectors',None))
+          assert callable(getattr(brown,'wavelet_episode_score',None))
+          assert callable(getattr(v3,'episode_score_details',None))
+          print('PASS_P3_EXACT_V8_EPISODE_RUNTIME_BINDING')
+          PY
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+          echo 'f76b8448f299ccf078fc5978c0890b9a084f131080db8d2136b5e6dba77edc7b  input/v6/label_free_sparse_support_v6_families.json.gz' | sha256sum -c -
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo '88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip' | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+          echo 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b  input/v8/pooled_year_centroid_v8_development.json' | sha256sum -c -
+
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py' | sha256sum -c -
+          python -m py_compile input/dsh/literature_comparators.py
+          echo PASS_P3_EXACT_INPUT_IDENTITIES
+
+      - name: Execute one-shot target-excluded P3 development
+        env:
+          PYTHONPATH: exact-v8:input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --v6-structural-families-json-gz input/v6/label_free_sparse_support_v6_families.json.gz \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --dsh-comparator input/dsh/literature_comparators.py \
+            --output output
+          cat output/CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT.md
+
+      - name: Enforce frozen P3 result and truth firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/crossfit_seed_floor_membership_p3_development.json').read_text())
+          assert r['verdict'] in {'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT','FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['window_half_width_deg']==5.0
+          assert r['configuration']['negative_minimum_per_direction']==128
+          assert r['configuration']['responsibility_threshold']==0.5
+          assert r['configuration']['parameter_search'] is False
+          assert r['configuration']['new_members_can_seed_growth'] is False
+          assert r['configuration']['p3_fold_count']==5
+          assert r['configuration']['p3_negative_tail_max']==0.10
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert abs(r['baseline_v8']['mrr']-0.045531138942766655)<1e-15
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert r['gates']['v8_baseline_reproduced'] is True
+          assert r['gates']['exact_dsh_source_identity'] is True
+          assert r['gates']['p3_exact_five_crossfit_folds'] is True
+          assert r['gates']['p3_crossfit_frozen_before_truth'] is True
+          assert r['gates']['p3_decisions_frozen_before_truth'] is True
+          assert r['gates']['p3_label_values_unread_until_membership_freeze'] is True
+          assert r['gates']['p3_every_surviving_proposal_meets_seed_floor'] is True
+          assert len(r['crossfit_pretruth_sha256'])==64
+          assert len(r['model_pretruth_sha256'])==64
+          assert len(r['membership_pretruth_sha256'])==64
+          assert len(r['decisions_pretruth_sha256'])==64
+          assert all(a['label_value_accessed'] is False for a in r['diagnostics']['geometry_audits'])
+          assert all(a['label_value_accessed_only_after_blind_and_dedup'] is True for a in r['diagnostics']['truth_audits'])
+          print('ORBITTRACE_P3_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'baseline_v8':r['baseline_v8'],'p3':r['p3'],'baseline_large_shower':r['baseline_large_shower'],'p3_large_shower':r['p3_large_shower'],'gates':r['gates'],'diagnostics':{k:v for k,v in r['diagnostics'].items() if k not in {'direction_audits','geometry_audits','truth_audits'}}},indent=2,sort_keys=True))
+          print('ORBITTRACE_P3_RESULT_END')
+          PY
+
+      - name: Record immutable environment
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum /tmp/run_p3.py orbittrace_crossfit_seed_floor_membership_p3/PROTOCOL.md orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py input/dsh/literature_comparators.py > output/source_sha256.txt 2>/dev/null || true
+          git -C exact-v8 rev-parse HEAD > output/exact_v8_commit.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-crossfit-seed-floor-membership-p3-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
