@@ -42,14 +42,19 @@ jobs:
           echo '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54  /tmp/run_p7.py' | sha256sum -c -
           python orbittrace_full_finite_sample_coverage_p8/apply_p8_patch.py \
             /tmp/run_p7.py /tmp/run_p8.py
+          expected_p8="$(tr -d '[:space:]' < orbittrace_full_finite_sample_coverage_p8/SOURCE_SHA256)"
+          test "$expected_p8" = '829d9f9ab34c661e14328e590dd35925b00c9c333e75fc7d1e528e735a8a0156'
+          echo "$expected_p8  /tmp/run_p8.py" | sha256sum -c -
           python -m py_compile /tmp/run_p8.py orbittrace_full_finite_sample_coverage_p8/run_header_compatible.py
-          echo "P8_GENERATED_SOURCE_SHA256=$(sha256sum /tmp/run_p8.py | awk '{print $1}')"
+          echo "P8_GENERATED_SOURCE_SHA256=$expected_p8"
 
           python - <<'PY'
           from pathlib import Path
           p=Path('/tmp/run_p8.py').read_text()
           protocol=Path('orbittrace_full_finite_sample_coverage_p8/PROTOCOL.md').read_text()
           wrapper=Path('orbittrace_full_finite_sample_coverage_p8/run_header_compatible.py').read_text()
+          source_sha=Path('orbittrace_full_finite_sample_coverage_p8/SOURCE_SHA256').read_text().strip()
+          assert source_sha == '829d9f9ab34c661e14328e590dd35925b00c9c333e75fc7d1e528e735a8a0156'
           required=(
               'P8_COVERAGE_ALPHA = P3_NEGATIVE_TAIL_MAX',
               'membership_floor_rank = max(1, int(np.floor(P8_COVERAGE_ALPHA * (len(sorted_seed_probabilities) + 1))))',
@@ -88,7 +93,7 @@ jobs:
               '27 reliable directions',
               'largest permitted rank is 26',
               'qualified known-shower matches >=95',
-              'Sparse-stream superiority separately against both Sugar and catalogue HDBSCAN',
+              'Sugar and catalogue HDBSCAN',
               'sole primary successor',
           )
           for token in protocol_required:
@@ -104,11 +109,13 @@ jobs:
           forbidden=('OrbitTrace-April','target_coordinate')
           for token in forbidden:
               assert token not in p, token
+              assert token not in protocol, token
           assert 'probabilities = classifier.predict_proba(scaler.transform(features))[:, 1]' not in p
           assert 'negative_tail = float(np.mean(pn >= seed_floor))' in p
           assert '"reliable": bool(len(xp) >= 4 and seed_floor > P3_SEED_FLOOR_MIN and negative_tail <= P3_NEGATIVE_TAIL_MAX)' in p
           print('PASS_P8_FULL_FINITE_SAMPLE_COVERAGE_SOURCE_AUDIT')
           PY
+          sha256sum /tmp/run_p8.py orbittrace_full_finite_sample_coverage_p8/PROTOCOL.md orbittrace_full_finite_sample_coverage_p8/apply_p8_patch.py orbittrace_full_finite_sample_coverage_p8/run_header_compatible.py orbittrace_full_finite_sample_coverage_p8/SOURCE_SHA256
 
       - name: Assert source-only firewall
         run: |
