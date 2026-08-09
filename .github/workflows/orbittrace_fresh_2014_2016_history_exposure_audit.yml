@@ -1,0 +1,102 @@
+name: OrbitTrace fresh 2014/2016 history exposure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_fresh_2014_2016_history_exposure_audit.yml
+      - orbittrace_post_p18_fresh_matched/HISTORY_AUDIT_RUN.md
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Require one-file audit activation and scan pre-reservation repository/PR history only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          marker=orbittrace_post_p18_fresh_matched/HISTORY_AUDIT_RUN.md
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = "$marker"
+          test "$(git show "$HEAD_SHA:$marker")" = 'AUDIT_PRE_RESERVATION_SONOTACO_2014_2016_EXPOSURE'
+          git checkout --detach "$BASE_SHA"
+          test ! -e "$marker"
+
+          # The reservation was created in PR #792 at 2026-08-09T21:32:21Z.
+          # Fetch historical branch/PR objects once, then search only commits strictly before that reservation.
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pull/*'
+          cutoff='2026-08-09T21:32:20Z'
+          regex='SonotaCo 2014|SonotaCo 2016|sonotaco[_-]2014|sonotaco[_-]2016|014a\.zip|016a\.zip|SNMv3/014|SNMv3/016'
+          git log --all --before="$cutoff" -G "$regex" --format='EXPOSURE_COMMIT %H %cI %s' --name-only -- . > /tmp/history_hits.txt || true
+          cat /tmp/history_hits.txt
+          if grep -q '^EXPOSURE_COMMIT ' /tmp/history_hits.txt; then
+            echo 'PRE_RESERVATION_REPOSITORY_EXPOSURE_FOUND' >&2
+            exit 1
+          fi
+
+          # Also search PR/issue text indexed before the reservation PR. Any hit on PR/issue number <792 is prior exposure.
+          python - <<'PY'
+          import json,os,subprocess,urllib.parse
+          repo=os.environ['REPO']
+          terms=['"SonotaCo 2014"','"SonotaCo 2016"','"sonotaco_2014"','"sonotaco_2016"','"014a.zip"','"016a.zip"']
+          bad=[]
+          seen=[]
+          for term in terms:
+              q=f'repo:{repo} {term}'
+              raw=subprocess.check_output(['gh','api','search/issues','-f',f'q={q}','-f','per_page=100'],text=True)
+              obj=json.loads(raw)
+              for item in obj.get('items',[]):
+                  num=int(item['number'])
+                  seen.append((term,num,item.get('html_url','')))
+                  if num < 792:
+                      bad.append((term,num,item.get('html_url','')))
+          print('INDEXED_SEARCH_HITS',json.dumps(seen,sort_keys=True))
+          if bad:
+              raise SystemExit('PRE_RESERVATION_PR_ISSUE_EXPOSURE_FOUND '+json.dumps(bad,sort_keys=True))
+          print('PASS_NO_PRE_RESERVATION_PR_ISSUE_EXPOSURE')
+          PY
+
+          mkdir -p output
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          history=Path('/tmp/history_hits.txt').read_text()
+          out={
+            'classification':'FRESH_MATCHED_PREACCESS_HISTORY_AUDIT',
+            'reserved_years':[2014,2016],
+            'reservation_pr':792,
+            'reservation_created_at':'2026-08-09T21:32:21Z',
+            'repository_history_prior_exposure':False,
+            'indexed_pr_issue_prior_exposure':False,
+            'archive_accessed':False,
+            'event_values_accessed':False,
+            'known_shower_truth_accessed':False,
+            'comparator_cluster_values_accessed':False,
+            'target_information_access':False,
+            'history_search_sha256':hashlib.sha256(history.encode()).hexdigest(),
+            'verdict':'PASS_FRESH_SONOTACO_2014_2016_PREACCESS_HISTORY_AUDIT',
+          }
+          Path('output/fresh_2014_2016_history_audit.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+          echo PASS_FRESH_SONOTACO_2014_2016_PREACCESS_HISTORY_AUDIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fresh-2014-2016-history-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
