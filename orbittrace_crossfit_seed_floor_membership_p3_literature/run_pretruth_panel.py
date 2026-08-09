@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import pickle
+import re
+import warnings
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+
+YEARS=(2023,2025)
+BLIND_LOW=20.0
+BLIND_HIGH=55.0
+P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'
+P3_DEVELOPMENT_SOURCE_SHA256='f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185'
+V8_SOURCE_COMMIT='c9d6c44704013ba0c9430100e98a29a56b453304'
+DSH_SOURCE_SHA256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+P3_FOLD_COUNT=5
+P3_NEGATIVE_TAIL_MAX=0.10
+P3_SEED_FLOOR_MIN=0.5
+SUPPORT_INELIGIBLE_RE=re.compile(r'^family ([A-Za-z0-9_.:-]+) year (2023|2025) has only ([0-9]+) events in local window$')
+ELIGIBLE='P3 matched-literature pretruth panel checkpoint'
+INELIGIBLE='P3_MATCHED_INPUT_INELIGIBLE'
+
+
+def require(ok:bool,message:str)->None:
+    if not ok: raise RuntimeError(message)
+
+
+def sha256_file(path:Path)->str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonical_sha(value:Any)->str:
+    return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
+
+
+def array_sha(x:np.ndarray)->str:
+    return hashlib.sha256(np.ascontiguousarray(x,dtype='<f8').tobytes()).hexdigest()
+
+
+def load_module(path:Path,name:str)->Any:
+    spec=importlib.util.spec_from_file_location(name,path)
+    require(spec is not None and spec.loader is not None,f'cannot import {path}')
+    m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def fit_exact_p2_model(directions:list[dict[str,Any]],p2:Any)->tuple[Any,Any,dict[str,Any]]:
+    xp=[]; yp=[]; wp=[]
+    for d in directions:
+        pos=np.asarray(d['positive_features'],dtype=np.float64)
+        neg=np.asarray(d['negative_features'],dtype=np.float64)
+        require(len(pos)>=4 and len(neg)>=int(p2.MIN_DIRECTION_NEGATIVES),'P3 matched direction support changed')
+        xp.extend((pos,neg)); yp.extend((np.ones(len(pos),dtype=np.int8),np.zeros(len(neg),dtype=np.int8)))
+        wp.extend((np.full(len(pos),0.5/len(pos),dtype=np.float64),np.full(len(neg),0.5/len(neg),dtype=np.float64)))
+    X=np.vstack(xp).astype(np.float64,copy=False); y=np.concatenate(yp).astype(np.int8,copy=False); w=np.concatenate(wp).astype(np.float64,copy=False)
+    require(X.shape[1]==2 and len(X)==len(y)==len(w) and np.all(np.isfinite(X)) and np.all(np.isfinite(w)),'P3 matched training shape/finite failure')
+    require(abs(float(np.sum(w[y==1]))-0.5*len(directions))<=1e-8 and abs(float(np.sum(w[y==0]))-0.5*len(directions))<=1e-8,'P3 matched family-direction weights changed')
+    scaler=StandardScaler(); scaler.fit(X,sample_weight=w)
+    clf=LogisticRegression(penalty='l2',C=float(p2.LOGISTIC_C),solver='lbfgs',max_iter=int(p2.LOGISTIC_MAX_ITER),tol=float(p2.LOGISTIC_TOL),fit_intercept=True,class_weight=None,random_state=None)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always'); clf.fit(scaler.transform(X),y,sample_weight=w)
+    convergence=[q for q in caught if issubclass(q.category,ConvergenceWarning)]
+    require(not convergence and int(np.max(clf.n_iter_))<int(p2.LOGISTIC_MAX_ITER),'P3 matched logistic convergence failure')
+    model={'feature_order':['d_obs','d_orb'],'scaler_mean':np.asarray(scaler.mean_,dtype=np.float64).tolist(),'scaler_scale':np.asarray(scaler.scale_,dtype=np.float64).tolist(),'scaler_var':np.asarray(scaler.var_,dtype=np.float64).tolist(),'logistic_coef':np.asarray(clf.coef_,dtype=np.float64).tolist(),'logistic_intercept':np.asarray(clf.intercept_,dtype=np.float64).tolist(),'logistic_n_iter':np.asarray(clf.n_iter_,dtype=np.int64).tolist(),'settings':{'penalty':'l2','C':float(p2.LOGISTIC_C),'solver':'lbfgs','max_iter':int(p2.LOGISTIC_MAX_ITER),'tol':float(p2.LOGISTIC_TOL),'fit_intercept':True,'class_weight':None,'family_direction_positive_total_weight':0.5,'family_direction_negative_total_weight':0.5,'window_half_width_deg':float(p2.WINDOW_HALF_WIDTH_DEG)}}
+    return scaler,clf,model
+
+
+def write_checkpoint(path:Path,payload:dict[str,Any])->None:
+    path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(pickle.dumps(payload,protocol=pickle.HIGHEST_PROTOCOL)); path.with_suffix(path.suffix+'.sha256').write_text(sha256_file(path)+'\n')
+
+
+def write_ineligible(path:Path,panel:str,kind:str,detail:dict[str,Any])->int:
+    payload={'classification':INELIGIBLE,'panel':panel,'years':list(YEARS),'blind_exclusion':[BLIND_LOW,BLIND_HIGH],'ineligibility_kind':kind,'detail':detail,'competitor_cluster_values_accessed':False,'known_shower_truth_accessed':False,'p3_membership_executed':False,'no_support_or_background_relaxation':True}
+    write_checkpoint(path,payload); print(INELIGIBLE,panel,kind,json.dumps(detail,sort_keys=True)); return 0
+
+
+def main()->int:
+    p=argparse.ArgumentParser()
+    p.add_argument('--panel',required=True,choices=('hdbscan','sugar')); p.add_argument('--strict-id-manifest',required=True,type=Path); p.add_argument('--exact-row-runner',required=True,type=Path); p.add_argument('--p2-source',required=True,type=Path); p.add_argument('--p3-source',required=True,type=Path); p.add_argument('--orbit-reader',required=True,type=Path); p.add_argument('--dsh-comparator',required=True,type=Path); p.add_argument('--archive-2023',required=True,type=Path); p.add_argument('--archive-2025',required=True,type=Path); p.add_argument('--base-runner',required=True,type=Path); p.add_argument('--support-source-parts',required=True,type=Path); p.add_argument('--candidate-payload',required=True,type=Path); p.add_argument('--baseline-payload',required=True,type=Path); p.add_argument('--scorer-parts',required=True,type=Path); p.add_argument('--output',required=True,type=Path); a=p.parse_args()
+    require(sha256_file(a.p2_source)==P2_SOURCE_SHA256,'canonical P2 source changed'); require(sha256_file(a.p3_source)==P3_DEVELOPMENT_SOURCE_SHA256,'exact P3 development source changed'); require(sha256_file(a.dsh_comparator)==DSH_SOURCE_SHA256,'D_SH source changed')
+    manifest=json.loads(a.strict_id_manifest.read_text()); require(manifest['classification']=='P2 matched-literature strict pretruth ID-only manifest','wrong exact-row ID manifest'); require(manifest['years']==list(YEARS) and manifest['blind_exclusion']==[BLIND_LOW,BLIND_HIGH],'manifest universe changed'); require(manifest['competitor_cluster_values_parsed'] is False and manifest['known_shower_truth_values_parsed'] is False and manifest['native_shower_tokens_parsed'] is False,'labels entered manifest')
+    side=a.strict_id_manifest.with_suffix(a.strict_id_manifest.suffix+'.sha256'); require(side.exists() and side.read_text().strip()==canonical_sha(manifest),'manifest hash mismatch')
+    exact=load_module(a.exact_row_runner,f'p3_exact_rows_{a.panel}'); p2=load_module(a.p2_source,'p3_canonical_p2_transfer'); orbit_reader=load_module(a.orbit_reader,'p3_exact_orbits'); dsh=p2.load_dsh_module(a.dsh_comparator)
+    old=load_module(a.base_runner,'p3_lit_base'); runtime=exact.v8.mult.load_frozen_runtime(); support=runtime.load_support_module(a.support_source_parts); require(float(support.BLIND_LOW)==BLIND_LOW and float(support.BLIND_HIGH)==BLIND_HIGH,'blind interval changed'); support.YEARS=YEARS; support.MONTH_KEYS=tuple(); support.CORPUS='sonotaco-exact-row-literature-pairwise'; support.RANKING_VARIANTS=exact.RAW_FIXED4_RANKING_VARIANTS
+    import types
+    srcargs=types.SimpleNamespace(support_source_parts=a.support_source_parts,candidate_payload=a.candidate_payload,baseline_payload=a.baseline_payload,scorer_parts=a.scorer_parts); _candidate,base,_scorer=support.load_sources(srcargs); exact.v8.YEARS=YEARS; exact.v8.MONTH_KEYS=tuple(); exact.v8.mult.YEARS=YEARS; exact.v8.mult.MONTH_KEYS=tuple()
+    archives={2023:a.archive_2023,2025:a.archive_2025}; ids_by_year={y:set(map(str,manifest['panels'][a.panel][str(y)]['scan_ids'])) for y in YEARS}; scan={y:exact.read_exact_geometry(y,archives[y],ids_by_year[y],base) for y in YEARS}; require(all(len(scan[y])==len(ids_by_year[y]) for y in YEARS),'exact geometry row count changed'); require(all(all(not(BLIND_LOW<=float(e['sol'])<=BLIND_HIGH) for e in scan[y]) for y in YEARS),'target interval entered P3 matched geometry')
+    try:
+        v8_panel=exact.run_v8_panel(a.panel,scan,support,runtime,base)
+    except RuntimeError as exc:
+        m=SUPPORT_INELIGIBLE_RE.fullmatch(str(exc))
+        if m is None: raise
+        return write_ineligible(a.output,a.panel,'P3_MATCHED_INPUT_INELIGIBLE_EXACT_V8_SUPPORT',{'family_id':m.group(1),'year':int(m.group(2)),'available_local_events':int(m.group(3)),'required_episode_events':128,'exact_exception':str(exc)})
+    try:
+        orbit_by_id={}
+        for y in YEARS: orbit_by_id.update(orbit_reader.read_exact_orbits(y,archives[y],ids_by_year[y]))
+    except RuntimeError as exc:
+        if 'P2_MATCHED_INPUT_INELIGIBLE_' not in str(exc): raise
+        return write_ineligible(a.output,a.panel,'P3_MATCHED_INPUT_INELIGIBLE_ORBIT',{'exact_exception':str(exc)})
+    require(set(orbit_by_id)==set().union(*ids_by_year.values()),'P3 orbit universe differs from exact-row universe')
+    by_id={str(f['family_id']):f for f in v8_panel['families']}; order=list(map(str,v8_panel['multiplicity_order'])); require(len(order)==len(by_id) and set(order)==set(by_id),'v8 order/family universe mismatch'); families=[by_id[fid] for fid in order]; family_rank={fid:i for i,fid in enumerate(order)}; event_lookup={y:{str(e['id']):e for e in scan[y]} for y in YEARS}; global_seeds=set().union(*(set(map(str,f['event_ids'])) for f in families)); require(global_seeds<=set(orbit_by_id),'v8 seed orbit missing')
+    nonseed={y:[e for e in scan[y] if str(e['id']) not in global_seeds] for y in YEARS}; directions=[]; direction_audits=[]; p2.YEARS=YEARS
+    for fi,family in enumerate(families):
+        fid=str(family['family_id']); ids={y:sorted(str(eid) for eid in family['event_ids'] if str(eid).startswith(f'SNM{y}:')) for y in YEARS}; rows={y:[event_lookup[y][eid] for eid in ids[y]] for y in YEARS}
+        for sy,tt in ((2023,2025),(2025,2023)):
+            require(len(ids[sy])>=4 and len(ids[tt])>=4,f'family {fid} invalid cross-year seeds'); center,inverse,obs_audit=p2.source_observation_model(rows[sy],base); target_center=p2.pooled_centroid(rows[tt]); mask=p2.wrapped_window_mask(nonseed[tt],target_center['sol'],base); neg=[e for e,k in zip(nonseed[tt],mask.tolist()) if k]
+            if len(neg)<int(p2.MIN_DIRECTION_NEGATIVES): return write_ineligible(a.output,a.panel,'P3_MATCHED_INPUT_INELIGIBLE_DIRECTION_BACKGROUND',{'family_id':fid,'source_year':sy,'target_year':tt,'negative_count':len(neg),'required':int(p2.MIN_DIRECTION_NEGATIVES)})
+            pos=rows[tt]; pos_ids=ids[tt]; neg_ids=[str(e['id']) for e in neg]; x_pos=np.column_stack((p2.mahalanobis_distance(pos,center,inverse,base),p2.min_exact_dsh_to_source(pos_ids,ids[sy],orbit_by_id,dsh))); x_neg=np.column_stack((p2.mahalanobis_distance(neg,center,inverse,base),p2.min_exact_dsh_to_source(neg_ids,ids[sy],orbit_by_id,dsh)))
+            directions.append({'family_index':fi,'family_id':fid,'source_year':sy,'target_year':tt,'positive_features':x_pos,'negative_event_ids':neg_ids,'negative_features':x_neg}); direction_audits.append({'family_id':fid,'source_year':sy,'target_year':tt,'source_seed_count':len(ids[sy]),'positive_count':len(x_pos),'negative_count':len(x_neg),'target_centroid_sol':float(target_center['sol']),**obs_audit})
+        if (fi+1)%25==0 or fi+1==len(families): print(f'P3 matched feature family {fi+1}/{len(families)}',flush=True)
+
+    family_fold={str(f['family_id']):int.from_bytes(hashlib.sha256(str(f['family_id']).encode('utf-8')).digest()[:8],'big')%P3_FOLD_COUNT for f in families}; require(len(family_fold)==len(families) and set(family_fold.values())==set(range(P3_FOLD_COUNT)),'P3 matched deterministic folds invalid')
+    crossfit_models=[]; reliability={}
+    for held_fold in range(P3_FOLD_COUNT):
+        train=[d for d in directions if family_fold[str(d['family_id'])]!=held_fold]; held=[d for d in directions if family_fold[str(d['family_id'])]==held_fold]; require(train and held,f'P3 matched fold {held_fold} empty')
+        train_ids=sorted({str(d['family_id']) for d in train}); held_ids=sorted({str(d['family_id']) for d in held}); require(not(set(train_ids)&set(held_ids)),f'P3 matched fold {held_fold} family leakage')
+        scf,clf,model=fit_exact_p2_model(train,p2); crossfit_models.append({'held_fold':held_fold,'training_family_ids':train_ids,'heldout_family_ids':held_ids,'model':model})
+        for d in held:
+            pp=np.asarray(clf.predict_proba(scf.transform(np.asarray(d['positive_features'],dtype=np.float64)))[:,1],dtype=np.float64); pn=np.asarray(clf.predict_proba(scf.transform(np.asarray(d['negative_features'],dtype=np.float64)))[:,1],dtype=np.float64); require(np.all(np.isfinite(pp)) and np.all(np.isfinite(pn)),'P3 matched nonfinite crossfit probability')
+            floor=float(np.min(pp)); tail=float(np.mean(pn>=floor)); key=f"{d['family_id']}|{d['source_year']}|{d['target_year']}"; require(key not in reliability,f'duplicate P3 reliability {key}')
+            reliability[key]={'family_id':str(d['family_id']),'source_year':int(d['source_year']),'target_year':int(d['target_year']),'fold':held_fold,'seed_count':int(len(pp)),'negative_count':int(len(pn)),'seed_floor':floor,'negative_tail':tail,'positive_scores_float64_sha256':array_sha(pp),'negative_scores_float64_sha256':array_sha(pn),'reliable':bool(len(pp)>=4 and floor>P3_SEED_FLOOR_MIN and tail<=P3_NEGATIVE_TAIL_MAX)}
+    require(len(reliability)==len(directions),'P3 matched reliability direction universe changed')
+    crossfit={'fold_count':P3_FOLD_COUNT,'fold_rule':'int.from_bytes(SHA256(family_id UTF-8)[:8], big) % 5','family_fold':family_fold,'models':crossfit_models,'reliability':reliability,'seed_floor_rule':'minimum held-out recurrent-seed probability','seed_floor_min_strict':P3_SEED_FLOOR_MIN,'negative_tail_max':P3_NEGATIVE_TAIL_MAX,'no_known_shower_truth_used':True}; crossfit_sha=canonical_sha(crossfit)
+
+    scaler,classifier,model=fit_exact_p2_model(directions,p2); model_sha=canonical_sha(model); proposals=defaultdict(list); eps=np.finfo(np.float64).eps
+    for d in directions:
+        key=f"{d['family_id']}|{d['source_year']}|{d['target_year']}"; gate=reliability[key]
+        if not bool(gate['reliable']): continue
+        feats=np.asarray(d['negative_features'],dtype=np.float64); probs=np.clip(classifier.predict_proba(scaler.transform(feats))[:,1],eps,1.0-eps); odds=probs/(1.0-probs)
+        for eid,pr,od in zip(d['negative_event_ids'],probs.tolist(),odds.tolist()):
+            if float(pr)<float(gate['seed_floor']): continue
+            proposals[eid].append({'family_index':int(d['family_index']),'family_id':str(d['family_id']),'source_year':int(d['source_year']),'target_year':int(d['target_year']),'probability':float(pr),'odds':float(od),'seed_floor':float(gate['seed_floor'])})
+    assignments={}; conflicted=0; resp=[]
+    for eid,ps in proposals.items():
+        require(eid not in global_seeds,'seed entered P3 matched competition'); conflicted+=int(len(ps)>1); denom=1.0+float(sum(x['odds'] for x in ps)); ranked=sorted(ps,key=lambda x:(-float(x['odds'])/denom,family_rank[str(x['family_id'])],str(x['family_id']))); best=dict(ranked[0]); r=float(best['odds']/denom)
+        if r<=float(p2.RESPONSIBILITY_THRESHOLD): continue
+        best['responsibility']=r; assignments[eid]=best; resp.append(r)
+    decision_payload={'proposals_by_event':{eid:proposals[eid] for eid in sorted(proposals)},'assignments':{eid:assignments[eid] for eid in sorted(assignments)}}; decision_sha=canonical_sha(decision_payload)
+    added=defaultdict(list)
+    for eid,rec in assignments.items(): added[int(rec['family_index'])].append(eid)
+    expanded=[]
+    for i,f in enumerate(families):
+        out=json.loads(json.dumps(f)); seeds=set(map(str,f['event_ids'])); additions=sorted(set(added.get(i,[]))-global_seeds); out['p3_added_event_ids']=additions; out['p3_added_event_count']=len(additions); out['event_ids']=sorted(seeds|set(additions)); out['event_count']=len(out['event_ids']); expanded.append(out)
+    membership_sha=canonical_sha(expanded); order_sha=hashlib.sha256(json.dumps(order,separators=(',',':')).encode()).hexdigest()
+    require([str(f['family_id']) for f in expanded]==order,'P3 matched rank changed'); require(all(set(map(str,f['event_ids']))<=set(map(str,o['event_ids'])) for f,o in zip(families,expanded)),'P3 matched seed lost'); require(all(float(p['probability'])>=float(p['seed_floor']) for ps in proposals.values() for p in ps),'P3 proposal below seed floor')
+    checkpoint={'classification':ELIGIBLE,'panel':a.panel,'years':list(YEARS),'blind_exclusion':[BLIND_LOW,BLIND_HIGH],'p2_source_sha256':P2_SOURCE_SHA256,'p3_development_source_sha256':P3_DEVELOPMENT_SOURCE_SHA256,'dsh_source_sha256':DSH_SOURCE_SHA256,'v8_source_commit':V8_SOURCE_COMMIT,'exact_event_rows':{str(y):len(scan[y]) for y in YEARS},'v8_family_count':len(families),'v8_multiplicity_order':order,'v8_order_pretruth_sha256':order_sha,'p3_crossfit_pretruth':crossfit,'p3_crossfit_pretruth_sha256':crossfit_sha,'p3_model_pretruth':model,'p3_model_pretruth_sha256':model_sha,'p3_decisions_pretruth':decision_payload,'p3_decisions_pretruth_sha256':decision_sha,'p3_expanded_families':expanded,'p3_membership_pretruth_sha256':membership_sha,'p3_diagnostics':{'family_directions':len(directions),'reliable_directions':sum(bool(r['reliable']) for r in reliability.values()),'unreliable_directions':sum(not bool(r['reliable']) for r in reliability.values()),'assigned_nonseed_events':len(assignments),'conflicted_proposal_events':conflicted,'families_gaining_members':sum(bool(added.get(i)) for i in range(len(families))),'responsibility_median':float(np.median(resp)) if resp else None,'responsibility_min':float(min(resp)) if resp else None,'responsibility_max':float(max(resp)) if resp else None,'direction_audits':direction_audits,'v8_pretruth':{'support_rankings':v8_panel['support_rankings'],'repair':v8_panel['repair'],'scoring_summary':v8_panel['scoring_summary'],'scan_audits':v8_panel['scan_audits'],'quartets':v8_panel['quartets'],'components':v8_panel['components']}},'competitor_cluster_values_accessed':False,'known_shower_truth_accessed':False,'crossfit_model_decisions_membership_and_rank_frozen_before_truth':True,'parameter_search':False,'new_members_can_seed_growth':False}
+    write_checkpoint(a.output,checkpoint); print(f'PASS_P3_MATCHED_PRETRUTH panel={a.panel} families={len(families)} crossfit_sha={crossfit_sha} model_sha={model_sha} decisions_sha={decision_sha} membership_sha={membership_sha} order_sha={order_sha}',flush=True); return 0
+
+
+if __name__=='__main__': raise SystemExit(main())
