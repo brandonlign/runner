@@ -21,13 +21,33 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile \
+            orbittrace_crossfit_seed_floor_membership_p3_literature/prepare_strict_id_manifest.py \
+            orbittrace_crossfit_seed_floor_membership_p3_literature/read_exact_orbits.py \
             orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py \
             orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py
           python - <<'PY'
           from pathlib import Path
+          manifest=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/prepare_strict_id_manifest.py').read_text()
+          orbit=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/read_exact_orbits.py').read_text()
           pre=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py').read_text()
           ev=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py').read_text()
           protocol=Path('orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_PROTOCOL.md').read_text()
+          provenance=Path('orbittrace_crossfit_seed_floor_membership_p3/HDBSCAN_2023_PROVENANCE_CORRECTION.md').read_text()
+          for token in (
+              "HDBSCAN_SHA256={2023:'35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',2025:'8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3'}",
+              "SUGAR_SHA256={2023:'2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389',2025:'77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e'}",
+              "EXPECTED_COUNTS={'hdbscan':{2023:26460,2025:19658},'sugar':{2023:30414,2025:23200}}",
+              "competitor_cluster_values_parsed':False",
+              "known_shower_truth_values_parsed':False",
+              "native_shower_tokens_parsed':False",
+          ):
+              assert token in manifest,token
+          for token in (
+              "ARCHIVE_SHA256={2023:'9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430',2025:'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52'}",
+              "EXPECTED_ORBIT_INDICES={'q':14,'e':16,'peri':18,'node':20,'i':21}",
+              'require(not(BLIND_LOW<=sol<=BLIND_HIGH)',
+          ):
+              assert token in orbit,token
           for token in (
               "P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'",
               "P3_DEVELOPMENT_SOURCE_SHA256='f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185'",
@@ -67,12 +87,14 @@ jobs:
               "pairwise_only_no_cross_denominator_comparison':True",
           ):
               assert token in ev,token
+          assert '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761' in provenance
+          assert 'old `7dbb...` artifact is not an allowed alternative' in provenance
           assert 'only if `SPARSE_STREAM_SUPERIORITY` passes separately against BOTH Sugar and HDBSCAN' in protocol
           assert '`BROAD_CATALOGUE_SUPERIORITY` is a supplementary stronger/broader characterization only' in protocol
           assert '20°–55°' in protocol
           forbidden=('OrbitTrace-April','target_coordinate','canonical target members','historical target rank')
           for token in forbidden:
-              assert token not in pre and token not in ev,token
+              assert token not in manifest and token not in orbit and token not in pre and token not in ev,token
           print('PASS_P3_MATCHED_LITERATURE_IMPLEMENTATION_AUDIT')
           PY
       - name: Assert source-only boundary
