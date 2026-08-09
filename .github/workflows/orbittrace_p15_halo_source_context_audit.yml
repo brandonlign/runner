@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - name: Reconstruct exact matched P12 v3 and inspect halo eligibility anchor
+      - name: Reconstruct exact P12 sources and inspect P15 insertion anchors
         run: |
           set -euo pipefail
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
@@ -41,19 +41,24 @@ jobs:
           echo '55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415  /tmp/p12_panel_v3.py' | sha256sum -c -
           python - <<'PY'
           from pathlib import Path
-          p=Path('/tmp/p12_panel_v3.py'); lines=p.read_text().splitlines()
-          needle='require(len(negative_events) >= MIN_DIRECTION_NEGATIVES'
-          hits=[i for i,s in enumerate(lines) if needle in s]
-          assert len(hits)==1,hits
-          i=hits[0]
-          print('P15_NEGATIVE_SUPPORT_ANCHOR_LINE',i+1)
-          for j in range(max(0,i-18),min(len(lines),i+36)):
-              print(f'{j+1:04d}: {lines[j]}')
-          for needle2 in ('direction_audits =', 'direction_audits.append', 'halo_checkpoint = {', 'proposals_by_event'):
-              hs=[k+1 for k,s in enumerate(lines) if needle2 in s]
-              print('P15_SOURCE_HITS',needle2,hs)
-          assert lines[i].strip().startswith('require(len(negative_events) >= MIN_DIRECTION_NEGATIVES')
-          assert 'positive_events = rows_by_year[target_year]' in '\n'.join(lines[i:i+12])
+          def show(path,label):
+              lines=Path(path).read_text().splitlines()
+              neg=[i for i,s in enumerate(lines) if 'require(len(negative_events) >= MIN_DIRECTION_NEGATIVES' in s]
+              assert len(neg)==1,(label,neg)
+              print(label,'NEGATIVE_SUPPORT_ANCHOR',neg[0]+1)
+              for j in range(max(0,neg[0]-15),min(len(lines),neg[0]+25)):
+                  print(f'{label} {j+1:04d}: {lines[j]}')
+              for needle in ('direction_audits = []','direction_audits.append','halo_checkpoint = {','"direction_audits": direction_audits','"direction_audits":direction_audits','result = {','out = {'):
+                  hs=[k for k,s in enumerate(lines) if needle in s]
+                  print(label,'HITS',repr(needle),[k+1 for k in hs])
+                  for k in hs[:2]:
+                      for j in range(max(0,k-5),min(len(lines),k+15)):
+                          print(f'{label}_CTX {j+1:04d}: {lines[j]}')
+              return lines
+          dev=show('/tmp/p12.py','DEV')
+          matched=show('/tmp/p12_panel_v3.py','MATCHED')
+          assert any('halo_checkpoint = {' in s for s in matched)
+          assert not any('halo_checkpoint = {' in s for s in dev)
           print('PASS_P15_HALO_SUPPORT_SOURCE_CONTEXT_FROZEN')
           PY
           echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
