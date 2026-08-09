@@ -1,0 +1,84 @@
+name: OrbitTrace P2 matched-literature implementation source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p2-literature-superiority-freeze
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2_literature/**
+      - .github/workflows/orbittrace_p2_matched_literature_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and prove exact pretruth/truth boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_crossyear_two_view_membership_p2_literature/prepare_strict_id_manifest.py \
+            orbittrace_crossyear_two_view_membership_p2_literature/read_exact_orbits.py \
+            orbittrace_crossyear_two_view_membership_p2_literature/run_pretruth_panel.py \
+            orbittrace_crossyear_two_view_membership_p2_literature/evaluate_frozen.py
+          python - <<'PY'
+          from pathlib import Path
+          manifest=Path('orbittrace_crossyear_two_view_membership_p2_literature/prepare_strict_id_manifest.py').read_text()
+          pre=Path('orbittrace_crossyear_two_view_membership_p2_literature/run_pretruth_panel.py').read_text()
+          ev=Path('orbittrace_crossyear_two_view_membership_p2_literature/evaluate_frozen.py').read_text()
+          orbit=Path('orbittrace_crossyear_two_view_membership_p2_literature/read_exact_orbits.py').read_text()
+          provenance=Path('orbittrace_crossyear_two_view_membership_p2_literature/BLIND_SAFE_HDBSCAN_2023_PROVENANCE.md').read_text()
+          assert "P2 matched-literature strict pretruth ID-only manifest" in manifest
+          assert "35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761" in manifest
+          assert "competitor_cluster_values_parsed':False" in manifest
+          assert "known_shower_truth_values_parsed':False" in manifest
+          for token in (
+              "P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'",
+              "DSH_SOURCE_SHA256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'",
+              "LogisticRegression(penalty='l2',C=float(p2.LOGISTIC_C),solver='lbfgs'",
+              "0.5/len(x_pos)",
+              "0.5/len(x_neg)",
+              "denom=1.0+float(sum(x['odds'] for x in ps))",
+              "r<=float(p2.RESPONSIBILITY_THRESHOLD)",
+              "model_membership_and_rank_frozen_before_truth':True",
+              "competitor_cluster_values_accessed':False",
+              "known_shower_truth_accessed':False",
+          ):
+              assert token in pre, token
+          assert "read_exact_orbits(y,archives[y],ids_by_year[y])" in pre
+          assert "set(orbit_by_id)==set().union(*ids_by_year.values())" in pre
+          assert "BLIND_LOW<=sol<=BLIND_HIGH" in orbit
+          assert "EXPECTED_ORBIT_INDICES={'q':14,'e':16,'peri':18,'node':20,'i':21}" in orbit
+          for token in (
+              "BROAD_CATALOGUE_SUPERIORITY",
+              "SPARSE_STREAM_SUPERIORITY",
+              "NO_LITERATURE_SUPERIORITY",
+              "all_delta>=0.05",
+              "min(nonempty)>=-0.05",
+              "sum(d>=0.10 for d in nonempty)>=2",
+              "float(bins['4-9'])>=0.10",
+              "d24>=0.10",
+              "all_delta>=-0.10",
+              "0.80*int(comp_summary['all']['f1_gt_0_5'])",
+              "pairwise_only_no_cross_denominator_comparison':True",
+          ):
+              assert token in ev, token
+          assert 'ffe8351b9ee8df4418fb4926fab782d66180e276' in provenance
+          assert 'overrides only' in provenance
+          assert 'not a comparator choice based on P2 outcome' in provenance
+          print('PASS_P2_MATCHED_LITERATURE_IMPLEMENTATION_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_COMPARATOR_VALUES_NO_TRUTH_NO_TARGET_ACCESS
