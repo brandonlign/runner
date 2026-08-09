@@ -2,9 +2,15 @@
 
 ## Eligibility
 
-This Stage-A protocol is dormant unless v6-LF has already passed all frozen target-excluded development gates and a no-retuning exact-row external SonotaCo comparison whose classification is `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against the frozen Sugar/HDBSCAN panels.
+This Stage-A protocol is dormant unless **all three** pre-result method-selection gates have already passed:
 
-No development, comparator, external, or final-search parameter may be changed after those results.
+1. v6-LF has passed all frozen target-excluded GMN 2022/2023 development gates;
+2. the no-retuning exact-row external SonotaCo comparison is classified `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against the frozen Sugar/HDBSCAN panels;
+3. the prospectively frozen no-retuning GMN 2024/2025 temporal holdout has returned `PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT` under its frozen integrity/power and scientific gates.
+
+Development PASS alone, literature superiority alone, a `POWER_INCONCLUSIVE` holdout, or a scientific holdout FAIL cannot authorize Stage A. No target-region deployment may occur before all three artifacts are durably available and verified.
+
+No development, comparator, holdout, or final-search parameter may be changed after those results.
 
 ## Frozen method
 
@@ -102,6 +108,8 @@ Fanout/checkpointing is implementation-only and may be used exactly as in the au
 5. final two-year family construction and Stage-A serialization.
 
 Infrastructure may be repaired only for technical correctness/equivalence and must never inspect target-reference data or alter scientific output.
+
+Any execution workflow must verify the exact development PASS artifact, exact matched-literature superiority artifact, and exact temporal-holdout PASS artifact **before** the first full-region GMN row is requested. Marker text alone is insufficient authorization.
 
 ## Transition to reveal
 
