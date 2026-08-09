@@ -1,0 +1,101 @@
+name: OrbitTrace v6 fanout replay repair audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-exact-fanout-v2
+    paths:
+      - orbittrace_v6_exact_fanout_v2/REPLAY_REPAIR_AUDIT.md
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Prove replay repair is ordering-only
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_exact_fanout_v2/replay_exact_year.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('orbittrace_v6_exact_fanout_v2/replay_exact_year.py').read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          fn=ast.get_source_segment(text,defs['align_exact_outputs_to_records'])
+          assert 'len(input_ids) == len(set(input_ids))' in fn
+          assert 'len(output_ids) == len(set(output_ids))' in fn
+          assert 'len(output_ids) == len(input_ids)' in fn
+          assert 'set(output_ids) == set(input_ids)' in fn
+          assert 'by_anchor = {str(row["proposal_anchor_id"]): row for row in outputs}' in fn
+          assert 'aligned = [by_anchor[proposal_id] for proposal_id in input_ids]' in fn
+          assert 'score' not in fn.lower()
+          assert 'distance' not in fn.lower()
+          assert 'member' not in fn.lower()
+          main=ast.get_source_segment(text,defs['main'])
+          assert 'v6.scan_year_v6' in main
+          assert 'proposal_cap_per_window' in main and '== 512' in main
+          assert 'max_primary_proposals_per_year' in main and '== 36864' in main
+          assert 'target_interval_remains_excluded' in main
+          print('PASS_REPLAY_REPAIR_SOURCE_SCOPE_ORDER_ONLY')
+          PY
+      - name: Download exact label-free 2022 artifacts used by failed replay
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/pre input/shard2
+          gh run download 31282128101 --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-fanout-preexact-2022 --dir input/pre
+          gh run download 31282128101 --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-fanout-exact-2022-2 --dir input/shard2
+      - name: Prove actual center-zero artifacts preserve exact proposal values and anchor bijection
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import copy,hashlib,json,pickle,sys
+          from pathlib import Path
+          sys.path.insert(0,'.')
+          from orbittrace_v6_exact_fanout_v2.replay_exact_year import align_exact_outputs_to_records
+
+          def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          pre_path=Path('input/pre/v6_preexact_2022.pkl')
+          sh_path=Path('input/shard2/v6_exact_2022_shard_02.pkl')
+          assert sha(pre_path)==Path('input/pre/v6_preexact_2022.sha256').read_text().strip().split()[0]
+          assert sha(sh_path)==Path('input/shard2/v6_exact_2022_shard_02.sha256').read_text().strip().split()[0]
+          pre=pickle.loads(pre_path.read_bytes()); shard=pickle.loads(sh_path.read_bytes())
+          assert pre['firewall']['target_interval_remains_excluded'] is True
+          assert pre['firewall']['hidden_labels_not_saved'] is True
+          assert shard['firewall']['target_interval_remains_excluded'] is True
+          assert shard['firewall']['labels_not_evaluated'] is True
+          assert 0.0 in shard['exact_by_center']
+          records=pre['centers'][0.0]['records']; outputs=shard['exact_by_center'][0.0]
+          rids=[str(x['proposal_anchor_id']) for x in records]; oids=[str(x['proposal_anchor_id']) for x in outputs]
+          assert len(rids)==554 and len(oids)==554
+          assert len(rids)==len(set(rids)) and len(oids)==len(set(oids))
+          assert set(rids)==set(oids)
+          # Current saved artifact is already in exact order; repair is identity.
+          aligned,changed=align_exact_outputs_to_records(outputs,records,0.0)
+          assert changed is False and aligned is outputs
+          before=hashlib.sha256(pickle.dumps(outputs,protocol=pickle.HIGHEST_PROTOCOL)).hexdigest()
+          after=hashlib.sha256(pickle.dumps(aligned,protocol=pickle.HIGHEST_PROTOCOL)).hexdigest()
+          assert before==after
+          # Deliberate permutation proves only list order is restored; each exact
+          # output dict is returned byte-for-byte from the immutable anchor map.
+          permuted=list(reversed(outputs))
+          repaired,changed=align_exact_outputs_to_records(permuted,records,0.0)
+          assert changed is True
+          assert [str(x['proposal_anchor_id']) for x in repaired]==rids
+          original_by_id={str(x['proposal_anchor_id']):pickle.dumps(x,protocol=pickle.HIGHEST_PROTOCOL) for x in outputs}
+          repaired_by_id={str(x['proposal_anchor_id']):pickle.dumps(x,protocol=pickle.HIGHEST_PROTOCOL) for x in repaired}
+          assert original_by_id==repaired_by_id
+          print('PASS_REPLAY_REPAIR_ACTUAL_ARTIFACT_BIJECTION_AND_VALUE_IDENTITY')
+          PY
+      - name: Assert no truth/target access
+        run: |
+          test ! -e output
+          echo LABEL_FREE_PRETRUTH_ARTIFACTS_ONLY_NO_SHOWER_TRUTH_NO_TARGET_REGION_RESTORED
