@@ -1,0 +1,84 @@
+name: OrbitTrace P17 explicit relay source audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/orbittrace_p17_issue_comment_relay.yml
+      - .github/workflows/orbittrace_p17_issue_comment_relay_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove explicit relay is exact-owner exact-PR and base-workflow-only
+        run: |
+          set -euo pipefail
+          r=.github/workflows/orbittrace_p17_issue_comment_relay.yml
+          test "$(git hash-object "$r")" = '673e861bfe618fcfd3bf675a22c79ef155d4a868'
+          for x in \
+            'issue_comment:' 'types: [created]' \
+            'github.event.issue.pull_request' \
+            'github.event.comment.user.login == github.repository_owner' \
+            "EXECUTE_P17_PRETRUTH_RELAY_V1 PR=760 BASE=62fb6c2eda5a11ed06af5025c413269edb1fbb09 HEAD=0e70de7dc40be3437751933258d469fc8c65ca6c" \
+            "test \"$PR_NUMBER\" = '760'" \
+            "p['base']['sha']=='62fb6c2eda5a11ed06af5025c413269edb1fbb09'" \
+            "p['head']['sha']=='0e70de7dc40be3437751933258d469fc8c65ca6c'" \
+            "p['head']['repo']['full_name']=='brandonlign/runner'" \
+            'P17_EXPLICIT_RELAY_RUN_ID=$GITHUB_RUN_ID' \
+            'test "${#files[@]}" -eq 2' \
+            '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
+            'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
+            'EXECUTE_P17_MATCHED_PRETRUTH' \
+            '31332157812' '9043232586' \
+            'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" \
+            "Path('/tmp/p17_exact_base_run.sh').write_text(out)" \
+            '/tmp/p17_exact_base_run.sh' \
+            'orbittrace-p17-matched-pretruth-checkpoints-explicit-relay'; do
+            grep -F "$x" "$r"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          t=Path('.github/workflows/orbittrace_p17_issue_comment_relay.yml').read_text()
+          assert '  issue_comment:\n    types: [created]' in t
+          assert 'pull_request_target' not in t
+          assert 'pull_request:' not in t.split('permissions:',1)[0]
+          # Owner-authored exact token and PR metadata are both required before execution.
+          assert "github.event.comment.user.login == github.repository_owner" in t
+          assert t.count('gh api "repos/$REPO/pulls/$PR_NUMBER"')==1
+          # Same-repo exact head/base, exact two-file diff, and nonce-byte-identity checks are mandatory.
+          for x in (
+            "p['base']['ref']=='agent/orbittrace-p15-support-safe-halo-freeze'",
+            "p['base']['sha']=='62fb6c2eda5a11ed06af5025c413269edb1fbb09'",
+            "p['head']['ref']=='agent/orbittrace-p17-matched-pretruth-run-v6-target-relay'",
+            "p['head']['sha']=='0e70de7dc40be3437751933258d469fc8c65ca6c'",
+            "p['head']['repo']['full_name']=='brandonlign/runner'",
+            'test "${#files[@]}" -eq 2',
+            'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml',
+          ): assert x in t,x
+          # PR-supplied code is never checked out or executed. The only executed science/data
+          # script is extracted from the authenticated methodology BASE workflow.
+          assert 'git checkout' not in t or 'actions/checkout@v4' in t
+          assert 'git checkout --detach "$HEAD_SHA"' not in t
+          assert 'git show "$BASE_SHA:$wf" > /tmp/p17_base_workflow.yml' in t
+          assert "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" in t
+          assert t.count('gh pr comment ')==1
+          # Relay contains no scientific implementation or matched-result logic itself.
+          forbidden=(
+            'MIN_DIRECTION_NEGATIVES','P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE',
+            'SPARSE_STREAM_SUPERIORITY','macro_f1_delta','MAARSY',
+          )
+          for x in forbidden: assert x not in t,x
+          for x in ('evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
+              assert t.count(x)==1,(x,t.count(x))
+          print('PASS_P17_EXPLICIT_ISSUE_COMMENT_RELAY_SOURCE_AUDIT')
+          PY
+          echo EXPLICIT_OWNER_COMMENT_TRIGGERS_ONLY_AUTHENTICATED_BASE_WORKFLOW
+          echo ONLY_WRITE_IS_RUN_ID_TELEMETRY_COMMENT
+          echo NO_MATCHED_RESULT_NO_EXTERNAL_NO_TARGET_ACCESS
