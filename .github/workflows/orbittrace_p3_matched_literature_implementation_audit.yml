@@ -1,0 +1,85 @@
+name: OrbitTrace P3 matched-literature implementation audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-matched-literature-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3_literature/**
+      - .github/workflows/orbittrace_p3_matched_literature_implementation_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and prove exact P3 pretruth semantics
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py \
+            orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py
+          python - <<'PY'
+          from pathlib import Path
+          pre=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py').read_text()
+          ev=Path('orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py').read_text()
+          protocol=Path('orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_PROTOCOL.md').read_text()
+          for token in (
+              "P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'",
+              "P3_DEVELOPMENT_SOURCE_SHA256='f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185'",
+              "DSH_SOURCE_SHA256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'",
+              'P3_FOLD_COUNT=5',
+              'P3_NEGATIVE_TAIL_MAX=0.10',
+              'P3_SEED_FLOOR_MIN=0.5',
+              "int.from_bytes(hashlib.sha256(str(f['family_id']).encode('utf-8')).digest()[:8],'big')%P3_FOLD_COUNT",
+              "not(set(train_ids)&set(held_ids))",
+              "np.full(len(pos),0.5/len(pos)",
+              "np.full(len(neg),0.5/len(neg)",
+              "LogisticRegression(penalty='l2',C=float(p2.LOGISTIC_C),solver='lbfgs'",
+              "floor=float(np.min(pp))",
+              "tail=float(np.mean(pn>=floor))",
+              "floor>P3_SEED_FLOOR_MIN and tail<=P3_NEGATIVE_TAIL_MAX",
+              "if float(pr)<float(gate['seed_floor']): continue",
+              "denom=1.0+float(sum(x['odds'] for x in ps))",
+              "r<=float(p2.RESPONSIBILITY_THRESHOLD)",
+              "p3_added_event_ids",
+              "competitor_cluster_values_accessed':False",
+              "known_shower_truth_accessed':False",
+              "crossfit_model_decisions_membership_and_rank_frozen_before_truth':True",
+              "parameter_search':False",
+              "new_members_can_seed_growth':False",
+          ):
+              assert token in pre,token
+          for token in (
+              "'SPARSE_STREAM_SUPERIORITY' if sparse else 'NO_LITERATURE_SUPERIORITY'",
+              "broad_catalogue_superiority':broad",
+              "sparse_stream_superiority':sparse",
+              "sparse_stream_superiority_required_for_promotion':True",
+              "broad_only_does_not_authorize_external':True",
+              "float(bins['4-9'])>=0.10",
+              "d24>=0.10",
+              "all_delta>=-0.10",
+              "0.80*int(comp_summary['all']['f1_gt_0_5'])",
+              "pairwise_only_no_cross_denominator_comparison':True",
+          ):
+              assert token in ev,token
+          assert 'only if `SPARSE_STREAM_SUPERIORITY` passes separately against BOTH Sugar and HDBSCAN' in protocol
+          assert '`BROAD_CATALOGUE_SUPERIORITY` is a supplementary stronger/broader characterization only' in protocol
+          assert '20°–55°' in protocol
+          forbidden=('OrbitTrace-April','target_coordinate','canonical target members','historical target rank')
+          for token in forbidden:
+              assert token not in pre and token not in ev,token
+          print('PASS_P3_MATCHED_LITERATURE_IMPLEMENTATION_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3_literature/RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_COMPARATOR_VALUES_NO_TRUTH_NO_TARGET_ACCESS
