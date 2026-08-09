@@ -63,6 +63,15 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Restore exact promoted-v8 runtime module
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          python -m py_compile input/v3/multi_anchor_energy_v3.py frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-pooled-year-centroid-v8-development
@@ -80,7 +89,7 @@ jobs:
           echo PASS_P19_EXACT_ANCESTRY
       - name: Execute one-shot target-excluded P19 development
         env:
-          PYTHONPATH: frozen-v8
+          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
           mkdir -p output
@@ -124,6 +133,8 @@ jobs:
           printf '%s\n' "p19_base_sha=${{ github.event.pull_request.base.sha }}" >> output/p19_provenance.txt
           sha256sum execution/orbittrace_p19_subthreshold_recurrence/run_development.py \
             execution/orbittrace_p19_subthreshold_recurrence/P19_PROTOCOL.md \
+            input/v3/multi_anchor_energy_v3.py \
+            frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
             input/v8/pooled_year_centroid_v8_development.json \
             >> output/p19_provenance.txt 2>/dev/null || true
           python --version > output/python_version.txt
