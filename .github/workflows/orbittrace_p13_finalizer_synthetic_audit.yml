@@ -6,6 +6,7 @@ on:
       - agent/orbittrace-p12-drift-conditioned-freeze
     paths:
       - orbittrace_core_halo_p13/finalize_from_p12.py
+      - orbittrace_core_halo_p13/FINALIZER_GIT_BLOB_SHA
       - orbittrace_core_halo_p13/PROTOCOL.md
       - .github/workflows/orbittrace_p13_finalizer_synthetic_audit.yml
 
@@ -17,6 +18,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Require pretruth-pinned finalizer identity
+        run: |
+          set -euo pipefail
+          expected="$(tr -d '[:space:]' < orbittrace_core_halo_p13/FINALIZER_GIT_BLOB_SHA)"
+          test "$expected" = '04ff0422e9f2aaf374e051b1a67f25e23bead129'
+          test "$(git hash-object orbittrace_core_halo_p13/finalize_from_p12.py)" = "$expected"
+          echo PASS_P13_PRETRUTH_FINALIZER_BLOB_IDENTITY
       - name: Exercise deterministic PASS and FAIL without catalogue or truth access
         run: |
           set -euo pipefail
