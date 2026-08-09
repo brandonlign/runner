@@ -43,6 +43,8 @@ jobs:
             'P17_OUTPUT_SHA256=c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
             'P17_SCOPE=represent P15-unavailable reciprocal explicitly; missing reciprocal reliability is fail-closed false; no P12 threshold/model/geometry/rank/proposal change' \
             'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' \
+            'fetch_exact_assignment_artifact 9012424187' \
+            'fetch_exact_assignment_artifact 8955917326' \
             'exit 0'; do grep -F "$x" /tmp/p17_pretruth.sh; done
           for x in \
             '31332157812' '9043232586' \
@@ -54,12 +56,14 @@ jobs:
             'p17_fail_closed_no_proposals' \
             'orbittrace-p17-matched-pretruth-checkpoints'; do grep -F "$x" "$wf"; done
 
-          # The generated execution shell itself must contain no posttruth evaluator,
-          # assignment payload, external-panel, or target surface.
+          # The two inherited fetch_exact_assignment_artifact calls above are the
+          # preregistered pretruth ID/universe inputs. The generated shell must still
+          # contain no posttruth evaluator, cluster-valued truth payload, external panel,
+          # or target surface.
           for forbidden in \
             'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' \
             'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' \
-            '8955917326' '9012424187' '8957940764' '8957263372' \
+            '8957940764' '8957263372' \
             'MAARSY' 'OrbitTrace-April' 'target_coordinate'; do
             if grep -Fq "$forbidden" /tmp/p17_pretruth.sh; then
               echo "posttruth/external/target surface leaked into generated P17 shell: $forbidden" >&2
