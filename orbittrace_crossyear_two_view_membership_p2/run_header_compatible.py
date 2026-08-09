@@ -5,7 +5,7 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-CANONICAL_PATH = Path('/tmp/run_p2_canonical_v2.py')
+EXPECTED_CANONICAL_SOURCE = Path('/tmp/run_p2_canonical_v2.py')
 
 
 def require(ok: bool, message: str) -> None:
@@ -47,8 +47,8 @@ def compatible_exact_header_positions(text: str) -> tuple[list[str], dict[str, i
 
 
 def load_canonical() -> Any:
-    require(CANONICAL_PATH.is_file(), f'canonical P2 runtime missing: {CANONICAL_PATH}')
-    spec = importlib.util.spec_from_file_location('orbittrace_p2_canonical_v2', CANONICAL_PATH)
+    require(EXPECTED_CANONICAL_SOURCE.is_file(), f'canonical P2 runtime missing: {EXPECTED_CANONICAL_SOURCE}')
+    spec = importlib.util.spec_from_file_location('orbittrace_p2_canonical_v2', EXPECTED_CANONICAL_SOURCE)
     require(spec is not None and spec.loader is not None, 'cannot load canonical P2 runtime')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
