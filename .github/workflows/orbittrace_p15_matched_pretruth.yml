@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
 
-      - name: Require one-file child, preserved numerical no-result, semantic P15 PASS, and freeze both checkpoints only
+      - name: Require one-file child, exact artifact-only P15 development PASS, and freeze both checkpoints only
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -48,90 +48,78 @@ jobs:
           test "${#files[@]}" -eq 1
           test "${files[0]}" = 'orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md'
           marker="$(git show "$HEAD_SHA":orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md)"
-          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P15_MATCHED_PRETRUTH_AFTER_SEMANTIC_DEVELOPMENT_PASS'
-          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31328065110'
-          test "$(printf '%s\n' "$marker" | sed -n '3p')" = '31329252140'
-          test "$(printf '%s\n' "$marker" | sed -n '4p')" = '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'
-          test "$(printf '%s\n' "$marker" | wc -l)" -eq 4
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P15_MATCHED_PRETRUTH_AFTER_ARTIFACT_ONLY_DEVELOPMENT_PASS'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31329529635'
+          test "$(printf '%s\n' "$marker" | sed -n '3p')" = '9042508082'
+          test "$(printf '%s\n' "$marker" | sed -n '4p')" = '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e'
+          test "$(printf '%s\n' "$marker" | sed -n '5p')" = '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 5
           git checkout --detach "$BASE_SHA"
           test ! -e orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md
 
-          # Preserve and require the original full P15 science execution exactly as it happened:
-          # science completed, but its old over-strict byte-identity adjudicator failed.
+          # Sole admissible P15 development promotion evidence: immutable canonical
+          # P12/P13 artifact-only adjudication. No fresh rerun or numerical tolerance.
           curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$REPO/actions/runs/31328065110" -o /tmp/p15-source-run.json
+            "https://api.github.com/repos/$REPO/actions/runs/31329529635" -o /tmp/p15-dev-run.json
           curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$REPO/actions/artifacts/9042324169" -o /tmp/p15-source-artifact.json
-          python - <<'PY_SOURCE'
-          import json
-          r=json.load(open('/tmp/p15-source-run.json')); a=json.load(open('/tmp/p15-source-artifact.json'))
-          assert r['id']==31328065110 and r['status']=='completed' and r['conclusion']=='failure'
-          assert r['head_sha']=='90dc77fafd7586e9743d28228030c7eb7c908ceb'
-          assert r['head_branch']=='agent/orbittrace-p15-support-safe-halo-development-run-v2'
-          assert a['id']==9042324169 and a['name']=='orbittrace-p15-support-safe-halo-development-v2'
-          assert a['digest']=='sha256:b49c7281387521762aeab454f0a5dd71addf318dbffeb3b5cb186cdee568913c' and not a['expired']
-          assert a['workflow_run']['id']==31328065110 and a['workflow_run']['head_sha']=='90dc77fafd7586e9743d28228030c7eb7c908ceb'
-          print('PASS_P15_MATCHED_PRESERVED_NUMERICAL_NO_RESULT_BOUND')
-          PY_SOURCE
-
-          # Require the exact source-only semantic adjudication of that preserved artifact.
+            "https://api.github.com/repos/$REPO/actions/artifacts/9042508082" -o /tmp/p15-dev-artifact.json
           curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$REPO/actions/runs/31329252140" -o /tmp/p15-semantic-run.json
-          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$REPO/actions/artifacts/9042432234" -o /tmp/p15-semantic-artifact.json
-          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$REPO/actions/artifacts/9042432234/zip" -o /tmp/p15-semantic.zip
-          echo '071f86af61e6e7efdc61dccc20a387381a64cc1e0b275f8987183d9c5481d917  /tmp/p15-semantic.zip' | sha256sum -c -
-          rm -rf /tmp/p15-semantic && mkdir -p /tmp/p15-semantic
-          unzip -q /tmp/p15-semantic.zip -d /tmp/p15-semantic
-          python - <<'PY_SEM'
-          import json
+            "https://api.github.com/repos/$REPO/actions/artifacts/9042508082/zip" -o /tmp/p15-dev.zip
+          echo 'f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96  /tmp/p15-dev.zip' | sha256sum -c -
+          rm -rf /tmp/p15-dev && mkdir -p /tmp/p15-dev
+          unzip -q /tmp/p15-dev.zip -d /tmp/p15-dev
+          python - <<'PY_DEV'
+          import hashlib,json
           from pathlib import Path
-          run=json.load(open('/tmp/p15-semantic-run.json')); art=json.load(open('/tmp/p15-semantic-artifact.json'))
-          assert run['id']==31329252140 and run['status']=='completed' and run['conclusion']=='success'
-          assert run['head_sha']=='3966c65e890c72ba931c22a96d00f2628f442d9d'
-          assert run['head_branch']=='agent/orbittrace-p15-semantic-development-adjudication-v3'
-          assert art['id']==9042432234 and art['name']=='orbittrace-p15-semantic-development-adjudication-v3'
-          assert art['digest']=='sha256:071f86af61e6e7efdc61dccc20a387381a64cc1e0b275f8987183d9c5481d917' and not art['expired']
-          assert art['workflow_run']['id']==31329252140 and art['workflow_run']['head_sha']=='3966c65e890c72ba931c22a96d00f2628f442d9d'
-          hits=list(Path('/tmp/p15-semantic').rglob('p15_semantic_development_adjudication_v3.json'))
+          run=json.load(open('/tmp/p15-dev-run.json')); art=json.load(open('/tmp/p15-dev-artifact.json'))
+          assert run['id']==31329529635 and run['status']=='completed' and run['conclusion']=='success'
+          assert run['head_sha']=='f87f106672a768c02ed444e787aed72c0c42f60b'
+          assert run['head_branch']=='agent/orbittrace-p15-development-artifact-adjudication-run-v2'
+          assert art['id']==9042508082 and art['name']=='orbittrace-p15-support-safe-halo-development-artifact-adjudication'
+          assert art['digest']=='sha256:f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96' and not art['expired']
+          assert art['workflow_run']['id']==31329529635 and art['workflow_run']['head_sha']=='f87f106672a768c02ed444e787aed72c0c42f60b'
+          hits=list(Path('/tmp/p15-dev').rglob('support_safe_secondary_halo_p15_development_artifact_adjudication.json'))
           assert len(hits)==1,hits
-          r=json.loads(hits[0].read_text())
-          assert r['verdict']=='PASS_P15_SUPPORT_SAFE_HALO_SEMANTIC_DEVELOPMENT_COMPATIBILITY'
-          assert r['classification']=='NUMERICALLY_STABLE_EXACT_DECISION_COMPATIBILITY'
-          assert r['p15_source_sha256']=='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'
-          assert r['source_execution_run_id']==31328065110 and r['source_execution_artifact_id']==9042324169
-          assert r['bitwise_json_identity'] is False and r['bitwise_identity_failure_preserved'] is True
-          assert r['fallback_vacuous_on_development'] is True
-          assert r['directions']==452 and r['unavailable_directions']==0 and r['family_count']==226
-          assert r['exact_family_order'] is True and r['exact_event_membership_ids'] is True and r['exact_added_member_ids'] is True
-          assert r['exact_headline_metrics'] is True and r['exact_discrete_diagnostics'] is True
-          assert r['continuous_abs_tolerance']==1e-12 and r['continuous_scaled_tolerance']==1e-12
-          assert r['max_continuous_abs_difference']<=1e-12 and r['max_continuous_scaled_difference']<=1e-12
-          assert r['canonical_p12_halo_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          raw=hits[0].read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e'
+          r=json.loads(raw)
+          assert r['verdict']=='PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT'
+          assert r['adjudication_mode']=='artifact_only_from_immutable_canonical_P12_P13'
+          assert r['architecture']=='P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY'
+          assert r['p15_development_source_sha256']=='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'
+          assert r['fixed_min_direction_negatives']==128
+          assert r['canonical_direction_count']==452 and r['canonical_minimum_negative_count']==2197
+          assert r['p15_unavailable_direction_count']==0 and r['p15_unavailable_directions']==[]
+          assert r['p15_fallback_vacuous_on_development'] is True
+          assert r['p15_no_padding_resampling_or_relaxation'] is True and r['p15_secondary_characterization_only'] is True
+          assert r['p15_availability_sha256']=='4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'
           assert r['canonical_p13_core_pretruth_sha256']=='12e6635085c77c8c705fe225e67811c659e98bf7cd1047649ec2b8d593261b3c'
-          assert r['matched_comparator_access'] is False and r['external_data_access'] is False and r['target_information_access'] is False
-          print('PASS_P15_MATCHED_SEMANTIC_DEVELOPMENT_ARTIFACT_GATE')
-          PY_SEM
+          assert r['canonical_p12_membership_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert r['canonical_p13_halo_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert r['new_truth_query'] is False and r['matched_truth_access'] is False and r['external_data_access'] is False and r['target_information_access'] is False
+          print('PASS_P15_MATCHED_ARTIFACT_ONLY_DEVELOPMENT_GATE')
+          PY_DEV
 
           test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
           test "$(git hash-object orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v3.py)" = 'af257d4b4902f9783acecd6df52f111415e5188c'
           test "$(git hash-object orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py)" = '372f1a57d97e1b0f0ac8f1303ef84f242245bdde'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15_v2.py)" = '1c966946a0122cea1734808f78338231f7763fc7'
           test "$(git hash-object orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py)" = '42fac298751179e5e629431060a1c9d803b1f19d'
           grep -F "MATCHED_P15_SHA256='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
 
-          python orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py \
+          python orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15_v2.py \
             orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p15_matched_pretruth.sh
           bash -n /tmp/p15_matched_pretruth.sh
           for x in \
+            'PASS_P15_OUTER_ONE_FILE_ACTIVATION_ALREADY_VERIFIED' \
             'PASS_P15_MATCHED_SUPPORT_SAFE_HALO_SOURCE_ACTIVE' \
             'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' \
             'p15_halo_availability_frozen_before_truth' \
             'exit 0'; do
             grep -F "$x" /tmp/p15_matched_pretruth.sh
           done
-          if grep -Eq 'OPEN TRUTH \+ COMPETITOR CLUSTER VALUES EXACTLY ONCE|evaluate_frozen_blindsafe.py|finalize_p3_evaluator_result.py|OrbitTrace-April|target_coordinate' /tmp/p15_matched_pretruth.sh; then
-            echo 'posttruth/target surface survived P15 pretruth generation' >&2
+          if grep -Eq 'orbittrace_support_safe_rank_p14/LAUNCH_PRETRUTH.md|LAUNCH_P14_MATCHED_PRETRUTH_DIRECT_V1|OPEN TRUTH \+ COMPETITOR CLUSTER VALUES EXACTLY ONCE|evaluate_frozen_blindsafe.py|finalize_p3_evaluator_result.py|OrbitTrace-April|target_coordinate' /tmp/p15_matched_pretruth.sh; then
+            echo 'stale P14 child/posttruth/target surface survived P15 v2 pretruth generation' >&2
             exit 1
           fi
           chmod +x /tmp/p15_matched_pretruth.sh
