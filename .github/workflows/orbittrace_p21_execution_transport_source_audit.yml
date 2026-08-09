@@ -1,0 +1,71 @@
+name: OrbitTrace P21 execution transport source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_p21_singleton_anchor_development.yml
+      - .github/workflows/orbittrace_p21_execution_transport_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove P21 transport is preregistered against exact P20 run and cannot open downstream data
+        run: |
+          set -euo pipefail
+          w=.github/workflows/orbittrace_p21_singleton_anchor_development.yml
+          test "$(git hash-object orbittrace_p21_singleton_anchor_recurrence/run_development.py)" = 'a1a89caf4641320b24ae14043bf2d47b87a2455d'
+          test "$(git hash-object orbittrace_p21_singleton_anchor_recurrence/P21_PROTOCOL.md)" = '3714675d87bbc9d3fc964d667f91fe9edca17a3c'
+          test "$(git hash-object orbittrace_p21_singleton_anchor_recurrence/P21_STRESS_PROTOCOL.md)" = 'a57d645d32dbe8dfc366bd4491dbd68af7739988'
+          test ! -e orbittrace_p21_singleton_anchor_recurrence/RUN.md
+
+          for x in \
+            'RUN_FROZEN_P21_SINGLETON_ANCHOR_RECURRENCE' \
+            'a1a89caf4641320b24ae14043bf2d47b87a2455d' \
+            '3714675d87bbc9d3fc964d667f91fe9edca17a3c' \
+            'a57d645d32dbe8dfc366bd4491dbd68af7739988' \
+            'ref: c9d6c44704013ba0c9430100e98a29a56b453304' \
+            'd8258581af143308495bd97bedcc142abbbd951a' \
+            '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2' \
+            '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8' \
+            '7035daf3e670ab89c66c87035540419f549bab09' \
+            'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' \
+            'run-id: 31217916558' \
+            'run-id: 31341591263' \
+            "assert r['verdict']=='FAIL_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT'" \
+            "assert not all(r['scientific_gates'].values())" \
+            'PASS_EXACT_PREREGISTERED_P20_SCIENTIFIC_NO_GO' \
+            'PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8' \
+            'PASS_P21_EXACT_ANCESTRY_AND_PREREGISTRATION' \
+            'PASS_P21_SINGLETON_ANCHOR_RECURRENCE_DEVELOPMENT' \
+            'FAIL_P21_SINGLETON_ANCHOR_RECURRENCE_DEVELOPMENT'; do
+            grep -F "$x" "$w"
+          done
+
+          if grep -Eq 'workflow_dispatch|schedule:' "$w"; then
+            echo 'P21 execution workflow is independently dispatchable' >&2
+            exit 1
+          fi
+          grep -F 'test "${#files[@]}" -eq 1' "$w"
+          grep -F 'orbittrace_p21_singleton_anchor_recurrence/RUN.md' "$w"
+          for forbidden in \
+            '013a.zip' '014a.zip' 'SNMv3/013' 'SNMv3/014' \
+            'MAARSY' 'zenodo.org' 'silseth_thesis_data' 'kep_collect.h5' \
+            'OrbitTrace-April' 'target_coordinate' 'F0059' \
+            '247.17' '-14.34' '37.62'; do
+            if grep -Fq -- "$forbidden" "$w"; then
+              echo "downstream/target surface leaked into P21 transport: $forbidden" >&2
+              exit 1
+            fi
+          done
+          echo PASS_P21_EXECUTION_TRANSPORT_PREREGISTRATION
+          echo P20_EXACT_RUN_FAIL_REQUIRED
+          echo SONOTACO_2013_2014_AND_MAARSY_VALUES_UNOPENED
+          echo TARGET_REGION_UNAVAILABLE
