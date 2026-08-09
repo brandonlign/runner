@@ -155,8 +155,8 @@ jobs:
       - name: Reconstruct exact v6-LF runtime without target reference
         run: |
           set -euo pipefail
-          test "$(git hash-object orbittrace_v6_lf_final_stage_a/run_stage_a.py)" = 'a77e967a8079827728156c82452651796211bede'
-          test "$(git hash-object orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py)" = 'f91590a8110904a2a72bd9573bd6e54599709528'
+          test "$(git hash-object orbittrace_v6_lf_final_stage_a/run_stage_a.py)" = 'a77e70672278daecb6ff77be2c13dc17e89d1129'
+          test "$(git hash-object orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py)" = '1e8250e2ca794d317353f69080bdfcf1d98f8ac8'
           python -m py_compile orbittrace_v6_lf_final_stage_a/run_stage_a.py orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py
 
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
@@ -201,35 +201,41 @@ jobs:
           set -euo pipefail
           mkdir -p output
           python -u orbittrace_v6_lf_final_stage_a/run_stage_a.py \
-            --v6-source /tmp/v6.repaired.py \
+            --repaired-v6-source /tmp/v6.repaired.py \
             --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
             --parallel-exact-wrapper orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py \
             --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             --scorer-parts mondrian_clique_development/source_parts_v2 \
-            --output output
+            --output output/stage_a_ranked_families.json
           python - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
           p=Path('output/stage_a_ranked_families.json')
           r=json.loads(p.read_text())
-          assert r['classification']=='target-uninformed full-region Stage A ranking'
+          assert r['schema']=='orbittrace-final-stage-a-ranked-families-v2'
           assert r['method_id']=='v6-LF-all-event-Mondrian-null'
           assert r['years']==[2022,2023]
-          assert r['blind_interval_reopened']==[20.0,55.0]
-          assert r['ranking_metric']=='primary v3 score descending; family_id ascending tie-break'
-          assert r['firewall']['target_reference_accessed'] is False
-          assert r['firewall']['catalogue_shower_labels_used'] is False
-          assert r['firewall']['all_event_null'] is True
-          assert r['firewall']['parameter_search'] is False
-          assert r['firewall']['null_trimming'] is False
-          assert len(r['primary_rank_order'])==r['primary_family_count']
-          assert len(set(r['primary_rank_order']))==r['primary_family_count']
-          assert [f['family_id'] for f in r['primary_families']]==r['primary_rank_order']
-          assert len(r['ranking_sha256'])==64
+          assert r['target_reference_accessed'] is False
+          assert r['catalogue_shower_labels_used'] is False
+          assert r['scientific_source']['repaired_v6_sha256']=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
+          assert r['scientific_source']['all_event_null'] is True
+          assert r['scientific_source']['parameter_search'] is False
+          assert r['scientific_source']['null_trimming'] is False
+          assert r['primary_family_count']==len(r['primary_families']) and r['primary_family_count']>0
+          assert [int(f['rank']) for f in r['primary_families']]==list(range(1,r['primary_family_count']+1))
+          assert all(set(f)=={'family_id','rank','years','event_ids_by_year'} for f in r['primary_families'])
+          assert all(sorted(int(y) for y in f['years'])==[2022,2023] for f in r['primary_families'])
+          assert all(set(f['event_ids_by_year'])=={'2022','2023'} for f in r['primary_families'])
+          side=Path('output/stage_a_ranked_families.json.sha256')
+          assert side.exists()
+          canonical=json.dumps(r,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+          digest=hashlib.sha256(canonical).hexdigest()
+          assert side.read_text().strip()==digest
           print('ORBITTRACE_V6_LF_FINAL_STAGE_A_RESULT_BEGIN')
-          print(json.dumps({'primary_family_count':r['primary_family_count'],'rescue_family_count':r['rescue_family_count'],'ranking_sha256':r['ranking_sha256'],'firewall':r['firewall']},indent=2,sort_keys=True))
+          print(json.dumps({'schema':r['schema'],'primary_family_count':r['primary_family_count'],'rescue_family_count_diagnostic_only':r['rescue_family_count_diagnostic_only'],'stage_a_sha256':digest,'target_reference_accessed':r['target_reference_accessed'],'catalogue_shower_labels_used':r['catalogue_shower_labels_used']},indent=2,sort_keys=True))
           print('ORBITTRACE_V6_LF_FINAL_STAGE_A_RESULT_END')
           PY
           test ! -e target
