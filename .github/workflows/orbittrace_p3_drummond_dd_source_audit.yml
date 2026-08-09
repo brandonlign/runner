@@ -1,0 +1,60 @@
+name: OrbitTrace P3 Drummond D_D source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/drummond_dd.py
+      - .github/workflows/orbittrace_p3_drummond_dd_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact numerical dependency
+        run: python -m pip install 'numpy==2.1.3'
+      - name: Prove D_D source semantics without survey data
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_crossfit_seed_floor_membership_p3/drummond_dd.py
+          python orbittrace_crossfit_seed_floor_membership_p3/drummond_dd.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          s=Path('orbittrace_crossfit_seed_floor_membership_p3/drummond_dd.py').read_text()
+          required=(
+              'qterm=(q1-q2)/qsum',
+              'eterm=(e1-e2)/esum',
+              '(I/math.pi)**2',
+              '(((e1+e2)/2.0)*(theta/math.pi))**2',
+              '_unit_plane_normal',
+              '_unit_perihelion_vector',
+              'minimum_drummond_dd',
+              "'identity_zero'",
+              "'symmetric'",
+              "'common_node_rotation_invariant'",
+          )
+          for token in required: assert token in s,token
+          tree=ast.parse(s)
+          funcs={n.name for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert {'_unit_plane_normal','_unit_perihelion_vector','_angle','drummond_dd','minimum_drummond_dd','self_test'} <= funcs
+          assert 'D_SH' in s and 'validation-only' in s
+          assert 'OrbitTrace-April' not in s
+          print('PASS_P3_DRUMMOND_DD_SOURCE_AUDIT')
+          PY
+      - name: Assert no-data boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_MAARSY_VALUE_ACCESS_NO_TARGET_ACCESS
