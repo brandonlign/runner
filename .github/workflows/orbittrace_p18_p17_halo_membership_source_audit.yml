@@ -6,6 +6,7 @@ on:
       - agent/orbittrace-p15-support-safe-halo-freeze
     paths:
       - orbittrace_p18_p17_halo_membership/**
+      - .github/workflows/orbittrace_p18_pretruth_transform.yml
       - .github/workflows/orbittrace_p18_p17_halo_membership_source_audit.yml
 
 permissions:
@@ -25,6 +26,7 @@ jobs:
           ext=orbittrace_p18_p17_halo_membership/P18_MAARSY_2020_2021_EXTERNAL_ADDENDUM.md
           blind=orbittrace_p18_p17_halo_membership/P18_FINAL_BLIND_AUTHORIZATION.md
           adapter=orbittrace_p18_p17_halo_membership/promote_p17_halo_membership_checkpoint.py
+          transform=.github/workflows/orbittrace_p18_pretruth_transform.yml
 
           python -m py_compile "$adapter"
           test "$(git hash-object "$adapter")" = '8c31daa65178255569888ec747f78a24656cd12b'
@@ -83,15 +85,32 @@ jobs:
             'otherwise `NO_BLIND_RECOVERY`' \
             'This protocol authorizes no target access by itself.'; do grep -F "$x" "$blind"; done
 
-          # Executable P18 source is a checkpoint transform only: no evaluator, comparator
-          # assignment artifact, external fetch/transport, or target/reveal operation exists.
+          # Future P18 execution can only bind an exact frozen P17 artifact and transform it.
+          for x in \
+            'EXECUTE_P18_PRETRUTH_TRANSFORM' \
+            'P17_DIGEST="$(printf' \
+            '31329487091' '9042496657' \
+            '31332157812' '9043232586' \
+            'PASS_P18_CANONICAL_DEVELOPMENT_COMPOSITION_PREREQUISITES' \
+            'PASS_P18_P17_PRETRUTH_ARTIFACT_EXACT_MARKER_BINDING' \
+            'printf '\''%s  %s\\n'\'' "$HDB_SHA" pretruth/hdbscan.p17.pkl | sha256sum -c -' \
+            'printf '\''%s  %s\\n'\'' "$SUGAR_SHA" pretruth/sugar.p17.pkl | sha256sum -c -' \
+            'PASS_P18_BOTH_CHECKPOINTS_TRANSFORMED_AND_FROZEN_PRETRUTH' \
+            'orbittrace-p18-matched-pretruth-checkpoints'; do grep -F "$x" "$transform"; done
+          test "$(grep -Fc 'python "$adapter" --input' "$transform")" -eq 1
+          grep -F 'for panel in hdbscan sugar; do' "$transform"
+
+          # Executable P18 source and transform contain no evaluator, comparator assignment
+          # artifact, external fetch/transport, or target/reveal operation.
           for forbidden in \
             'evaluate_frozen_blindsafe' '9012424187' '8955917326' '8957940764' '8957263372' \
-            'MAARSY' 'OrbitTrace-April' 'target_coordinate' 'withheld target' 'FULL_BLIND_RECOVERY'; do
-            if grep -Fq "$forbidden" "$adapter"; then
-              echo "forbidden data/evaluator/target surface in P18 transform: $forbidden" >&2
+            'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' 'MAARSY' \
+            'OrbitTrace-April' 'target_coordinate' 'withheld target' 'FULL_BLIND_RECOVERY'; do
+            if grep -Fq "$forbidden" "$adapter" "$transform"; then
+              echo "forbidden data/evaluator/target surface in P18 executable path: $forbidden" >&2
               exit 1
             fi
           done
-          echo PASS_P18_P17_HALO_MEMBERSHIP_SOURCE_AND_PROTOCOL_FREEZE
+          test ! -e orbittrace_p18_p17_halo_membership/P18_PRETRUTH_TRANSFORM_RUN.md
+          echo PASS_P18_P17_HALO_MEMBERSHIP_SOURCE_PROTOCOL_AND_TRANSFORM_FREEZE
           echo NO_MATCHED_TRUTH_NO_EXTERNAL_EVENT_VALUES_NO_TARGET_ACCESS
