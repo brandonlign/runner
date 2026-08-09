@@ -8,7 +8,7 @@ MAARSY 2020/2021 was reserved prospectively for the P2/P3 fallback lineage in PR
 
 P3 may open this panel only after:
 1. exact authoritative P3 development PASS;
-2. the separately frozen matched Sugar/HDBSCAN protocol classifies P3 as `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against both comparators;
+2. the separately frozen matched Sugar/HDBSCAN protocol returns `SPARSE_STREAM_SUPERIORITY` separately against BOTH comparators, with every required annual condition satisfied in BOTH SonotaCo 2023 and 2025; `BROAD_CATALOGUE_SUPERIORITY` alone is not sufficient;
 3. execution-time history/freshness finds no earlier MAARSY 2020/2021 event-value scientific access.
 
 Any earlier failure leaves MAARSY 2020/2021 unopened. No target-containing GMN access is authorized here.
@@ -121,4 +121,4 @@ Report at minimum:
 
 Solar longitude 20°–55° remains excluded throughout this external validation. No OrbitTrace coordinate, member ID, target identity, historical target rank/recovery, target activity profile, withheld exact target reference or target-containing output may enter the run.
 
-Only exact P3 development PASS + matched-literature superiority + `PASS_P3_MAARSY_2020_2021_EXTERNAL_GENERALIZATION` may satisfy P3's prerequisites for a separately frozen final target-containing Stage A.
+Only exact P3 development PASS + `SPARSE_STREAM_SUPERIORITY` against BOTH Sugar and HDBSCAN in BOTH SonotaCo 2023 and 2025 + `PASS_P3_MAARSY_2020_2021_EXTERNAL_GENERALIZATION` may satisfy P3's prerequisites for a separately frozen final target-containing Stage A.
