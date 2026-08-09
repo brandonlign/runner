@@ -84,16 +84,15 @@ jobs:
           curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
             "https://api.github.com/repos/$REPO/actions/artifacts/$P17_ARTIFACT/zip" -o /tmp/p17-pre.zip
           printf '%s  %s\n' "${P17_DIGEST#sha256:}" /tmp/p17-pre.zip | sha256sum -c -
-          python - <<'PY_META'
-          import json,os
+          python - "$P17_RUN" "$P17_ARTIFACT" "$P17_DIGEST" <<'PY_META'
+          import json,sys
+          run_id=int(sys.argv[1]); artifact_id=int(sys.argv[2]); digest=sys.argv[3]
           r=json.load(open('/tmp/p17-run.json')); a=json.load(open('/tmp/p17-art.json'))
-          run=int(os.environ['P17_RUN']) if 'P17_RUN' in os.environ else None
-          art=int(os.environ['P17_ARTIFACT']) if 'P17_ARTIFACT' in os.environ else None
-          # Shell already syntax-validates marker values; compare via files below as well.
-          assert r['status']=='completed' and r['conclusion']=='success',r
-          assert a['name']=='orbittrace-p17-matched-pretruth-checkpoints' and not a['expired'],a
-          assert a['workflow_run']['id']==r['id'],a
-          print('PASS_P18_P17_PRETRUTH_ARTIFACT_METADATA')
+          assert r['id']==run_id and r['status']=='completed' and r['conclusion']=='success',r
+          assert a['id']==artifact_id and a['name']=='orbittrace-p17-matched-pretruth-checkpoints' and not a['expired'],a
+          assert a['digest']==digest and a['workflow_run']['id']==run_id,a
+          assert a['workflow_run']['head_sha']==r['head_sha'],a
+          print('PASS_P18_P17_PRETRUTH_ARTIFACT_EXACT_MARKER_BINDING')
           PY_META
           rm -rf /tmp/p17-pre pretruth output && mkdir -p /tmp/p17-pre pretruth output
           unzip -q /tmp/p17-pre.zip -d /tmp/p17-pre
