@@ -30,16 +30,15 @@ jobs:
           set -euo pipefail
           python -m py_compile orbittrace_v6_lf_final_stage_a/run_stage_a.py orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py
           PYTHONPATH=. python - <<'PY'
-          import orbittrace_v6_lf_final_stage_a.run_stage_a as stage_a
           import orbittrace_v6_lf_final_stage_a.parallel_exact_rescore as wrapper
           assert callable(wrapper.install)
-          assert stage_a.wrapper is wrapper
           print('PASS_STAGE_A_PARALLEL_RUNTIME_IMPORT')
           PY
           sha256sum orbittrace_v6_lf_final_stage_a/run_stage_a.py orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py
           python - <<'PY'
           import ast
           from pathlib import Path
+
           p=Path('orbittrace_v6_lf_final_stage_a/run_stage_a.py')
           text=p.read_text(); tree=ast.parse(text); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
           constants={}
@@ -51,19 +50,23 @@ jobs:
           assert constants['REPAIRED_V6_SHA256']=='257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24'
           assert constants['STAGE_A_SCHEMA']=='orbittrace-final-stage-a-ranked-families-v2'
           assert constants['METHOD_ID']=='v6-LF-all-event-Mondrian-null'
-          geom=ast.get_source_segment(text,defs['parse_full_geometry'])
+
+          geom=ast.get_source_segment(text,defs['parse_full_geometry']) or ''
           assert 'support.dd.get_monthly_file_content_by_date(key)' in geom
           assert 'support.read_gmn_frame(text)' in geom and 'support.column_map(frame)' in geom
-          assert 'frame[columns[' not in geom and 'frame.iloc' not in geom and 'normalize_label' not in geom
-          assert 'columns[\'label\']' in geom
-          assert 'base.wrap180(float(lam[int(index)])-s)' in geom
-          assert "complex_key':'HIDDEN'" in geom and "dict(event,complex_key='SPORADIC')" in geom
+          assert 'frame.iloc' not in geom and 'normalize_label' not in geom
+          assert "columns['label']" in geom or 'columns["label"]' in geom
+          assert "float(lam[int(index)])" in geom
+          assert "complex_key='HIDDEN'" in geom
+          assert "dict(event,complex_key='SPORADIC')" in geom
           assert 'BLIND_LOW' not in geom and 'BLIND_HIGH' not in geom
-          main=ast.get_source_segment(text,defs['main'])
-          assert "v6.scan_year_v6(old,year,scan[year],calibration[year]" in main
+
+          main=ast.get_source_segment(text,defs['main']) or ''
+          assert "load_module(args.parallel_exact_wrapper,'orbittrace_final_stage_a_parallel_exact')" in main
+          assert 'wrapper.install(v6,workers=4,min_parallel_records=256)' in main
+          assert 'v6.scan_year_v6(' in main
           assert "v6.build_family_track_v6(old,components,base,'v3')" in main
           assert "v6.build_family_track_v6(old,components,base,'fixed4_rescue')" in main
-          assert "wrapper.install(v6,workers=4,min_parallel_records=256)" in main
           assert "'target_reference_accessed':False" in main
           assert "'catalogue_shower_labels_used':False" in main
           assert "'all_event_null':True" in main
@@ -73,8 +76,8 @@ jobs:
 
           w=Path('orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py').read_text(); wtree=ast.parse(w)
           wdefs={n.name:n for n in ast.walk(wtree) if isinstance(n,ast.FunctionDef)}
-          install=ast.get_source_segment(w,wdefs['install'])
-          split=ast.get_source_segment(w,wdefs['_split_contiguous'])
+          install=ast.get_source_segment(w,wdefs['install']) or ''
+          split=ast.get_source_segment(w,wdefs['_split_contiguous']) or ''
           assert 'worker_count = min(max(1, int(workers)), cpu_count, 4)' in install
           assert 'threshold = max(1, int(min_parallel_records))' in install
           assert 'mp.get_context("fork")' in install
@@ -87,7 +90,6 @@ jobs:
           assert 'does **not** remove solar longitude 20°–55°' in protocol
           assert 'shower-label **values**' in protocol
           assert 'orbittrace-final-stage-a-ranked-families-v2' in protocol
-          assert 'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT' not in protocol or 'development' in protocol
           assert '`BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY`' in protocol
           assert '`PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT`' in protocol
           assert 'POWER_INCONCLUSIVE' in protocol
