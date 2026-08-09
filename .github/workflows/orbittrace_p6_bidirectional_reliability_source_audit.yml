@@ -63,7 +63,7 @@ jobs:
           print('PASS_P6_EXACT_PRETRUTH_TRANSFORM_IDENTITY')
           PY
 
-      - name: Assert P6 protocol and source-only firewall
+      - name: Assert P6 protocol, execution hierarchy and source-only firewall
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -71,6 +71,7 @@ jobs:
           protocol=Path('orbittrace_bidirectional_reliability_p6/PROTOCOL.md').read_text()
           transform=Path('orbittrace_bidirectional_reliability_p6/transform_frozen_p5.py').read_text()
           evaluator=Path('orbittrace_bidirectional_reliability_p6/evaluate_frozen_p6.py').read_text()
+          workflow=Path('.github/workflows/orbittrace_p6_bidirectional_reliability_development.yml').read_text()
           for token in (
               'both 2022→2023 and 2023→2022 directions are P3-reliable',
               'dropped P5 assignments: 3,320',
@@ -86,9 +87,23 @@ jobs:
               assert token in transform, token
           for token in ('PASS_BIDIRECTIONAL_RELIABILITY_MEMBERSHIP_P6_DEVELOPMENT','FAIL_BIDIRECTIONAL_RELIABILITY_MEMBERSHIP_P6_NO_GO','parameter_search'):
               assert token in evaluator, token
+          for token in (
+              'EXECUTE_P6_AFTER_AUTHORITATIVE_P5_SCIENTIFIC_NO_GO',
+              '31293431873',
+              '9032407268',
+              '39ba9b6f40c0a07f326ae61f9f1dc06d9d3ed3d11c4400f41a75dfb4473c3ea6',
+              '40b0b720ef37427bc2d89aeb71c145683cbc69eff9b56ac5516e87fc34348ff6',
+              '5e76bbf2fd75acdf1d1bc770dc3c60de338a6388524c956544afe4c1aabc8490',
+              'Freeze the exact P6 transform before any known-shower truth is reopened.',
+              'Evaluate frozen P6 membership against unchanged target-excluded truth',
+              'orbittrace-bidirectional-reliability-membership-p6-development',
+          ):
+              assert token in workflow, token
+          assert workflow.index('transform_frozen_p5.py') < workflow.index('evaluate_frozen_p6.py')
           forbidden=('OrbitTrace-April','target_coordinate')
           assert all(t not in transform for t in forbidden)
           assert all(t not in evaluator for t in forbidden)
+          assert all(t not in workflow for t in forbidden)
           print('PASS_P6_BIDIRECTIONAL_RELIABILITY_SOURCE_AUDIT')
           PY
           test ! -e orbittrace_bidirectional_reliability_p6/RUN.md
