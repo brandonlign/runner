@@ -1,0 +1,105 @@
+name: OrbitTrace B1 header-schema transport repair source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-background-odds-membership-b1
+    paths:
+      - orbittrace_background_odds_membership_b1/run_header_compatible.py
+      - .github/workflows/orbittrace-background-odds-membership-b1.yml
+      - .github/workflows/orbittrace_b1_header_schema_transport_repair_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove B1 science is untouched and header repair is exact pre-existing P10 compatibility function
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          b1=orbittrace_background_odds_membership_b1/run_development.py
+          wrap=orbittrace_background_odds_membership_b1/run_header_compatible.py
+          p10=orbittrace_floor_consistent_geometry_p10/run_header_compatible.py
+          wf=.github/workflows/orbittrace-background-odds-membership-b1.yml
+          test "$(sha256sum "$b1" | cut -d' ' -f1)" = '8b848cad728ad2370d1bf538b3ccc7f71d1b65c1f8d483838374aa6e12bbbb0d'
+          test "$(git hash-object "$wrap")" = '25ccd93cf106db2f3a2515c42e795f2e3f365fd7'
+          test "$(git hash-object "$p10")" = '03c30f004668e2f2fa458a56e2fb3bf017cc6521'
+          python -m py_compile "$b1" "$wrap" "$p10"
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          def fn(path,name):
+              tree=ast.parse(Path(path).read_text())
+              hits=[x for x in tree.body if isinstance(x,(ast.FunctionDef,ast.AsyncFunctionDef)) and x.name==name]
+              assert len(hits)==1,(path,name,len(hits))
+              return ast.dump(hits[0],include_attributes=False)
+          a=fn('orbittrace_background_odds_membership_b1/run_header_compatible.py','compatible_exact_header_positions')
+          b=fn('orbittrace_floor_consistent_geometry_p10/run_header_compatible.py','compatible_exact_header_positions')
+          assert a==b
+          text=Path('orbittrace_background_odds_membership_b1/run_header_compatible.py').read_text()
+          required=(
+            "B1_SOURCE=Path(__file__).with_name('run_development.py')",
+            'b1.raw_header_positions=compatible_exact_header_positions',
+            "print('PASS_B1_PREEXISTING_P10_HEADER_SCHEMA_TRANSPORT_ACTIVE')",
+            'return int(b1.main())',
+          )
+          for x in required: assert x in text,x
+          forbidden=(
+            'posterior_log_odds_cutoff','activity_padding_deg','density_ceiling','trajectory_ceiling',
+            'LedoitWolf','D_SH','feature_weight','prior odds','multiplicity_order',
+            'known_shower','evaluate_frozen','MAARSY','OrbitTrace-April','target_coordinate',
+          )
+          for x in forbidden: assert x not in text,x
+          print('PASS_B1_HEADER_FUNCTION_AST_IDENTICAL_TO_PREEXISTING_P10')
+          PY
+
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          git show "$BASE_SHA:$wf" > /tmp/b1_wf_parent.yml
+          cp "$wf" /tmp/b1_wf_new.yml
+          python - <<'PY'
+          from pathlib import Path
+          old=Path('/tmp/b1_wf_parent.yml').read_text()
+          new=Path('/tmp/b1_wf_new.yml').read_text()
+          # Reverse only the four authorized transport/provenance surfaces.
+          new=new.replace(
+            '      - name: Execute frozen target-excluded B1 through pre-existing P10 schema transport\n',
+            '      - name: Execute frozen target-excluded B1\n',1)
+          new=new.replace(
+            '            orbittrace_background_odds_membership_b1/run_development.py \\\n            orbittrace_background_odds_membership_b1/run_header_compatible.py\n',
+            '            orbittrace_background_odds_membership_b1/run_development.py\n',1)
+          new=new.replace(
+            '          python -u orbittrace_background_odds_membership_b1/run_header_compatible.py \\\n',
+            '          python -u orbittrace_background_odds_membership_b1/run_development.py \\\n',1)
+          new=new.replace(
+            '          sha256sum orbittrace_background_odds_membership_b1/run_development.py \\\n            orbittrace_background_odds_membership_b1/run_header_compatible.py \\\n',
+            '          sha256sum orbittrace_background_odds_membership_b1/run_development.py \\\n',1)
+          assert new==old,'B1 workflow differs outside four schema-transport/provenance surfaces'
+          print('PASS_B1_WORKFLOW_EXACT_FOUR_SURFACE_TRANSPORT_REPAIR')
+          PY
+
+          # Frozen scientific constants and gates remain in untouched B1 source.
+          for x in \
+            'POSTERIOR_LOG_ODDS_CUTOFF = 0.0' \
+            'ACTIVITY_PADDING_DEG = 6.0' \
+            'DENSITY_CEILING = 1.5' \
+            'TRAJECTORY_CEILING = 1.5' \
+            "'macro_f1_ge_0_25'" \
+            "'qualified_ge_95'" \
+            "'top100_ge_58'" \
+            "'top500_ge_95'" \
+            "'top100_precision_ge_0_65'" \
+            "'added_event_count_ge_400'" \
+            "'added_event_year_count_ge_800'"; do
+            grep -F "$x" "$b1"
+          done
+          echo PASS_B1_P10_HEADER_SCHEMA_TRANSPORT_REPAIR_SOURCE_AUDIT
+          echo NO_B1_SCIENCE_NO_COMPARATOR_NO_EXTERNAL_NO_TARGET_CHANGE
