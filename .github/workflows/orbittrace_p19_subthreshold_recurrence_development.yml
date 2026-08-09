@@ -72,6 +72,18 @@ jobs:
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
           test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
           python -m py_compile input/v3/multi_anchor_energy_v3.py frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
+      - name: Decode exact promoted-v8 catalogue runtime
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/audit_development_source.py)" = '7035daf3e670ab89c66c87035540419f549bab09'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test -f /tmp/run_wavelet_catalogue_v3_development.py
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-pooled-year-centroid-v8-development
@@ -85,7 +97,8 @@ jobs:
           test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
           test "$(git -C frozen-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
           test "$(git -C execution hash-object orbittrace_p19_subthreshold_recurrence/run_development.py)" = 'f230fc775b38df1e9d447bba33419abd5f6f6ef1'
-          python -m py_compile execution/orbittrace_p19_subthreshold_recurrence/run_development.py
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          python -m py_compile execution/orbittrace_p19_subthreshold_recurrence/run_development.py /tmp/run_wavelet_catalogue_v3_development.py
           echo PASS_P19_EXACT_ANCESTRY
       - name: Execute one-shot target-excluded P19 development
         env:
@@ -130,11 +143,14 @@ jobs:
           printf '%s\n' 'v8_run=31217916558' > output/p19_provenance.txt
           printf '%s\n' 'v8_artifact_id=9009728299' >> output/p19_provenance.txt
           printf '%s\n' 'v8_artifact_digest=sha256:88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e' >> output/p19_provenance.txt
+          printf '%s\n' 'catalogue_v3_source_sha256=ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' >> output/p19_provenance.txt
           printf '%s\n' "p19_base_sha=${{ github.event.pull_request.base.sha }}" >> output/p19_provenance.txt
           sha256sum execution/orbittrace_p19_subthreshold_recurrence/run_development.py \
             execution/orbittrace_p19_subthreshold_recurrence/P19_PROTOCOL.md \
             input/v3/multi_anchor_energy_v3.py \
             frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            frozen-v8/orbittrace_wavelet_catalogue_v3/audit_development_source.py \
+            /tmp/run_wavelet_catalogue_v3_development.py \
             input/v8/pooled_year_centroid_v8_development.json \
             >> output/p19_provenance.txt 2>/dev/null || true
           python --version > output/python_version.txt
