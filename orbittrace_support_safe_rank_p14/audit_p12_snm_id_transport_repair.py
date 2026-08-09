@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 V2_SHA256 = "f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae"
+V3_SHA256 = "55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415"
 
 OLD_SIG = '''def source_observation_model(
     rows: list[dict[str, Any]], base: types.ModuleType
@@ -35,6 +36,8 @@ def main() -> int:
     new = new_path.read_text(encoding="utf-8")
     if sha256(old_path) != V2_SHA256:
         raise RuntimeError(f"matched-v2 source changed: {sha256(old_path)}")
+    if sha256(new_path) != V3_SHA256:
+        raise RuntimeError(f"matched-v3 source changed: {sha256(new_path)}")
 
     for needle in (OLD_SIG, OLD_AUDIT, OLD_CALL):
         if old.count(needle) != 1:
@@ -53,8 +56,8 @@ def main() -> int:
         raise RuntimeError("legacy MONTH_KEYS year parsing was altered")
     if new.count("source_seed_years") != old.count("source_seed_years"):
         raise RuntimeError("P12 source-year audit field changed")
-    if new.count("source_year") != old.count("source_year") + 2:
-        # One new formal argument and one new use in audit metadata; the call already contained source_year.
+    if new.count("source_year") != old.count("source_year") + 3:
+        # New formal argument + audit-metadata use + explicit call argument.
         raise RuntimeError("unexpected explicit source_year source delta")
     if "OrbitTrace-April" in new or "target_coordinate" in new:
         raise RuntimeError("forbidden target-specific token present")
