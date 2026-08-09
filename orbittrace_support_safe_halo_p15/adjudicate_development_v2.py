@@ -44,8 +44,8 @@ def main()->int:
     require(len(new['direction_audits'])==452,'P15 development direction count changed')
     require(min(int(x['negative_count']) for x in new['direction_audits'])>=128,'P15 development has support-ineligible direction')
 
-    # Strongest compatibility test: the new execution, after deleting only P15
-    # provenance/availability keys, must equal the authoritative exact P12 JSON.
+    # Strongest compatibility test: after deleting only P15 metadata, the fresh
+    # execution must be object-identical to the authoritative exact P12 JSON.
     inherited={k:v for k,v in new.items() if not k.startswith('p15_')}
     require(inherited==p12,'P15 execution differs from canonical P12 outside added p15_* metadata')
     require(new['membership_pretruth_sha256']==P12_MEMBERSHIP_SHA,'P15 halo membership hash changed')
@@ -60,9 +60,13 @@ def main()->int:
         'mrr':0.045531138942766655,
         'top100_dominant_precision':0.6884631112636006,
     },'canonical P13 core endpoints changed')
-    require(abs(p13['halo_membership']['macro_f1']-new['p12']['macro_f1'])<1e-15,'P15/P13 halo macro F1 mismatch')
-    require(abs(p13['halo_membership']['large_shower_mean_recall']-new['p12_large_shower']['mean_recall'])<1e-15,'P15/P13 large recall mismatch')
-    require(abs(p13['halo_membership']['large_shower_mean_precision']-new['p12_large_shower']['mean_precision'])<1e-15,'P15/P13 large precision mismatch')
+    halo=p13['halo_membership']
+    require(abs(halo['macro_f1']-new['p12']['macro_f1'])<1e-15,'P15/P13 halo macro F1 mismatch')
+    require(halo['qualified_matches_secondary']==new['p12']['qualified_matches'],'P15/P13 halo qualified mismatch')
+    require(halo['recovered_at_100_secondary']==new['p12']['recovered_at_100'],'P15/P13 halo recovery@100 mismatch')
+    require(halo['recovered_at_500_secondary']==new['p12']['recovered_at_500'],'P15/P13 halo recovery@500 mismatch')
+    require(abs(halo['top100_dominant_precision_secondary']-new['p12']['top100_dominant_precision'])<1e-15,'P15/P13 halo top100 precision mismatch')
+    require(halo['large_shower']==new['p12_large_shower'],'P15/P13 large-shower halo metrics mismatch')
     require(p13['no_new_truth_query'] is True and p13['target_information_access'] is False,'canonical P13 firewall changed')
 
     summary={
@@ -76,7 +80,7 @@ def main()->int:
         'p13_core_pretruth_sha256':P13_CORE_SHA,
         'halo_membership_pretruth_sha256':P12_MEMBERSHIP_SHA,
         'core_discovery':p13['core_discovery'],
-        'halo_membership':p13['halo_membership'],
+        'halo_membership':halo,
         'matched_truth_access':False,
         'external_data_access':False,
         'target_information_access':False,
