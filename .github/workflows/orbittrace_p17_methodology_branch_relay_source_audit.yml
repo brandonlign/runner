@@ -20,6 +20,7 @@ jobs:
           set -euo pipefail
           r=.github/workflows/orbittrace_p17_methodology_branch_relay.yml
           for x in \
+            'pull_request_target:' \
             'agent/orbittrace-p15-support-safe-halo-freeze' \
             'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md' \
             'github.event.pull_request.head.repo.full_name == github.repository' \
@@ -41,9 +42,8 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           t=Path('.github/workflows/orbittrace_p17_methodology_branch_relay.yml').read_text()
-          # Transitional audit accepts the original pull_request event or the intended
-          # default-branch pull_request_target event, but all execution safeguards are fixed.
-          assert ('  pull_request:\n' in t) or ('  pull_request_target:\n' in t)
+          assert '  pull_request_target:\n' in t
+          assert '  pull_request:\n' not in t
           assert 'branches:\n      - agent/orbittrace-p15-support-safe-halo-freeze' in t
           assert 'paths:\n      - orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md' in t
           forbidden=(
@@ -58,7 +58,11 @@ jobs:
           assert 'git show "$HEAD_SHA:$wf" > /tmp/p17_child_workflow.yml' in t
           assert 'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' in t
           assert "if: github.event.pull_request.head.repo.full_name == github.repository" in t
-          print('PASS_P17_DEFAULT_BRANCH_RELAY_SEMANTIC_SOURCE_AUDIT')
+          # pull_request_target is safe here because the same-repo guard is mandatory,
+          # permissions are read-only, PR workflow code is never executed, and the only
+          # executed scientific/data block is extracted from the authenticated BASE ref.
+          assert 'contents: read' in t and 'actions: read' in t and 'pull-requests: read' in t
+          print('PASS_P17_PULL_REQUEST_TARGET_RELAY_SOURCE_AUDIT')
           PY
-          echo RELAY_EXECUTES_FROZEN_BASE_RUN_BLOCK_NOT_PR_SCIENCE
+          echo RELAY_EXECUTES_AUTHENTICATED_FROZEN_BASE_RUN_BLOCK_NOT_PR_SCIENCE
           echo NO_MATCHED_RESULT_NO_EXTERNAL_NO_TARGET_ACCESS
