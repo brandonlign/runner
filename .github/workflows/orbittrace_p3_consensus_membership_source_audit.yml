@@ -1,0 +1,60 @@
+name: OrbitTrace P3 consensus membership source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_consensus_membership_p3/PROTOCOL.md
+      - .github/workflows/orbittrace_p3_consensus_membership_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove pre-result P3 freeze and target firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_consensus_membership_p3/PROTOCOL.md').read_text()
+          required=(
+            'before the authoritative P2 development verdict exists',
+            'e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',
+            'ba0269bab1e3db76bd981364225a815d719d8154348c5c39d124ece0f400f73a',
+            'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb',
+            'A3_f = A1_f ∩ A2_f',
+            'M3_f = S_f ∪ A3_f',
+            'qualified known-shower matches >= 95',
+            'recovery@100 >= 58',
+            'top-100 dominant-label precision >= 0.65',
+            'macro F1 >= 0.2536657194465356',
+            'large-shower mean recall >= 1.5×',
+            'large-shower mean precision >= 0.85',
+            'PASS_DUAL_MEMBERSHIP_CONSENSUS_P3_DEVELOPMENT',
+            'FAIL_DUAL_MEMBERSHIP_CONSENSUS_P3_NO_GO',
+            'No union, fallback, confidence override',
+            '20°–55°',
+          )
+          for token in required:
+              assert token in p, token
+          assert 'Technical/integrity failure never activates P3' in p
+          assert 'P3 memberships hash-frozen before truth evaluation' in p
+          assert 'No family is created, deleted, merged, split, re-ranked, or re-centered.' in p
+          assert 'same broad/sparse superiority bars used for v6/P1/P2' in p
+          assert 'separately frozen no-retuning cross-survey validation' in p
+          print('PASS_P3_CONSENSUS_PRE_RESULT_PROTOCOL_AUDIT')
+          PY
+      - name: Assert no execution or target data
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_consensus_membership_p3/RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_P3_EXECUTION_NO_TARGET_ACCESS
