@@ -6,6 +6,7 @@ on:
       - agent/orbittrace-v6-catalogue-base
     paths:
       - 'orbittrace_probabilistic_membership_p1/**'
+      - '.github/workflows/orbittrace_probabilistic_membership_p1_development.yml'
       - '.github/workflows/orbittrace_probabilistic_membership_p1_source_check.yml'
 
 permissions:
@@ -36,7 +37,7 @@ jobs:
           print('P1_SOURCE_SHA256',digest)
           PY
           python -m py_compile /tmp/run_probabilistic_membership_p1.py
-      - name: Check frozen architecture and exact-v8 reconstruction markers
+      - name: Check frozen architecture, exact-v8 reconstruction, and activation provenance
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -64,5 +65,17 @@ jobs:
             assert marker in t,marker
           tree=ast.parse(t)
           assert not any(isinstance(n,ast.FunctionDef) and n.name=='evaluate' for n in ast.walk(tree))
-          print('PASS_P1_FROZEN_SOURCE_CHECK')
+
+          w=Path('.github/workflows/orbittrace_probabilistic_membership_p1_development.yml').read_text()
+          assert "EXECUTE_P1_AFTER_BOTH_V6_DEVELOPMENT_NO_GO" in w
+          assert "orbittrace-v6-semantic-replay-development" in w
+          assert "orbittrace-v6-lf-all-event-null-development-v2" in w
+          assert "orbittrace-v6-lf-strict-semantic-development" in w
+          assert 'test "${#lf_candidates[@]}" -eq 1' in w
+          assert "FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT" in w
+          assert "FAIL_V6_LABEL_FREE_ALL_EVENT_NULL_NO_GO" in w
+          assert "all(lf['gates'][key] is True for key in integrity)" in w
+          assert "not all(lf['gates'][key] is True for key in scientific)" in w
+          assert "git checkout --detach \"$BASE_SHA\"" in w
+          print('PASS_P1_FROZEN_SOURCE_AND_DUAL_NOGO_ACTIVATION_CHECK')
           PY
