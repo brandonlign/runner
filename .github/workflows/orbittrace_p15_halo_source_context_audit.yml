@@ -41,22 +41,22 @@ jobs:
           echo '55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415  /tmp/p12_panel_v3.py' | sha256sum -c -
           python - <<'PY'
           from pathlib import Path
-          def show(path,label):
+          def inspect(path,label):
               lines=Path(path).read_text().splitlines()
               neg=[i for i,s in enumerate(lines) if 'require(len(negative_events) >= MIN_DIRECTION_NEGATIVES' in s]
               assert len(neg)==1,(label,neg)
-              print(label,'NEGATIVE_SUPPORT_ANCHOR',neg[0]+1)
-              for j in range(max(0,neg[0]-15),min(len(lines),neg[0]+25)):
-                  print(f'{label} {j+1:04d}: {lines[j]}')
-              for needle in ('direction_audits = []','direction_audits.append','halo_checkpoint = {','"direction_audits": direction_audits','"direction_audits":direction_audits','result = {','out = {'):
+              i=neg[0]
+              print(label,'NEGATIVE_SUPPORT_ANCHOR',i+1)
+              for j in range(max(0,i-15),min(len(lines),i+25)): print(f'{label} {j+1:04d}: {lines[j]}')
+              patterns=('for family_index, family in enumerate(families)','direction_audits','len(directions)','family_directions','2 * len(families)','2*len(families)','p3_every_direction','p9_bidirectionally','halo_checkpoint = {','result = {')
+              for needle in patterns:
                   hs=[k for k,s in enumerate(lines) if needle in s]
                   print(label,'HITS',repr(needle),[k+1 for k in hs])
-                  for k in hs[:2]:
-                      for j in range(max(0,k-5),min(len(lines),k+15)):
-                          print(f'{label}_CTX {j+1:04d}: {lines[j]}')
+                  for k in hs:
+                      print(f'{label}_HIT {k+1:04d}: {lines[k]}')
               return lines
-          dev=show('/tmp/p12.py','DEV')
-          matched=show('/tmp/p12_panel_v3.py','MATCHED')
+          dev=inspect('/tmp/p12.py','DEV')
+          matched=inspect('/tmp/p12_panel_v3.py','MATCHED')
           assert any('halo_checkpoint = {' in s for s in matched)
           assert not any('halo_checkpoint = {' in s for s in dev)
           print('PASS_P15_HALO_SUPPORT_SOURCE_CONTEXT_FROZEN')
