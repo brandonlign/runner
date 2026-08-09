@@ -43,6 +43,8 @@ jobs:
             'halo_pretruth_sha256':'f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'}
           assert f['p12_matched_transport']['generated_source_sha256']=='7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c'
           assert f['p12_matched_transport']['source_audit_workflow_run_id']==31304785477
+          assert f['literature_implementation']['p3_evaluator_source_commit']=='b1fa693471be78d1634632de942b6f95222c8a92'
+          assert f['literature_implementation']['p3_blindsafe_evaluator_sha256']=='a927d8248139222c451760fde016b54fdc9f2fb8d2d99f733e5b107707dd3975'
           expected={
             ('hdbscan','2023'):('35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',26460),
             ('hdbscan','2025'):('8e7580c52e41e6996d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3',19658),
@@ -51,8 +53,8 @@ jobs:
           }
           for (p,y),(sha,n) in expected.items():
               assert f['assignments'][p][y]['sha256']==sha and f['assignments'][p][y]['count']==n
-          assert f['exact_row_archives']['2023']=={'artifact_id':9029172941,'zip_sha256':'2924964e70acfd4ebe693156b28b54b6b717627bbd4931ab1ab45910906df750'}
-          assert f['exact_row_archives']['2025']=={'artifact_id':9029198814,'zip_sha256':'ff26143dba441cf0208140622fd9356dab7dac9733b100b4a9ecb45afc5e016f'}
+          assert f['exact_row_archives']['2023']=={'source':'https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip','zip_sha256':'9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430'}
+          assert f['exact_row_archives']['2025']=={'source':'https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip','zip_sha256':'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52'}
           g=f['mandatory_sparse_gate']; assert g['separate_for_each_panel_and_year'] is True
           assert g['four_to_nine_mean_f1_gain_min']==0.10 and g['four_to_twentyfour_mean_f1_gain_min']==0.10
           assert g['macro_f1_max_deficit']==0.10 and g['competitor_f1_gt_0_5_retention_min']==0.80
@@ -66,7 +68,6 @@ jobs:
           set -euo pipefail
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
-          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb15035be05c40d0e0531c343ff620f3ba8185' >/dev/null
           echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
           python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
           echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
@@ -95,7 +96,7 @@ jobs:
       - name: Verify exact dormant evaluator source and freeze semantics
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin 1fd7a063f5de63b045e0a9f6bd9fd69fa6dfc2f8
+          git fetch --no-tags --depth=1 origin b1fa693471be78d1634632de942b6f95222c8a92
           git show FETCH_HEAD:orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen_blindsafe.py > /tmp/evaluate_frozen_blindsafe.py
           echo 'a927d8248139222c451760fde016b54fdc9f2fb8d2d99f733e5b107707dd3975  /tmp/evaluate_frozen_blindsafe.py' | sha256sum -c -
           python -m py_compile /tmp/evaluate_frozen_blindsafe.py
