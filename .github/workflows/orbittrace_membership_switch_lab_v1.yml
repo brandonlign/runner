@@ -60,7 +60,7 @@ jobs:
             test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
           )
           test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
-          python -m py_compile orbittrace_membership_switch_lab_v1/run_lab.py input/v3/multi_anchor_energy_v3.py /tmp/run_wavelet_catalogue_v3_development.py
+          python -m py_compile orbittrace_membership_switch_lab_v1/run_lab.py orbittrace_membership_switch_lab_v1/run_lab_year_compatible.py input/v3/multi_anchor_energy_v3.py /tmp/run_wavelet_catalogue_v3_development.py
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-pooled-year-centroid-v8-development
@@ -85,10 +85,10 @@ jobs:
           echo PASS_MEMBERSHIP_SWITCH_LAB_INPUTS
       - name: Run target-excluded GMN membership-switch lab
         env:
-          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+          PYTHONPATH: .:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_membership_switch_lab_v1/run_lab.py \
+          python -u orbittrace_membership_switch_lab_v1/run_lab_year_compatible.py \
             --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
@@ -103,7 +103,7 @@ jobs:
           set +e
           mkdir -p output
           git rev-parse HEAD > output/lab_commit.txt
-          sha256sum orbittrace_membership_switch_lab_v1/run_lab.py \
+          sha256sum orbittrace_membership_switch_lab_v1/run_lab.py orbittrace_membership_switch_lab_v1/run_lab_year_compatible.py \
             input/v8/pooled_year_centroid_v8_development.json \
             input/p12/p12_expanded_families.json.gz \
             input/p12/p12_decisions_pretruth.json.gz \
