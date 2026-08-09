@@ -1,0 +1,46 @@
+name: OrbitTrace P15 MAARSY external addendum source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/P15_MAARSY_2020_2021_EXTERNAL_ADDENDUM.md
+      - .github/workflows/orbittrace_p15_maarsy_external_addendum_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify P15 external addendum preserves preregistered MAARSY design
+        run: |
+          set -euo pipefail
+          p=orbittrace_support_safe_halo_p15/P15_MAARSY_2020_2021_EXTERNAL_ADDENDUM.md
+          for x in \
+            'MAARSY 2020 and 2021' \
+            '3e0bcc3db805f60310ec9b01d6d48f76b29544780119c05e71fc225c04e3fe48' \
+            '20°–55°' \
+            'MIN_DIRECTION_NEGATIVES=128' \
+            'CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES' \
+            'contribute zero nonseed proposals' \
+            'do not pad, resample, borrow negatives, lower 128' \
+            'halo macro-F1 must exceed core macro-F1 by >=0.08' \
+            '>=1.5x core recall' \
+            'precision >=0.85' \
+            '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b' \
+            '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6' \
+            'PASS_P15_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            'POWER_INCONCLUSIVE_MAARSY_2020_2021'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'MAARSY 2018|MAARSY 2019|2022/2023 external|change.*0\.08|lower.*0\.08|lower.*0\.85|target_coordinate|OrbitTrace-April' "$p"; then
+            echo 'P15 addendum changes panel/gates or contains target-specific material' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_support_safe_halo_p15/EXTERNAL_RUN.md
+          echo PASS_P15_MAARSY_EXTERNAL_ADDENDUM_SOURCE_FREEZE
+          echo NO_MAARSY_EVENT_NO_EXTERNAL_TRUTH_NO_TARGET_ACCESS
