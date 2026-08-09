@@ -13,7 +13,7 @@ SOURCE_SCHEMA = "orbittrace-withheld-reference-v1"
 SEALED_SCHEMA = "orbittrace-withheld-exact-ids-v2"
 SEAL_SCHEMA = "orbittrace-withheld-exact-ids-seal-v1"
 YEARS = (2022, 2023)
-MONTH_RE = re.compile(r"^(2022|2023)-(0[1-9]|1[0-2])$")
+SOURCE_MONTH_RE = re.compile(r"^(202[2-5]-(0[1-9]|1[0-2])|2026-0[1-7])$")
 
 
 def require(ok: bool, message: str) -> None:
@@ -76,13 +76,13 @@ def main() -> int:
         event_id = str(row["event_id"])
         month_key = str(row["month_key"])
         require(event_id and event_id not in seen, "blank/duplicate source event ID")
+        require(SOURCE_MONTH_RE.fullmatch(month_key) is not None, "source month key is outside frozen historical schema")
         seen.add(event_id)
-        match = MONTH_RE.fullmatch(month_key)
-        if match is None:
-            # The historical reference may include later years. The final firewall is
-            # frozen to GMN 2022/2023, so all other years are deterministically dropped.
+        year = int(month_key[:4])
+        if year not in YEARS:
+            # Historical reference can include later years. Final exact-ID recovery is
+            # preregistered only on GMN 2022/2023, so later years are deterministically dropped.
             continue
-        year = int(match.group(1))
         sealed_events.append({"id": event_id, "year": year})
         by_year[year] += 1
 
