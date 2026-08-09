@@ -6,7 +6,9 @@ on:
       - agent/orbittrace-p14-matched-literature-freeze
     paths:
       - orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_patch_v3.py
+      - orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_from_v2.py
       - orbittrace_support_safe_rank_p14/audit_p12_snm_id_transport_repair.py
+      - orbittrace_support_safe_rank_p14/finalize_pretruth_checkpoint_p14_transport_v3.py
       - .github/workflows/orbittrace_p14_p12_snm_id_transport_repair_audit.yml
 
 permissions:
@@ -20,6 +22,7 @@ jobs:
       - name: Prove repair differs only in audit-year ID semantics
         run: |
           set -euo pipefail
+          python -m py_compile orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_patch_v3.py orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_from_v2.py orbittrace_support_safe_rank_p14/audit_p12_snm_id_transport_repair.py orbittrace_support_safe_rank_p14/finalize_pretruth_checkpoint_p14_transport_v3.py
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
           python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
@@ -37,4 +40,11 @@ jobs:
           python orbittrace_core_halo_p13_literature/apply_p12_matched_transport_patch_v2.py /tmp/p12.py /tmp/p12_panel_v2.py
           echo 'f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae  /tmp/p12_panel_v2.py' | sha256sum -c -
           python orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_patch_v3.py /tmp/p12.py /tmp/p12_panel_v3.py
+          python orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_from_v2.py /tmp/p12_panel_v2.py /tmp/p12_panel_runtime.py
+          cmp /tmp/p12_panel_v3.py /tmp/p12_panel_runtime.py
+          echo '55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415  /tmp/p12_panel_runtime.py' | sha256sum -c -
           python orbittrace_support_safe_rank_p14/audit_p12_snm_id_transport_repair.py /tmp/p12_panel_v2.py /tmp/p12_panel_v3.py
+          grep -F "PARENT_TRANSPORT_SHA256 = \"f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae\"" orbittrace_support_safe_rank_p14/finalize_pretruth_checkpoint_p14_transport_v3.py
+          grep -F "TECHNICAL_TRANSPORT_SHA256 = \"55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415\"" orbittrace_support_safe_rank_p14/finalize_pretruth_checkpoint_p14_transport_v3.py
+          grep -F "p14_p12_snm_id_transport_scientific_delta\"] = False" orbittrace_support_safe_rank_p14/finalize_pretruth_checkpoint_p14_transport_v3.py
+          echo PASS_P14_MATCHED_V3_RUNTIME_AND_METADATA_SOURCE_FREEZE
