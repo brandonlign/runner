@@ -1,0 +1,82 @@
+name: OrbitTrace P4 dual-view seed-envelope source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_dual_view_seed_envelope_p4/**
+      - .github/workflows/orbittrace_p4_dual_view_seed_envelope_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact P3 and audit minimal P4 transform
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py \
+            /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py \
+            /tmp/run_p3.py /tmp/run_p4.py
+          python -m py_compile /tmp/run_p4.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/run_p4.py').read_text()
+          protocol=Path('orbittrace_dual_view_seed_envelope_p4/PROTOCOL.md').read_text()
+          required=(
+              'feature_ceiling = np.max(xp, axis=0)',
+              'seed_floor_allowed = probabilities >= float(gate["seed_floor"])',
+              'within_envelope = np.all(features <= feature_ceiling[None, :], axis=1)',
+              'allowed = seed_floor_allowed & within_envelope',
+              'p4_every_surviving_proposal_inside_two_view_seed_envelope',
+              'PASS_DUAL_VIEW_SEED_ENVELOPE_MEMBERSHIP_P4_DEVELOPMENT',
+              'FAIL_DUAL_VIEW_SEED_ENVELOPE_MEMBERSHIP_P4_NO_GO',
+              '"p4_parameter_search": False',
+              'dual_view_seed_envelope_membership_p4_development.json',
+              'p4_membership_pretruth.sha256',
+              'p4_decisions_pretruth.sha256',
+          )
+          for token in required:
+              assert token in p, token
+          protocol_required=(
+              'No quantile, multiplier, offset, shrinkage, search, or known-shower label is used.',
+              'qualified known-shower matches >=95',
+              'recovery@100 >=58',
+              'top-100 dominant precision >=0.65',
+              'large-shower mean precision >=0.85',
+              'There is exactly one primary P4 configuration',
+          )
+          for token in protocol_required:
+              assert token in protocol, token
+          forbidden=('OrbitTrace-April','target_coordinate','20°-55° may be used')
+          for token in forbidden:
+              assert token not in p, token
+          # P4 may only add a proposal filter; it must preserve P3 final model,
+          # responsibility threshold, family rank and nonrecursive architecture.
+          assert 'RESPONSIBILITY_THRESHOLD = 0.5' in p
+          assert 'P3_FOLD_COUNT = 5' in p
+          assert 'P3_NEGATIVE_TAIL_MAX = 0.10' in p
+          assert 'P3_SEED_FLOOR_MIN = 0.5' in p
+          assert 'new_members_can_seed_growth' in p
+          assert 'ranking_after_membership' in p
+          print('PASS_P4_MINIMAL_DUAL_VIEW_SEED_ENVELOPE_SOURCE_AUDIT')
+          PY
+          sha256sum /tmp/run_p4.py
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_dual_view_seed_envelope_p4/RUN.md
+          test ! -e target
+          echo NO_P4_TRUTH_EXECUTION_NO_TARGET_ACCESS
