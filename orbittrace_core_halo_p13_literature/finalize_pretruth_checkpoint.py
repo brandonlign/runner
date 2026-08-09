@@ -12,6 +12,7 @@ from typing import Any
 P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'
 P3_EVALUATOR_COMPAT_SOURCE_SHA256='f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185'
 DSH_SOURCE_SHA256='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+P13_TRANSPORT_SOURCE_SHA256='7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c'
 YEARS=(2023,2025)
 
 
@@ -36,6 +37,7 @@ def main()->int:
     require(core['blind_exclusion']==[20.0,55.0] and halo['blind_exclusion']==[20.0,55.0],'blind interval mismatch')
     require(core['competitor_cluster_values_accessed'] is False and halo['competitor_cluster_values_accessed'] is False,'comparator values entered pretruth')
     require(core['known_shower_truth_accessed'] is False and halo['known_shower_truth_accessed'] is False,'truth entered pretruth')
+    require(halo.get('target_accessed') is False,'target entered P12 halo pretruth transport')
     core_families=halo['core_families']; core_order=list(map(str,halo['core_multiplicity_order']))
     require(core_order==list(map(str,core['multiplicity_order'])),'core order changed during halo transport')
     require({str(f['family_id']) for f in core_families}==set(core_order),'core family universe changed during halo transport')
@@ -75,12 +77,12 @@ def main()->int:
         'p13_halo_families':halo['halo_families'],
         'p13_halo_membership_pretruth_sha256':halo['halo_membership_pretruth_sha256'],
         'p13_core_pretruth_sha256':halo['core_pretruth_sha256'],
-        'p13_transport_source_sha256':'4c2ee663541fe00ec959b3e3d0ec7d9e5bf2fad062bf9f8b709a3d7bedbde6ae',
+        'p13_transport_source_sha256':P13_TRANSPORT_SOURCE_SHA256,
         'p13_primary_core_only':True,
         'p13_halo_secondary_only':True,
     }
     raw=pickle.dumps(cp,protocol=pickle.HIGHEST_PROTOCOL); a.output.write_bytes(raw); a.output.with_suffix(a.output.suffix+'.sha256').write_text(hashlib.sha256(raw).hexdigest()+'\n')
-    print('P13_MATCHED_PRETRUTH_CHECKPOINT_FROZEN',a.panel,json.dumps({'core_families':len(candidate_families),'core_sha':cp['p13_core_pretruth_sha256'],'halo_sha':cp['p13_halo_membership_pretruth_sha256'],'rows':cp['exact_event_rows']},sort_keys=True),flush=True)
+    print('P13_MATCHED_PRETRUTH_CHECKPOINT_FROZEN',a.panel,json.dumps({'core_families':len(candidate_families),'core_sha':cp['p13_core_pretruth_sha256'],'halo_sha':cp['p13_halo_membership_pretruth_sha256'],'transport_source_sha256':P13_TRANSPORT_SOURCE_SHA256,'rows':cp['exact_event_rows']},sort_keys=True),flush=True)
     return 0
 
 
