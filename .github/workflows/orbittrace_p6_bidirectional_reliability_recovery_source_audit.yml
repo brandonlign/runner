@@ -1,0 +1,54 @@
+name: OrbitTrace P6 schema-only recovery source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p5-joint-seed-support-freeze
+    paths:
+      - .github/workflows/orbittrace_p6_bidirectional_reliability_recovery.yml
+      - .github/workflows/orbittrace_p6_bidirectional_reliability_recovery_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Audit exact technical-recovery boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_p6_bidirectional_reliability_recovery.yml').read_text()
+          required=(
+              'RECOVER_P6_AFTER_SCHEMA_ONLY_TECHNICAL_NO_RESULT',
+              '31294634617',
+              "KeyError: 'hashes'",
+              "! grep -Fq 'PASS_P6_PRETRUTH_MEMBERSHIP_FROZEN_BEFORE_TRUTH'",
+              "! grep -Fq 'ORBITTRACE_P6_RESULT_BEGIN'",
+              '31293431873',
+              '9032407268',
+              '39ba9b6f40c0a07f326ae61f9f1dc06d9d3ed3d11c4400f41a75dfb4473c3ea6',
+              "r['crossfit_pretruth_sha256']=='55defa606101cfc0e0f9038d326fd19cfd99d0c423b68602ecd5581e00ff8ac1'",
+              "r['model_pretruth_sha256']=='8ac8b13ab025a636884d44a2b19d478c9de5c138c3da190f3dfe3d73490257eb'",
+              "r['membership_pretruth_sha256']=='933be44170bc91cf8e92a38b84689d590610ecdf809e911ac40022b5d4e806c9'",
+              "r['decisions_pretruth_sha256']=='b9b87427e8d5521e92bca3d27ef9528da7509f2c9d5a647764789abc65323711'",
+              '40b0b720ef37427bc2d89aeb71c145683cbc69eff9b56ac5516e87fc34348ff6',
+              '5e76bbf2fd75acdf1d1bc770dc3c60de338a6388524c956544afe4c1aabc8490',
+              'PASS_P6_RECOVERY_PRETRUTH_MEMBERSHIP_FROZEN_BEFORE_TRUTH',
+              'Evaluate exact frozen P6 membership against unchanged target-excluded truth',
+              'orbittrace-bidirectional-reliability-membership-p6-development-recovery',
+          )
+          for token in required:
+              assert token in w,token
+          assert w.index('transform_frozen_p5.py') < w.index('evaluate_frozen_p6.py')
+          assert 'OrbitTrace-April' not in w
+          assert 'target_coordinate' not in w
+          print('PASS_P6_SCHEMA_ONLY_RECOVERY_SOURCE_AUDIT')
+          PY
+          test ! -e orbittrace_bidirectional_reliability_p6/RUN_RECOVER.md
+          test ! -e target
+          echo NO_P6_RECOVERY_TRUTH_EXECUTION_NO_TARGET_ACCESS
