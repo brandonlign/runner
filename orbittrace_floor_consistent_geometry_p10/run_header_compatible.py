@@ -50,7 +50,7 @@ def compatible_exact_header_positions(text: str) -> tuple[list[str], dict[str, i
 
 
 def install_same_request_transport_resilience() -> None:
-    import gmn_python_api.meteor_trajectory as mt
+    import gmn_python_api.data_directory as mt
 
     original = mt.get_monthly_file_content_by_date
     cache: dict[tuple[Any, ...], Any] = {}
