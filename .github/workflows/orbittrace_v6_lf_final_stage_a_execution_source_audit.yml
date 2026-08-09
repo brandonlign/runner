@@ -47,22 +47,30 @@ jobs:
               "all(hold['scientific_gates'].values())",
               "hold['truth_accessed'] is True",
               "hold['truth_event_universe_exact'] is True",
+              '--repaired-v6-source /tmp/v6.repaired.py',
+              '--output output/stage_a_ranked_families.json',
+              "r['schema']=='orbittrace-final-stage-a-ranked-families-v2'",
+              "r['target_reference_accessed'] is False",
+              "r['catalogue_shower_labels_used'] is False",
+              "set(f)=={'family_id','rank','years','event_ids_by_year'}",
+              'stage_a_ranked_families.json.sha256',
               "test ! -e target",
               "test ! -e input",
               "--parallel-exact-wrapper orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py",
-              "'target_reference_accessed'",
-              "'catalogue_shower_labels_used'",
-              "'all_event_null'",
               'orbittrace-v6-lf-final-stage-a',
           ]
           for token in required: assert token in w, token
-          # Reject the obsolete holdout schema assumptions that would block a valid PASS.
           for obsolete in (
               "hold['years']",
               "hold['blind_exclusion']",
               "hold['all_event_null']",
               "hold['parameter_search']",
               "hold['gates']",
+              '--v6-source /tmp/v6.repaired.py',
+              "r['classification']=='target-uninformed full-region Stage A ranking'",
+              "r['blind_interval_reopened']",
+              "r['primary_rank_order']",
+              "r['ranking_sha256']",
           ):
               assert obsolete not in w, obsolete
           auth=w.index('Require one-file child and all three frozen authorization gates')
@@ -70,9 +78,8 @@ jobs:
           execute=w.index('Execute target-uninformed full-region Stage A')
           assert auth < runtime < execute
           assert w.index('rm -rf /tmp/stage-a-auth') < execute
-          assert 'target_reference' not in w[execute:w.index('Record immutable Stage-A provenance')].lower() or "target_reference_accessed" in w[execute:w.index('Record immutable Stage-A provenance')]
-          assert "git hash-object orbittrace_v6_lf_final_stage_a/run_stage_a.py)\" = 'a77e967a8079827728156c82452651796211bede'" in w
-          assert "git hash-object orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py)\" = 'f91590a8110904a2a72bd9573bd6e54599709528'" in w
+          assert "git hash-object orbittrace_v6_lf_final_stage_a/run_stage_a.py)\" = 'a77e70672278daecb6ff77be2c13dc17e89d1129'" in w
+          assert "git hash-object orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py)\" = '1e8250e2ca794d317353f69080bdfcf1d98f8ac8'" in w
           assert "257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24" in w
           assert "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2" in w
           print('PASS_V6_LF_FINAL_STAGE_A_EXECUTION_SOURCE_AUDIT')
