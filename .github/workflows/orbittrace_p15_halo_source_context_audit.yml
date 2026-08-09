@@ -42,43 +42,74 @@ jobs:
           python -m py_compile orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
           python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12.py /tmp/p15_dev.py | tee /tmp/p15_dev_transform.txt
           python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12_panel_v3.py /tmp/p15_matched.py | tee /tmp/p15_matched_transform.txt
+          echo '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b  /tmp/p15_dev.py' | sha256sum -c -
+          echo '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6  /tmp/p15_matched.py' | sha256sum -c -
           python -m py_compile /tmp/p15_dev.py /tmp/p15_matched.py
           python - <<'PY'
           from pathlib import Path
-          import difflib,re
-          parents={'DEV':Path('/tmp/p12.py'),'MATCHED':Path('/tmp/p12_panel_v3.py')}
-          children={'DEV':Path('/tmp/p15_dev.py'),'MATCHED':Path('/tmp/p15_matched.py')}
-          for label in parents:
-              old=parents[label].read_text(); new=children[label].read_text()
-              assert old.count('    direction_audits: list[dict[str, Any]] = []\n')==1
-              assert new.count('    p15_unavailable_directions: list[dict[str, Any]] = []\n')==1
-              old_guard='            require(len(negative_events) >= MIN_DIRECTION_NEGATIVES, f"P2 input-ineligible: <{MIN_DIRECTION_NEGATIVES} negatives for {family_id} {source_year}->{target_year}")\n'
-              assert old.count(old_guard)==1 and new.count(old_guard)==0
-              assert new.count('            if len(negative_events) < MIN_DIRECTION_NEGATIVES:\n')==1
-              assert new.count('                continue\n') >= old.count('                continue\n')+1
-              assert new.count('p15_unavailable_directions.append')==1
+          import difflib
+
+          init_old='    direction_audits: list[dict[str, Any]] = []\n'
+          init_new=init_old+'    p15_unavailable_directions: list[dict[str, Any]] = []\n'
+          guard_old='            require(len(negative_events) >= MIN_DIRECTION_NEGATIVES, f"P2 input-ineligible: <{MIN_DIRECTION_NEGATIVES} negatives for {family_id} {source_year}->{target_year}")\n'
+          guard_new='''            if len(negative_events) < MIN_DIRECTION_NEGATIVES:
+              p15_unavailable_directions.append({
+                  "family_id": str(family_id),
+                  "source_year": int(source_year),
+                  "target_year": int(target_year),
+                  "observed_negative_count": int(len(negative_events)),
+                  "required_negative_count": int(MIN_DIRECTION_NEGATIVES),
+                  "status": "CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES",
+              })
+              continue
+          '''.replace('              ','                ')
+          expr='hashlib.sha256(json.dumps(p15_unavailable_directions, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()'
+          dev_old='''    result = {
+              "verdict": verdict,
+          '''.replace('              ','        ')
+          dev_new=f'''    result = {{
+              "verdict": verdict,
+              "p15_architecture": "P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY",
+              "p15_parent_source_sha256": "78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32",
+              "p15_min_direction_negatives_unchanged": int(MIN_DIRECTION_NEGATIVES),
+              "p15_unavailable_directions": p15_unavailable_directions,
+              "p15_unavailable_direction_count": int(len(p15_unavailable_directions)),
+              "p15_availability_sha256": {expr},
+              "p15_no_padding_resampling_or_relaxation": True,
+              "p15_secondary_characterization_only": True,
+          '''.replace('              ','        ')
+          matched_old='''    halo_checkpoint = {
+              "classification": "P13 exact-P12 matched-panel pretruth halo transport",
+          '''.replace('              ','        ')
+          matched_new=f'''    halo_checkpoint = {{
+              "classification": "P13 exact-P12 matched-panel pretruth halo transport",
+              "p15_architecture": "P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY",
+              "p15_parent_source_sha256": "55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415",
+              "p15_min_direction_negatives_unchanged": int(MIN_DIRECTION_NEGATIVES),
+              "p15_unavailable_directions": p15_unavailable_directions,
+              "p15_unavailable_direction_count": int(len(p15_unavailable_directions)),
+              "p15_availability_sha256": {expr},
+              "p15_no_padding_resampling_or_relaxation": True,
+              "p15_secondary_characterization_only": True,
+          '''.replace('              ','        ')
+
+          for label,parent_path,child_path,meta_old,meta_new in (
+              ('DEV',Path('/tmp/p12.py'),Path('/tmp/p15_dev.py'),dev_old,dev_new),
+              ('MATCHED',Path('/tmp/p12_panel_v3.py'),Path('/tmp/p15_matched.py'),matched_old,matched_new),
+          ):
+              old=parent_path.read_text(); new=child_path.read_text()
+              assert old.count(init_old)==1 and new.count(init_new)==1
+              assert old.count(guard_old)==1 and new.count(guard_new)==1
+              assert old.count(meta_old)==1 and new.count(meta_new)==1
+              reverted=new.replace(init_new,init_old,1).replace(guard_new,guard_old,1).replace(meta_new,meta_old,1)
+              assert reverted==old,f'{label} P15 source differs outside exactly three frozen surfaces'
               assert old.count('MIN_DIRECTION_NEGATIVES = 128')==new.count('MIN_DIRECTION_NEGATIVES = 128')==1
+              assert new.count('p15_unavailable_directions.append')==1
               assert new.count('CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES')==1
-              assert new.count('p15_no_padding_resampling_or_relaxation')==1
-              assert new.count('p15_secondary_characterization_only')==1
-              if label=='DEV':
-                  assert new.count('"p15_parent_source_sha256": "78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32"')==1
-                  assert new.index('"p15_architecture"') > new.index('    result = {')
-              else:
-                  assert new.count('"p15_parent_source_sha256": "55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415"')==1
-                  assert new.index('"p15_architecture"') > new.index('    halo_checkpoint = {')
-              delta=list(difflib.unified_diff(old.splitlines(),new.splitlines(),lineterm=''))
-              changed=[x for x in delta if (x.startswith('+') or x.startswith('-')) and not x.startswith('+++') and not x.startswith('---')]
-              print(label,'P15_CHANGED_LINES',len(changed))
+              delta=list(difflib.unified_diff(old.splitlines(),new.splitlines(),fromfile=f'{label}_PARENT',tofile=f'{label}_P15',lineterm=''))
               print('\n'.join(delta))
-              # All changed lines must belong to one of the three frozen transform surfaces.
-              allowed_tokens=('p15_','if len(negative_events) < MIN_DIRECTION_NEGATIVES','family_id','source_year','target_year','observed_negative_count','required_negative_count','CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES','continue','require(len(negative_events) >= MIN_DIRECTION_NEGATIVES','"verdict": verdict','"classification": "P13 exact-P12 matched-panel pretruth halo transport"')
-              for line in changed:
-                  body=line[1:].strip()
-                  if not body: continue
-                  assert any(tok in body for tok in allowed_tokens),(label,line)
-          print('PASS_P15_SOURCE_TRANSFORM_EXACTLY_SCOPED')
+          print('PASS_P15_SOURCE_TRANSFORM_EXACT_REVERSE_EQUIVALENCE')
           PY
-          grep -E '^P15_OUTPUT_SHA256=' /tmp/p15_dev_transform.txt
-          grep -E '^P15_OUTPUT_SHA256=' /tmp/p15_matched_transform.txt
+          grep -F "DEV_P15_SHA256='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          grep -F "MATCHED_P15_SHA256='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
           echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
