@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Enforce one-file child and preregistered P1 activation
+      - name: Enforce one-file child and dual v6-family scientific no-go prerequisite
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -33,27 +33,62 @@ jobs:
           test "${files[0]}" = 'orbittrace_probabilistic_membership_p1/RUN.md'
           content="$(git show "$HEAD_SHA":orbittrace_probabilistic_membership_p1/RUN.md)"
           mode="$(printf '%s\n' "$content" | sed -n '1p')"
-          upstream_run="$(printf '%s\n' "$content" | sed -n '2p')"
-          test "$mode" = 'EXECUTE_P1_AFTER_FANOUT_V6_SCIENTIFIC_FAIL'
-          [[ "$upstream_run" =~ ^[0-9]+$ ]]
-          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
-          rm -rf /tmp/p1-prereq && mkdir -p /tmp/p1-prereq
+          v6_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          lf_run="$(printf '%s\n' "$content" | sed -n '3p')"
+          test "$mode" = 'EXECUTE_P1_AFTER_BOTH_V6_DEVELOPMENT_NO_GO'
+          [[ "$v6_run" =~ ^[0-9]+$ ]]
+          [[ "$lf_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 3
+          rm -rf /tmp/p1-prereq && mkdir -p /tmp/p1-prereq/{v6,lf}
 
-          gh run download "$upstream_run" --repo "$GITHUB_REPOSITORY" \
-            --name orbittrace-v6-semantic-replay-development --dir /tmp/p1-prereq
+          gh run download "$v6_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-semantic-replay-development --dir /tmp/p1-prereq/v6
+          gh run download "$lf_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-lf-all-event-null-development-v2 --dir /tmp/p1-prereq/lf
           python - <<'PY'
           import json
           from pathlib import Path
-          r=json.loads(Path('/tmp/p1-prereq/v3_primary_catalogue_v6_development.json').read_text())
-          assert r['verdict']=='FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT',r['verdict']
-          assert r['configuration']['years']==[2022,2023]
-          assert r['configuration']['blind_exclusion']==[20.0,55.0]
-          assert r['configuration']['primary_alpha']==0.05
-          assert r['configuration']['rescue_queue']=='fixed4 p <= 1/129; never inserted into v3 primary ranking'
-          assert all(a['proposal_cap_per_window']==512 for a in r['year_audits'])
-          assert all(a['max_primary_proposals_per_year']==36864 for a in r['year_audits'])
-          assert not all(r['gates'].values())
-          print('PASS_P1_ACTIVATION_V6_SCIENTIFIC_FAIL')
+
+          v6=json.loads(Path('/tmp/p1-prereq/v6/v3_primary_catalogue_v6_development.json').read_text())
+          assert v6['verdict']=='FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT',v6['verdict']
+          assert v6['configuration']['years']==[2022,2023]
+          assert v6['configuration']['blind_exclusion']==[20.0,55.0]
+          assert v6['configuration']['primary_alpha']==0.05
+          assert v6['configuration']['rescue_queue']=='fixed4 p <= 1/129; never inserted into v3 primary ranking'
+          assert all(a['proposal_cap_per_window']==512 for a in v6['year_audits'])
+          assert all(a['max_primary_proposals_per_year']==36864 for a in v6['year_audits'])
+          assert not all(v6['gates'].values())
+
+          lf=json.loads(Path('/tmp/p1-prereq/lf/v6_label_free_all_event_null_development.json').read_text())
+          assert lf['verdict']=='FAIL_V6_LABEL_FREE_ALL_EVENT_NULL_NO_GO',lf['verdict']
+          assert lf['configuration']['years']==[2022,2023]
+          assert lf['configuration']['blind_exclusion']==[20.0,55.0]
+          assert lf['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert lf['configuration']['parameter_search'] is False
+          assert lf['configuration']['null_trimming'] is False
+          assert lf['configuration']['exact_fanout'] is True
+          assert lf['configuration']['exact_shards_per_year']==6
+          integrity=[
+              'exact_repaired_v6_source',
+              'blind_interval_exact',
+              'geometry_parser_never_accessed_label_values',
+              'all_event_calibration_exact',
+              'at_least_30_supported_bins_each_year',
+              'proposal_budget_exact',
+              'pretruth_family_payload_frozen_before_truth',
+              'truth_event_universe_exact',
+          ]
+          scientific=[
+              'at_least_50_v3_families',
+              'qualified_at_least_v8',
+              'recovery100_at_least_v8',
+              'mrr_at_least_v8',
+              'top100_precision_at_least_065',
+              'macro_f1_at_least_v8',
+          ]
+          assert all(lf['gates'][key] is True for key in integrity),lf['gates']
+          assert not all(lf['gates'][key] is True for key in scientific),lf['gates']
+          print('PASS_P1_ACTIVATION_BOTH_V6_DEVELOPMENT_NO_GO')
           PY
 
           git checkout --detach "$BASE_SHA"
