@@ -1,0 +1,76 @@
+name: OrbitTrace P17 artifact-only development vacuity
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_reciprocal_support_closure_p17/adjudicate_p17_development_vacuity.py
+      - orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py
+      - .github/workflows/orbittrace_p17_development_vacuity.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Adjudicate P17 vacuity from immutable P15 development PASS only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_reciprocal_support_closure_p17/adjudicate_p17_development_vacuity.py \
+            orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py
+
+          mkdir -p /tmp/p17-parent output
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/runs/31329529635" -o /tmp/p17-parent/run.json
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/artifacts/9042508082" -o /tmp/p17-parent/meta.json
+          python - <<'PY_META'
+          import json
+          r=json.load(open('/tmp/p17-parent/run.json')); a=json.load(open('/tmp/p17-parent/meta.json'))
+          assert r['id']==31329529635 and r['status']=='completed' and r['conclusion']=='success',r
+          assert r['head_sha']=='f87f106672a768c02ed444e787aed72c0c42f60b',r
+          assert r['head_branch']=='agent/orbittrace-p15-development-artifact-adjudication-run-v2',r
+          assert a['id']==9042508082 and a['name']=='orbittrace-p15-support-safe-halo-development-artifact-adjudication',a
+          assert a['digest']=='sha256:f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96' and not a['expired'],a
+          assert a['workflow_run']['id']==31329529635 and a['workflow_run']['head_sha']=='f87f106672a768c02ed444e787aed72c0c42f60b',a
+          print('PASS_P17_EXACT_P15_ARTIFACT_ONLY_PARENT_METADATA')
+          PY_META
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/artifacts/9042508082/zip" -o /tmp/p17-parent/p15.zip
+          echo 'f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96  /tmp/p17-parent/p15.zip' | sha256sum -c -
+          unzip -q /tmp/p17-parent/p15.zip -d /tmp/p17-parent/artifact
+          parent=/tmp/p17-parent/artifact/support_safe_secondary_halo_p15_development_artifact_adjudication.json
+          echo '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e  '"$parent" | sha256sum -c -
+          test "$(cat "$parent.sha256")" = '1f778661e3d134075fe7f5d3abf5f8188fdf3cd605434ac2be3bb6a9be9dd061'
+
+          python orbittrace_reciprocal_support_closure_p17/adjudicate_p17_development_vacuity.py \
+            --p15-artifact-only-result "$parent" \
+            --p17-patcher orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py \
+            --output output/p17_reciprocal_support_closure_development_vacuity.json
+          grep -F '"verdict": "PASS_P17_RECIPROCAL_SUPPORT_CLOSURE_DEVELOPMENT_VACUITY"' output/p17_reciprocal_support_closure_development_vacuity.json
+          grep -F '"canonical_unavailable_direction_count": 0' output/p17_reciprocal_support_closure_development_vacuity.json
+          grep -F '"fresh_development_rerun_used": false' output/p17_reciprocal_support_closure_development_vacuity.json
+          grep -F '"post_result_numeric_tolerance_used": false' output/p17_reciprocal_support_closure_development_vacuity.json
+          grep -F '"matched_comparator_access": false' output/p17_reciprocal_support_closure_development_vacuity.json
+          grep -F '"target_information_access": false' output/p17_reciprocal_support_closure_development_vacuity.json
+          echo PASS_P17_ARTIFACT_ONLY_DEVELOPMENT_VACUITY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p17-reciprocal-support-closure-development-vacuity
+          path: output
+          if-no-files-found: error
+          retention-days: 90
