@@ -1,0 +1,75 @@
+name: OrbitTrace v6-LF-core C1 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_v6_lf_core_probabilistic_membership_c1/**
+      - .github/workflows/orbittrace_v6_lf_core_c1_source_audit.yml
+      - .github/workflows/orbittrace_v6_lf_core_c1_guarded_development.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-core-c1-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-core-probabilistic-membership-c1-freeze
+      - name: Compile and prove frozen C1-LF boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_lf_core_probabilistic_membership_c1/run_development.py
+          test "$(git hash-object orbittrace_v6_lf_core_probabilistic_membership_c1/run_development.py)" = '4c29e414373a2d14ead743cb3888dbe9afe9d6b3'
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          source=Path('orbittrace_v6_lf_core_probabilistic_membership_c1/run_development.py').read_text()
+          tree=ast.parse(source)
+          defs={n.name:n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef)}
+          main=ast.get_source_segment(source,defs['main'])
+
+          assert 'lf.parse_geometry_only(support,base)' in main
+          membership_freeze=main.index('(args.output/"c1_lf_membership_pretruth.json").write_text')
+          truth=main.index('lf.parse_truth_after_freeze(support,pretruth_ids)')
+          evaluation=main.index('v8.mult.evaluate_order(hidden_labels,primary_families,rank_order)')
+          assert membership_freeze < truth < evaluation
+          assert 'transfer.apply_exact_p1_membership(p1,primary_families,scan_by_year,base)' in main
+          assert 'rescue_families=v6.build_family_track_v6' in main
+          assert 'apply_exact_p1_membership(p1,rescue_families' not in main
+          assert 'reproduced_lf_pretruth_sha==lf_result["pretruth_sha256"]' in main
+          assert 'lf.canonical_sha(scan_by_year[year])==checkpoints[year]["scan_rows_sha256"]' in main
+          assert 'lf.canonical_sha(calibration_by_year[year])==checkpoints[year]["calibration_rows_sha256"]' in main
+          assert 'set(hidden_labels)==pretruth_ids' in main
+          assert 'MACRO_F1_GAIN_GATE=0.08' in source
+          assert 'MRR_RETENTION=0.95' in source
+          assert 'ABSOLUTE_PRECISION_FLOOR=0.65' in source
+          assert 'PRECISION_REGRESSION_ALLOWANCE=0.02' in source
+          assert 'max(ABSOLUTE_PRECISION_FLOOR,float(baseline["top100_dominant_precision"])-PRECISION_REGRESSION_ALLOWANCE)' in main
+          assert 'float(c1_metric["macro_f1"])-float(baseline["macro_f1"])>=MACRO_F1_GAIN_GATE' in main
+          assert 'float(c1_metric["mrr"])>=MRR_RETENTION*float(baseline["mrr"])' in main
+          assert 'fixed4_rescue_can_seed_c1_lf":False' in main
+          assert 'parameter_search":False' in main
+          assert 'new_members_can_seed_growth":False' in main
+          assert 'PASS_V6_LF_CORE_PROBABILISTIC_MEMBERSHIP_C1_DEVELOPMENT' in source
+          assert 'FAIL_V6_LF_CORE_PROBABILISTIC_MEMBERSHIP_C1_NO_GO' in source
+          protocol=Path('orbittrace_v6_lf_core_probabilistic_membership_c1/PROTOCOL.md').read_text()
+          assert 'v6-LF **passes**' in protocol
+          assert 'NO_LITERATURE_SUPERIORITY' in protocol
+          assert '99%–99.99%' in protocol
+          assert 'one-sided 95% Garwood' in protocol
+          print('PASS_V6_LF_CORE_C1_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only firewall
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_DEVELOPMENT_DATA_NO_LITERATURE_RESULT_NO_TARGET_ACCESS
