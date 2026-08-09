@@ -6,6 +6,7 @@ on:
       - agent/orbittrace-crossyear-two-view-membership-p2-freeze
     paths:
       - orbittrace_consensus_membership_p3/PROTOCOL.md
+      - orbittrace_consensus_membership_p3/run_development.py
       - .github/workflows/orbittrace_p3_consensus_membership_source_audit.yml
 
 permissions:
@@ -20,26 +21,28 @@ jobs:
       - name: Prove pre-result P3 freeze and target firewall
         run: |
           set -euo pipefail
+          python -m py_compile orbittrace_consensus_membership_p3/run_development.py
           python - <<'PY'
+          import ast
           from pathlib import Path
           p=Path('orbittrace_consensus_membership_p3/PROTOCOL.md').read_text()
           required=(
-            'before the authoritative P2 development verdict exists',
-            'e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',
-            'ba0269bab1e3db76bd981364225a815d719d8154348c5c39d124ece0f400f73a',
-            'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb',
-            'A3_f = A1_f ∩ A2_f',
-            'M3_f = S_f ∪ A3_f',
-            'qualified known-shower matches >= 95',
-            'recovery@100 >= 58',
-            'top-100 dominant-label precision >= 0.65',
-            'macro F1 >= 0.2536657194465356',
-            'large-shower mean recall >= 1.5×',
-            'large-shower mean precision >= 0.85',
-            'PASS_DUAL_MEMBERSHIP_CONSENSUS_P3_DEVELOPMENT',
-            'FAIL_DUAL_MEMBERSHIP_CONSENSUS_P3_NO_GO',
-            'No union, fallback, confidence override',
-            '20°–55°',
+              'before the authoritative P2 development verdict exists',
+              'e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',
+              'ba0269bab1e3db76bd981364225a815d719d8154348c5c39d124ece0f400f73a',
+              'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb',
+              'A3_f = A1_f ∩ A2_f',
+              'M3_f = S_f ∪ A3_f',
+              'qualified known-shower matches >= 95',
+              'recovery@100 >= 58',
+              'top-100 dominant-label precision >= 0.65',
+              'macro F1 >= 0.2536657194465356',
+              'large-shower mean recall >= 1.5×',
+              'large-shower mean precision >= 0.85',
+              'PASS_DUAL_MEMBERSHIP_CONSENSUS_P3_DEVELOPMENT',
+              'FAIL_DUAL_MEMBERSHIP_CONSENSUS_P3_NO_GO',
+              'No union, fallback, confidence override',
+              '20°–55°',
           )
           for token in required:
               assert token in p, token
@@ -48,7 +51,61 @@ jobs:
           assert 'No family is created, deleted, merged, split, re-ranked, or re-centered.' in p
           assert 'same broad/sparse superiority bars used for v6/P1/P2' in p
           assert 'separately frozen no-retuning cross-survey validation' in p
-          print('PASS_P3_CONSENSUS_PRE_RESULT_PROTOCOL_AUDIT')
+
+          src=Path('orbittrace_consensus_membership_p3/run_development.py').read_text()
+          tree=ast.parse(src)
+          main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+          calls=[]
+          for n in ast.walk(main):
+              if isinstance(n,ast.Call):
+                  if isinstance(n.func,ast.Name): name=n.func.id
+                  elif isinstance(n.func,ast.Attribute): name=n.func.attr
+                  else: continue
+                  calls.append((getattr(n,'lineno',-1),name))
+          first_cons=min(line for line,name in calls if name=='freeze_consensus')
+          first_parse=min(line for line,name in calls if name=='parse_catalogue')
+          assert first_cons < first_parse,(first_cons,first_parse)
+          assert 'P1_PRETRUTH_SHA256 = "ba0269bab1e3db76bd981364225a815d719d8154348c5c39d124ece0f400f73a"' in src
+          assert 'additions = add1 & add2' in src
+          assert 'seeds1 | additions' in src
+          assert 'p1_owner[eid] != p2_owner[eid]' in src
+          assert 'parameter_search": False' in src
+          print('PASS_P3_CONSENSUS_PRE_RESULT_PROTOCOL_AND_SOURCE_AUDIT')
+          PY
+      - name: Synthetic exact-consensus semantics
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('p3',Path('orbittrace_consensus_membership_p3/run_development.py'))
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          def fam(fid,seeds,p1=(),p2=(),which='p1'):
+              adds=p1 if which=='p1' else p2
+              return {'family_id':fid,'event_ids':sorted(set(seeds)|set(adds)),f'{which}_added_event_ids':list(adds),f'{which}_added_event_count':len(adds)}
+          # Expand to the exact family-count invariant with deterministic dummy seeds.
+          p1=[];p2=[]
+          for i in range(m.EXPECTED_FAMILY_COUNT):
+              fid=f'F{i:03d}'; seeds={f's{i}a',f's{i}b'}
+              if i==0:
+                  p1.append(fam(fid,seeds,p1=('x','y'),which='p1'))
+                  p2.append(fam(fid,seeds,p2=('x','z'),which='p2'))
+              elif i==1:
+                  p1.append(fam(fid,seeds,p1=('q',),which='p1'))
+                  p2.append(fam(fid,seeds,p2=(),which='p2'))
+              elif i==2:
+                  p1.append(fam(fid,seeds,p1=('d',),which='p1'))
+                  p2.append(fam(fid,seeds,p2=('d',),which='p2'))
+              else:
+                  p1.append(fam(fid,seeds,which='p1'))
+                  p2.append(fam(fid,seeds,which='p2'))
+          baseline,p3,a=m.freeze_consensus(p1,p2)
+          assert p3[0]['p3_added_event_ids']==['x']
+          assert p3[1]['p3_added_event_ids']==[]
+          assert p3[2]['p3_added_event_ids']==['d']
+          assert a['p3_same_family_intersection_total']==2
+          assert all(set(b['event_ids']).issubset(set(x['event_ids'])) for b,x in zip(baseline,p3))
+          print('PASS_P3_EXACT_INTERSECTION_SYNTHETIC')
           PY
       - name: Assert no execution or target data
         run: |
