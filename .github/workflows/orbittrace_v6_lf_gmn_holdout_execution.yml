@@ -26,12 +26,12 @@ env:
 jobs:
   authorize:
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - name: Require one-file child and exact v6-LF development PASS
+      - name: Require one-file child, exact v6-LF development PASS, and matched-literature superiority
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -45,12 +45,27 @@ jobs:
           content="$(git show "$HEAD_SHA":orbittrace_v6_lf_gmn_2024_2025_holdout/RUN.md)"
           mode="$(printf '%s\n' "$content" | sed -n '1p')"
           dev_run="$(printf '%s\n' "$content" | sed -n '2p')"
-          test "$mode" = 'EXECUTE_AFTER_V6_LF_DEVELOPMENT_PASS'
+          literature_run="$(printf '%s\n' "$content" | sed -n '3p')"
+          test "$mode" = 'EXECUTE_AFTER_V6_LF_DEVELOPMENT_AND_LITERATURE_SUPERIORITY'
           [[ "$dev_run" =~ ^[0-9]+$ ]]
-          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
-          rm -rf /tmp/v6lf && mkdir -p /tmp/v6lf
-          gh run download "$dev_run" --repo "$GITHUB_REPOSITORY" \
-            --name orbittrace-v6-lf-all-event-null-development-v2 --dir /tmp/v6lf
+          [[ "$literature_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 3
+
+          dev_conclusion="$(gh run view "$dev_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)"
+          literature_conclusion="$(gh run view "$literature_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)"
+          test "$dev_conclusion" = success
+          test "$literature_conclusion" = success
+
+          rm -rf /tmp/v6lf /tmp/literature && mkdir -p /tmp/v6lf /tmp/literature
+          mapfile -t dev_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$dev_run/artifacts" --jq '.artifacts[].name')
+          dev_candidates=()
+          for name in orbittrace-v6-lf-all-event-null-development-v2 orbittrace-v6-lf-strict-semantic-development; do
+            if printf '%s\n' "${dev_names[@]}" | grep -qx "$name"; then dev_candidates+=("$name"); fi
+          done
+          test "${#dev_candidates[@]}" -eq 1
+          gh run download "$dev_run" --repo "$GITHUB_REPOSITORY" --name "${dev_candidates[0]}" --dir /tmp/v6lf
+          gh run download "$literature_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-lf-matched-literature-fanout-v1-result --dir /tmp/literature
           python - <<'PY'
           import json
           from pathlib import Path
@@ -62,7 +77,15 @@ jobs:
           assert r['configuration']['parameter_search'] is False
           assert r['configuration']['null_trimming'] is False
           assert all(r['gates'].values()),r['gates']
-          print('PASS_V6_LF_HOLDOUT_DEVELOPMENT_PREREQUISITE')
+
+          lit=json.loads(Path('/tmp/literature/v6_lf_matched_literature.json').read_text())
+          assert lit['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'},lit['classification']
+          assert lit['years']==[2023,2025]
+          assert lit['blind_exclusion']==[20.0,55.0]
+          assert lit['pairwise_only_no_cross_denominator_comparison'] is True
+          assert lit['panels']['hdbscan']['exact_event_rows']=={'2023':26460,'2025':19658}
+          assert lit['panels']['sugar']['exact_event_rows']=={'2023':30414,'2025':23200}
+          print('PASS_V6_LF_HOLDOUT_DEVELOPMENT_AND_LITERATURE_PREREQUISITES')
           PY
           git checkout --detach "$BASE_SHA"
           test ! -e orbittrace_v6_lf_gmn_2024_2025_holdout/RUN.md
