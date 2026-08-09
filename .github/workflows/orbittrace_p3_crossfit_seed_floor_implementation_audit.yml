@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Reconstruct exact canonical P2 and transform to P3
         run: |
           set -euo pipefail
@@ -33,7 +34,7 @@ jobs:
           python -m py_compile /tmp/p3.py
           sha256sum /tmp/p3.py
 
-      - name: Prove P3 source delta, strict truth firewall and unchanged gates
+      - name: Prove exact P3 science, truth ordering and unchanged promotion bars
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -53,22 +54,24 @@ jobs:
               'negative_tail = float(np.mean(pn >= seed_floor))',
               'seed_floor > P3_SEED_FLOOR_MIN',
               'negative_tail <= P3_NEGATIVE_TAIL_MAX',
-              'probabilities >= float(gate["seed_floor"])',
-              'denominator = 1.0 + sum(float(proposal["odds"]) for proposal in proposals)',
+              'allowed = probabilities >= float(gate["seed_floor"])',
+              'denom = 1.0 + float(sum(p["odds"] for p in proposals))',
               'RESPONSIBILITY_THRESHOLD = 0.5',
               'LOGISTIC_C = 1.0',
               'LOGISTIC_MAX_ITER = 1000',
               'LOGISTIC_TOL = 1e-10',
               'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
               'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
-              'crossfit_pretruth_sha256',
               'p3_crossfit_pretruth.json',
+              'positive_scores_float64_sha256',
+              'negative_scores_float64_sha256',
+              'p3_decisions_pretruth.json.gz',
+              'p3_membership_pretruth.sha256',
               'p3_parse_geometry_only',
               'p3_parse_truth_after_freeze',
               'hidden_labels = None',
-              'FIRST known-shower label-value access',
-              'len(crossfit_sha)==64 and len(model_sha)==64 and len(membership_sha)==64',
-              'p3_truth_physically_unavailable_until_membership_freeze',
+              'FIRST known-shower label-value access in P3',
+              'p3_label_values_unread_until_membership_freeze',
           ):
               assert token in p, token
           for token in (
@@ -84,28 +87,32 @@ jobs:
           assert 'valid_nonseed_by_year' not in p
           assert 'nonseed_events_by_year' in p
           assert 'frame.iloc[int(index)][columns["label"]]' in p
+          assert 'set(family_fold.values()) == set(range(P3_FOLD_COUNT))' in p
+          assert 'not (set(train_family_ids) & set(heldout_family_ids))' in p
+          assert 'p3_every_surviving_proposal_meets_seed_floor' in p
           geom_start=p.index('def p3_parse_geometry_only')
           truth_start=p.index('def p3_parse_truth_after_freeze')
           geom=p[geom_start:truth_start]
           assert 'frame.iloc' not in geom and 'normalize_label' not in geom
-          freeze=p.index('(args.output / "p2_membership_pretruth.sha256")')
-          truth=p.index('# FIRST known-shower label-value access')
-          assert freeze < truth
+          freeze_membership=p.index('(args.output / "p3_membership_pretruth.sha256")')
+          freeze_decisions=p.index('(args.output / "p3_decisions_pretruth.sha256")')
+          truth=p.index('# FIRST known-shower label-value access in P3')
+          assert freeze_membership < truth and freeze_decisions < truth
           assert "EXPECTED_P2_SHA256 = \"f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb\"" in patch
           assert 'five-fold held-out seed-floor reliability gate only' in patch
-          assert 'geometry-only before crossfit/model/membership freeze' in patch2
+          assert 'does not override any v1 scientific anchor' in patch2
           assert 'before the authoritative P2 development result is known' in protocol
           assert 'No P2 outcome, P2 per-label result' in protocol
           tree=ast.parse(p)
           names={n.id for n in ast.walk(tree) if isinstance(n,ast.Name)}
-          assert {'crossfit_payload','reliability','family_fold','truth_audits','geometry_audits'} <= names
+          assert {'crossfit_payload','reliability','family_fold','truth_audits','geometry_audits','decision_sha'} <= names
           print('PASS_P3_IMPLEMENTATION_SOURCE_AUDIT')
           PY
 
-      - name: Assert no-data/no-P2-outcome boundary
+      - name: Assert no-data/no-target boundary
         run: |
           set -euo pipefail
           test ! -e input
           test ! -e output
           test ! -e target
-          echo NO_P2_RESULT_NO_P3_SCIENCE_NO_TARGET_ACCESS
+          echo NO_P3_SCIENCE_NO_TARGET_ACCESS
