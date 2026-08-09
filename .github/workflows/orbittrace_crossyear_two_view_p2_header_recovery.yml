@@ -53,10 +53,10 @@ jobs:
           test "$p1_run" = '31288682378'
           test "$(printf '%s\n' "$content" | wc -l)" -eq 3
           test "$(gh run view "$source_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = failure
-          gh run view "$source_run" --repo "$GITHUB_REPOSITORY" --log-failed > /tmp/source-failed.log
-          grep -Fq 'RuntimeError: raw schema header not unique: 0' /tmp/source-failed.log
-          grep -Fq 'PASS_CANONICAL_P2_V2_EXACT_INPUT_IDENTITIES' /tmp/source-failed.log
-          grep -Fq 'PASS_CANONICAL_P2_EXACT_P1_NO_GO_PREREQUISITE' /tmp/source-failed.log
+          gh run view "$source_run" --repo "$GITHUB_REPOSITORY" --log > /tmp/source-complete.log
+          grep -Fq 'RuntimeError: raw schema header not unique: 0' /tmp/source-complete.log
+          grep -Fq 'PASS_CANONICAL_P2_V2_EXACT_INPUT_IDENTITIES' /tmp/source-complete.log
+          grep -Fq 'PASS_CANONICAL_P2_EXACT_P1_NO_GO_PREREQUISITE' /tmp/source-complete.log
 
           rm -rf /tmp/p2-failed-artifact && mkdir -p /tmp/p2-failed-artifact
           if gh run download "$source_run" --repo "$GITHUB_REPOSITORY" --name orbittrace-crossyear-two-view-membership-p2-v2-development --dir /tmp/p2-failed-artifact 2>/dev/null; then
