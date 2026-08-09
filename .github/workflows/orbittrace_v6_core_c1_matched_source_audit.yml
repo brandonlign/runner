@@ -37,7 +37,7 @@ jobs:
           test "$(git -C p1-transfer hash-object orbittrace_probabilistic_membership_p1_literature/prepare_strict_id_manifest.py)" = '918a67eb06e85132ee796278a7159aa7d0afdf44'
           test "$(git -C v6lit hash-object orbittrace_v6_literature_adapter/prepare_id_manifest.py)" = '6905d474f764be63584a8d499eb85e5509b0ebc1'
           test "$(git -C v6lit hash-object orbittrace_v6_literature_adapter/evaluate_frozen.py)" = '77c3be6f30e4a861d4dfb1bdb23568530e325e34'
-          PYTHONPATH="$PWD/p1-transfer:$PWD/v6lit:$PYTHONPATH" python -m py_compile \
+          PYTHONPATH="$PWD/p1-transfer:$PWD/v6lit:${PYTHONPATH:-}" python -m py_compile \
             orbittrace_v6_core_probabilistic_membership_c1/prepare_strict_matched_manifest.py \
             orbittrace_v6_core_probabilistic_membership_c1/combine_apply_c1_pretruth.py \
             orbittrace_v6_core_probabilistic_membership_c1/evaluate_matched.py
@@ -99,7 +99,7 @@ jobs:
       - name: Prove evaluator inherits exact v6 bars and post-freeze access order
         run: |
           set -euo pipefail
-          PYTHONPATH="$PWD/v6lit:$PYTHONPATH" python - <<'PY'
+          PYTHONPATH="$PWD/v6lit:${PYTHONPATH:-}" python - <<'PY'
           import ast,importlib.util,sys
           from pathlib import Path
           text=Path('orbittrace_v6_core_probabilistic_membership_c1/evaluate_matched.py').read_text(); tree=ast.parse(text)
