@@ -95,9 +95,13 @@ Stage A cannot execute until the promoted method has passed, without retuning, *
 2. a frozen exact-row pairwise matched literature comparison whose final classification is `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against the required Sugar/HDBSCAN panels;
 3. a separately frozen prospective or external generalization gate whose event-level scientific values were not used to tune the promoted method.
 
-For v6-LF specifically, item 3 is the preregistered GMN 2024/2025 temporal holdout and requires exact verdict `PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT`. `POWER_INCONCLUSIVE` and scientific FAIL do not authorize Stage A even if development and literature pass.
+For v6-LF specifically, item 3 is the pristine MAARSY 2018/2019 cross-survey validation frozen in PR #589 and requires exact verdict `PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_VALIDATION`. Either MAARSY power-inconclusive verdict or a scientific/integrity FAIL does not authorize Stage A even if development and literature pass.
+
+The earlier proposed GMN 2024/2025 prospective holdout is explicitly invalid as an authorization source. Repository history showed that target-excluded 2024/2025 scientific values, known-shower labels and F1 endpoints were already consumed in PR #453 / run `31235104333`. It may be cited only as historical transfer/development evidence, never as the independent generalization gate.
 
 For a later successor, its separately preregistered external/generalization gate may substitute for item 3 only if that gate was frozen before its result and the corresponding data remained scientifically unexposed to method tuning. A matched literature panel cannot silently double-count as the independent generalization gate unless that dual role was explicitly preregistered before either result.
+
+Because pristine external panels are scarce, the active method chain owns an external panel only after it passes its literature gate. If an earlier method fails before external activation, the unopened panel remains available to the next preregistered successor; an inactive predecessor need not consume it merely to satisfy routing paperwork.
 
 Any Stage-A execution wrapper must verify the exact prerequisite artifacts and method identity before the first target-region discovery row is accessed; marker text alone is insufficient authorization.
 
