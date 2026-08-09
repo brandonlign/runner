@@ -6,6 +6,7 @@ on:
       - agent/orbittrace-crossyear-two-view-membership-p2-freeze
     paths:
       - orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py
+      - orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py
       - .github/workflows/orbittrace_p3_crossfit_seed_floor_implementation_audit.yml
 
 permissions:
@@ -28,11 +29,11 @@ jobs:
           echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2_canonical_v2.py
           echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
-          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py /tmp/p2_canonical_v2.py /tmp/p3.py
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2_canonical_v2.py /tmp/p3.py
           python -m py_compile /tmp/p3.py
           sha256sum /tmp/p3.py
 
-      - name: Prove P3 source delta and preregistered semantics
+      - name: Prove P3 source delta, strict truth firewall and unchanged gates
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -40,6 +41,7 @@ jobs:
           from pathlib import Path
           p=Path('/tmp/p3.py').read_text()
           patch=Path('orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py').read_text()
+          patch2=Path('orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py').read_text()
           protocol=Path('orbittrace_crossfit_seed_floor_membership_p3/PROTOCOL.md').read_text()
           for token in (
               'P3_FOLD_COUNT = 5',
@@ -61,9 +63,14 @@ jobs:
               'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
               'crossfit_pretruth_sha256',
               'p3_crossfit_pretruth.json',
+              'p3_parse_geometry_only',
+              'p3_parse_truth_after_freeze',
+              'hidden_labels = None',
+              'FIRST known-shower label-value access',
+              'len(crossfit_sha)==64 and len(model_sha)==64 and len(membership_sha)==64',
+              'p3_truth_physically_unavailable_until_membership_freeze',
           ):
               assert token in p, token
-          # Same P2 substantive gates must remain literal in transformed source.
           for token in (
               'qualified_matches_no_regression',
               'recovery_at_100_no_regression',
@@ -73,15 +80,25 @@ jobs:
               'large_shower_mean_precision_at_least_085',
           ):
               assert token in p, token
+          assert 'support.parse_catalogue(base)' not in p
           assert 'valid_nonseed_by_year' not in p
           assert 'nonseed_events_by_year' in p
+          assert 'frame.iloc[int(index)][columns["label"]]' in p
+          geom_start=p.index('def p3_parse_geometry_only')
+          truth_start=p.index('def p3_parse_truth_after_freeze')
+          geom=p[geom_start:truth_start]
+          assert 'frame.iloc' not in geom and 'normalize_label' not in geom
+          freeze=p.index('(args.output / "p2_membership_pretruth.sha256")')
+          truth=p.index('# FIRST known-shower label-value access')
+          assert freeze < truth
           assert "EXPECTED_P2_SHA256 = \"f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb\"" in patch
           assert 'five-fold held-out seed-floor reliability gate only' in patch
+          assert 'geometry-only before crossfit/model/membership freeze' in patch2
           assert 'before the authoritative P2 development result is known' in protocol
           assert 'No P2 outcome, P2 per-label result' in protocol
           tree=ast.parse(p)
           names={n.id for n in ast.walk(tree) if isinstance(n,ast.Name)}
-          assert 'crossfit_payload' in names and 'reliability' in names and 'family_fold' in names
+          assert {'crossfit_payload','reliability','family_fold','truth_audits','geometry_audits'} <= names
           print('PASS_P3_IMPLEMENTATION_SOURCE_AUDIT')
           PY
 
