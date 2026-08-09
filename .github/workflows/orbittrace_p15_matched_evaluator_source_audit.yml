@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - name: Audit inherited gates, P15 prerequisites, truth-opening order, and authorization boundary
+      - name: Audit inherited gates, authoritative P15 checkpoint schema, truth-opening order, and authorization boundary
         run: |
           set -euo pipefail
           test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py)" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
@@ -44,10 +44,30 @@ jobs:
           assert all(base.count(x)==patched.count(x)>0 for x in gates)
           validator=Path('orbittrace_support_safe_halo_p15/validate_p15_matched_pretruth_checkpoint.py').read_text()
           final=Path('orbittrace_support_safe_halo_p15/finalize_p15_matched_result.py').read_text()
-          for x in ('23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6','P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY','p15_unavailable_direction_count','CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES','p15_matched_pretruth_frozen_before_truth','PASS_P15_BOTH_PRETRUTH_CHECKPOINTS_VALIDATED_BEFORE_TRUTH'):
-              assert x in validator,x
-          for x in ('PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT','PASS_P14_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS','FAIL_P14_MATCHED_SPARSE_SUPERIORITY_NO_GO','PASS_P15_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS','FAIL_P15_MATCHED_SPARSE_SUPERIORITY_NO_GO','sparse_superiority_required_against_both_comparators_in_both_years','broad_only_does_not_authorize_external',"out['target_access_authorized']=False"):
-              assert x in final,x
+          for x in (
+            '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6',
+            'P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY',
+            'p15_generated_matched_source_sha256',
+            'p15_unavailable_direction_count',
+            'CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES',
+            'p15_halo_availability_frozen_before_truth',
+            'PASS_P15_BOTH_PRETRUTH_CHECKPOINTS_VALIDATED_BEFORE_TRUTH',
+          ): assert x in validator,x
+          assert 'p15_halo_source_sha256' not in validator
+          assert 'p15_matched_pretruth_frozen_before_truth' not in validator
+          for x in (
+            'PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT',
+            'PASS_P14_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS',
+            'FAIL_P14_MATCHED_SPARSE_SUPERIORITY_NO_GO',
+            'PASS_P15_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS',
+            'FAIL_P15_MATCHED_SPARSE_SUPERIORITY_NO_GO',
+            'p15_generated_matched_source_sha256',
+            'p15_halo_availability_frozen_before_truth',
+            'sparse_superiority_required_against_both_comparators_in_both_years',
+            'broad_only_does_not_authorize_external',
+            "out['target_access_authorized']=False",
+          ): assert x in final,x
+          assert 'p15_halo_source_sha256' not in final
           for x in ('OrbitTrace-April','target_coordinate'):
               assert x not in patched+validator+final,x
 
