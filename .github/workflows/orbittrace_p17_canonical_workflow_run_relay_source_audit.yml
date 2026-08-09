@@ -1,0 +1,80 @@
+name: OrbitTrace P17 canonical-workflow relay source audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/orbittrace_p17_canonical_workflow_run_relay.yml
+      - .github/workflows/orbittrace_p17_canonical_workflow_run_relay_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove canonical completion relay is exact-current-head and base-workflow-only
+        run: |
+          set -euo pipefail
+          r=.github/workflows/orbittrace_p17_canonical_workflow_run_relay.yml
+          for x in \
+            'workflow_run:' \
+            'workflows: ["GhostStream canonical final package"]' \
+            'types: [completed]' \
+            "github.event.workflow_run.head_branch == 'agent/orbittrace-p17-matched-pretruth-run-v9-workflow-run'" \
+            'gh api "repos/$REPO/pulls/778"' \
+            "p['base']['sha']=='62fb6c2eda5a11ed06af5025c413269edb1fbb09'" \
+            "p['head']['repo']['full_name']=='brandonlign/runner'" \
+            "p['head']['sha']==trigger" \
+            'P17_CANONICAL_RELAY_RUN_ID=$GITHUB_RUN_ID' \
+            'TRIGGER_CANONICAL_RUN_ID=$TRIGGER_RUN_ID' \
+            'test "${#files[@]}" -eq 2' \
+            '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
+            'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
+            'EXECUTE_P17_MATCHED_PRETRUTH' \
+            '31332157812' '9043232586' \
+            'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" \
+            "Path('/tmp/p17_exact_base_run.sh').write_text(out)" \
+            '/tmp/p17_exact_base_run.sh' \
+            'orbittrace-p17-matched-pretruth-checkpoints-canonical-relay'; do
+            grep -F "$x" "$r"
+          done
+          python - <<'PY'
+          from pathlib import Path
+          t=Path('.github/workflows/orbittrace_p17_canonical_workflow_run_relay.yml').read_text()
+          assert '  workflow_run:\n    workflows: ["GhostStream canonical final package"]\n    types: [completed]' in t
+          assert "github.event.workflow_run.head_repository.full_name == github.repository" in t
+          assert "github.event.workflow_run.head_branch == 'agent/orbittrace-p17-matched-pretruth-run-v9-workflow-run'" in t
+          # Current PR metadata must independently match the triggering canonical run head.
+          for x in (
+            "p['number']==778 and p['state']=='open' and not p['draft']",
+            "p['base']['ref']=='agent/orbittrace-p15-support-safe-halo-freeze'",
+            "p['base']['sha']=='62fb6c2eda5a11ed06af5025c413269edb1fbb09'",
+            "p['head']['ref']=='agent/orbittrace-p17-matched-pretruth-run-v9-workflow-run'",
+            "p['head']['repo']['full_name']=='brandonlign/runner'",
+            "p['head']['sha']==trigger",
+          ): assert x in t,x
+          # Exact child diff/nonced workflow proof precedes BASE-workflow extraction.
+          assert 'test "${#files[@]}" -eq 2' in t
+          assert 'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' in t
+          assert 'git show "$BASE_SHA:$wf" > /tmp/p17_base_workflow.yml' in t
+          assert "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" in t
+          assert 'git checkout --detach "$HEAD_SHA"' not in t
+          # Sole write is run-ID telemetry on the exact PR.
+          assert t.count('gh pr comment 778')==1
+          forbidden=(
+            'MIN_DIRECTION_NEGATIVES','P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE',
+            'SPARSE_STREAM_SUPERIORITY','macro_f1_delta','MAARSY',
+          )
+          for x in forbidden: assert x not in t,x
+          for x in ('evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
+              assert t.count(x)==1,(x,t.count(x))
+          print('PASS_P17_CANONICAL_WORKFLOW_RUN_RELAY_SOURCE_AUDIT')
+          PY
+          echo KNOWN_CANONICAL_ACTION_COMPLETION_TRIGGERS_EXACT_CURRENT_HEAD_ONLY
+          echo RELAY_EXECUTES_AUTHENTICATED_FROZEN_BASE_RUN_BLOCK_NOT_PR_SCIENCE
+          echo NO_MATCHED_RESULT_NO_EXTERNAL_NO_TARGET_ACCESS
