@@ -33,6 +33,29 @@ def load(path:Path,name:str)->Any:
     m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
+def compatible_exact_header_positions(text:str)->tuple[list[str],dict[str,int]]:
+    candidates:list[list[str]]=[]
+    for raw_line in text.splitlines():
+        line=raw_line.lstrip('\ufeff \t')
+        if not line.startswith('#'):
+            continue
+        body=line[1:].strip()
+        fields=[field.strip() for field in body.split(';')]
+        if fields and fields[0]=='Unique trajectory':
+            candidates.append(fields)
+    require(len(candidates)==1,f'raw schema header not unique after whitespace normalization: {len(candidates)}')
+    fields=candidates[0]
+    def exact(name:str)->int:
+        hits=[idx for idx,field in enumerate(fields) if field==name]
+        require(len(hits)==1,f'raw schema field {name!r} not unique: {hits}')
+        return hits[0]
+    positions={'id':exact('Unique trajectory'),'sol':exact('Sol lon'),'q':exact('q'),'e':exact('e'),'i':exact('i'),'peri':exact('peri'),'node':exact('node')}
+    require(len(set(positions.values()))==len(positions),f'raw schema positions overlap: {positions}')
+    q_upper=[idx for idx,field in enumerate(fields) if field=='Q']
+    require(len(q_upper)==1 and q_upper[0]!=positions['q'],'q/Q schema identity changed')
+    return fields,positions
+
+
 def arrays(ids:list[str],orbit_by_id:dict[str,dict[str,float]])->dict[str,np.ndarray]:
     return {
         'q':np.asarray([orbit_by_id[x]['q'] for x in ids],dtype=np.float64),
@@ -63,6 +86,8 @@ def main()->int:
     require(sha256_file(a.p2_source)==EXPECTED_P2_SHA256,'canonical P2 source changed')
     require(sha256_file(a.dsh_comparator)==EXPECTED_DSH_SHA256,'frozen D_SH source changed')
     p2=load(a.p2_source,'rect_audit_p2')
+    # Identical implementation-only raw-header compatibility used by authoritative P6-P8.
+    p2.exact_header_positions=compatible_exact_header_positions
     dsh=load(a.dsh_comparator,'rect_audit_dsh')
     old=load(a.base_runner,'rect_audit_base')
     support=old.load_support_module(a.support_source_parts)
@@ -79,7 +104,6 @@ def main()->int:
     require(all(len(ids_by_year[y])>=128 for y in YEARS),'insufficient target-excluded audit orbit universe')
     panels=[]
     sizes=((1,1),(2,3),(5,4),(10,7),(25,11),(64,16),(64,64),(127,31))
-    # Identity-hash ordering makes panels deterministic without labels or geometry-adaptive selection.
     def hashed(ids:list[str],salt:str)->list[str]:
         return sorted(ids,key=lambda x:hashlib.sha256((salt+'|'+x).encode()).digest())
     panel_index=0
@@ -89,9 +113,9 @@ def main()->int:
             right_pool=hashed(ids_by_year[ry],f'R{ly}-{ry}-{rep}')
             for nl,nr in sizes:
                 left_ids=left_pool[:nl]; right_ids=right_pool[:nr]
-                # Within-year panels must still be disjoint so the reference cross-slice has no shared diagonal element.
                 if ly==ry:
-                    right_ids=[x for x in right_pool if x not in set(left_ids)][:nr]
+                    left_set=set(left_ids)
+                    right_ids=[x for x in right_pool if x not in left_set][:nr]
                 require(len(left_ids)==nl and len(right_ids)==nr,'deterministic panel construction failed')
                 left=arrays(left_ids,orbit_by_id); right=arrays(right_ids,orbit_by_id)
                 expected=exact_cross(dsh,left,right); observed=rectangular_pairwise_dsh(left,right)
@@ -118,6 +142,7 @@ def main()->int:
         'known_shower_label_values_used':False,
         'target_region_orbits_used':False,
         'scientific_parameter_changed':False,
+        'header_whitespace_compatibility_same_as_authoritative_p6_p8':True,
     }
     require(result['panels_tested']==160,'audit panel count changed')
     require(result['all_bitwise_equal'] and result['maximum_absolute_difference']==0.0,'rectangular equivalence failed')
