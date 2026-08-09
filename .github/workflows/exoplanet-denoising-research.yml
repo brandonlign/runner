@@ -1,0 +1,142 @@
+name: Isolated exoplanet denoising research
+
+on:
+  push:
+    branches:
+      - agent/exoplanet-denoising-research-runner
+    paths:
+      - experiments/exoplanet-denoising/**
+      - .github/workflows/exoplanet-denoising-research.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exoplanet-denoising-isolated-research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    if: github.ref == 'refs/heads/agent/exoplanet-denoising-research-runner'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SOURCE_REPO: brandonlign/exoplanet-transit-denoising
+      SOURCE_REF: agent/research-upgrade-wavelength-preserving
+      SOURCE_TOKEN: ${{ secrets.EXOPLANET_REPO_TOKEN || secrets.GH_PAT || secrets.GH_TOKEN || secrets.PAT || secrets.REPO_TOKEN }}
+    steps:
+      - name: Checkout isolated runner branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/exoplanet-denoising-research-runner
+          persist-credentials: false
+
+      - name: Check private-source credential
+        id: auth
+        shell: bash
+        run: |
+          if [ -n "$SOURCE_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Cross-repository credential found; private research execution enabled."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No compatible cross-repository token secret is configured; execution is safely skipped."
+          fi
+
+      - name: Checkout private research branch
+        if: steps.auth.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/exoplanet-transit-denoising
+          ref: agent/research-upgrade-wavelength-preserving
+          token: ${{ env.SOURCE_TOKEN }}
+          path: project
+          fetch-depth: 0
+
+      - name: Set up Python
+        if: steps.auth.outputs.available == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: project/pyproject.toml
+
+      - name: Install private project
+        if: steps.auth.outputs.available == 'true'
+        working-directory: project
+        run: python -m pip install --disable-pip-version-check -e .
+
+      - name: Static compile check
+        if: steps.auth.outputs.available == 'true'
+        working-directory: project
+        run: python -m compileall -q src scripts
+
+      - name: Run frozen fair same-input baseline gate
+        if: steps.auth.outputs.available == 'true'
+        id: fair
+        working-directory: project
+        shell: bash
+        run: |
+          mkdir -p research_results
+          set +e
+          python scripts/run_fair_same_input_baselines.py > research_results/fair_same_input_baselines.log 2>&1
+          status=$?
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "Fair same-input gate finished with status $status; details remain in the private repository."
+
+      - name: Save fair-gate result privately
+        if: steps.auth.outputs.available == 'true' && always()
+        working-directory: project
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- research_results/fair_same_input_baselines.log
+          if [ -f research_results/fair_same_input_baselines.json ]; then
+            git add -- research_results/fair_same_input_baselines.json
+          fi
+          if ! git diff --cached --quiet; then
+            git commit -m 'Record frozen fair same-input baseline gate'
+            git pull --rebase origin "$SOURCE_REF"
+            git push origin "HEAD:$SOURCE_REF"
+          fi
+
+      - name: Stop if fair gate failed
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status != '0'
+        run: exit 1
+
+      - name: Run frozen cross-fitted Hybrid gate
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0'
+        id: crossfit
+        working-directory: project
+        shell: bash
+        run: |
+          mkdir -p research_results
+          set +e
+          python scripts/run_crossfit_hybrid_experiment.py --device cpu > research_results/crossfit_hybrid.log 2>&1
+          status=$?
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "Cross-fitted Hybrid gate finished with status $status; details remain in the private repository."
+
+      - name: Save cross-fit result privately
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && always()
+        working-directory: project
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- research_results/crossfit_hybrid.log
+          if [ -f research_results/crossfit_hybrid.json ]; then
+            git add -- research_results/crossfit_hybrid.json
+          fi
+          if ! git diff --cached --quiet; then
+            git commit -m 'Record frozen cross-fitted Hybrid gate'
+            git pull --rebase origin "$SOURCE_REF"
+            git push origin "HEAD:$SOURCE_REF"
+          fi
+
+      - name: Stop if cross-fit gate failed
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.crossfit.outputs.status != '0'
+        run: exit 1
