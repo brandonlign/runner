@@ -15,20 +15,21 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Prove relay only authenticates child and executes exact base run block
+      - name: Prove relay only authenticates exact child and executes exact base run block
         run: |
           set -euo pipefail
           r=.github/workflows/orbittrace_p17_methodology_branch_relay.yml
           for x in \
             'pull_request_target:' \
             'agent/orbittrace-p15-support-safe-halo-freeze' \
-            'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md' \
             'github.event.pull_request.head.repo.full_name == github.repository' \
             'issues: write' \
             'Publish relay run identity' \
             'P17_RELAY_RUN_ID=$GITHUB_RUN_ID' \
             'EVENT=pull_request_target' \
             'test "${#files[@]}" -eq 2' \
+            "test \"${files[0]}\" = \"$wf\"" \
+            "test \"${files[1]}\" = \"$marker_path\"" \
             '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
             'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
             'EXECUTE_P17_MATCHED_PRETRUTH' \
@@ -49,7 +50,9 @@ jobs:
           assert '  pull_request_target:\n' in t
           assert '  pull_request:\n' not in t
           assert 'branches:\n      - agent/orbittrace-p15-support-safe-halo-freeze' in t
-          assert 'paths:\n      - orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md' in t
+          # No event-level paths filter: exact two-file identity is enforced inside the job.
+          event=t.split('permissions:',1)[0]
+          assert 'paths:' not in event
           forbidden=(
             'MIN_DIRECTION_NEGATIVES','P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE',
             'SPARSE_STREAM_SUPERIORITY','macro_f1_delta','MAARSY',
@@ -57,22 +60,21 @@ jobs:
           for x in forbidden: assert x not in t,x
           for x in ('evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
               assert t.count(x)==1,(x,t.count(x))
+          assert 'marker_path=orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md' in t
           assert 'git show "$BASE_SHA:$wf" > /tmp/p17_base_workflow.yml' in t
           assert "src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()" in t
           assert 'git show "$HEAD_SHA:$wf" > /tmp/p17_child_workflow.yml' in t
           assert 'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' in t
           assert "if: github.event.pull_request.head.repo.full_name == github.repository" in t
           assert 'contents: read' in t and 'actions: read' in t and 'pull-requests: read' in t and 'issues: write' in t
-          # The sole write-capable operation is telemetry to the same authenticated PR.
           assert t.count('gh pr comment ')==1
           assert 'P17_RELAY_RUN_ID=$GITHUB_RUN_ID BASE_SHA=$BASE_SHA HEAD_SHA=$HEAD_SHA EVENT=pull_request_target' in t
           telemetry=t.index('      - name: Publish relay run identity')
           science=t.index('      - name: Verify child and execute exact frozen base workflow run block')
           assert telemetry < science
-          # pull_request_target is safe here because PR-supplied workflow/science is never
-          # executed: child workflow is only compared to BASE and science is extracted from BASE.
-          print('PASS_P17_PULL_REQUEST_TARGET_RELAY_WITH_RUNID_TELEMETRY_SOURCE_AUDIT')
+          print('PASS_P17_PULL_REQUEST_TARGET_RELAY_NO_PATH_FILTER_EXACT_DIFF_SOURCE_AUDIT')
           PY
+          echo EVENT_FILTER_REMOVED_EXACT_TWO_FILE_JOB_GUARD_REMAINS
           echo RELAY_EXECUTES_AUTHENTICATED_FROZEN_BASE_RUN_BLOCK_NOT_PR_SCIENCE
           echo ONLY_WRITE_IS_RUN_ID_TELEMETRY_COMMENT
           echo NO_MATCHED_RESULT_NO_EXTERNAL_NO_TARGET_ACCESS
