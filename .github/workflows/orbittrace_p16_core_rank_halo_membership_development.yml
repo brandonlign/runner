@@ -1,0 +1,105 @@
+name: OrbitTrace P16 core-rank halo-membership canonical development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_core_rank_halo_membership_p16/**
+      - .github/workflows/orbittrace_p16_core_rank_halo_membership_development.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+
+      - name: Audit P16 transformation source before development artifacts
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py orbittrace_core_rank_halo_membership_p16/adjudicate_canonical_development.py
+          proto=orbittrace_core_rank_halo_membership_p16/P16_PROTOCOL.md
+          adapter=orbittrace_core_rank_halo_membership_p16/promote_halo_membership_checkpoint.py
+          for x in \
+            'P16 core-rank / halo-membership catalogue freeze' \
+            '4–9-member mean F1 >= comparator +0.10' \
+            'combined 4–24-member mean F1 >= comparator +0.10' \
+            'overall macro F1 no more than 0.10 below comparator' \
+            'retain >=80% of comparator count of showers with F1>0.5' \
+            'halo membership cannot create a family' \
+            'exact frozen P15/P12 label-free halo'; do
+            grep -F "$x" "$proto"
+          done
+          for x in \
+            "P16_RULE='P16_CORE_RANK_LABEL_FREE_HALO_MEMBERSHIP'" \
+            "stored==set(added)" \
+            "cp['p3_expanded_families']=evaluator" \
+            "cp['p16_core_order_unchanged']=True" \
+            "cp['p16_no_new_detector_score_threshold_or_proposal']=True" \
+            "cp['p16_membership_frozen_before_truth']=True"; do
+            grep -F "$x" "$adapter"
+          done
+          if grep -Eq '8955917326|9012424187|8957940764|8957263372|9041833656|evaluate_frozen_blindsafe|MAARSY|OrbitTrace-April|target_coordinate' orbittrace_core_rank_halo_membership_p16/*.py; then
+            echo 'matched/external/target surface leaked into P16 development source' >&2
+            exit 1
+          fi
+          echo PASS_P16_SOURCE_FREEZE_BEFORE_MATCHED_TRUTH
+
+      - name: Fetch exact canonical target-excluded P12/P13 development artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p16/{p12,p13} output
+          for pair in \
+            '9035003746:4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7:p12' \
+            '9035081147:efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a:p13'; do
+            IFS=: read -r aid digest tag <<< "$pair"
+            curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$REPO/actions/artifacts/$aid" -o "/tmp/p16/$tag-meta.json"
+            curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$REPO/actions/artifacts/$aid/zip" -o "/tmp/p16/$tag.zip"
+            echo "$digest  /tmp/p16/$tag.zip" | sha256sum -c -
+            unzip -q "/tmp/p16/$tag.zip" -d "/tmp/p16/$tag"
+          done
+          python - <<'PY'
+          import json
+          checks=(
+            ('p12',9035003746,'orbittrace-drift-conditioned-two-view-membership-p12-development',31302353678,'sha256:4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7'),
+            ('p13',9035081147,'orbittrace-dual-output-core-halo-p13-development',31303078223,'sha256:efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a'),
+          )
+          for tag,aid,name,run,digest in checks:
+              m=json.load(open(f'/tmp/p16/{tag}-meta.json'))
+              assert m['id']==aid and m['name']==name and m['workflow_run']['id']==run
+              assert m['digest']==digest and not m['expired']
+          print('PASS_P16_CANONICAL_ARTIFACT_METADATA')
+          PY
+
+      - name: Adjudicate exact P16 development output architecture
+        run: |
+          set -euo pipefail
+          python orbittrace_core_rank_halo_membership_p16/adjudicate_canonical_development.py \
+            --p12-result /tmp/p16/p12/drift_conditioned_two_view_membership_p12_development.json \
+            --p12-expanded /tmp/p16/p12/p12_expanded_families.json.gz \
+            --p13-result /tmp/p16/p13/dual_output_core_halo_p13_development.json \
+            --p13-core /tmp/p16/p13/p13_core_pretruth.json \
+            --output output/p16_core_rank_halo_membership_canonical_development.json
+          grep -F '"verdict": "PASS_P16_CORE_RANK_HALO_MEMBERSHIP_CANONICAL_DEVELOPMENT_IDENTITY"' output/p16_core_rank_halo_membership_canonical_development.json
+          grep -F '"already_frozen_halo_additions": 17238' output/p16_core_rank_halo_membership_canonical_development.json
+          grep -F '"family_count": 226' output/p16_core_rank_halo_membership_canonical_development.json
+          grep -F '"new_detector_score_threshold_or_member_proposal": false' output/p16_core_rank_halo_membership_canonical_development.json
+          echo PASS_P16_CANONICAL_DEVELOPMENT_IDENTITY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p16-core-rank-halo-membership-canonical-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
