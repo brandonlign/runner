@@ -1,0 +1,57 @@
+name: OrbitTrace P13 MAARSY 2020-2021 transport source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-literature-freeze
+    paths:
+      - orbittrace_core_halo_p13_external/apply_maarsy_2020_2021_transport_patch.py
+      - .github/workflows/orbittrace_p13_maarsy_transport_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Reconstruct source-only 2020-2021 transport
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin ad9fe059ad37a198bd7a82cd3005a3dd1929d362
+          git show FETCH_HEAD:orbittrace_probabilistic_membership_p1/maarsy_2018_2019_transport.py > /tmp/p1_maarsy_transport.py
+          test "$(git hash-object /tmp/p1_maarsy_transport.py)" = 'f563ca63e169e6ddfe846219d8f00384f3451797'
+          python orbittrace_core_halo_p13_external/apply_maarsy_2020_2021_transport_patch.py /tmp/p1_maarsy_transport.py /tmp/p13_maarsy_2020_2021_transport.py
+          python -m py_compile /tmp/p13_maarsy_2020_2021_transport.py orbittrace_core_halo_p13_external/apply_maarsy_2020_2021_transport_patch.py
+          echo "P13_MAARSY_TRANSPORT_SOURCE_SHA256=$(sha256sum /tmp/p13_maarsy_2020_2021_transport.py | awk '{print $1}')"
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/p13_maarsy_2020_2021_transport.py').read_text()
+          required=(
+            'YEARS=(2020,2021)',
+            'MONTH_RE=re.compile(r"^data/(2020|2021)/(0[1-9]|1[0-2])/kep_collect\\.h5$")',
+            'STOP_PREFIX="data/2022/"',
+            'MAX_EVENTS_PER_BIN=10_000',
+            'BLIND_LOW=20.0','BLIND_HIGH=55.0',
+            'REQUIRED_GEOMETRY=("sun_lon","slat","slon","vels")',
+            'EXPECTED_FILE_SIZE=21_485_785_089',
+            'EXPECTED_FILE_MD5="01820c6a90ea1415b011bb013a4d9213"',
+            'valid_sol&~blind',
+            'identity_hash(eid)',
+            '"peri":arg%360.0',
+            'kepler_std_opened":False',
+            'target_interval_radiant_speed_read":False',
+            'target_information_access":False')
+          for x in required: assert x in p,x
+          for x in ('YEARS=(2018,2019)','data/(2018|2019)','STOP_PREFIX="data/2020/"','OrbitTrace-April','target_coordinate'):
+              assert x not in p,x
+          print('PASS_P13_MAARSY_TRANSPORT_SOURCE_AUDIT_NO_DATA_ACCESS')
+          PY
+      - name: Assert dormant external firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_core_halo_p13_external/RUN_MAARSY_2020_2021.md
+          echo NO_MAARSY_EVENT_DOWNLOAD_NO_LABEL_ACCESS_NO_TARGET_ACCESS
