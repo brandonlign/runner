@@ -11,6 +11,8 @@ P15_GEN=HERE/'orbittrace_support_safe_halo_p15'/'generate_matched_pretruth_p15_v
 P15_SHA='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'
 P17_SHA='c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a'
 P17_SCOPE='P17_SCOPE=represent P15-unavailable reciprocal explicitly; missing reciprocal reliability is fail-closed false; no P12 threshold/model/geometry/rank/proposal change'
+P13_PARENT_TRANSPORT_SHA='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'
+P14_AUDITED_TRANSPORT_SHA='55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415'
 
 
 def main()->int:
@@ -48,13 +50,27 @@ def main()->int:
     lines[j]=insertion
     text=''.join(lines)
 
-    # Reversibility proof: replacing only the exact P17 insertion and renamed
-    # P15 runtime output must recover the generated P15-v2 shell byte-for-byte.
-    restored=text
+    # The inherited P13 hard barrier predates the separately audited P14 SNM-ID
+    # transport repair. Replace only that obsolete provenance equality. Scientific
+    # compatibility is stricter than accepting either SHA: require the repaired
+    # source, the exact original parent, and the frozen scientific_delta=False flag.
+    old_barrier=f"    assert c['p13_transport_source_sha256']=='{P13_PARENT_TRANSPORT_SHA}'\n"
+    new_barrier=(
+        f"    assert c['p13_transport_source_sha256']=='{P14_AUDITED_TRANSPORT_SHA}'\n"
+        f"    assert c['p13_transport_parent_source_sha256']=='{P13_PARENT_TRANSPORT_SHA}'\n"
+        "    assert c['p14_p12_snm_id_transport_scientific_delta'] is False\n"
+    )
+    if text.count(old_barrier)!=1:
+        raise RuntimeError(f'P17 inherited transport barrier anchor count={text.count(old_barrier)}')
+    text=text.replace(old_barrier,new_barrier,1)
+
+    # Reversibility proof: undoing only the exact provenance repair, exact P17
+    # insertion, and renamed P15 runtime output must recover P15-v2 byte-for-byte.
+    restored=text.replace(new_barrier,old_barrier,1)
     new_run=m.group('prefix')+src+' /tmp/p12_panel_p15.py\n'
     restored=restored.replace(new_run,old_run,1).replace(insertion,original.splitlines(keepends=True)[j],1)
     if restored!=original:
-        raise RuntimeError('P17 generated shell changed outside exact P15->P17 source insertion')
+        raise RuntimeError('P17 generated shell changed outside exact source insertion and technical transport-barrier repair')
 
     required=(
         'PASS_P15_OUTER_ONE_FILE_ACTIVATION_ALREADY_VERIFIED',
@@ -63,6 +79,8 @@ def main()->int:
         'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES',
         'p15_halo_availability_frozen_before_truth',
         P17_SHA,
+        P14_AUDITED_TRANSPORT_SHA,
+        "p14_p12_snm_id_transport_scientific_delta'] is False",
         'exit 0',
     )
     for token in required:
@@ -72,7 +90,7 @@ def main()->int:
         if token in text:
             raise RuntimeError(f'P17 forbidden posttruth/target token survived: {token}')
     output.write_text(text)
-    print('PASS_P17_PRETRUTH_SHELL_GENERATED_FROM_EXACT_P15_V2')
+    print('PASS_P17_PRETRUTH_SHELL_GENERATED_FROM_EXACT_P15_V2_WITH_AUDITED_TRANSPORT_BARRIER')
     return 0
 
 
