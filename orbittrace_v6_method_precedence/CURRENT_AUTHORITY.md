@@ -1,52 +1,64 @@
-# OrbitTrace current method authority
+# Current OrbitTrace v6-family authority
 
-This file is a routing ledger, not a scientific result. It records only outcomes and activation rules that were already fixed under their own frozen protocols. It contains no OrbitTrace target information.
+This file records completed results and current routing under the pre-result precedence protocol in `PROTOCOL.md`. It does not change detector science or selection thresholds.
 
-## Resolved branch: ordinary repaired v6
+## Ordinary repaired v6 — permanently rejected
 
-Canonical ordinary-v6 authority is strict semantic-replay run `31285583731`.
+Canonical strict semantic-replay development run: `31285583731`.
 
-Result: `FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT`.
+Exact verdict: `FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT`.
 
-Authoritative endpoints:
+Canonical endpoints from the run artifact/log:
 
-- primary recurrent families: 29;
-- qualified known-shower matches: 77;
-- recovery@100: 43;
-- MRR: 0.043081491921251325;
-- top-100 dominant-label precision: 1.0;
-- macro F1: 0.42415938362284855.
+- primary v3 families: **12**;
+- fixed4 rescue-only families: **25**;
+- qualified known-shower matches: **5**;
+- recovery@100: **5**;
+- recovery@500: **5**;
+- MRR: **0.3931818181818182**;
+- median rank: **4.0**;
+- macro F1 over the five qualified matches: **0.7380195031780808**;
+- top-100 dominant precision: **0.469098846991149**;
+- rescue-only additional qualified labels: **13**.
 
-The frozen >=50-family, >=95-qualified, >=58 recovery@100, MRR>=promoted-v8, and v3-only recovery>=46 gates failed. Integrity, target exclusion, exact source identity, proposal-budget, and strict semantic-replay checks passed. This is therefore a scientific development no-go, not an infrastructure no-result.
+Integrity/development-interface gates passed, but all four substantive scientific gates failed:
 
-Ordinary-v6 matched literature, external validation, ordinary-v6 C1, and ordinary-v6 target deployment are permanently dormant.
+- `at_least_50_v3_families = false`;
+- `top100_recovery_at_least_80pct_fixed4 = false`;
+- `top100_precision_at_least_050 = false`;
+- `qualified_matches_at_least_60pct_fixed4 = false`.
 
-## Live primary branch: v6-LF all-event null
+This supersedes the earlier stale authority summary that incorrectly listed 29 primary families and 77 recovery@100. The canonical artifact/log from run `31285583731` is authoritative.
 
-The only live v6-family development architecture is the frozen fully label-free all-event-null method. It calibrates on every geometrically valid target-excluded event and does not use shower-label values before pretruth family/rank freeze.
+Ordinary v6 also uses the native catalogue `SPORADIC` designation to select its calibration reservoir, so even a hypothetical performance recovery would not give it the same information-parity claim as v6-LF. No further ordinary-v6 tuning, matched literature, external validation, ordinary-v6 C1, or target deployment is authorized.
 
-A v6-LF technical failure is never a scientific no-go. The pre-frozen strict semantic replay recovery may be used only after a technical no-result with the immutable preexact/exact artifacts complete.
+## v6-LF — live precedence branch
 
-### If v6-LF passes development
+v6-LF changes exactly one preregistered scientific assumption relative to repaired v6: calibration uses **every geometrically valid target-excluded scan event**, with no shower-label selection, trimming, density masking, or parameter search. All repaired-v6 scores, proposal budgets, exact rescoring, components, recurrence, ranking and gates remain frozen.
 
-v6-LF remains primary regardless of any ordinary-v6 metric.
+Original v6-LF run `31285478837` completed both preexact captures and all 12 exact-rescore shards. Its 2022 replay then hit a technical serialization-equality mismatch before any final scientific evaluation. That run is therefore a technical no-result, not a scientific failure.
 
-Required succession:
+Strict semantic-equivalence recovery run `31287635860` reuses those immutable exact artifacts. Both 2022 and 2023 replay jobs have passed; the combined family-freeze/truth/evaluation job is the remaining stage. The semantic fallback preserves exact structure, IDs and order and permits floating differences only within the preregistered 1e-12 tolerance.
 
-1. bounded real matched-literature fanout equivalence;
-2. exact pairwise HDBSCAN/Sugar matched-literature adjudication under unchanged broad/sparse superiority bars;
-3. if `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY`, prospective GMN 2024/2025 holdout without retuning;
-4. only after holdout PASS, target-uninformed full-region Stage A;
-5. Stage B/reveal remains separate and may use target reference only after the complete Stage-A ranking is immutable.
+Until run `31287635860` produces a final artifact, v6-LF has **no scientific PASS/FAIL verdict**.
 
-If v6-LF instead returns `NO_LITERATURE_SUPERIORITY`, ordinary v6 may not rescue the result. Succession is the pre-frozen v6-LF-core conservative membership architecture C1-LF.
+## Binding downstream routing
 
-### If v6-LF fails development scientifically
+- v6-LF development PASS -> bounded matched-literature equivalence audit, then frozen pairwise Sugar/HDBSCAN comparison.
+- v6-LF development PASS + matched `NO_LITERATURE_SUPERIORITY` -> C1-LF.
+- v6-LF genuine scientific development FAIL -> P1.
+- Technical/integrity failure -> equivalence-preserving repair only; it may not activate P1, C1-LF, or P2.
 
-Because ordinary v6 already has a canonical scientific development no-go, exact promoted-v8-core P1 becomes the next architecture. P1 activation still requires the exact v6-LF scientific no-go artifact; a timeout, cancellation, import failure, missing artifact, or other technical failure cannot activate it.
+If v6-LF establishes broad or sparse matched-literature superiority, it must next pass a genuinely independent cross-survey generalization gate before any target-containing Stage A.
 
-P2 remains downstream only after an exact frozen P1 scientific no-go.
+## Independent generalization correction
+
+The previously proposed target-excluded GMN 2024/2025 prospective holdout is invalid for this purpose. Repository history shows PR #453 / run `31235104333` already consumed GMN 2024/2025 scientific values, known-shower labels and F1 endpoints. No later workflow may relabel that panel as pristine external evidence.
+
+The replacement v6-LF external gate is frozen prospectively in PR #589 on scientifically event-value-unexposed **MAARSY 2018/2019**. It is dormant unless v6-LF first passes development and matched literature. Both complete v6-LF and promoted-v8 family universes/ranks must freeze before native orbit access, and exact `PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_VALIDATION` is required before final target-region Stage A.
+
+If v6-LF fails before external activation, MAARSY 2018/2019 remains unopened for the next legitimately active preregistered successor.
 
 ## Target firewall
 
-No branch above currently authorizes OrbitTrace target access. Solar longitude 20°–55° and all target coordinates, identities, canonical members, historical target ranks, and target-containing outputs remain unavailable to method selection/development/literature/holdout work.
+No branch currently authorizes OrbitTrace target access. Solar longitude 20°–55° and all target coordinates, identities, canonical members, historical target ranks, target-containing Stage-A outputs, and Stage-B reveal data remain unavailable to method selection, development, literature and external-validation work.
