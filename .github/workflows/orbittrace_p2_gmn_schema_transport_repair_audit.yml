@@ -1,0 +1,96 @@
+name: OrbitTrace P2 GMN schema transport repair audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/apply_gmn_schema_transport_repair.py
+      - .github/workflows/orbittrace_p2_gmn_schema_transport_repair_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reconstruct exact canonical P2 then apply transport-only repair
+        run: |
+          set -euo pipefail
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_v2.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_gmn_schema_transport_repair.py \
+            /tmp/p2_v2.py /tmp/p2_schema_repaired.py
+          python -m py_compile /tmp/p2_schema_repaired.py
+          sha256sum /tmp/p2_schema_repaired.py
+
+      - name: Verify exact pinned gmn-python-api 0.0.13 schema metadata fallback
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'gmn-python-api==0.0.13'
+          python - <<'PY'
+          import ast
+          import importlib.metadata
+          from pathlib import Path
+          from gmn_python_api import meteor_trajectory_schema as schema
+
+          assert importlib.metadata.version('gmn-python-api') == '0.0.13'
+          model = schema._MODEL_METEOR_TRAJECTORY_FILE_ONE_ROW_PATH.read_text()
+          headers = [line for line in model.splitlines() if line.startswith('#  Unique trajectory;')]
+          assert len(headers) == 1
+          fixture_fields = [x.strip() for x in headers[0][1:].split(';')]
+          expected = {'id':0,'sol':5,'e':25,'i':27,'peri':29,'node':31,'q':37}
+          names = {'id':'Unique trajectory','sol':'Sol lon','e':'e','i':'i','peri':'peri','node':'node','q':'q'}
+          for key,name in names.items():
+              hits=[i for i,x in enumerate(fixture_fields) if x==name]
+              assert hits == [expected[key]], (key,hits)
+          assert [i for i,x in enumerate(fixture_fields) if x=='Q'] == [43]
+
+          source=Path('/tmp/p2_schema_repaired.py').read_text()
+          tree=ast.parse(source)
+          funcs=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='exact_header_positions']
+          assert len(funcs)==1
+          mod=ast.Module(body=funcs,type_ignores=[])
+          def require(ok,msg):
+              if not ok: raise RuntimeError(msg)
+          ns={'require':require}
+          exec(compile(mod,'<schema-test>','exec'),ns)
+          fn=ns['exact_header_positions']
+          fields,pos=fn('20220101_example;1;2;3;4;123.0;...')
+          assert pos == expected, pos
+          assert fields == fixture_fields
+          fields2,pos2=fn(headers[0]+'\n20220101_example;1;2;3;4;123.0;...')
+          assert pos2 == expected and fields2 == fixture_fields
+          print('PASS_P2_GMN_SCHEMA_METADATA_FALLBACK_EQUIVALENCE')
+          PY
+
+      - name: Prove repair scope and no-data boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_crossyear_two_view_membership_p2/apply_gmn_schema_transport_repair.py').read_text()
+          assert 'EXPECTED_INPUT_SHA256 = "f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb"' in p
+          assert '_MODEL_METEOR_TRAJECTORY_FILE_ONE_ROW_PATH' in p
+          assert 'do not infer' in p
+          assert 'exact("q")' in p and 'field == "Q"' in p
+          assert 'LogisticRegression' not in p
+          assert 'responsibility' not in p
+          assert 'WINDOW_HALF_WIDTH_DEG' not in p
+          print('PASS_P2_GMN_SCHEMA_REPAIR_SCOPE')
+          PY
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_GMN_SCIENTIFIC_DATA_NO_TRUTH_NO_TARGET_ACCESS
