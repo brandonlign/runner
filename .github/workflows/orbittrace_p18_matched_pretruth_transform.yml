@@ -64,9 +64,9 @@ jobs:
           run,aid,digest=sys.argv[1:]
           r=json.load(open('/tmp/p17-run.json')); a=json.load(open('/tmp/p17-meta.json'))
           assert r['id']==int(run) and r['status']=='completed' and r['conclusion']=='success',r
-          assert r['name']=='OrbitTrace P17 fixed main pretruth relay',r
-          assert r['event'] in {'push','schedule'},r
-          assert r['head_branch']=='main',r
+          assert r['name']=='OrbitTrace P17 main-base activation relay',r
+          assert r['event']=='pull_request',r
+          assert r['head_branch']=='agent/orbittrace-p17-main-activation-run-v1',r
           assert a['id']==int(aid) and a['name']=='orbittrace-p17-matched-pretruth-checkpoints-main-relay',a
           assert a['digest']==digest and not a['expired'],a
           assert a['workflow_run']['id']==int(run),a
