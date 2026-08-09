@@ -30,7 +30,7 @@ jobs:
           bash -n "$launcher"
           python -m py_compile "$helper" orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py
           test "$(git hash-object orbittrace_support_safe_halo_p15/run_matched_evaluator_after_pretruth.sh)" = 'f5d7177a7f58aa4d5150b43755ec8ca838a29c51'
-          test "$(git hash-object "$helper")" = '4a8f41fd97c1a76415d13318de382ca70d775040'
+          test "$(git hash-object "$helper")" = 'f3ea3bd83eb5f70e7ade2beb406ef8b6a7fdadeb'
           test "$(git hash-object orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py)" = 'cb5a66e7481fa4542b28135dc4c8c89ef33b276f'
           test "$(git hash-object orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py)" = '9f7b8ea6279434e7243ac9debdbf5d5a4a33aadd'
           test "$(git hash-object "$proto")" = '444c08ed2678a1b2eb6949a043799d63c3ec1a1b'
@@ -81,7 +81,6 @@ jobs:
           done
           test "$(grep -Fc '/tmp/p18_evaluator_once.sh' "$launcher")" -eq 3
           test "$(grep -Fc "progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'" "$launcher")" -eq 1
-          # Two appearances before execution are chmod/bash-n validation; exactly one bare execution line is permitted.
           test "$(grep -Ec '^/tmp/p18_evaluator_once\.sh$' "$launcher")" -eq 1
           test "$(grep -Fc 'python orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py' "$launcher")" -eq 1
           grep -F 'orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md' "$wf"
@@ -89,7 +88,6 @@ jobs:
           test "$(grep -Fc 'run_matched_truth_once.sh' "$wf")" -eq 1
           test ! -e orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md
 
-          # No detector/pretruth transform or external/target execution may occur after truth.
           for forbidden in \
             'generate_matched_pretruth' 'promote_p17_checkpoint_to_p18.py' \
             'apply_support_safe_halo_p15.py' 'apply_reciprocal_support_closure_p17.py' \
