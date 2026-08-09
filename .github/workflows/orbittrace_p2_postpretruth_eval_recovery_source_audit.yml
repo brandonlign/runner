@@ -1,0 +1,88 @@
+name: OrbitTrace P2 post-pretruth evaluation recovery source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p2-header-compat-recovery-freeze
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py
+      - .github/workflows/orbittrace_p2_postpretruth_eval_recovery_source_audit.yml
+      - .github/workflows/orbittrace_p2_postpretruth_eval_recovery.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove evaluation-only recovery semantics
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py)" = '186cbe5607f610e9111b7253a51ad5aa58bf9829'
+          python -m py_compile orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          s=Path('orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py').read_text()
+          for token in (
+              'b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e',
+              '0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f',
+              '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a',
+              '31289333209','31289791712','9031107930',
+              'membership_recomputed\':False',
+              'model_refit\':False',
+              "'qualified_matches_no_regression'",
+              "'recovery_at_100_no_regression'",
+              "'macro_f1_gain_at_least_008'",
+              "'large_shower_mean_recall_at_least_15x_v8'",
+              "'large_shower_mean_precision_at_least_085'",
+          ):
+              assert token in s,token
+          tree=ast.parse(s)
+          main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+          calls=[]
+          for n in ast.walk(main):
+              if isinstance(n,ast.Call):
+                  if isinstance(n.func,ast.Name): name=n.func.id
+                  elif isinstance(n.func,ast.Attribute): name=n.func.attr
+                  else: continue
+                  calls.append((n.lineno,name))
+          first_reconstruct=min(line for line,name in calls if name=='reconstruct_v8_seeds')
+          first_truth=min(line for line,name in calls if name=='parse_catalogue')
+          assert first_reconstruct < first_truth,(first_reconstruct,first_truth)
+          # Recovery never imports/executes canonical P2 membership construction.
+          assert 'LogisticRegression' not in s
+          assert 'OAS(' not in s
+          assert 'predict_proba' not in s
+          assert 'pairwise_dsh' not in s
+          assert 'evaluate_order(hidden_labels,expanded,order)' in s
+          print('PASS_P2_POSTPRETRUTH_EVALUATION_ONLY_SOURCE_AUDIT')
+          PY
+      - name: Synthetic seed reconstruction leaves additions immutable
+        run: |
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('r',Path('orbittrace_crossyear_two_view_membership_p2/evaluate_frozen_pretruth_recovery.py'))
+          m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+          rows=[]
+          for i in range(m.EXPECTED_FAMILY_COUNT):
+              adds=[f'a{i}'] if i<3 else []
+              rows.append({'family_id':f'F{i:03d}','event_ids':[f's{i}a',f's{i}b',*adds],'event_count':2+len(adds),'p2_added_event_ids':adds,'p2_added_event_count':len(adds)})
+          baseline,d=m.reconstruct_v8_seeds(rows)
+          assert d['assigned_nonseed_events']==3
+          assert d['families_gaining_members']==3
+          assert d['assigned_nonseed_ids_unique'] is True
+          assert baseline[0]['event_ids']==['s0a','s0b']
+          assert rows[0]['event_ids']==['s0a','s0b','a0']
+          print('PASS_P2_POSTPRETRUTH_SEED_RECONSTRUCTION_SYNTHETIC')
+          PY
+      - name: Assert no scientific data in freeze
+        run: |
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_RECOVERY_EXECUTION_NO_TARGET_ACCESS
