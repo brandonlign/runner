@@ -1,0 +1,57 @@
+name: OrbitTrace P13 MAARSY external reservation audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-literature-freeze
+    paths:
+      - orbittrace_core_halo_p13_external/**
+      - .github/workflows/orbittrace_p13_maarsy_external_reservation_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit pre-result no-retuning reservation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=json.loads(Path('orbittrace_core_halo_p13_external/EXTERNAL_FREEZE.json').read_text())
+          p=Path('orbittrace_core_halo_p13_external/MAARSY_2020_2021_PROTOCOL.md').read_text()
+          assert f['classification']=='P13 no-retuning external validation reservation'
+          assert f['status']=='DORMANT_UNLESS_MATCHED_SPARSE_PASS'
+          assert f['prerequisite']['required_matched_verdict']=='PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS'
+          assert f['prerequisite']['required_panels']==['hdbscan','sugar'] and f['prerequisite']['required_years']==[2023,2025]
+          assert f['prerequisite']['broad_only_is_insufficient'] is True
+          assert f['external_panel']=={'survey':'MAARSY','years':[2020,2021],'replace_or_subset_after_result':False}
+          assert f['method']['primary_output']=='immutable P13 recurrent discovery core'
+          assert f['method']['secondary_output']=='exact transported P12 characterization halo'
+          assert f['method']['halo_can_affect_core_qualification_or_rank'] is False
+          assert f['method']['parameter_search'] is False and f['method']['retuning_to_external'] is False
+          assert f['power_eligibility']['minimum_known_shower_labels_with_at_least_4_usable_events_in_each_year']==5
+          assert f['power_eligibility']['minimum_recurrent_core_families']==5
+          assert f['power_eligibility']['ineligible_verdict']=='POWER_INCONCLUSIVE_MAARSY_2020_2021'
+          g=f['generalization_gates']
+          assert g['at_least_one_truth_qualified_recurrent_core_shower'] is True
+          assert g['halo_macro_f1_gain_over_core_min']==0.08
+          assert g['large_shower_total_min_if_subset_nonempty']==100
+          assert g['halo_large_mean_recall_multiple_over_core_min']==1.5
+          assert g['halo_large_mean_precision_min']==0.85
+          assert f['firewall']=={'blind_exclusion':[20.0,55.0],'freeze_core_halo_before_truth':True,'external_truth_can_feed_back_into_method':False,'target_access_authorized':False}
+          assert f['pass_verdict']=='PASS_P13_MAARSY_2020_2021_NO_RETUNING_EXTERNAL'
+          assert f['fail_verdict']=='FAIL_P13_MAARSY_2020_2021_NO_RETUNING_EXTERNAL'
+          for token in ('no-retuning','MAARSY 2020/2021','20°–55°','core','halo','POWER_INCONCLUSIVE_MAARSY_2020_2021'):
+              assert token in p,token
+          for forbidden in ('OrbitTrace-April','target_coordinate'):
+              assert forbidden not in p and forbidden not in json.dumps(f),forbidden
+          print('PASS_P13_MAARSY_RESERVATION_NO_EXTERNAL_VALUES')
+          PY
+          test ! -e orbittrace_core_halo_p13_external/RUN.md
+          test ! -e target
+          echo NO_EXTERNAL_EXECUTION_NO_TARGET_ACCESS
