@@ -13,7 +13,7 @@ The detector-agnostic Stage-B exact-ID reveal semantics remain those already fro
 P3 Stage A is dormant unless all exact prerequisites pass without retuning:
 
 1. authoritative P3 development result is `PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT` with all integrity gates true;
-2. the separately frozen P3 SonotaCo exact-row matched comparison returns `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against both Sugar and HDBSCAN under PR #626's frozen protocol;
+2. the separately frozen P3 SonotaCo exact-row matched comparison returns `SPARSE_STREAM_SUPERIORITY` separately against BOTH Sugar and HDBSCAN, with every required annual condition satisfied in BOTH SonotaCo 2023 and 2025 under PR #626's frozen protocol; `BROAD_CATALOGUE_SUPERIORITY` alone is not sufficient;
 3. the separately frozen P3 MAARSY 2020/2021 external route returns `PASS_P3_MAARSY_2020_2021_EXTERNAL_GENERALIZATION` under PR #627's frozen protocol, with execution-time freshness proving that panel remained scientifically unexposed before activation;
 4. the exact P3 scientific source identity and all prerequisite artifact hashes are verified before the first full-region GMN scientific row is requested.
 
