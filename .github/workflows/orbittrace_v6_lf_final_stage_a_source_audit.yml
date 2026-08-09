@@ -47,7 +47,7 @@ jobs:
           assert 'support.dd.get_monthly_file_content_by_date(key)' in geom
           assert 'support.read_gmn_frame(text)' in geom and 'support.column_map(frame)' in geom
           assert 'frame[columns[' not in geom and 'frame.iloc' not in geom and 'normalize_label' not in geom
-          assert 'columns[\'label\']' in geom  # column name/provenance only
+          assert 'columns[\'label\']' in geom
           assert 'base.wrap180(float(lam[int(index)])-s)' in geom
           assert "complex_key':'HIDDEN'" in geom and "dict(event,complex_key='SPORADIC')" in geom
           assert 'BLIND_LOW' not in geom and 'BLIND_HIGH' not in geom
@@ -61,13 +61,17 @@ jobs:
           assert "'all_event_null':True" in main
           assert "'parameter_search':False" in main and "'null_trimming':False" in main
           assert 'evaluate_families' not in main and 'normalize_label' not in main
-          record=ast.get_source_segment(text,defs['family_record'])
           assert set(('family_id','rank','years','event_ids_by_year')) <= {s.value for s in ast.walk(defs['family_record']) if isinstance(s,ast.Constant) and isinstance(s.value,str)}
           protocol=Path('orbittrace_v6_lf_final_stage_a/PROTOCOL.md').read_text()
           assert 'complete GMN **2022 and 2023** geometry' in protocol
           assert 'does **not** remove solar longitude 20°–55°' in protocol
           assert 'shower-label **values**' in protocol
           assert 'orbittrace-final-stage-a-ranked-families-v2' in protocol
+          assert 'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT' not in protocol or 'development' in protocol
+          assert '`BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY`' in protocol
+          assert '`PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT`' in protocol
+          assert 'POWER_INCONCLUSIVE' in protocol
+          assert 'before the first full-region GMN row is requested' in protocol
           print('PASS_V6_LF_FINAL_STAGE_A_SOURCE_AUDIT')
           PY
       - name: Assert no-data boundary
