@@ -1,0 +1,61 @@
+name: OrbitTrace P3 result finalizer source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - .github/workflows/orbittrace_p3_result_finalizer.yml
+      - .github/workflows/orbittrace_p3_result_finalizer_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove finalizer is immutable-artifact verification only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          y=Path('.github/workflows/orbittrace_p3_result_finalizer.yml').read_text()
+          required=(
+              'FINALIZE_IMMUTABLE_P3_RESULT_AFTER_POSTRESULT_ASSERTION_BUG',
+              '31291214704',
+              '9031626210',
+              'sha256:b4855118119760f9aa4b94ceb77ad445bd6649eaeff09b32150360804b7d76f8',
+              'f6547943f14bef1dfe320a6c53d38b11f2b131f5e4588f85f3a2c62d99729229',
+              'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
+              "r['p3']['qualified_matches']==90",
+              "r['p3']['recovered_at_100']==58",
+              '0.471038167294719',
+              '0.8081618015600882',
+              "r['gates']['qualified_matches_no_regression'] is False",
+              "r['gates']['large_shower_mean_precision_at_least_085'] is False",
+              "r['diagnostics']['assigned_nonseed_events']==36742",
+              "r['diagnostics']['p3_reliable_directions']==439",
+              "KeyError: 'geometry_audits'",
+              '"scientific_recomputation": false',
+              '"membership_recomputed": false',
+              '"model_refit": false',
+              '"result_changed": false',
+              '"target_information_access": false',
+              'orbittrace-p3-finalized-development',
+          )
+          for token in required: assert token in y,token
+          forbidden=('python -u /tmp/run_p3','apply_p3_patch_v2.py /tmp/p2','LogisticRegression','predict_proba','evaluate_order(')
+          for token in forbidden: assert token not in y,token
+          assert "cp source/crossfit_seed_floor_membership_p3_development.json output/crossfit_seed_floor_membership_p3_development.json" in y
+          print('PASS_P3_IMMUTABLE_RESULT_FINALIZER_SOURCE_AUDIT')
+          PY
+      - name: Assert dormant no-data boundary
+        run: |
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/FINALIZE_RESULT.md
+          test ! -e source
+          test ! -e output
+          test ! -e target
+          echo NO_RESULT_FINALIZATION_NO_TARGET_ACCESS
