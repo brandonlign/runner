@@ -23,7 +23,7 @@ jobs:
           set -euo pipefail
           python -m py_compile orbittrace_crossyear_two_view_membership_p2/run_header_compatible.py
           python - <<'PY'
-          import ast
+          import ast, importlib.util
           from pathlib import Path
           p=Path('orbittrace_crossyear_two_view_membership_p2/run_header_compatible.py')
           text=p.read_text(); tree=ast.parse(text)
@@ -41,15 +41,17 @@ jobs:
           assert 'return int(module.main())' in main
           for forbidden in ('INNER_PROB','OUTER_PROB','responsibility_threshold','WINDOW_HALF_WIDTH','NEGATIVE_MINIMUM','rank_scored','evaluate_families','BLIND_LOW','BLIND_HIGH','D_SH'):
               assert forbidden not in text,forbidden
+
+          spec=importlib.util.spec_from_file_location('p2_header_compat',p)
+          module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          module.self_test()
+          assert not module.EXPECTED_CANONICAL_SOURCE.exists()
           print('PASS_P2_HEADER_COMPAT_SOURCE_AUDIT')
           PY
-          PYTHONPATH=. python orbittrace_crossyear_two_view_membership_p2/run_header_compatible.py --help >/tmp/help.txt 2>/tmp/help.err || status=$?
-          # Without the canonical /tmp runtime, wrapper must fail before scientific execution.
-          test "${status:-1}" -ne 0
-          grep -q 'canonical P2 runtime missing' /tmp/help.err
       - name: Assert source-only boundary
         run: |
           set -euo pipefail
           test ! -e input
           test ! -e output
+          test ! -e /tmp/run_p2_canonical_v2.py
           echo NO_GMN_VALUES_NO_P2_SCIENCE_NO_TARGET_ACCESS
