@@ -1,0 +1,58 @@
+name: OrbitTrace v6-LF MAARSY 2018/2019 external source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-literature-freeze
+    paths:
+      - orbittrace_v6_lf_maarsy_2018_2019_external/PROTOCOL.md
+      - .github/workflows/orbittrace_v6_lf_maarsy_2018_2019_external_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove prospective external protocol and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_v6_lf_maarsy_2018_2019_external/PROTOCOL.md').read_text()
+          for token in (
+              'MAARSY 2018/2019',
+              'PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT',
+              '`BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY`',
+              'PR #453 / run `31235104333`',
+              'at most 10,000 events per frozen solar-longitude bin',
+              'D_SH < 0.05',
+              '`Q_v6lf >= 10`',
+              '`Q_v8 >= 10`',
+              '`Q_v6lf >= ceil(0.80 * Q_v8)`',
+              '`T25_v6lf >= max(2, ceil(0.80 * T25_v8))`',
+              '`T50_v6lf >= max(4, ceil(0.80 * T50_v8))`',
+              '`MRR_Q_v6lf >= 0.80 * MRR_Q_v8`',
+              '`median_precision_Q_v6lf >= 0.60`',
+              'PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_VALIDATION',
+          ):
+              assert token in p, token
+          assert '2016/2017 v8 validation was power-inconclusive' in p
+          assert 'Q=11' in p
+          assert 'Q >= 30' in p
+          assert 'before any MAARSY `kepler` value is read' in p
+          assert 'No OrbitTrace coordinate' in p
+          assert '20°–55° remains excluded' in p
+          assert 'No alternative cap, binning, or subsample may be tried' in p
+          print('PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_PROTOCOL_AUDIT')
+          PY
+      - name: Assert no-data boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_MAARSY_2018_2019_VALUES_NO_TARGET_ACCESS
