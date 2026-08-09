@@ -89,13 +89,17 @@ If multiple families satisfy a criterion, the reported family is the lowest-rank
 
 ## Authorization gate
 
-Stage A cannot execute until the method has passed, without retuning:
+Stage A cannot execute until the promoted method has passed, without retuning, **all** of the following:
 
 1. its frozen target-excluded development gate;
 2. a frozen exact-row pairwise matched literature comparison whose final classification is `BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY` against the required Sugar/HDBSCAN panels;
-3. the same matched SonotaCo run must constitute the external/generalization test, with no candidate-method tuning to its result.
+3. a separately frozen prospective or external generalization gate whose event-level scientific values were not used to tune the promoted method.
 
-If the ultimately promoted method is a successor with a separately frozen external gate, that gate may substitute only if it is at least as strong and was frozen before its result.
+For v6-LF specifically, item 3 is the preregistered GMN 2024/2025 temporal holdout and requires exact verdict `PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT`. `POWER_INCONCLUSIVE` and scientific FAIL do not authorize Stage A even if development and literature pass.
+
+For a later successor, its separately preregistered external/generalization gate may substitute for item 3 only if that gate was frozen before its result and the corresponding data remained scientifically unexposed to method tuning. A matched literature panel cannot silently double-count as the independent generalization gate unless that dual role was explicitly preregistered before either result.
+
+Any Stage-A execution wrapper must verify the exact prerequisite artifacts and method identity before the first target-region discovery row is accessed; marker text alone is insufficient authorization.
 
 ## Claim boundary
 
