@@ -56,8 +56,6 @@ jobs:
             echo 'stale core-only evaluated-result compatibility assertion survived' >&2; exit 1
           fi
 
-          # Gate tokens and all non-compatibility source are mechanically preserved by
-          # the patcher's reversibility proof. P18 wrapper may only relabel provenance.
           for x in \
             "P18_RULE='P18_P17_RANK_LABEL_FREE_HALO_MEMBERSHIP'" \
             "P17_RULE='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'" \
@@ -71,14 +69,17 @@ jobs:
             "out['pairwise_only_no_cross_denominator_comparison'] is True" \
             "out['broad_only_does_not_authorize_external'] is True"; do grep -F "$x" "$final"; done
 
-          # P18 evaluator source contains no assignment IDs, no result-dependent tuning,
-          # no external transport, and no target-specific logic.
+          # Literal target-token names may appear only once each in the compatibility
+          # patcher's defensive rejection guard; they may not appear in the result wrapper.
+          for sentinel in 'OrbitTrace-April' 'target_coordinate'; do
+            test "$(grep -Fc "$sentinel" "$prep")" -eq 1
+            test "$(grep -Fc "$sentinel" "$final")" -eq 0
+          done
           for forbidden in \
             '9012424187' '8955917326' '8957940764' '8957263372' \
-            'MAARSY' 'OrbitTrace-April' 'target_coordinate' \
-            'parameter_search=True' 'retune' 'grid_search'; do
+            'MAARSY' 'parameter_search=True' 'retune' 'grid_search'; do
             if grep -Fq "$forbidden" "$prep" "$final"; then
-              echo "forbidden postfreeze/tuning/target surface in P18 evaluator freeze: $forbidden" >&2
+              echo "forbidden postfreeze/tuning surface in P18 evaluator freeze: $forbidden" >&2
               exit 1
             fi
           done
