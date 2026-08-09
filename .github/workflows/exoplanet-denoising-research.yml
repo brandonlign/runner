@@ -141,8 +141,43 @@ jobs:
         if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status != '0'
         run: exit 1
 
-      - name: Run frozen cross-fitted Hybrid gate
+      - name: Run explicit depth-shape objective gate
         if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0'
+        id: shape
+        working-directory: project
+        shell: bash
+        run: |
+          mkdir -p research_results
+          set +e
+          python scripts/run_depth_shape_decomposition.py > research_results/depth_shape_decomposition.log 2>&1
+          status=$?
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "Depth-shape gate finished with status $status; details remain in the private repository."
+
+      - name: Save depth-shape result privately
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0' && always()
+        working-directory: project
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- research_results/depth_shape_decomposition.log
+          if [ -f research_results/depth_shape_decomposition.json ]; then
+            git add -- research_results/depth_shape_decomposition.json
+          fi
+          if ! git diff --cached --quiet; then
+            git commit -m 'Record explicit depth-shape objective gate'
+            git pull --rebase origin "$SOURCE_REF"
+            git push origin "HEAD:$SOURCE_REF"
+          fi
+
+      - name: Stop if depth-shape gate failed
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0' && steps.shape.outputs.status != '0'
+        run: exit 1
+
+      - name: Run frozen cross-fitted Hybrid gate
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0' && steps.shape.outputs.status == '0'
         id: crossfit
         working-directory: project
         shell: bash
@@ -156,7 +191,7 @@ jobs:
           echo "Cross-fitted Hybrid gate finished with status $status; details remain in the private repository."
 
       - name: Save cross-fit result privately
-        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0' && always()
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0' && steps.shape.outputs.status == '0' && always()
         working-directory: project
         shell: bash
         run: |
@@ -173,5 +208,5 @@ jobs:
           fi
 
       - name: Stop if cross-fit gate failed
-        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0' && steps.crossfit.outputs.status != '0'
+        if: steps.auth.outputs.available == 'true' && steps.fair.outputs.status == '0' && steps.stability.outputs.status == '0' && steps.shape.outputs.status == '0' && steps.crossfit.outputs.status != '0'
         run: exit 1
