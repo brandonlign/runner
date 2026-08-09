@@ -1,0 +1,164 @@
+name: OrbitTrace P2 finalize immutable pretruth
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p2-pretruth-finalize-freeze
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/RUN_FINALIZE.md
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  finalize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Require one-file child and exact immutable failed-run pretruth
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_crossyear_two_view_membership_p2/RUN_FINALIZE.md'
+          content="$(git show "$HEAD_SHA":orbittrace_crossyear_two_view_membership_p2/RUN_FINALIZE.md)"
+          test "$(printf '%s\n' "$content" | sed -n '1p')" = 'EXECUTE_P2_DIRECT_FINALIZE_FROM_IMMUTABLE_PRETRUTH'
+          test "$(printf '%s\n' "$content" | sed -n '2p')" = '31289791712'
+          test "$(printf '%s\n' "$content" | sed -n '3p')" = '9031107930'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 3
+          gh run view 31289791712 --repo "$GITHUB_REPOSITORY" --log-failed > /tmp/source_failed.log
+          grep -Fq "NameError: name 'valid_nonseed_by_year' is not defined" /tmp/source_failed.log
+          grep -Fq 'P2 scoring direction 452/452' /tmp/source_failed.log
+          ! grep -Fq 'CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT.md' /tmp/source_failed.log
+          mkdir -p input/pretruth
+          gh run download 31289791712 --repo "$GITHUB_REPOSITORY" --name orbittrace-crossyear-two-view-membership-p2-header-recovery-development --dir input/pretruth
+          test ! -e input/pretruth/crossyear_two_view_membership_p2_development.json
+          test "$(cat input/pretruth/p2_model_pretruth.sha256)" = '0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          test "$(cat input/pretruth/p2_membership_pretruth.sha256)" = 'b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e'
+          python - <<'PY'
+          import gzip,hashlib,json
+          from pathlib import Path
+          raw=gzip.decompress(Path('input/pretruth/p2_expanded_families.json.gz').read_bytes())
+          assert hashlib.sha256(raw).hexdigest()=='b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e'
+          fs=json.loads(raw)
+          assert len(fs)==226 and len({str(f['family_id']) for f in fs})==226
+          assert sum(len(f.get('p2_added_event_ids',[])) for f in fs)==247123
+          model=json.loads(Path('input/pretruth/p2_model_pretruth.json').read_text())
+          canon=json.dumps(model,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+          assert hashlib.sha256(canon).hexdigest()=='0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          assert model['feature_order']==['d_obs','d_orb']
+          assert model['logistic_n_iter']==[15]
+          PY
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_crossyear_two_view_membership_p2/RUN_FINALIZE.md
+          echo PASS_P2_IMMUTABLE_PRETRUTH_AUTHORIZATION
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Reconstruct exact P2/v8/evaluator identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v8,dsh} output
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/run_p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/run_p2_canonical_v2.py' | sha256sum -c -
+          python -m py_compile /tmp/run_p2_canonical_v2.py orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo '88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip' | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+          echo 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b  input/v8/pooled_year_centroid_v8_development.json' | sha256sum -c -
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py' | sha256sum -c -
+          echo PASS_P2_DIRECT_FINALIZE_SOURCE_IDENTITIES
+      - name: Finalize exact frozen P2 memberships against unchanged target-excluded truth
+        env:
+          PYTHONPATH: exact-v8:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py \
+            --p2-source /tmp/run_p2_canonical_v2.py \
+            --expanded-families input/pretruth/p2_expanded_families.json.gz \
+            --membership-sha input/pretruth/p2_membership_pretruth.sha256 \
+            --model-json input/pretruth/p2_model_pretruth.json \
+            --model-sha input/pretruth/p2_model_pretruth.sha256 \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --dsh-comparator input/dsh/literature_comparators.py \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/crossyear_two_view_membership_p2_development.json').read_text())
+          assert r['verdict'] in {'PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT','FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['parameter_search'] is False
+          assert r['sources']['pretruth_source_run']==31289791712
+          assert r['sources']['pretruth_artifact_id']==9031107930
+          assert r['model_pretruth_sha256']=='0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          assert r['membership_pretruth_sha256']=='b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e'
+          assert r['gates']['v8_baseline_reproduced'] is True
+          assert r['gates']['exact_dsh_source_identity'] is True
+          print('ORBITTRACE_P2_FINALIZED_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'baseline_v8':r['baseline_v8'],'p2':r['p2'],'baseline_large_shower':r['baseline_large_shower'],'p2_large_shower':r['p2_large_shower'],'gates':r['gates'],'diagnostics':r['diagnostics']},indent=2,sort_keys=True))
+          print('ORBITTRACE_P2_FINALIZED_RESULT_END')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py /tmp/run_p2_canonical_v2.py input/pretruth/p2_model_pretruth.json input/pretruth/p2_expanded_families.json.gz > output/finalization_source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-crossyear-two-view-membership-p2-finalized-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
