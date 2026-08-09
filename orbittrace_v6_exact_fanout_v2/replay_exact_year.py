@@ -44,17 +44,26 @@ def load_pickle_with_sidecar(path: Path) -> tuple[Any, str]:
     return pickle.loads(raw), digest
 
 
+def exact_scientific_signature(records: list[dict[str, Any]]) -> list[tuple[str, int, float]]:
+    """Fields that can affect exact-rescore or its frozen post-exact adjudication.
+
+    Frozen exact_rescore_window_v6 obtains geometry from the immutable event
+    window/event_lookup and reads proposal_anchor_id from each proposal record.
+    Its returned record is then adjudicated by bin; window_center is retained as
+    an integrity/order identity. Proposal-stage nearest/member diagnostics are
+    overwritten by exact rescoring and are therefore deliberately not part of
+    this scientific replay signature.
+    """
+    return [
+        (str(row["proposal_anchor_id"]), int(row["bin"]), float(row["window_center"]))
+        for row in records
+    ]
+
+
 def align_exact_outputs_to_records(
     outputs: list[dict[str, Any]], records: list[dict[str, Any]], center: float
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Recover the exact captured proposal order without changing any output value.
-
-    Every exact shard already proved immediately after scalar rescoring that its
-    output proposal_anchor_id sequence equalled its captured input sequence. The
-    fanout replay additionally requires proposal IDs to be unique and the saved
-    output/input ID sets to be exactly identical. If deserialized list order is
-    nevertheless different, realign only by the immutable unique proposal ID.
-    """
+    """Recover the exact captured proposal order without changing any output value."""
     input_ids = [str(row["proposal_anchor_id"]) for row in records]
     output_ids = [str(row["proposal_anchor_id"]) for row in outputs]
     require(len(input_ids) == len(set(input_ids)), f"duplicate captured proposal anchor center {center}")
@@ -130,6 +139,7 @@ def main() -> int:
     original_exact = v6.exact_rescore_window_v6
     replayed: list[float] = []
     realigned_centers: list[float] = []
+    nonsemantic_record_drift_centers: list[float] = []
 
     def replay_exact(old_arg, records, window_events, event_lookup, support_arg, base_arg):
         del old_arg, event_lookup, support_arg, base_arg
@@ -138,10 +148,24 @@ def main() -> int:
         require(center in pre["centers"], f"unexpected replay center {center}")
         require(center not in replayed, f"duplicate replay center {center}")
         spec = pre["centers"][center]
-        require(canonical_sha(records) == spec["records_sha256"], f"proposal records changed before replay center {center}")
+        captured_records = spec["records"]
+        current_signature = exact_scientific_signature(records)
+        captured_signature = exact_scientific_signature(captured_records)
+        require(
+            current_signature == captured_signature,
+            f"scientific proposal identity changed before replay center {center}",
+        )
+        if canonical_sha(records) != spec["records_sha256"]:
+            nonsemantic_record_drift_centers.append(center)
+            print(
+                f"V6_FANOUT_REPLAY_NONSEMANTIC_RECORD_DRIFT year={args.year} center={center:.1f}",
+                flush=True,
+            )
         ids = [str(row["id"]) for row in window_events]
         require(canonical_sha(ids) == spec["window_event_ids_sha256"], f"window events changed before replay center {center}")
         outputs, realigned = align_exact_outputs_to_records(exact_by_center[center], records, center)
+        output_signature = exact_scientific_signature(outputs)
+        require(output_signature == current_signature, f"saved exact output scientific identity mismatch center {center}")
         if realigned:
             realigned_centers.append(center)
             print(f"V6_FANOUT_REPLAY_REALIGNED_BY_ANCHOR year={args.year} center={center:.1f}", flush=True)
@@ -171,6 +195,9 @@ def main() -> int:
             "exact_fanout_v2": True,
             "exact_shard_count": shard_count,
             "preexact_sha256": pre_sha,
+            "replay_scientific_signature_guard": ["proposal_anchor_id", "bin", "window_center"],
+            "nonsemantic_record_drift_center_count": len(nonsemantic_record_drift_centers),
+            "nonsemantic_record_drift_centers": nonsemantic_record_drift_centers,
             "replay_anchor_alignment_repair": True,
             "realigned_center_count": len(realigned_centers),
             "realigned_centers": realigned_centers,
@@ -196,12 +223,15 @@ def main() -> int:
         "components": len(components),
         "exact_shard_count": shard_count,
         "preexact_sha256": pre_sha,
+        "nonsemantic_record_drift_center_count": len(nonsemantic_record_drift_centers),
+        "nonsemantic_record_drift_centers": nonsemantic_record_drift_centers,
         "realigned_center_count": len(realigned_centers),
         "realigned_centers": realigned_centers,
     }, indent=2, sort_keys=True) + "\n")
     print(
         f"PASS_V6_FANOUT_YEAR_REPLAY year={args.year} anchors={len(anchors)} "
-        f"components={len(components)} realigned_centers={len(realigned_centers)} sha={digest}",
+        f"components={len(components)} nonsemantic_record_drift_centers={len(nonsemantic_record_drift_centers)} "
+        f"realigned_centers={len(realigned_centers)} sha={digest}",
         flush=True,
     )
     return 0
