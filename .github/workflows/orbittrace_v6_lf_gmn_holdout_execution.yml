@@ -1,0 +1,278 @@
+name: OrbitTrace v6-LF GMN 2024/2025 temporal holdout execution
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-gmn-2024-2025-holdout-execution-freeze
+    paths:
+      - orbittrace_v6_lf_gmn_2024_2025_holdout/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-v6-lf-gmn-2024-2025-holdout
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Require one-file child and exact v6-LF development PASS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_v6_lf_gmn_2024_2025_holdout/RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_v6_lf_gmn_2024_2025_holdout/RUN.md)"
+          mode="$(printf '%s\n' "$content" | sed -n '1p')"
+          dev_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$mode" = 'EXECUTE_AFTER_V6_LF_DEVELOPMENT_PASS'
+          [[ "$dev_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+          rm -rf /tmp/v6lf && mkdir -p /tmp/v6lf
+          gh run download "$dev_run" --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-lf-all-event-null-development-v2 --dir /tmp/v6lf
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/v6lf/v6_label_free_all_event_null_development.json').read_text())
+          assert r['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT',r['verdict']
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert r['configuration']['parameter_search'] is False
+          assert r['configuration']['null_trimming'] is False
+          assert all(r['gates'].values()),r['gates']
+          print('PASS_V6_LF_HOLDOUT_DEVELOPMENT_PREREQUISITE')
+          PY
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_v6_lf_gmn_2024_2025_holdout/RUN.md
+
+  preexact:
+    needs: authorize
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2024, 2025]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {repository: brandonlign/runner, ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Capture target-excluded holdout preexact inputs
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p preexact
+          python -u execution/orbittrace_v6_lf_gmn_2024_2025_holdout/capture_preexact_year.py \
+            --year '${{ matrix.year }}' --repaired-v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output preexact
+      - uses: actions/upload-artifact@v4
+        with: {name: 'v6-lf-holdout-preexact-${{ matrix.year }}', path: preexact, if-no-files-found: error, retention-days: 90}
+
+  exact:
+    needs: preexact
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        include:
+          - {year: 2024, shard: 0}
+          - {year: 2024, shard: 1}
+          - {year: 2024, shard: 2}
+          - {year: 2024, shard: 3}
+          - {year: 2024, shard: 4}
+          - {year: 2024, shard: 5}
+          - {year: 2025, shard: 0}
+          - {year: 2025, shard: 1}
+          - {year: 2025, shard: 2}
+          - {year: 2025, shard: 3}
+          - {year: 2025, shard: 4}
+          - {year: 2025, shard: 5}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {repository: brandonlign/runner, ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with: {name: 'v6-lf-holdout-preexact-${{ matrix.year }}', path: preexact}
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Execute unchanged exact shard on holdout year
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p exact
+          python -u execution/orbittrace_v6_lf_gmn_2024_2025_holdout/run_exact_holdout_shard.py \
+            --year '${{ matrix.year }}' --shard-index '${{ matrix.shard }}' --shard-count 6 --workers 4 \
+            --preexact-checkpoint preexact/v6_lf_preexact_${{ matrix.year }}.pkl \
+            --repaired-v6-source /tmp/v6.repaired.py --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output exact
+      - uses: actions/upload-artifact@v4
+        with: {name: 'v6-lf-holdout-exact-${{ matrix.year }}-${{ matrix.shard }}', path: exact, if-no-files-found: error, retention-days: 90}
+
+  replay:
+    needs: exact
+    strategy:
+      fail-fast: false
+      matrix:
+        year: [2024, 2025]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {repository: brandonlign/runner, ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with: {name: 'v6-lf-holdout-preexact-${{ matrix.year }}', path: preexact}
+      - uses: actions/download-artifact@v4
+        with: {pattern: 'v6-lf-holdout-exact-${{ matrix.year }}-*', path: exact, merge-multiple: true}
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Replay exact outputs through unchanged holdout scan
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p year
+          python -u execution/orbittrace_v6_lf_gmn_2024_2025_holdout/replay_holdout_year.py \
+            --year '${{ matrix.year }}' --preexact-checkpoint preexact/v6_lf_preexact_${{ matrix.year }}.pkl \
+            --exact-shards-dir exact --repaired-v6-source /tmp/v6.repaired.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output year
+      - uses: actions/upload-artifact@v4
+        with: {name: 'v6-lf-holdout-year-${{ matrix.year }}', path: year, if-no-files-found: error, retention-days: 90}
+
+  combine:
+    needs: replay
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.base.sha }}', path: execution}
+      - uses: actions/checkout@v4
+        with: {repository: brandonlign/runner, ref: agent/orbittrace-v3-primary-catalogue-v6, path: frozen-v6}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: execution/ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r execution/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-holdout-year-2024, path: years}
+      - uses: actions/download-artifact@v4
+        with: {name: v6-lf-holdout-year-2025, path: years}
+      - name: Bootstrap exact runtime
+        run: bash execution/orbittrace_v6_label_free_all_event_null_fanout/bootstrap_runtime.sh
+      - name: Freeze holdout families, then read truth and evaluate
+        env:
+          PYTHONPATH: execution:execution/orbittrace_wavelet_catalogue_v3:/tmp
+        run: |
+          mkdir -p output
+          python -u execution/orbittrace_v6_lf_gmn_2024_2025_holdout/combine_evaluate_holdout.py \
+            --year-2024 years/v6_lf_year_2024.pkl --year-2025 years/v6_lf_year_2025.pkl \
+            --repaired-v6-source /tmp/v6.repaired.py --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts execution/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload execution/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload execution/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts execution/mondrian_clique_development/source_parts_v2 --output output
+          cat output/V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/v6_lf_gmn_2024_2025_temporal_holdout.json').read_text())
+          assert r['verdict'] in {
+            'PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT',
+            'FAIL_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT',
+            'POWER_INCONCLUSIVE_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT',
+          }
+          assert r['configuration']['years']==[2024,2025]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert r['configuration']['parameter_search'] is False and r['configuration']['null_trimming'] is False
+          if r['verdict'].startswith('PASS_'):
+              assert all(r['pretruth_integrity_power_gates'].values())
+              assert all(r['scientific_gates'].values())
+              assert r['truth_accessed'] is True
+          if r['verdict'].startswith('POWER_INCONCLUSIVE_'):
+              assert r['truth_accessed'] is False
+          print('ORBITTRACE_V6_LF_HOLDOUT_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'primary_family_count':r['primary_family_count'],'evaluation':r['evaluation'],'pretruth_integrity_power_gates':r['pretruth_integrity_power_gates'],'scientific_gates':r['scientific_gates']},indent=2))
+          print('ORBITTRACE_V6_LF_HOLDOUT_RESULT_END')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum execution/orbittrace_v6_lf_gmn_2024_2025_holdout/* execution/.github/workflows/orbittrace_v6_lf_gmn_holdout_execution.yml > output/source_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: orbittrace-v6-lf-gmn-2024-2025-temporal-holdout, path: output, if-no-files-found: error, retention-days: 90}
