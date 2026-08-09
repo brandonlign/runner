@@ -23,11 +23,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v6-literature-fanout-v3
+          path: execution
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v3-primary-catalogue-v6
+          path: frozen-v6
       - name: Prove exact decomposition and replay identity boundary
         run: |
           set -euo pipefail
-          python -m py_compile orbittrace_v6_literature_fanout_v3/*.py
-          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+          python -m py_compile execution/orbittrace_v6_literature_fanout_v3/*.py
+          cat frozen-v6/orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
             | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
           echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
           python - <<'PY'
@@ -50,7 +55,7 @@ jobs:
           assert 'str(primary["proposal_anchor_id"])' in scan_text
           assert len(calls(scan,'exact_rescore_window_v6'))==1
 
-          root=Path('orbittrace_v6_literature_fanout_v3')
+          root=Path('execution/orbittrace_v6_literature_fanout_v3')
           capture=(root/'capture_preexact_panel.py').read_text(); runner=(root/'run_exact_slice_panel.py').read_text(); replay=(root/'replay_pretruth_panel.py').read_text(); panel=(root/'panel_common.py').read_text()
           for text in (capture,runner,replay):
               assert 'evaluate_frozen' not in text
