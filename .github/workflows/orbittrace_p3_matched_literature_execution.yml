@@ -1,0 +1,317 @@
+name: OrbitTrace P3 matched Sugar-HDBSCAN execution
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-matched-literature-execution-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p3-matched-literature-execution
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    outputs:
+      p3_run: ${{ steps.guard.outputs.p3_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: guard
+        name: Require one-file child and authoritative P3 development PASS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_RUN.md)"
+          marker="$(printf '%s\n' "$content" | sed -n '1p')"
+          p3_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          test "$marker" = 'EXECUTE_P3_MATCHED_LITERATURE_AFTER_DEVELOPMENT_PASS'
+          test "$p3_run" = '31291214704'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+          test "$(gh run view "$p3_run" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          rm -rf /tmp/p3-prereq && mkdir -p /tmp/p3-prereq
+          gh run download "$p3_run" --repo "$GITHUB_REPOSITORY" --name orbittrace-p3-crossfit-seed-floor-development --dir /tmp/p3-prereq
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/p3-prereq/crossfit_seed_floor_membership_p3_development.json').read_text())
+          assert r['verdict']=='PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',r['verdict']
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['p3_fold_count']==5
+          assert r['configuration']['p3_negative_tail_max']==0.10
+          assert r['configuration']['parameter_search'] is False
+          integrity=(
+              'exact_v8_226_family_order','exact_v8_seed_members_preserved','v8_baseline_reproduced','exact_dsh_source_identity',
+              'model_frozen_before_truth_evaluation','membership_frozen_before_truth_evaluation','classifier_converged',
+              'p3_exact_five_crossfit_folds','p3_crossfit_frozen_before_truth','p3_decisions_frozen_before_truth',
+              'p3_every_family_in_exactly_one_fold','p3_no_heldout_family_in_own_fold_training','p3_every_direction_has_one_heldout_gate',
+              'p3_exact_seed_floor_and_tail_rule','p3_no_unreliable_direction_can_propose','p3_every_surviving_proposal_meets_seed_floor',
+              'p3_label_values_unread_until_membership_freeze',
+          )
+          assert all(r['gates'].get(k) is True for k in integrity)
+          PY
+          echo "p3_run=$p3_run" >> "$GITHUB_OUTPUT"
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_RUN.md
+
+  pretruth:
+    needs: authorize
+    strategy:
+      fail-fast: false
+      matrix:
+        panel: [hdbscan, sugar]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Reconstruct exact P3/pretruth transport sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,parser,mapping,archives,competitors/{hdbscan2023,hdbscan2025,sugar2023,sugar2025}} output
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py)" = '1db03c9fef7e38fc95f6e7d47884d60be33b34b3'
+          test "$(git -C exact-lit hash-object orbittrace_literature_matched_v8/run_exact_row_benchmark.py)" = '2e51d126524313897621886233862f98ad8ea0aa'
+          test "$(git -C exact-lit hash-object orbittrace_literature_matched_v8/run_matched_benchmark.py)" = '9dd25aa73368347249a18bae7d7b03865c5a7010'
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          git fetch --no-tags --depth=1 origin d8e58697812bbc93cbd204eb5ebbd6c98d0f3c0d
+          git show FETCH_HEAD:orbittrace_crossyear_two_view_membership_p2_literature/prepare_strict_id_manifest.py > /tmp/prepare_manifest.py
+          git show FETCH_HEAD:orbittrace_crossyear_two_view_membership_p2_literature/read_exact_orbits.py > /tmp/read_exact_orbits.py
+          test "$(git hash-object /tmp/prepare_manifest.py)" = 'c90f5f77a8d1b3fa839e830e867642d4007cde19'
+          test "$(git hash-object /tmp/read_exact_orbits.py)" = 'd3d027d88166dbf55b3dd1b9b0a4250502a3ffef'
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > /tmp/dsh.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  /tmp/dsh.py' | sha256sum -c -
+          cd exact-lit
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cd ..
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          gh run download 30920687116 --repo "$GITHUB_REPOSITORY" --name sonotaco-2023-confirmation-source-repair-v2 --dir input/parser
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input/mapping
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/parser/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
+      - name: Download exact blind-safe competitor assignments and archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 31226945294 --repo "$GITHUB_REPOSITORY" --name orbittrace-hdbscan-2023-blind-safe-benchmark --dir input/competitors/hdbscan2023
+          gh run download 31071589912 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2025-hdbscan-catalogue --dir input/competitors/hdbscan2025
+          gh run download 31076789635 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2023-sugar-uncertainty-transfer --dir input/competitors/sugar2023
+          gh run download 31075178517 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2025-sugar-uncertainty-catalogue --dir input/competitors/sugar2025
+          echo '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761  input/competitors/hdbscan2023/full_catalogue_assignments.jsonl.gz' | sha256sum -c -
+          echo '8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3  input/competitors/hdbscan2025/full_catalogue_assignments.jsonl.gz' | sha256sum -c -
+          echo '2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389  input/competitors/sugar2023/sugar_uncertainty_assignments.json.gz' | sha256sum -c -
+          echo '77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e  input/competitors/sugar2025/sugar_uncertainty_assignments.json.gz' | sha256sum -c -
+          curl --fail --location --retry 3 --output input/archives/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          curl --fail --location --retry 3 --output input/archives/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/archives/023a.zip' | sha256sum -c -
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/archives/025a.zip' | sha256sum -c -
+      - name: Freeze strict ID-only manifest before P3 or comparator values
+        run: |
+          set -euo pipefail
+          python /tmp/prepare_manifest.py \
+            --hdbscan-2023 input/competitors/hdbscan2023/full_catalogue_assignments.jsonl.gz \
+            --hdbscan-2025 input/competitors/hdbscan2025/full_catalogue_assignments.jsonl.gz \
+            --sugar-2023 input/competitors/sugar2023/sugar_uncertainty_assignments.json.gz \
+            --sugar-2025 input/competitors/sugar2025/sugar_uncertainty_assignments.json.gz \
+            --output input/strict_id_manifest.json
+      - name: Build and freeze P3 pretruth panel
+        env:
+          PYTHONPATH: exact-lit:input/v3:exact-lit/orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_crossfit_seed_floor_membership_p3_literature/run_pretruth_panel.py \
+            --panel "${{ matrix.panel }}" \
+            --strict-id-manifest input/strict_id_manifest.json \
+            --exact-row-runner exact-lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py \
+            --p2-source /tmp/p2.py \
+            --p3-source /tmp/p3.py \
+            --orbit-reader /tmp/read_exact_orbits.py \
+            --dsh-comparator /tmp/dsh.py \
+            --archive-2023 input/archives/023a.zip \
+            --archive-2025 input/archives/025a.zip \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts exact-lit/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload exact-lit/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload exact-lit/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts exact-lit/mondrian_clique_development/source_parts_v2 \
+            --output output/${{ matrix.panel }}_p3_pretruth.pkl
+      - name: Upload immutable P3 pretruth checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p3-matched-${{ matrix.panel }}-pretruth
+          path: |
+            output/${{ matrix.panel }}_p3_pretruth.pkl
+            output/${{ matrix.panel }}_p3_pretruth.pkl.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: [authorize, pretruth]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Download immutable pretruth checkpoints
+        uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-p3-matched-*-pretruth
+          path: pretruth
+          merge-multiple: true
+      - name: Reconstruct exact truth/evaluator dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,parser,mapping,archives,competitors/{hdbscan2023,hdbscan2025,sugar2023,sugar2025}} output
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py)" = '23275e4a59e1a5dab3934ea63c4f73381c627912'
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen_blindsafe.py)" = '2fdc051dd6e4f5d42d3f20e8c35390a57a26fb34'
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          cd exact-lit
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          cd ..
+          gh run download 30920687116 --repo "$GITHUB_REPOSITORY" --name sonotaco-2023-confirmation-source-repair-v2 --dir input/parser
+          gh run download 30855193522 --repo "$GITHUB_REPOSITORY" --name real-shower-meta-data-audit --dir input/mapping
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/parser/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/mapping/audit.json' | sha256sum -c -
+          gh run download 31226945294 --repo "$GITHUB_REPOSITORY" --name orbittrace-hdbscan-2023-blind-safe-benchmark --dir input/competitors/hdbscan2023
+          gh run download 31071589912 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2025-hdbscan-catalogue --dir input/competitors/hdbscan2025
+          gh run download 31076789635 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2023-sugar-uncertainty-transfer --dir input/competitors/sugar2023
+          gh run download 31075178517 --repo "$GITHUB_REPOSITORY" --name orbittrace-sonotaco-2025-sugar-uncertainty-catalogue --dir input/competitors/sugar2025
+          echo '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761  input/competitors/hdbscan2023/full_catalogue_assignments.jsonl.gz' | sha256sum -c -
+          echo '8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3  input/competitors/hdbscan2025/full_catalogue_assignments.jsonl.gz' | sha256sum -c -
+          echo '2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389  input/competitors/sugar2023/sugar_uncertainty_assignments.json.gz' | sha256sum -c -
+          echo '77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e  input/competitors/sugar2025/sugar_uncertainty_assignments.json.gz' | sha256sum -c -
+          curl --fail --location --retry 3 --output input/archives/023a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          curl --fail --location --retry 3 --output input/archives/025a.zip https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/archives/023a.zip' | sha256sum -c -
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/archives/025a.zip' | sha256sum -c -
+      - name: Open truth/comparator values only after both P3 checkpoints exist
+        env:
+          PYTHONPATH: exact-lit:input/v3:exact-lit/orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          test -f pretruth/hdbscan_p3_pretruth.pkl
+          test -f pretruth/sugar_p3_pretruth.pkl
+          python orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen_blindsafe.py \
+            --hdbscan-pretruth pretruth/hdbscan_p3_pretruth.pkl \
+            --sugar-pretruth pretruth/sugar_p3_pretruth.pkl \
+            --exact-row-runner exact-lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts exact-lit/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload exact-lit/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload exact-lit/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts exact-lit/mondrian_clique_development/source_parts_v2 \
+            --parser-2023 input/parser/run_sonotaco_2023_fixed4_confirmation.py \
+            --parser-2025 exact-lit/orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py \
+            --mapping-audit input/mapping/audit.json \
+            --archive-2023 input/archives/023a.zip \
+            --archive-2025 input/archives/025a.zip \
+            --hdbscan-2023 input/competitors/hdbscan2023/full_catalogue_assignments.jsonl.gz \
+            --hdbscan-2025 input/competitors/hdbscan2025/full_catalogue_assignments.jsonl.gz \
+            --sugar-2023 input/competitors/sugar2023/sugar_uncertainty_assignments.json.gz \
+            --sugar-2025 input/competitors/sugar2025/sugar_uncertainty_assignments.json.gz \
+            --output output/p3_matched_literature_result.json
+          cat output/p3_matched_literature_result.json
+      - name: Enforce frozen literature promotion semantics
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/p3_matched_literature_result.json').read_text())
+          assert r['classification'] in {'SPARSE_STREAM_SUPERIORITY','NO_LITERATURE_SUPERIORITY','P3_MATCHED_INPUT_INELIGIBLE'}
+          assert r['years']==[2023,2025] and r['blind_exclusion']==[20.0,55.0]
+          assert r['pairwise_only_no_cross_denominator_comparison'] is True
+          assert r['sparse_stream_superiority_required_for_promotion'] is True
+          assert r['broad_only_does_not_authorize_external'] is True
+          if r['classification']=='SPARSE_STREAM_SUPERIORITY':
+              assert r['sparse_stream_superiority'] is True
+              assert all(r['panels'][p]['sparse_pairwise_pass'] is True for p in ('hdbscan','sugar'))
+          else:
+              assert r['sparse_stream_superiority'] is False
+          print('ORBITTRACE_P3_MATCHED_LITERATURE_FINAL_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_P3_MATCHED_LITERATURE_FINAL_END')
+          PY
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_source_commit.txt
+          sha256sum orbittrace_crossfit_seed_floor_membership_p3_literature/*.py pretruth/*.pkl input/competitors/*/* input/archives/*.zip > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p3-matched-literature-result
+          path: output
+          if-no-files-found: error
+          retention-days: 90
