@@ -1,0 +1,29 @@
+name: OrbitTrace P15 matched pretruth transform diagnostic
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/audit_generate_matched_pretruth_p15_transform.py
+      - .github/workflows/orbittrace_p15_matched_pretruth_transform_diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Identify any P15 substitution that reintroduces posttruth source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v3.py)" = 'af257d4b4902f9783acecd6df52f111415e5188c'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/audit_generate_matched_pretruth_p15_transform.py)" = '2dadc00b8b172e09915542c0d2e5776cf186ba8a'
+          python -m py_compile orbittrace_support_safe_halo_p15/audit_generate_matched_pretruth_p15_transform.py
+          python orbittrace_support_safe_halo_p15/audit_generate_matched_pretruth_p15_transform.py orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh
+          echo NO_DATA_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
