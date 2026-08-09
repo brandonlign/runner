@@ -1,0 +1,94 @@
+name: OrbitTrace P3 cross-fit seed-floor implementation audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py
+      - .github/workflows/orbittrace_p3_crossfit_seed_floor_implementation_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reconstruct exact canonical P2 and transform to P3
+        run: |
+          set -euo pipefail
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py /tmp/p2_canonical_v2.py /tmp/p3.py
+          python -m py_compile /tmp/p3.py
+          sha256sum /tmp/p3.py
+
+      - name: Prove P3 source delta and preregistered semantics
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('/tmp/p3.py').read_text()
+          patch=Path('orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py').read_text()
+          protocol=Path('orbittrace_crossfit_seed_floor_membership_p3/PROTOCOL.md').read_text()
+          for token in (
+              'P3_FOLD_COUNT = 5',
+              'P3_NEGATIVE_TAIL_MAX = 0.10',
+              'P3_SEED_FLOOR_MIN = 0.5',
+              'hashlib.sha256(str(f["family_id"]).encode("utf-8")).digest()[:8]',
+              'family_fold[str(d["family_id"])] != held_fold',
+              'seed_floor = float(np.min(pp))',
+              'negative_tail = float(np.mean(pn >= seed_floor))',
+              'seed_floor > P3_SEED_FLOOR_MIN',
+              'negative_tail <= P3_NEGATIVE_TAIL_MAX',
+              'probabilities >= float(gate["seed_floor"])',
+              'denominator = 1.0 + sum(float(proposal["odds"]) for proposal in proposals)',
+              'RESPONSIBILITY_THRESHOLD = 0.5',
+              'LOGISTIC_C = 1.0',
+              'LOGISTIC_MAX_ITER = 1000',
+              'LOGISTIC_TOL = 1e-10',
+              'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
+              'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
+              'crossfit_pretruth_sha256',
+              'p3_crossfit_pretruth.json',
+          ):
+              assert token in p, token
+          # Same P2 substantive gates must remain literal in transformed source.
+          for token in (
+              'qualified_matches_no_regression',
+              'recovery_at_100_no_regression',
+              'top100_dominant_precision_at_least_065',
+              'macro_f1_gain_at_least_008',
+              'large_shower_mean_recall_at_least_15x_v8',
+              'large_shower_mean_precision_at_least_085',
+          ):
+              assert token in p, token
+          assert 'valid_nonseed_by_year' not in p
+          assert 'nonseed_events_by_year' in p
+          assert "EXPECTED_P2_SHA256 = \"f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb\"" in patch
+          assert 'five-fold held-out seed-floor reliability gate only' in patch
+          assert 'before the authoritative P2 development result is known' in protocol
+          assert 'No P2 outcome, P2 per-label result' in protocol
+          tree=ast.parse(p)
+          names={n.id for n in ast.walk(tree) if isinstance(n,ast.Name)}
+          assert 'crossfit_payload' in names and 'reliability' in names and 'family_fold' in names
+          print('PASS_P3_IMPLEMENTATION_SOURCE_AUDIT')
+          PY
+
+      - name: Assert no-data/no-P2-outcome boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_P2_RESULT_NO_P3_SCIENCE_NO_TARGET_ACCESS
