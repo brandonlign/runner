@@ -1,0 +1,44 @@
+name: OrbitTrace P15 MAARSY protocol source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15_external/**
+      - .github/workflows/orbittrace_p15_maarsy_protocol_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit P15 external preregistration only
+        run: |
+          set -euo pipefail
+          p=orbittrace_support_safe_halo_p15_external/MAARSY_2020_2021_PROTOCOL.md
+          t=orbittrace_support_safe_halo_p15_external/TRANSPORT_SOURCE_PROVENANCE.md
+          for x in \
+            'PASS_P15_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'MAARSY 2020 and 2021' \
+            'MIN_DIRECTION_NEGATIVES=128' \
+            'CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES' \
+            'halo macro-F1 >= core macro-F1 + **0.08**' \
+            'halo mean recall >= **1.5×** core mean recall' \
+            'halo mean precision >= **0.85**' \
+            'PASS_P15_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            '20°–55°'; do grep -F "$x" "$p"; done
+          for x in \
+            'f563ca63e169e6ddfe846219d8f00384f3451797' \
+            'bbf71f190ca128e3e24f71900fefbd1472cdacb6' \
+            '31325401462' \
+            '3e0bcc3db805f60310ec9b01d6d48f76b29544780119c05e71fc225c04e3fe48'; do grep -F "$x" "$t"; done
+          if grep -Eq 'PASS_P14_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS|PASS_P14_MAARSY_2020_2021_NO_RETUNING_EXTERNAL|OrbitTrace-April|target_coordinate' "$p" "$t"; then
+            echo 'stale predecessor verdict or target-specific token survived P15 external reservation' >&2
+            exit 1
+          fi
+          echo PASS_P15_MAARSY_PROTOCOL_SOURCE_AUDIT
+          echo NO_MAARSY_DATA_NO_MATCHED_TRUTH_NO_TARGET_ACCESS
