@@ -1,0 +1,68 @@
+name: OrbitTrace v6-LF final Stage-A execution source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-lf-final-stage-a-freeze
+    paths:
+      - .github/workflows/orbittrace_v6_lf_final_stage_a_execution.yml
+      - .github/workflows/orbittrace_v6_lf_final_stage_a_execution_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-lf-final-stage-a-execution-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-lf-final-stage-a-execution-freeze
+      - name: Prove gated target-uninformed Stage-A execution ordering
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_v6_lf_final_stage_a_execution.yml').read_text()
+          required=[
+              'orbittrace_v6_lf_final_stage_a/RUN_STAGE_A.md',
+              'EXECUTE_V6_LF_FINAL_STAGE_A_AFTER_ALL_GATES',
+              'orbittrace-v6-lf-all-event-null-development-v2',
+              'orbittrace-v6-lf-strict-semantic-development',
+              'orbittrace-v6-lf-matched-literature-fanout-v1-result',
+              'orbittrace-v6-lf-gmn-2024-2025-holdout',
+              "dev['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'",
+              "lit['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}",
+              "hold['verdict']=='PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT'",
+              "test ! -e target",
+              "test ! -e input",
+              "--parallel-exact-wrapper orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py",
+              "'target_reference_accessed'",
+              "'catalogue_shower_labels_used'",
+              "'all_event_null'",
+              'orbittrace-v6-lf-final-stage-a',
+          ]
+          for token in required: assert token in w, token
+          auth=w.index('Require one-file child and all three frozen authorization gates')
+          runtime=w.index('Reconstruct exact v6-LF runtime without target reference')
+          execute=w.index('Execute target-uninformed full-region Stage A')
+          assert auth < runtime < execute
+          assert w.index('rm -rf /tmp/stage-a-auth') < execute
+          assert 'target_reference' not in w[execute:w.index('Record immutable Stage-A provenance')].lower() or "target_reference_accessed" in w[execute:w.index('Record immutable Stage-A provenance')]
+          assert "git hash-object orbittrace_v6_lf_final_stage_a/run_stage_a.py)\" = 'a77e967a8079827728156c82452651796211bede'" in w
+          assert "git hash-object orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py)\" = 'f91590a8110904a2a72bd9573bd6e54599709528'" in w
+          assert "257aab9d0f4d710a1b62af6088cfb9c0939062018d44dbacd074b4e7898eaa24" in w
+          assert "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2" in w
+          print('PASS_V6_LF_FINAL_STAGE_A_EXECUTION_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only audit boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_GMN_DATA_NO_TARGET_REFERENCE_NO_STAGE_A_EXECUTION
