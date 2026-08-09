@@ -92,9 +92,15 @@ jobs:
             'git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py' \
             '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2' \
             '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8' \
+            '7035daf3e670ab89c66c87035540419f549bab09' \
+            'python orbittrace_wavelet_catalogue_v3/audit_development_source.py' \
+            'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' \
+            '/tmp/run_wavelet_catalogue_v3_development.py' \
             'PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8'; do
             grep -F "$x" "$w"
           done
+          test "$(grep -Fc 'python orbittrace_wavelet_catalogue_v3/audit_development_source.py' "$w")" -eq 1
+          test "$(grep -Fc 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' "$w")" -ge 3
           if grep -Fq 'PYTHONPATH: frozen-v8' "$w"; then
             echo 'incomplete v8 runtime path survived P19 transport repair' >&2
             exit 1
