@@ -1,0 +1,63 @@
+name: OrbitTrace P3 dual-null protocol source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_crossyear_dual_null_membership_p3/PROTOCOL.md
+      - .github/workflows/orbittrace_p3_dual_null_protocol_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove frozen P3 architecture and gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_crossyear_dual_null_membership_p3/PROTOCOL.md').read_text()
+          required=(
+              'before any canonical P2 scientific PASS/FAIL exists',
+              'exact 226 recurrent v8 families',
+              '±5.0° solar-longitude window',
+              '4D OAS covariance',
+              'minimum exact D_SH',
+              'D_SH < 0.05',
+              'p_dual = max(p_obs, p_orbit)',
+              'at least 128 local nonseed rows',
+              'at least 128 valid-orbit local nonseed rows',
+              'p_adj = min(1, m * p_dual)',
+              'p_adj <= 0.01',
+              'new members never seed/refit',
+              'at least 20 families gain >=1 member',
+              'at least 200 total nonseed events are admitted',
+              'qualified known-shower matches >= 95',
+              'recovery@100 >= 58',
+              'MRR >= 0.95 × 0.045531138942766655',
+              'top-100 dominant-label precision >= 0.68',
+              'macro F1 >= 0.25',
+              'PASS_CROSSYEAR_DUAL_NULL_MEMBERSHIP_P3_DEVELOPMENT',
+              'FAIL_CROSSYEAR_DUAL_NULL_MEMBERSHIP_P3_NO_GO',
+          )
+          for token in required: assert token in p, token
+          for forbidden in ('OrbitTrace-April','247.17','-14.34','37.62','rank 59','95 target'):
+              assert forbidden not in p, forbidden
+          assert 'No OrbitTrace target coordinate' in p
+          assert 'No null trimming' in p
+          assert 'No learned class weights or probability model is fit' in p
+          print('PASS_P3_DUAL_NULL_PROTOCOL_SOURCE_AUDIT')
+          PY
+      - name: Assert protocol-only no-data boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_GMN_VALUES_NO_P2_RESULT_NO_TARGET_ACCESS
