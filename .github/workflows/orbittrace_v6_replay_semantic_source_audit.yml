@@ -1,0 +1,79 @@
+name: OrbitTrace v6 replay semantic-equivalence source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-exact-fanout-v2
+    paths:
+      - orbittrace_v6_exact_fanout_v2/replay_exact_year.py
+      - .github/workflows/orbittrace_v6_replay_semantic_source_audit.yml
+      - .github/workflows/orbittrace_v6_replay_semantic_recovery.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile recovery replay
+        run: python -m py_compile orbittrace_v6_exact_fanout_v2/replay_exact_year.py
+      - name: Prove semantic-equivalence boundary
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          path=Path('orbittrace_v6_exact_fanout_v2/replay_exact_year.py')
+          text=path.read_text(); tree=ast.parse(text)
+          defs={n.name:n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef)}
+          sem=ast.get_source_segment(text,defs['semantic_record_equivalence'])
+          replay=ast.get_source_segment(text,defs['replay_exact'])
+          assert 'FLOAT_REL_TOL = 1e-12' in text
+          assert 'FLOAT_ABS_TOL = 1e-12' in text
+          assert 'math.isclose' in sem
+          assert 'set(a) == set(b)' in sem
+          assert 'len(a) == len(b)' in sem
+          assert 'for index, (av, bv) in enumerate(zip(a, b))' in sem
+          assert 'type(a) is type(b) and a == b' in sem
+          assert 'canonical_sha(records) != spec["records_sha256"]' in replay
+          assert 'semantic_record_equivalence(captured_records, records, center)' in replay
+          assert '[str(row["proposal_anchor_id"]) for row in records]' in replay
+          assert '[str(row["proposal_anchor_id"]) for row in captured_records]' in replay
+          assert 'canonical_sha(ids) == spec["window_event_ids_sha256"]' in replay
+          assert 'align_exact_outputs_to_records(exact_by_center[center], captured_records, center)' in replay
+          assert 'return outputs' in replay
+          print('PASS_REPLAY_SEMANTIC_EQUIVALENCE_SOURCE_AUDIT')
+          PY
+      - name: Synthetic strictness tests
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          import copy
+          from orbittrace_v6_exact_fanout_v2.replay_exact_year import semantic_record_equivalence
+          base=[{'proposal_anchor_id':'A','window_center':0.0,'proposal_brown_score':1.0,'proposal_member_ids':['x','y'],'nearest_ids':['n1','n2'],'exact_rescore':False}]
+          tiny=copy.deepcopy(base); tiny[0]['proposal_brown_score'] += 5e-13
+          semantic_record_equivalence(base,tiny,0.0)
+          for mutate in ('anchor','members','order','float'):
+              bad=copy.deepcopy(base)
+              if mutate=='anchor': bad[0]['proposal_anchor_id']='B'
+              if mutate=='members': bad[0]['proposal_member_ids'][1]='z'
+              if mutate=='order': bad[0]['nearest_ids'].reverse()
+              if mutate=='float': bad[0]['proposal_brown_score'] += 1e-6
+              try:
+                  semantic_record_equivalence(base,bad,0.0)
+              except RuntimeError:
+                  pass
+              else:
+                  raise AssertionError(f'{mutate} mismatch was incorrectly accepted')
+          print('PASS_REPLAY_SEMANTIC_STRICTNESS_TESTS')
+          PY
+      - name: Assert source-only boundary
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABEL_NO_TARGET_ACCESS
