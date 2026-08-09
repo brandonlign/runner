@@ -1,0 +1,62 @@
+name: OrbitTrace P2 MAARSY 2020/2021 external source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p2-maarsy-2020-2021-reservation
+    paths:
+      - orbittrace_p2_maarsy_2020_2021_external/PROTOCOL.md
+      - .github/workflows/orbittrace_p2_maarsy_2020_2021_external_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove frozen P2 external generalization contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_p2_maarsy_2020_2021_external/PROTOCOL.md').read_text()
+          required=(
+            'MAARSY 2020/2021',
+            'PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT',
+            '`BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY`',
+            'cross-survey no-retuning generalization/transport test',
+            'not an independent-orbit-modality validation',
+            '20°–55°',
+            'at most 10,000 events per fixed 10° solar-longitude bin',
+            'Stage S — promoted-v8 seed/rank freeze before orbit',
+            'at least 100 recurrent promoted-v8 families',
+            'exactly two features `[d_obs,d_orb]`',
+            'responsibility `>0.5`',
+            'at least 30 distinct families',
+            'at least 200 added events',
+            'at least 200 deterministic control events',
+            'at least 10 orbitally corroborated families',
+            '`Q_P2 >= Q_seed`',
+            'precision >= 0.60',
+            '>= 0.15 absolute',
+            '`p <= 0.01`',
+            'grows by >=20%',
+            'PASS_P2_MAARSY_2020_2021_EXTERNAL_VALIDATION',
+          )
+          for token in required: assert token in p, token
+          assert '2016/2017 promoted-v8 test produced N=107 recurrent families but only Q=11' in p
+          assert 'inherited unchanged from the P1 MAARSY preregistration' in p
+          assert 'No OrbitTrace coordinates' in p
+          assert 'No alternate years, cap, binning, subset, density rule' in p
+          print('PASS_P2_MAARSY_2020_2021_EXTERNAL_PROTOCOL_AUDIT')
+          PY
+      - name: Assert no-data boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_MAARSY_2020_2021_VALUES_NO_TARGET_ACCESS
