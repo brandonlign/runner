@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - name: Reconstruct exact P12 sources and inspect P15 insertion anchors
+      - name: Reconstruct exact parents and prove P15 transform scope
         run: |
           set -euo pipefail
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
@@ -39,26 +39,46 @@ jobs:
           echo 'f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae  /tmp/p12_panel_v2.py' | sha256sum -c -
           python orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_from_v2.py /tmp/p12_panel_v2.py /tmp/p12_panel_v3.py
           echo '55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415  /tmp/p12_panel_v3.py' | sha256sum -c -
+          python -m py_compile orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12.py /tmp/p15_dev.py | tee /tmp/p15_dev_transform.txt
+          python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12_panel_v3.py /tmp/p15_matched.py | tee /tmp/p15_matched_transform.txt
+          python -m py_compile /tmp/p15_dev.py /tmp/p15_matched.py
           python - <<'PY'
           from pathlib import Path
-          def inspect(path,label):
-              lines=Path(path).read_text().splitlines()
-              neg=[i for i,s in enumerate(lines) if 'require(len(negative_events) >= MIN_DIRECTION_NEGATIVES' in s]
-              assert len(neg)==1,(label,neg)
-              i=neg[0]
-              print(label,'NEGATIVE_SUPPORT_ANCHOR',i+1)
-              for j in range(max(0,i-15),min(len(lines),i+25)): print(f'{label} {j+1:04d}: {lines[j]}')
-              patterns=('for family_index, family in enumerate(families)','direction_audits','len(directions)','family_directions','2 * len(families)','2*len(families)','p3_every_direction','p9_bidirectionally','halo_checkpoint = {','result = {')
-              for needle in patterns:
-                  hs=[k for k,s in enumerate(lines) if needle in s]
-                  print(label,'HITS',repr(needle),[k+1 for k in hs])
-                  for k in hs:
-                      print(f'{label}_HIT {k+1:04d}: {lines[k]}')
-              return lines
-          dev=inspect('/tmp/p12.py','DEV')
-          matched=inspect('/tmp/p12_panel_v3.py','MATCHED')
-          assert any('halo_checkpoint = {' in s for s in matched)
-          assert not any('halo_checkpoint = {' in s for s in dev)
-          print('PASS_P15_HALO_SUPPORT_SOURCE_CONTEXT_FROZEN')
+          import difflib,re
+          parents={'DEV':Path('/tmp/p12.py'),'MATCHED':Path('/tmp/p12_panel_v3.py')}
+          children={'DEV':Path('/tmp/p15_dev.py'),'MATCHED':Path('/tmp/p15_matched.py')}
+          for label in parents:
+              old=parents[label].read_text(); new=children[label].read_text()
+              assert old.count('    direction_audits: list[dict[str, Any]] = []\n')==1
+              assert new.count('    p15_unavailable_directions: list[dict[str, Any]] = []\n')==1
+              old_guard='            require(len(negative_events) >= MIN_DIRECTION_NEGATIVES, f"P2 input-ineligible: <{MIN_DIRECTION_NEGATIVES} negatives for {family_id} {source_year}->{target_year}")\n'
+              assert old.count(old_guard)==1 and new.count(old_guard)==0
+              assert new.count('            if len(negative_events) < MIN_DIRECTION_NEGATIVES:\n')==1
+              assert new.count('                continue\n') >= old.count('                continue\n')+1
+              assert new.count('p15_unavailable_directions.append')==1
+              assert old.count('MIN_DIRECTION_NEGATIVES = 128')==new.count('MIN_DIRECTION_NEGATIVES = 128')==1
+              assert new.count('CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES')==1
+              assert new.count('p15_no_padding_resampling_or_relaxation')==1
+              assert new.count('p15_secondary_characterization_only')==1
+              if label=='DEV':
+                  assert new.count('"p15_parent_source_sha256": "78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32"')==1
+                  assert new.index('"p15_architecture"') > new.index('    result = {')
+              else:
+                  assert new.count('"p15_parent_source_sha256": "55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415"')==1
+                  assert new.index('"p15_architecture"') > new.index('    halo_checkpoint = {')
+              delta=list(difflib.unified_diff(old.splitlines(),new.splitlines(),lineterm=''))
+              changed=[x for x in delta if (x.startswith('+') or x.startswith('-')) and not x.startswith('+++') and not x.startswith('---')]
+              print(label,'P15_CHANGED_LINES',len(changed))
+              print('\n'.join(delta))
+              # All changed lines must belong to one of the three frozen transform surfaces.
+              allowed_tokens=('p15_','if len(negative_events) < MIN_DIRECTION_NEGATIVES','family_id','source_year','target_year','observed_negative_count','required_negative_count','CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES','continue','require(len(negative_events) >= MIN_DIRECTION_NEGATIVES','"verdict": verdict','"classification": "P13 exact-P12 matched-panel pretruth halo transport"')
+              for line in changed:
+                  body=line[1:].strip()
+                  if not body: continue
+                  assert any(tok in body for tok in allowed_tokens),(label,line)
+          print('PASS_P15_SOURCE_TRANSFORM_EXACTLY_SCOPED')
           PY
+          grep -E '^P15_OUTPUT_SHA256=' /tmp/p15_dev_transform.txt
+          grep -E '^P15_OUTPUT_SHA256=' /tmp/p15_matched_transform.txt
           echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
