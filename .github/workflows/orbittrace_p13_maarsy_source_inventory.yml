@@ -1,0 +1,60 @@
+name: OrbitTrace P13 MAARSY metadata-only source inventory
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-maarsy-2020-2021-external-reservation
+    paths:
+      - orbittrace_core_halo_p13_external/INVENTORY.md
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  inventory:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 1}
+      - name: Require one-file metadata-only child
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_core_halo_p13_external/INVENTORY.md'
+          m="$(git show "$HEAD_SHA":orbittrace_core_halo_p13_external/INVENTORY.md)"
+          test "$(printf '%s\n' "$m" | sed -n '1p')" = 'INVENTORY_MAARSY_SOURCE_METADATA_ONLY'
+          test "$(printf '%s\n' "$m" | wc -l)" -eq 1
+      - name: Inventory branch and path names without opening file contents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name' | grep -i 'maarsy\|external' | sort -u > output/branches.txt || true
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          git log --all --name-only --pretty=format: | sed '/^$/d' | grep -i 'maarsy' | sort -u > output/paths.txt || true
+          {
+            echo 'P13 MAARSY SOURCE INVENTORY — METADATA ONLY'
+            echo
+            echo 'No source file contents or result artifacts were opened.'
+            echo
+            echo 'Branches/ref names:'
+            sed 's/^/- `/' output/branches.txt | sed 's/$/`/'
+            echo
+            echo 'Repository path names:'
+            sed 's/^/- `/' output/paths.txt | sed 's/$/`/'
+          } > output/inventory.md
+          gh pr comment 681 --repo "$GITHUB_REPOSITORY" --body-file output/inventory.md
+          cat output/inventory.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p13-maarsy-source-metadata-inventory
+          path: output
+          retention-days: 30
