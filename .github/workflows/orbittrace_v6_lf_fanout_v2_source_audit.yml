@@ -61,10 +61,23 @@ jobs:
           assert 'v6.exact_rescore_window_v6(old,records,window,event_lookup,support,base)' in shard
 
           replay=Path('orbittrace_v6_label_free_all_event_null_fanout/replay_exact_year.py').read_text()
+          rtree=ast.parse(replay); rdefs={n.name:n for n in ast.walk(rtree) if isinstance(n,ast.FunctionDef)}
           assert 'lf.parse_geometry_only(support,base)' in replay
           assert 'support.parse_catalogue' not in replay
           assert 'v6.exact_rescore_window_v6=replay' in replay
           assert 'scientific_result_not_evaluated":True' in replay
+          assert 'FLOAT_REL_TOL=1e-12' in replay and 'FLOAT_ABS_TOL=1e-12' in replay
+          semantic=ast.get_source_segment(replay,rdefs['semantic_record_equivalence'])
+          assert 'set(a)==set(b)' in semantic
+          assert 'len(a)==len(b)' in semantic
+          assert 'type(a) is type(b) and a==b' in semantic
+          assert 'math.isclose(af,bf,rel_tol=FLOAT_REL_TOL,abs_tol=FLOAT_ABS_TOL)' in semantic
+          replay_fn=ast.get_source_segment(replay,rdefs['replay'])
+          assert 'semantic_record_equivalence(captured,records,center)' in replay_fn
+          assert '[str(r["proposal_anchor_id"]) for r in records]==[str(r["proposal_anchor_id"]) for r in captured]' in replay_fn
+          assert 'lf.canonical_sha(ids)==spec["window_event_ids_sha256"]' in replay_fn
+          assert 'align_exact_outputs_to_records(exact_by_center[center],captured,center)' in replay_fn
+          assert 'semantic_record_equivalence_fallback":True' in replay
 
           combine=Path('orbittrace_v6_label_free_all_event_null_fanout/combine_and_evaluate.py').read_text()
           assert 'lf.parse_geometry_only(support,base)' in combine
