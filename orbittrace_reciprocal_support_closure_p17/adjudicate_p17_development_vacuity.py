@@ -42,9 +42,13 @@ def main()->int:
         'p9_reliable = bool(direction_reliable and p17_reciprocal_p3_reliable)',
         'missing reciprocal reliability without support-unavailable proof',
         'p17_missing_reciprocal_creates_positive_evidence',
+        "if 'p17_reciprocal_p3_reliable = True' in text:",
+        "raise RuntimeError('P17 fabricates reciprocal positive reliability')",
     )
     for x in required: require(x in s,f'P17 patcher source invariant missing: {x}')
-    require('p17_reciprocal_p3_reliable = True' not in s,'P17 patcher can fabricate positive reciprocal reliability')
+    # Reject an actual generated-code assignment while allowing the patcher's own
+    # defensive string check that explicitly rejects such an assignment.
+    require('\n            p17_reciprocal_p3_reliable = True\n' not in s,'P17 patcher contains a positive reciprocal assignment')
 
     out={
         'verdict':'PASS_P17_RECIPROCAL_SUPPORT_CLOSURE_DEVELOPMENT_VACUITY',
