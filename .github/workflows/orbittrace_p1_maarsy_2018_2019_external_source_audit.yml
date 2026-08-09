@@ -1,0 +1,60 @@
+name: OrbitTrace P1 MAARSY 2018/2019 external source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-probabilistic-membership-p1-freeze-v2
+    paths:
+      - orbittrace_probabilistic_membership_p1/MAARSY_2018_2019_EXTERNAL_PROTOCOL.md
+      - .github/workflows/orbittrace_p1_maarsy_2018_2019_external_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove frozen external membership-validation contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_probabilistic_membership_p1/MAARSY_2018_2019_EXTERNAL_PROTOCOL.md').read_text()
+          required=(
+              'MAARSY 2018/2019',
+              'PASS_PROBABILISTIC_MEMBERSHIP_P1_DEVELOPMENT',
+              'BROAD_CATALOGUE_SUPERIORITY',
+              'SPARSE_STREAM_SUPERIORITY',
+              '20°–55°',
+              'deterministic 10,000/bin identity cap',
+              '`D_SH < 0.05`',
+              'family orbital precision >= 0.50',
+              'at least **200** P1-added events with valid native orbits',
+              'at least **30** distinct primary families',
+              'at least **200** valid-orbit shell controls',
+              '`Q_P1 >= Q_seed`',
+              'added-member orbital precision >= **0.60**',
+              'at least **+0.15 absolute** higher than shell-control precision',
+              'one-sided Fisher exact enrichment has **p <= 0.01**',
+              'increases by at least **20%**',
+              'PASS_P1_MAARSY_2018_2019_EXTERNAL_VALIDATION',
+          )
+          for token in required:
+              assert token in p, token
+          assert 'kepler_std' in p and 'forbidden' in p
+          assert 'P1-added event is dynamically consistent' in p
+          assert 'opposite-year immutable v8 seed orbit' in p
+          assert 'No OrbitTrace target coordinate' in p
+          assert 'If repository history later reveals prior 2018/2019 scientific-value access' in p
+          print('PASS_P1_MAARSY_2018_2019_EXTERNAL_PROTOCOL_AUDIT')
+          PY
+      - name: Assert source-only no-data boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_MAARSY_2018_2019_VALUES_NO_TARGET_ACCESS
