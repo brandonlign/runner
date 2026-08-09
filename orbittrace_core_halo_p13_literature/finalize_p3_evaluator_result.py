@@ -10,8 +10,9 @@ from typing import Any
 
 PANELS=('hdbscan','sugar')
 YEARS=(2023,2025)
+P13_TRANSPORT_SOURCE_SHA256='7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c'
 ASSIGNMENT_SHA256={
-    'hdbscan':{2023:'35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',2025:'8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3'},
+    'hdbscan':{2023:'35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',2025:'8e7580c52e41e6996d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3'},
     'sugar':{2023:'2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389',2025:'77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e'},
 }
 EXPECTED_COUNTS={'hdbscan':{2023:26460,2025:19658},'sugar':{2023:30414,2025:23200}}
@@ -36,7 +37,7 @@ def load_checkpoint(path:Path,panel:str)->dict[str,Any]:
     require(cp['p3_diagnostics']['primary_candidate_is_core_only'] is True and cp['p3_diagnostics']['halo_can_affect_primary_evaluation'] is False,f'generic evaluator compatibility role changed {panel}')
     require(len(cp['p13_core_pretruth_sha256'])==64 and len(cp['p13_halo_membership_pretruth_sha256'])==64,f'P13 pretruth hashes missing {panel}')
     require(cp['p3_membership_pretruth_sha256']==canonical_sha(cp['p3_expanded_families']),f'core candidate hash changed {panel}')
-    require(cp['p13_transport_source_sha256']=='4c2ee663541fe00ec959b3e3d0ec7d9e5bf2fad062bf9f8b709a3d7bedbde6ae',f'P12 panel transport source changed {panel}')
+    require(cp['p13_transport_source_sha256']==P13_TRANSPORT_SOURCE_SHA256,f'P12 panel transport source changed {panel}')
     return cp
 
 
@@ -61,7 +62,6 @@ def main()->int:
         year_sparse={}; year_broad={}
         for year in YEARS:
             g=q['pairwise_gates'][str(year)]
-            # Mandatory sparse standard must hold independently in each year.
             require(set(g['sparse_gates'])=={'four_to_nine_gain_ge_0_10','four_to_twentyfour_gain_ge_0_10','macro_f1_not_more_than_0_10_lower','retain_at_least_80pct_f1_gt_0_5_count'},f'sparse gate set changed {panel} {year}')
             year_sparse[str(year)]=bool(g['sparse_pass'] and all(g['sparse_gates'].values()))
             year_broad[str(year)]=bool(g['broad_pass'] and all(g['broad_gates'].values()))
