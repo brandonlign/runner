@@ -1,0 +1,70 @@
+name: OrbitTrace P14 support-safe rank source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-core-halo-pretruth-reservation
+    paths:
+      - orbittrace_support_safe_rank_p14/**
+      - .github/workflows/orbittrace_p14_support_safe_source_audit.yml
+      - .github/workflows/orbittrace_p14_support_safe_development.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Static and synthetic fail-closed audit
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_support_safe_rank_p14/support_safe_rank.py orbittrace_support_safe_rank_p14/finalize_development.py
+          python - <<'PY'
+          from types import SimpleNamespace
+          from orbittrace_support_safe_rank_p14.support_safe_rank import score_and_complete_rank, EPISODE_SIZE
+
+          class M:
+              EPISODE_SIZE=128
+              def __init__(self,fail=None): self.fail=fail
+              def score_families(self,fams,scan,runtime,base):
+                  f=fams[0]; fid=f['family_id']
+                  if fid==self.fail: raise RuntimeError(f'family {fid} year 2025 has only 64 events in local window')
+                  score={'A':3.2,'B':3.8,'C':3.5}[fid]
+                  return ([{'family_id':fid,'multiplicity_worst_year':score,'multiplicity_geometric_mean':score}],
+                          {'families_requested':1,'families_scored':1,'episode_sizes':[128]})
+              def rank_scored(self,rows,method):
+                  assert method=='multiplicity'
+                  return [r['family_id'] for r in sorted(rows,key=lambda r:(-r['multiplicity_worst_year'],-r['multiplicity_geometric_mean'],r['family_id']))]
+          fams=[{'family_id':'A'},{'family_id':'B'},{'family_id':'C'}]
+          rows,order,audit=score_and_complete_rank(fams,{2023:[],2025:[]},None,None,M())
+          assert order==['B','C','A'],order
+          assert audit['families_scored']==3 and audit['families_unscorable']==0
+          rows,order,audit=score_and_complete_rank(fams,{2023:[],2025:[]},None,None,M('B'))
+          assert order==['C','A','B'],order
+          assert audit['families_scored']==2 and audit['families_unscorable']==1
+          assert audit['unscorable_families'][0]['available_local_events']==64
+          try:
+              class Bad(M):
+                  def score_families(self,*args): raise RuntimeError('unexpected numerical failure')
+              score_and_complete_rank(fams,{2023:[],2025:[]},None,None,Bad())
+              raise AssertionError('P14 swallowed non-support exception')
+          except RuntimeError as exc:
+              assert str(exc)=='unexpected numerical failure'
+          assert EPISODE_SIZE==128
+          print('PASS_P14_SUPPORT_SAFE_SYNTHETIC_AUDIT')
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_support_safe_rank_p14/support_safe_rank.py').read_text()
+          protocol=Path('orbittrace_support_safe_rank_p14/PROTOCOL.md').read_text()
+          for token in ('EPISODE_SIZE = 128','multiplicity_module.score_families([family]','multiplicity_module.rank_scored(scored_rows, "multiplicity")','SUPPORT_INELIGIBLE_RE.fullmatch','unscorable_ids = sorted','fabricated_scores": False','episode_size_relaxed": False'):
+              assert token in p,token
+          for token in ('No padding, resampling, duplicate events, smaller episode','226','452','20°–55°','before any Sugar/HDBSCAN cluster value'):
+              assert token in protocol,token
+          assert 'OrbitTrace-April' not in p+protocol and 'target_coordinate' not in p+protocol
+          print('PASS_P14_SUPPORT_SAFE_SOURCE_AUDIT_NO_TARGET_ACCESS')
+          PY
