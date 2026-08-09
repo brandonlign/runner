@@ -1,0 +1,98 @@
+name: OrbitTrace final exact-ID Stage-B source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-final-exact-id-firewall-v2
+    paths:
+      - orbittrace_final_exact_id_firewall_v2/seal_withheld_reference.py
+      - orbittrace_final_exact_id_firewall_v2/SEAL_WITHHELD_REFERENCE_REQUEST.schema.json
+      - orbittrace_final_exact_id_firewall_v2/STAGE_B_EXECUTION_REQUEST.schema.json
+      - orbittrace_final_exact_id_firewall_v2/STAGE_B_EXECUTION_FREEZE.md
+      - .github/workflows/orbittrace_final_exact_id_reference_seal.yml
+      - .github/workflows/orbittrace_final_exact_id_stage_b_execution.yml
+      - .github/workflows/orbittrace_final_exact_id_stage_b_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-final-exact-id-stage-b-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-exact-id-stage-b-execution-freeze
+
+      - name: Compile exact-ID-only seal and reveal sources
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_final_exact_id_firewall_v2/seal_withheld_reference.py \
+            orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py
+          test "$(git hash-object orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py)" = '4d9f10e56c5151ac755f098c9752f664da264218'
+
+      - name: Prove seal happens only after promotion and before Stage A
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          seal=Path('.github/workflows/orbittrace_final_exact_id_reference_seal.yml').read_text()
+          stage=Path('.github/workflows/orbittrace_final_exact_id_stage_b_execution.yml').read_text()
+          scrub=Path('orbittrace_final_exact_id_firewall_v2/seal_withheld_reference.py').read_text()
+          evaluator=Path('orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py').read_text()
+
+          assert 'pull_request_target:' in seal and 'SEAL_WITHHELD_REFERENCE_REQUEST.json' in seal
+          assert "PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT" in seal
+          assert "{'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}" in seal
+          assert "PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT" in seal
+          promotion=seal.index('Verify all method-promotion gates before any target reference access')
+          target=seal.index('Download exact historical withheld-reference artifact only after promotion')
+          scrub_step=seal.index('Scrub reference to exact ID and year only')
+          assert promotion < target < scrub_step
+          assert 'target_ids_logged' in seal and 'target_counts_logged' in seal
+
+          assert 'SOURCE_SCHEMA = "orbittrace-withheld-reference-v1"' in scrub
+          assert 'SEALED_SCHEMA = "orbittrace-withheld-exact-ids-v2"' in scrub
+          assert 'set(row) == {"event_id", "month_key"}' in scrub
+          assert 'sealed_events.append({"id": event_id, "year": year})' in scrub
+          for forbidden in ('ra', 'dec', 'radiant', 'orbit', 'velocity', 'score', 'suggested_family'):
+              assert forbidden not in scrub.lower(), forbidden
+
+          assert 'pull_request_target:' in stage and 'STAGE_B_EXECUTION_REQUEST.json' in stage
+          request_block=stage[stage.index("assert set(r)=={'schema','stage_a_run_id','seal_run_id'}"):stage.index("PASS_EXACT_ID_STAGE_B_REQUEST")]
+          assert 'artifact_id' not in request_block and 'reference' not in request_block
+          order=[
+              stage.index('Verify seal completed before Stage A began'),
+              stage.index('Download and validate immutable Stage A before target access'),
+              stage.index('Download pre-Stage-A sealed exact-ID reference only after Stage-A preflight'),
+              stage.index('Execute one-shot exact-ID reveal only'),
+          ]
+          assert order==sorted(order)
+          assert 'seal_done < stage_start' in stage
+          assert 'module.load_stage_a(p)' in stage
+          assert "module.load_target_ids(Path('input/sealed/withheld_exact_ids.json'))" in stage
+          assert "git hash-object orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py)\" = '4d9f10e56c5151ac755f098c9752f664da264218'" in stage
+
+          for token in ('FULL_RANK_MAX=25','PARTIAL_RANK_MAX=100','MIN_OVERLAP_PER_YEAR=4','MIN_OVERLAP_TOTAL=8'):
+              assert token in evaluator, token
+          assert 'by_year[year]&target[year]' in evaluator
+          for forbidden in ('d_criterion','nearest_neighbor','rerank','radiant_distance','orbit_distance'):
+              assert forbidden not in evaluator.lower(), forbidden
+          print('PASS_ORBITTRACE_EXACT_ID_STAGE_B_SOURCE_AUDIT')
+          PY
+
+      - name: Assert freeze contains no execution request or target data
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_final_exact_id_firewall_v2/SEAL_WITHHELD_REFERENCE_REQUEST.json
+          test ! -e orbittrace_final_exact_id_firewall_v2/STAGE_B_EXECUTION_REQUEST.json
+          test ! -e input
+          test ! -e target
+          test ! -e sealed
+          echo NO_TARGET_DATA_NO_STAGE_B_EXECUTION
