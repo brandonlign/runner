@@ -1,0 +1,44 @@
+name: OrbitTrace P18 final blind core-ID clarification source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/P18_FINAL_BLIND_CORE_ID_CLARIFICATION.md
+      - .github/workflows/orbittrace_p18_final_blind_core_id_clarification_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify final recovery counts only immutable primary core IDs
+        run: |
+          set -euo pipefail
+          p=orbittrace_p17_rank_halo_membership_p18/P18_FINAL_BLIND_CORE_ID_CLARIFICATION.md
+          for x in \
+            'only that family' \
+            'immutable P17/P14 recurrent-core event-ID set' \
+            'Halo-only event IDs' \
+            'do not count toward the requirement of at least 4 exact withheld reference IDs in 2022' \
+            'do not count toward the requirement of at least 4 exact withheld reference IDs in 2023' \
+            'do not count toward the requirement of at least 8 exact withheld reference IDs total' \
+            'cannot turn `NO_BLIND_RECOVERY` into `PARTIAL_BLIND_RECOVERY`' \
+            'cannot turn `PARTIAL_BLIND_RECOVERY` into `FULL_BLIND_RECOVERY`' \
+            'cannot change the primary family rank' \
+            'FULL rank <=25' \
+            'PARTIAL rank <=100' \
+            'must not be changed in response to any later result'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'target_coordinate|OrbitTrace-April|prior.*rank 59|247\.|-14\.|37\.62|95 canonical' "$p"; then
+            echo 'target-specific material leaked into core-ID clarification' >&2
+            exit 1
+          fi
+          echo PASS_P18_FINAL_BLIND_PRIMARY_CORE_ID_ONLY_RECOVERY_FREEZE
+          echo HALO_CANNOT_CONTRIBUTE_TO_FINAL_RECOVERY_VERDICT
+          echo NO_TARGET_ACCESS
