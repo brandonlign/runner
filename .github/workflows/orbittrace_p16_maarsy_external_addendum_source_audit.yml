@@ -1,0 +1,49 @@
+name: OrbitTrace P16 MAARSY external addendum source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p16-core-rank-halo-membership-freeze
+    paths:
+      - orbittrace_core_rank_halo_membership_p16/P16_MAARSY_2020_2021_EXTERNAL_ADDENDUM.md
+      - .github/workflows/orbittrace_p16_maarsy_external_addendum_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify P16 external addendum preserves frozen MAARSY design
+        run: |
+          set -euo pipefail
+          p=orbittrace_core_rank_halo_membership_p16/P16_MAARSY_2020_2021_EXTERNAL_ADDENDUM.md
+          for x in \
+            '31329487091' \
+            '9042496657' \
+            '1d470dcd2034e8b693d80117380f544f43cf6c6d581574a356dc11a04bb91040' \
+            'MAARSY 2020 and 2021' \
+            '3e0bcc3db805f60310ec9b01d6d48f76b29544780119c05e71fc225c04e3fe48' \
+            '20°–55°' \
+            'MIN_DIRECTION_NEGATIVES=128' \
+            'CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES' \
+            'macro-F1 must exceed immutable core macro-F1 by >=0.08' \
+            '>=1.5x immutable core recall' \
+            'precision must be >=0.85' \
+            '12e6635085c77c8c705fe225e67811c659e98bf7cd1047649ec2b8d593261b3c' \
+            'f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3' \
+            '17,238 already-frozen halo additions' \
+            'PASS_P16_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'PASS_P16_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            'POWER_INCONCLUSIVE_MAARSY_2020_2021'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'MAARSY 2018|MAARSY 2019|lower.*0\.08|lower.*0\.85|padding.*allowed|resampling.*allowed|target_coordinate|OrbitTrace-April|prior.*rank 59' "$p"; then
+            echo 'P16 addendum changes panel/gates or contains target-specific material' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_core_rank_halo_membership_p16/EXTERNAL_RUN.md
+          echo PASS_P16_MAARSY_EXTERNAL_ADDENDUM_SOURCE_FREEZE
+          echo NO_MAARSY_EVENT_NO_EXTERNAL_TRUTH_NO_TARGET_ACCESS
