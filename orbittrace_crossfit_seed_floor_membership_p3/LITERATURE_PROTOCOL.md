@@ -114,9 +114,13 @@ Separately against both Sugar and HDBSCAN, all must hold:
 
 Any non-sparse disadvantage must be reported explicitly.
 
+### Frozen promotion gate
+
+The literature prerequisite for downstream external validation passes **only if `SPARSE_STREAM_SUPERIORITY` passes separately against BOTH Sugar and HDBSCAN, with every required annual condition satisfied in BOTH SonotaCo 2023 and 2025**. `BROAD_CATALOGUE_SUPERIORITY` is a supplementary stronger/broader characterization only; it cannot substitute for the required sparse-stream gate.
+
 ### `NO_LITERATURE_SUPERIORITY`
 
-If neither classification passes against both comparators, P3 has not beaten the implemented literature methods. Preserve that outcome permanently. Do not alter P3 or this benchmark from the exposed result.
+If `SPARSE_STREAM_SUPERIORITY` fails against either comparator in either required year, P3 has not met the frozen literature-promotion prerequisite, regardless of whether `BROAD_CATALOGUE_SUPERIORITY` passes. Preserve that outcome permanently. Do not alter P3 or this benchmark from the exposed result.
 
 ## Information-parity claim boundary
 
@@ -126,6 +130,6 @@ P3 receives no native SonotaCo shower/background designation for calibration or 
 
 ## Downstream boundary
 
-A P3 literature pass still does not authorize target access. P3 must then pass a separately frozen no-retuning external/generalization test on an event-value-unexposed panel before final Stage A. MAARSY 2020/2021 remains unopened because P2 failed development before its reserved external route executed; any P3 use requires a P3-specific protocol frozen before first MAARSY 2020/2021 event-value access.
+Only a P3 result satisfying the frozen promotion gate above authorizes the separately frozen no-retuning external/generalization test. A broad-only result does not. MAARSY 2020/2021 remains unopened because P2 failed development before its reserved external route executed; any P3 use requires a P3-specific protocol frozen before first MAARSY 2020/2021 event-value access.
 
 No OrbitTrace coordinate, identity, member, historical target rank/recovery, target-region event, withheld target reference or target-containing output may be accessed anywhere in this comparison.
