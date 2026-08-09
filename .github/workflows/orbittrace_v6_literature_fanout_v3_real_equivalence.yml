@@ -34,7 +34,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
 
-      - name: Require one-file child and exact v6 development PASS
+      - name: Require one-file child, canonical v6 PASS, and v6-LF scientific no-go
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -44,24 +44,51 @@ jobs:
           files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')"
           test "$files" = 'orbittrace_v6_literature_fanout_v3/RUN_EQUIVALENCE.md'
           git fetch --no-tags --depth=1 origin "$HEAD_SHA"
-          test "$(git show "$HEAD_SHA":orbittrace_v6_literature_fanout_v3/RUN_EQUIVALENCE.md)" = 'EXECUTE_AFTER_FANOUT_V6_PASS'
+          content="$(git show "$HEAD_SHA":orbittrace_v6_literature_fanout_v3/RUN_EQUIVALENCE.md)"
+          mode="$(printf '%s\n' "$content" | sed -n '1p')"
+          v6_run="$(printf '%s\n' "$content" | sed -n '2p')"
+          lf_run="$(printf '%s\n' "$content" | sed -n '3p')"
+          test "$mode" = 'EXECUTE_ORDINARY_V6_LITERATURE_EQUIVALENCE_AFTER_LF_NO_GO'
+          [[ "$v6_run" =~ ^[0-9]+$ ]]
+          [[ "$lf_run" =~ ^[0-9]+$ ]]
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 3
           test ! -e orbittrace_v6_literature_fanout_v3/RUN_EQUIVALENCE.md
-          rm -rf /tmp/v6dev && mkdir -p /tmp/v6dev
-          gh run download 31282128101 \
+          rm -rf /tmp/v6dev /tmp/lfdev && mkdir -p /tmp/v6dev /tmp/lfdev
+          gh run download "$v6_run" \
             --repo "$GITHUB_REPOSITORY" \
-            --name orbittrace-v6-fanout-v2-development \
+            --name orbittrace-v6-semantic-replay-development \
             --dir /tmp/v6dev
+          gh run download "$lf_run" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v6-lf-all-event-null-development-v2 \
+            --dir /tmp/lfdev
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('/tmp/v6dev/v3_primary_catalogue_v6_development.json')
-          assert p.exists(), 'fanout v6 development result missing'
-          r=json.loads(p.read_text())
-          assert r['verdict']=='PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT',r['verdict']
-          assert r['configuration']['years']==[2022,2023]
-          assert r['configuration']['blind_exclusion']==[20.0,55.0]
-          assert all(r['gates'].values()),r['gates']
-          print('PASS_LITERATURE_FANOUT_EQUIVALENCE_V6_PREREQUISITE')
+
+          v6=json.loads(Path('/tmp/v6dev/v3_primary_catalogue_v6_development.json').read_text())
+          assert v6['verdict']=='PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT',v6['verdict']
+          assert v6['configuration']['years']==[2022,2023]
+          assert v6['configuration']['blind_exclusion']==[20.0,55.0]
+          assert all(v6['gates'].values()),v6['gates']
+
+          lf=json.loads(Path('/tmp/lfdev/v6_label_free_all_event_null_development.json').read_text())
+          assert lf['verdict']=='FAIL_V6_LABEL_FREE_ALL_EVENT_NULL_NO_GO',lf['verdict']
+          assert lf['configuration']['years']==[2022,2023]
+          assert lf['configuration']['blind_exclusion']==[20.0,55.0]
+          assert lf['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          integrity=[
+              'exact_repaired_v6_source','blind_interval_exact','geometry_parser_never_accessed_label_values',
+              'all_event_calibration_exact','at_least_30_supported_bins_each_year','proposal_budget_exact',
+              'pretruth_family_payload_frozen_before_truth','truth_event_universe_exact',
+          ]
+          scientific=[
+              'at_least_50_v3_families','qualified_at_least_v8','recovery100_at_least_v8',
+              'mrr_at_least_v8','top100_precision_at_least_065','macro_f1_at_least_v8',
+          ]
+          assert all(lf['gates'][key] is True for key in integrity),lf['gates']
+          assert not all(lf['gates'][key] is True for key in scientific),lf['gates']
+          print('PASS_ORDINARY_V6_LITERATURE_EQUIVALENCE_SELECTION_PREREQUISITE')
           PY
 
       - uses: actions/checkout@v4
