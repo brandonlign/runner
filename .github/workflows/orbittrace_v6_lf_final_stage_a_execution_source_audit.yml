@@ -39,6 +39,14 @@ jobs:
               "dev['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'",
               "lit['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}",
               "hold['verdict']=='PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT'",
+              "hold_cfg=hold['configuration']",
+              "hold_cfg['years']==[2024,2025]",
+              "hold_cfg['blind_exclusion']==[20.0,55.0]",
+              "hold_cfg['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'",
+              "all(hold['pretruth_integrity_power_gates'].values())",
+              "all(hold['scientific_gates'].values())",
+              "hold['truth_accessed'] is True",
+              "hold['truth_event_universe_exact'] is True",
               "test ! -e target",
               "test ! -e input",
               "--parallel-exact-wrapper orbittrace_v6_lf_final_stage_a/parallel_exact_rescore.py",
@@ -48,6 +56,15 @@ jobs:
               'orbittrace-v6-lf-final-stage-a',
           ]
           for token in required: assert token in w, token
+          # Reject the obsolete holdout schema assumptions that would block a valid PASS.
+          for obsolete in (
+              "hold['years']",
+              "hold['blind_exclusion']",
+              "hold['all_event_null']",
+              "hold['parameter_search']",
+              "hold['gates']",
+          ):
+              assert obsolete not in w, obsolete
           auth=w.index('Require one-file child and all three frozen authorization gates')
           runtime=w.index('Reconstruct exact v6-LF runtime without target reference')
           execute=w.index('Execute target-uninformed full-region Stage A')
