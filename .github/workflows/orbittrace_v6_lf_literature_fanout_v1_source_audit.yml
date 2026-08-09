@@ -8,6 +8,7 @@ on:
       - orbittrace_v6_lf_literature_fanout_v1/**
       - .github/workflows/orbittrace_v6_lf_literature_fanout_v1_source_audit.yml
       - .github/workflows/orbittrace_v6_lf_literature_fanout_v1_real_equivalence.yml
+      - .github/workflows/orbittrace_v6_lf_literature_fanout_v1_execution.yml
 
 permissions:
   contents: read
@@ -85,16 +86,38 @@ jobs:
           assert len({i for i,values in enumerate(bins1) if any(float(p['center'])==10.0 for p in values)})>=2
           assert max(loads1)<sum(loads1)
 
-          workflow=Path('.github/workflows/orbittrace_v6_lf_literature_fanout_v1_real_equivalence.yml').read_text()
-          assert 'EXECUTE_V6_LF_LITERATURE_FANOUT_EQUIVALENCE_AFTER_DEVELOPMENT_PASS' in workflow
-          assert 'orbittrace-v6-lf-all-event-null-development-v2' in workflow
-          assert 'orbittrace-v6-lf-strict-semantic-development' in workflow
-          assert "test \"${#candidates[@]}\" -eq 1" in workflow
-          assert "r['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'" in workflow
-          assert 'all(r[' in workflow and "['gates'].values())" in workflow
-          assert '--panel hdbscan --year 2023 --split-records 512 --workers 4' in workflow
-          assert 'PASS_V6_LF_LITERATURE_REAL_EXACT_EQUIVALENCE' in workflow
-          assert '"native_background_membership_used_for_calibration": false' in workflow
+          eq=Path('.github/workflows/orbittrace_v6_lf_literature_fanout_v1_real_equivalence.yml').read_text()
+          assert 'EXECUTE_V6_LF_LITERATURE_FANOUT_EQUIVALENCE_AFTER_DEVELOPMENT_PASS' in eq
+          assert 'orbittrace-v6-lf-all-event-null-development-v2' in eq
+          assert 'orbittrace-v6-lf-strict-semantic-development' in eq
+          assert "test \"${#candidates[@]}\" -eq 1" in eq
+          assert "r['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'" in eq
+          assert "all(r['gates'].values())" in eq
+          assert '--panel hdbscan --year 2023 --split-records 512 --workers 4' in eq
+          assert 'PASS_V6_LF_LITERATURE_REAL_EXACT_EQUIVALENCE' in eq
+          assert '"native_background_membership_used_for_calibration": false' in eq
+
+          full=Path('.github/workflows/orbittrace_v6_lf_literature_fanout_v1_execution.yml').read_text()
+          assert 'EXECUTE_V6_LF_MATCHED_LITERATURE_AFTER_REAL_EQUIVALENCE' in full
+          assert 'orbittrace-v6-lf-literature-fanout-v1-real-equivalence' in full
+          assert "test \"${#candidates[@]}\" -eq 1" in full
+          assert "r['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'" in full
+          assert "all(r['gates'].values())" in full
+          assert 'shard: [0, 1, 2, 3, 4, 5, 6, 7]' in full
+          assert '--shard-count 8 --workers 4' in full
+          assert 'max-parallel: 24' in full
+          assert 'rm -rf input/hdbscan2023 input/hdbscan2025 input/sugar2023 input/sugar2025' in full
+          assert "grep -E 'assignments|mapping|audit\\.json'" in full
+          freeze=full.index('PASS_V6_LF_LITERATURE_RANKINGS_FROZEN_BEFORE_TRUTH')
+          open_truth=full.index('Open frozen comparator assignments and known-shower truth only after rank freeze')
+          evaluate=full.index('Evaluate exact frozen pairwise comparison and unchanged superiority bars')
+          assert freeze < open_truth < evaluate
+          assert "35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761" in full
+          assert "77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e" in full
+          assert "r['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY','NO_LITERATURE_SUPERIORITY'}" in full
+          assert "{'2023':26460,'2025':19658}" in full
+          assert "{'2023':30414,'2025':23200}" in full
+          assert 'orbittrace-v6-lf-matched-literature-fanout-v1-result' in full
 
           assert 'every exact matched scan row' in protocol
           assert 'relative and absolute tolerance `1e-12`' in protocol
