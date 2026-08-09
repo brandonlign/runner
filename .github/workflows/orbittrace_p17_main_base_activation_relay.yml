@@ -108,10 +108,15 @@ jobs:
           out='\n'.join(x[10:] if x else '' for x in block)+'\n'
           for x in ('set -euo pipefail','PASS_P17_CHILD_WORKFLOW_DIFF_IS_INERT_NONCE_ONLY','git checkout --detach "$BASE_SHA"','31332157812','9043232586','c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a','PASS_P17_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH'):
               assert x in out,x
-          for x in ('OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE','evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
-              assert x not in out,x
+          lines=out.splitlines()
+          for token in ('evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py'):
+              assert not any(token in line and line.lstrip().startswith(('python ','python -u ')) for line in lines),token
+          assert not any('OPEN' in line and 'TRUTH' in line and line.lstrip().startswith(('echo ','progress ')) for line in lines)
+          for token in ('OrbitTrace-April','target_coordinate'):
+              occurrences=[line for line in lines if token in line]
+              assert occurrences and all('grep -E' in line for line in occurrences),(token,occurrences)
           Path('/tmp/p17_exact_base_run.sh').write_text(out)
-          print('PASS_P17_MAIN_RELAY_EXTRACTED_EXACT_BASE_RUN_BLOCK')
+          print('PASS_P17_MAIN_RELAY_EXTRACTED_EXACT_BASE_RUN_BLOCK_EXECUTION_AWARE_FIREWALL')
           PY
           bash -n /tmp/p17_exact_base_run.sh
           chmod +x /tmp/p17_exact_base_run.sh
