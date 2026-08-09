@@ -7,6 +7,8 @@ from pathlib import Path
 
 DEV_PARENT_SHA256='78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32'
 MATCHED_PARENT_SHA256='55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415'
+DEV_P15_SHA256='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'
+MATCHED_P15_SHA256='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'
 P15_RULE='P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY'
 
 
@@ -65,6 +67,7 @@ def main()->int:
         "p15_secondary_characterization_only": True,
 '''
         text=once(text,result_old,result_new,'development result metadata')
+        expected=DEV_P15_SHA256
     else:
         checkpoint_old='''    halo_checkpoint = {
         "classification": "P13 exact-P12 matched-panel pretruth halo transport",
@@ -81,6 +84,7 @@ def main()->int:
         "p15_secondary_characterization_only": True,
 '''
         text=once(text,checkpoint_old,checkpoint_new,'matched halo checkpoint metadata')
+        expected=MATCHED_P15_SHA256
 
     if 'MIN_DIRECTION_NEGATIVES = 128' not in text:
         raise RuntimeError('P15 exact 128-negative constant changed or unavailable')
@@ -93,8 +97,10 @@ def main()->int:
         if token in text:
             raise RuntimeError(f'P15 forbidden token/source change present: {token}')
 
+    result=sha256(text.encode('utf-8'))
+    if result!=expected:
+        raise RuntimeError(f'P15 generated source SHA changed: expected={expected} actual={result}')
     out.write_text(text,encoding='utf-8')
-    result=sha256(out.read_bytes())
     print(f'P15_INPUT_SHA256={parent}')
     print(f'P15_OUTPUT_SHA256={result}')
     print('P15_SCOPE=secondary halo availability only; exact 128-negative requirement unchanged; insufficient directions add zero proposals; all eligible P12 science unchanged')
