@@ -1,0 +1,58 @@
+name: OrbitTrace P1 final Stage-A protocol audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-final-exact-id-firewall-v2
+    paths:
+      - orbittrace_p1_final_stage_a/PROTOCOL.md
+      - .github/workflows/orbittrace_p1_final_stage_a_protocol_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove frozen P1 deployment and exact-ID reveal boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_p1_final_stage_a/PROTOCOL.md').read_text()
+          for token in (
+              'PASS_PROBABILISTIC_MEMBERSHIP_P1_DEVELOPMENT',
+              '`BROAD_CATALOGUE_SUPERIORITY` or `SPARSE_STREAM_SUPERIORITY`',
+              'PASS_P1_MAARSY_2018_2019_EXTERNAL_VALIDATION',
+              'e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508',
+              'complete geometrically valid GMN **2022 and 2023** rows',
+              '20°–55°',
+              'catalogue shower-label values',
+              'orbittrace-final-stage-a-ranked-families-v2',
+              'target_reference_accessed = false',
+              'catalogue_shower_labels_used = false',
+              'event_ids_by_year',
+              'FULL_BLIND_RECOVERY',
+              'PARTIAL_BLIND_RECOVERY',
+              'rank <=25',
+              'rank <=100',
+              'at least 4 exact withheld IDs in each of 2022 and 2023',
+          ):
+              assert token in p, token
+          assert 'PR #453 / run `31235104333`' in p
+          assert 'no family reranking after membership expansion' in p
+          assert 'added members never refit a family and never seed recursive growth' in p
+          assert 'withheld target-reference artifact must not be downloaded' in p
+          assert 'exact set intersections' in p
+          print('PASS_P1_FINAL_STAGE_A_PROTOCOL_AUDIT')
+          PY
+      - name: Assert protocol-only no-target boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e target
+          test ! -e output
+          echo NO_FULL_REGION_GMN_NO_TARGET_REFERENCE_NO_P1_RESULT
