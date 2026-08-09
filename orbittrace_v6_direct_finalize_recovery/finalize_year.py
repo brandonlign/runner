@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import gzip
 import hashlib
 import json
 import pickle
@@ -17,25 +18,10 @@ from orbittrace_v6_checkpointed_fallback.common import (
     sha256_bytes,
 )
 
-YEARS = (2022, 2023)
-
-
-def canonical_sha(value: Any) -> str:
-    return sha256_bytes(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode())
-
-
-def load_pickle_with_sha(path: Path) -> tuple[Any, str]:
-    raw = path.read_bytes()
-    sidecar = path.with_suffix(".sha256")
-    require(sidecar.exists(), f"missing SHA sidecar for {path.name}")
-    digest = sha256_bytes(raw)
-    require(digest == sidecar.read_text().strip().split()[0], f"SHA mismatch for {path.name}")
-    return pickle.loads(raw), digest
-
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--year", required=True, type=int, choices=YEARS)
+    p.add_argument("--year", required=True, type=int, choices=(2022, 2023))
     p.add_argument("--preexact", required=True, type=Path)
     p.add_argument("--exact-dir", required=True, type=Path)
     p.add_argument("--repaired-source", required=True, type=Path)
@@ -48,8 +34,20 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def finalize_postexact(v6: Any, old: Any, year: int, exact_records_all: list[dict[str, Any]], event_lookup: dict[str, dict[str, Any]], base: Any, proposal_cal: dict[int, Any], v3_cal: dict[int, Any], fixed4_cal: dict[int, Any], audit: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Literal frozen scan_year_v6 tail after exact_rescore_window_v6."""
+def canonical_sha(value: Any) -> str:
+    return sha256_bytes(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+
+
+def load_pickle_with_sha(path: Path) -> tuple[Any, str]:
+    raw = path.read_bytes()
+    sidecar = path.with_suffix(".sha256")
+    require(sidecar.exists(), f"missing SHA sidecar {path.name}")
+    digest = sha256_bytes(raw)
+    require(digest == sidecar.read_text().strip().split()[0], f"SHA mismatch {path.name}")
+    return pickle.loads(raw), digest
+
+
+def finalize_postexact(v6, old, year, exact_records_all, event_lookup, base, proposal_cal, v3_cal, fixed4_cal, audit):
     primary_by_anchor: dict[str, dict[str, Any]] = {}
     rescue_by_anchor: dict[str, dict[str, Any]] = {}
     exact_rejections = 0
@@ -71,7 +69,9 @@ def finalize_postexact(v6: Any, old: Any, year: int, exact_records_all: list[dic
             anchor_id = str(primary["anchor_id"])
             prior = primary_by_anchor.get(anchor_id)
             key = (float(primary["p_v3"]), -float(primary["v3_score"]), float(primary["p_fixed4"]), str(primary["proposal_anchor_id"]))
-            if prior is None or key < (float(prior["p_v3"]), -float(prior["v3_score"]), float(prior["p_fixed4"]), str(prior["proposal_anchor_id"])):
+            if prior is None or key < (
+                float(prior["p_v3"]), -float(prior["v3_score"]), float(prior["p_fixed4"]), str(prior["proposal_anchor_id"])
+            ):
                 primary_by_anchor[anchor_id] = primary
         if exact["rescue_detected"] and len(exact["proposal_member_ids"]) >= old.MIN_COMPONENT_EVENTS:
             rescue = dict(exact)
@@ -81,7 +81,9 @@ def finalize_postexact(v6: Any, old: Any, year: int, exact_records_all: list[dic
             anchor_id = str(rescue["anchor_id"])
             prior = rescue_by_anchor.get(anchor_id)
             key = (float(rescue["p_fixed4"]), float(rescue["p_v3"]), -float(rescue["fixed4_score"]), anchor_id)
-            if prior is None or key < (float(prior["p_fixed4"]), float(prior["p_v3"]), -float(prior["fixed4_score"]), anchor_id):
+            if prior is None or key < (
+                float(prior["p_fixed4"]), float(prior["p_v3"]), -float(prior["fixed4_score"]), anchor_id
+            ):
                 rescue_by_anchor[anchor_id] = rescue
 
     def cap_anchor_track(records: list[dict[str, Any]], channel: str) -> list[dict[str, Any]]:
@@ -91,9 +93,13 @@ def finalize_postexact(v6: Any, old: Any, year: int, exact_records_all: list[dic
         capped_track: list[dict[str, Any]] = []
         for _bin_index, rows in sorted(by_bin.items()):
             if channel == "v3":
-                rows.sort(key=lambda row: (float(row["p_v3"]), -float(row["v3_score"]), float(row["p_fixed4"]), str(row["anchor_id"])))
+                rows.sort(key=lambda row: (
+                    float(row["p_v3"]), -float(row["v3_score"]), float(row["p_fixed4"]), str(row["anchor_id"])
+                ))
             else:
-                rows.sort(key=lambda row: (float(row["p_fixed4"]), float(row["p_v3"]), -float(row["fixed4_score"]), str(row["anchor_id"])))
+                rows.sort(key=lambda row: (
+                    float(row["p_fixed4"]), float(row["p_v3"]), -float(row["fixed4_score"]), str(row["anchor_id"])
+                ))
             capped_track.extend(rows[: old.MAX_COMPONENTS_PER_BIN * 8])
         return capped_track
 
@@ -165,11 +171,13 @@ def main() -> int:
     source_sha = hashlib.sha256(json.dumps(source_rows, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     require(source_sha == pre["year_sources_sha256"], "source identity changed")
 
-    # Calibration is independently deterministic: calibrate_year_v6 seeds its RNG
-    # solely from the frozen year. Verify it against every stored preexact Brown
-    # and fixed4 p-value before using the saved exact outputs.
-    bins = old.build_calibration_bins(calibration_events)
-    proposal_cal, v3_cal, fixed4_cal, calibration_summary = v6.calibrate_year_v6(old, args.year, calibration_events, candidate, base, scorer)
+    # Use the literal frozen-v6 calibration routine. The earlier recovery draft
+    # incorrectly called a nonexistent base-runner helper before reaching any
+    # scientific continuation. Verify fresh calibration against every stored
+    # preexact proposal p-value before consuming exact outputs.
+    proposal_cal, v3_cal, fixed4_cal, calibration_summary = v6.calibrate_year_v6(
+        old, args.year, calibration_events, candidate, base, scorer
+    )
     supported_bins = sorted(v3_cal)
     require(sorted(proposal_cal) == supported_bins == sorted(fixed4_cal), "calibration bin universes differ")
     stored_pvalue_checks = 0
@@ -182,7 +190,7 @@ def main() -> int:
         for record in records:
             b = int(record["bin"])
             brown = old.empirical_upper_pvalue(record["proposal_brown_score"], proposal_cal[b])
-            fixed4 = old.empirical_upper_pvalue(record["proposal_fixed4_score"], fixed4_cal[b])
+            fixed4 = old.empirical_upper_pvalue(record["fixed4_score"], fixed4_cal[b])
             require(abs(float(brown) - float(record["proposal_p_brown"])) <= 1e-15, f"Brown calibration identity changed center {center}")
             require(abs(float(fixed4) - float(record["p_fixed4"])) <= 1e-15, f"fixed4 calibration identity changed center {center}")
             stored_pvalue_checks += 2
@@ -192,30 +200,34 @@ def main() -> int:
     exact_records_all = [copy.deepcopy(row) for center in [float(c) for c in pre["ordered_centers"]] for row in exact_by_center[center]]
     require(len(exact_records_all) == int(pre["total_records"]), "exact record total differs from preexact capture")
 
-    # Reconstruct the scientifically relevant audit fields without regenerating
-    # nondeterministic nearest-neighbor proposal identities. Four pre-dedup count
-    # diagnostics were not stored by fanout-v2 and are explicitly null rather than
-    # misrepresented from a different replay realization; they are not used by any
-    # scientific or integrity gate.
+    # Reconstruct only source-defined audit fields. Four pre-dedup count
+    # diagnostics were not stored by fanout-v2 and are explicitly null; source
+    # audit proved they are not used by any scientific/integrity decision gate.
+    centers = [float(index * old.WINDOW_STEP_DEG) for index in range(int(360 / old.WINDOW_STEP_DEG))]
     unsupported_windows = 0
-    for center in old.window_centers():
-        events = old.window_events_for_center(scan, center, base)
-        if len(events) < 128 or old.calibration_bin_index(center) not in v3_cal:
+    window_count = 0
+    for center in centers:
+        window_events = old.window_events_for_center(scan, center, base)
+        if len(window_events) < old.EPISODE_SIZE:
             unsupported_windows += 1
+            continue
+        window_count += 1
+    proposal_cap = old.MAX_COMPONENTS_PER_BIN * v6.PROPOSALS_PER_WINDOW_FACTOR
+    require(proposal_cap * int(360 / old.WINDOW_STEP_DEG) == 36 * old.MAX_COMPONENTS_PER_BIN * 8, "proposal budget identity changed")
     audit = {
         "year": args.year,
         "scan_events": len(scan),
         "calibration_events": len(calibration_events),
         "supported_bins": supported_bins,
         "calibration": calibration_summary,
-        "window_count": len(old.window_centers()),
+        "window_count": window_count,
         "unsupported_windows": unsupported_windows,
         "prefilter_candidates": None,
         "proposal_candidates_scored": None,
         "primary_proposals_selected_before_dedup": None,
         "rescue_proposals_selected_before_dedup": None,
-        "proposal_cap_per_window": old.MAX_COMPONENTS_PER_BIN * 4,
-        "max_primary_proposals_per_year": v6.MAX_PRIMARY_PROPOSALS_PER_YEAR,
+        "proposal_cap_per_window": proposal_cap,
+        "max_primary_proposals_per_year": proposal_cap * len(centers),
         "deduplicated_exact_proposals": int(pre["total_records"]),
     }
     require(audit["proposal_cap_per_window"] == 512, "proposal cap changed")
@@ -253,21 +265,25 @@ def main() -> int:
         },
     }
     raw = pickle.dumps(checkpoint, protocol=pickle.HIGHEST_PROTOCOL)
-    path = args.output / f"v6_year_{args.year}.pkl"
-    path.write_bytes(raw)
+    out = args.output / f"v6_year_{args.year}.pkl"
+    out.write_bytes(raw)
     digest = sha256_bytes(raw)
-    path.with_suffix(".sha256").write_text(digest + "\n")
+    out.with_suffix(".sha256").write_text(digest + "\n")
     (args.output / f"v6_year_{args.year}.json").write_text(json.dumps({
         "year": args.year,
         "checkpoint_sha256": digest,
+        "anchors": len(anchors),
+        "components": len(components),
         "preexact_sha256": pre_sha,
         "exact_shard_count": shard_count,
         "stored_proposal_pvalue_checks": stored_pvalue_checks,
-        "anchors": len(anchors),
-        "components": len(components),
-        "audit": audit,
+        "proposal_identity_regeneration_performed": False,
     }, indent=2, sort_keys=True) + "\n")
-    print(f"PASS_V6_DIRECT_FINALIZE_YEAR year={args.year} anchors={len(anchors)} components={len(components)} pvalue_checks={stored_pvalue_checks:,} sha={digest}", flush=True)
+    print(
+        f"PASS_V6_DIRECT_FINALIZE_YEAR year={args.year} anchors={len(anchors)} components={len(components)} "
+        f"stored_pvalue_checks={stored_pvalue_checks} sha={digest}",
+        flush=True,
+    )
     return 0
 
 
