@@ -1,0 +1,65 @@
+name: OrbitTrace P3 MAARSY 2020/2021 external protocol audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/MAARSY_2020_2021_EXTERNAL_PROTOCOL.md
+      - .github/workflows/orbittrace_p3_maarsy_2020_2021_external_protocol_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove pre-result external protocol and claim boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_crossfit_seed_floor_membership_p3/MAARSY_2020_2021_EXTERNAL_PROTOCOL.md').read_text()
+          required=(
+              'authoritative P3 development run `31291214704` is unresolved',
+              'MAARSY 2020/2021',
+              'PR #546',
+              'PR #598 was closed explicitly without MAARSY 2020/2021 scientific-value access',
+              'BROAD_CATALOGUE_SUPERIORITY',
+              'SPARSE_STREAM_SUPERIORITY',
+              'at most 10,000 events per frozen 10° solar-longitude bin',
+              'P3_FOLDS',
+              'Drummond orbital dissimilarity `D_D`',
+              'D_D^2 = ((q1-q2)/(q1+q2))^2 + ((e1-e2)/(e1+e2))^2',
+              'Do not search a `D_D` cutoff',
+              '>=200 valid-orbit P3 additions total',
+              '>=200 valid deterministic controls total',
+              '>=90% of frozen P3 additions have a valid native orbit',
+              '0.75 × pooled median',
+              'Mann–Whitney U',
+              'p <= 0.01',
+              'at least 70%',
+              'at least 20 such powered families',
+              'no single family contributes >20%',
+              'PASS_P3_MAARSY_2020_2021_EXTERNAL_GENERALIZATION',
+              'FAIL_P3_MAARSY_2020_2021_EXTERNAL_GENERALIZATION',
+              'distinct but correlated orbital-similarity stress metric',
+              '20°–55°',
+          )
+          for token in required: assert token in p,token
+          assert 'not an independent-orbit-modality validation' in p
+          assert 'No D_SH, Drummond value, probability, responsibility, label or outcome enters control selection.' in p
+          assert 'No target-containing GMN access is authorized here.' in p
+          print('PASS_P3_MAARSY_EXTERNAL_PREREGISTRATION_AUDIT')
+          PY
+      - name: Assert protocol-only pristine boundary
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/MAARSY_EXTERNAL_RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_MAARSY_2020_2021_VALUE_ACCESS_NO_TARGET_ACCESS
