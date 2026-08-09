@@ -25,7 +25,7 @@ jobs:
           ref: agent/orbittrace-v3-primary-catalogue-v6
           path: frozen-v6
           fetch-depth: 1
-      - name: Reconstruct authoritative frozen v6 and expose repair-critical source
+      - name: Reconstruct authoritative frozen v6 and audit repair-critical source
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -40,13 +40,26 @@ jobs:
           src=raw.decode('utf-8')
           tree=ast.parse(src)
           lines=src.splitlines()
-          wanted={'calibrate_year_v6','exact_rescore_window_v6','component_records_track_v6','scan_year_v6'}
+          wanted={'calibrate_year_v6','exact_rescore_window_v6','component_records_track_v6','scan_year_v6','main'}
           found={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in wanted}
           assert set(found)==wanted,set(found)
-          for name in ('calibrate_year_v6','exact_rescore_window_v6','component_records_track_v6','scan_year_v6'):
+          for name in ('calibrate_year_v6','exact_rescore_window_v6','component_records_track_v6'):
               fn=found[name]
               print(f'--- {name} ---')
               for i in range(fn.lineno,fn.end_lineno+1):
                   print(f'{i:04d}: {lines[i-1]}')
-          print('PASS_V6_REPLAY_REPAIR_SOURCE_EXTRACT',digest)
+          # Print only main statements that consume year scan outputs/audit or gate a verdict.
+          main=found['main']
+          print('--- main scan/audit/verdict contexts ---')
+          for node in ast.walk(main):
+              if not hasattr(node,'lineno'):
+                  continue
+              text=ast.get_source_segment(src,node) or ''
+              needles=('scan_year_v6(', 'audits', 'prefilter_candidates', 'proposal_candidates_scored',
+                       'primary_proposals_selected_before_dedup','rescue_proposals_selected_before_dedup',
+                       'deduplicated_exact_proposals','PASS_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT',
+                       'FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT')
+              if any(n in text for n in needles) and isinstance(node,(ast.Assign,ast.AnnAssign,ast.If,ast.Expr,ast.Return)):
+                  print(f'{node.lineno:04d}: {text[:1800]}')
+          print('PASS_V6_REPLAY_REPAIR_SOURCE_AUDIT',digest)
           PY
