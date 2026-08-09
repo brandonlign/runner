@@ -1,0 +1,150 @@
+name: OrbitTrace P13 matched stepwise zero-data preflight v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-launcher-v2
+    paths:
+      - orbittrace_core_halo_p13_literature/PREFLIGHT_V2.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+
+      - name: 01 Child and activation guards
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_core_halo_p13_literature/PREFLIGHT_V2.md'
+          marker="$(git show "$HEAD_SHA":orbittrace_core_halo_p13_literature/PREFLIGHT_V2.md)"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'PREFLIGHT_V2_P13_MATCHED_TECHNICAL_RECOVERY'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '674'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 2
+          cp orbittrace_core_halo_p13_literature/prepare_pretruth_panel_input_v2.py /tmp/prepare_p13_panel_v2.py
+          python -m py_compile /tmp/prepare_p13_panel_v2.py
+          gh api "repos/$GITHUB_REPOSITORY/pulls/674" > /tmp/activation.json
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/activation.json'))
+          assert p['state']=='open' and p['base']['sha']=='fe86ca3a97a909bcd772eae665770b92718ca51f' and p['head']['sha']=='92e09337190aa46a100f59336f6b92fa855e2088'
+          PY
+
+      - name: 02 Detach to scientific freeze
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin fe86ca3a97a909bcd772eae665770b92718ca51f
+          git checkout --detach fe86ca3a97a909bcd772eae665770b92718ca51f
+          test ! -e orbittrace_core_halo_p13_literature/RUN.md
+
+      - name: 03 Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r exact-lit/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: 04 Reconstruct exact P2 through P12 transport
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/p10.py
+          python orbittrace_density_contrast_p11/apply_p11_patch.py /tmp/p10.py /tmp/p11.py
+          echo '914913d0462ea6793af3836cef945f14a03cca205ac0755ed6cdadb63b8752f9  /tmp/p11.py' | sha256sum -c -
+          python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/p12.py
+          echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12.py' | sha256sum -c -
+          python orbittrace_core_halo_p13_literature/apply_p12_matched_transport_patch_v2.py /tmp/p12.py /tmp/p12_panel.py
+          echo 'f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae  /tmp/p12_panel.py' | sha256sum -c -
+          python -m py_compile /tmp/p12_panel.py
+
+      - name: 05 Audit exact wavelet runtime
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          (cd exact-lit && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+
+      - name: 06 Verify exact-literature paths
+        run: |
+          set -euo pipefail
+          test "$(git -C exact-lit rev-parse HEAD)" = 'ffe8351b9ee8df4418fb4926fab782d66180e276'
+          test -f exact-lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py
+          test -f exact-lit/orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py
+          python -m py_compile exact-lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py exact-lit/orbittrace_literature_matched_v8/sonotaco_2025_native_adapter_wrapper.py
+
+      - name: 07 Verify exact DSH comparator
+        run: |
+          set -euo pipefail
+          mkdir -p input/dsh
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py' | sha256sum -c -
+
+      - name: 08 Verify strict-manifest and orbit-reader sources
+        run: |
+          set -euo pipefail
+          mkdir -p input/source
+          git fetch --no-tags --depth=1 origin d8e58697812bbc93cbd204eb5ebbd6c98d0f3c0d
+          git show FETCH_HEAD:orbittrace_crossyear_two_view_membership_p2_literature/prepare_strict_id_manifest.py > input/source/prepare_strict_id_manifest.py
+          git show FETCH_HEAD:orbittrace_crossyear_two_view_membership_p2_literature/read_exact_orbits.py > input/source/read_exact_orbits.py
+          python -m py_compile input/source/prepare_strict_id_manifest.py input/source/read_exact_orbits.py
+
+      - name: 09 Verify pretruth helper interfaces
+        env:
+          PYTHONPATH: exact-lit:input/v3:exact-lit/orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          def load(p,n):
+              s=importlib.util.spec_from_file_location(n,p); assert s and s.loader; m=importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+          exact=load(Path('exact-lit/orbittrace_literature_matched_v8/run_exact_row_benchmark.py'),'exact_preflight_v2')
+          orbit=load(Path('input/source/read_exact_orbits.py'),'orbit_preflight_v2')
+          assert tuple(exact.YEARS)==(2023,2025)
+          runtime=exact.v8.mult.load_frozen_runtime()
+          assert hasattr(runtime,'load_support_module')
+          assert callable(exact.run_v8_panel)
+          assert callable(exact.read_exact_geometry)
+          assert callable(orbit.read_exact_orbits)
+          print('PASS_P13_PREFLIGHT_V2_EXACT_INTERFACES')
+          PY
+
+      - name: 10 PASS before any benchmark data
+        run: |
+          set -euo pipefail
+          echo PASS_P13_MATCHED_ZERO_DATA_PREFLIGHT_V2
+          echo 'No comparator assignment file or raw benchmark archive was downloaded.'
