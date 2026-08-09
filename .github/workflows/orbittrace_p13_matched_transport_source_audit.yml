@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install numpy==2.1.3 scipy==1.14.1 scikit-learn==1.5.2 pandas==2.2.3 requests==2.32.5 beautifulsoup4==4.12.3
-      - name: Reconstruct exact P12 and matched-panel transport
+      - name: Reconstruct exact P12 and inspect adapter boundary
         run: |
           set -euo pipefail
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
@@ -49,13 +49,21 @@ jobs:
           echo '914913d0462ea6793af3836cef945f14a03cca205ac0755ed6cdadb63b8752f9  /tmp/p11.py' | sha256sum -c -
           python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/p12.py
           echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12.py' | sha256sum -c -
-          python orbittrace_core_halo_p13_literature/apply_p12_panel_pretruth_patch.py /tmp/p12.py /tmp/p12_panel.py
-          echo '4c2ee663541fe00ec959b3e3d0ec7d9e5bf2fad062bf9f8b709a3d7bedbde6ae  /tmp/p12_panel.py' | sha256sum -c -
-          python -m py_compile /tmp/p12_panel.py
-          echo P13_PANEL_SOURCE_INTERFACE_BEGIN
-          python /tmp/p12_panel.py --help || true
-          grep -nE "add_argument|pretruth|pickle|output|panel-input|panel_input|STOP|classification" /tmp/p12_panel.py | tail -n 160
-          echo P13_PANEL_SOURCE_INTERFACE_END
+          python -m py_compile /tmp/p12.py
+          echo P13_EXACT_P12_INTERFACE_BEGIN
+          grep -nE "^def (parse_args|main|source_observation_model|mahalanobis_distance)|parse_catalogue|parse_geometry|v6_structural|families =|v8_order|p12_.*pretruth|membership_pretruth|decisions_pretruth|hidden_labels|baseline_full|evaluate_order|args.output" /tmp/p12.py | tail -n 260
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/p12.py').read_text().splitlines()
+          for i,line in enumerate(p):
+              if line.startswith('def main'):
+                  lo=max(0,i-25); hi=min(len(p),i+430)
+                  print(f'P13_P12_MAIN_LINES={lo+1}:{hi}')
+                  for n in range(lo,hi): print(f'{n+1:05d}: {p[n]}')
+                  break
+          PY
+          echo P13_EXACT_P12_INTERFACE_END
+          echo CORRUPTED_LEGACY_PANEL_PATCH_NOT_USED
       - name: Audit no-result boundary
         run: |
           set -euo pipefail
