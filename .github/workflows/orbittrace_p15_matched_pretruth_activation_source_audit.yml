@@ -1,12 +1,11 @@
-name: OrbitTrace P15 matched pretruth activation source audit
+name: OrbitTrace P17 reciprocal-support closure source audit
 
 on:
   pull_request:
     branches:
       - agent/orbittrace-p15-support-safe-halo-freeze
     paths:
-      - orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15_v2.py
-      - .github/workflows/orbittrace_p15_matched_pretruth.yml
+      - orbittrace_reciprocal_support_closure_p17/**
       - .github/workflows/orbittrace_p15_matched_pretruth_activation_source_audit.yml
 
 permissions:
@@ -19,23 +18,63 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - name: Prove artifact-only activation and stale P14 child-guard repair are exact
+      - name: Reconstruct exact P15 parents and prove P17 is fail-closed only
         run: |
           set -euo pipefail
-          wf=.github/workflows/orbittrace_p15_matched_pretruth.yml
-          v2=orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15_v2.py
-          python -m py_compile "$v2" orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py
-          test "$(git hash-object "$v2")" = 'fc4bc35019e08d4a9ed08fba9fcf1b0e5c490032'
-          for x in 'EXECUTE_P15_MATCHED_PRETRUTH_AFTER_ARTIFACT_ONLY_DEVELOPMENT_PASS' '31329529635' '9042508082' 'f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96' '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e' 'PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT' 'artifact_only_from_immutable_canonical_P12_P13' "r['canonical_direction_count']==452 and r['canonical_minimum_negative_count']==2197" "r['p15_unavailable_direction_count']==0" '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945' '12e6635085c77c8c705fe225e67811c659e98bf7cd1047649ec2b8d593261b3c' 'f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3' '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b' '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6' 'generate_matched_pretruth_p15_v2.py' 'orbittrace-p15-matched-pretruth-checkpoints'; do grep -F "$x" "$wf"; done
-          for x in '31328065110' '9042324169' '31329252140' '9042432234' 'NUMERICALLY_STABLE_EXACT_DECISION_COMPATIBILITY' '1e-12' 'semantic_development'; do if grep -Fq "$x" "$wf"; then echo "inadmissible path survived: $x" >&2; exit 1; fi; done
-          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
-          test "$(git hash-object orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v3.py)" = 'af257d4b4902f9783acecd6df52f111415e5188c'
-          test "$(git hash-object orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py)" = '372f1a57d97e1b0f0ac8f1303ef84f242245bdde'
-          test "$(git hash-object orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py)" = '42fac298751179e5e629431060a1c9d803b1f19d'
-          python "$v2" orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p15_pretruth_v2.sh
-          bash -n /tmp/p15_pretruth_v2.sh
-          for x in 'PASS_P15_OUTER_ONE_FILE_ACTIVATION_ALREADY_VERIFIED' 'PASS_P14_DIRECT_AUTHORITATIVE_DEVELOPMENT' 'PASS_P15_MATCHED_SUPPORT_SAFE_HALO_SOURCE_ACTIVE' 'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' "p15_halo_availability_frozen_before_truth'] is True" 'exit 0'; do grep -F "$x" /tmp/p15_pretruth_v2.sh; done
-          for x in 'orbittrace_support_safe_rank_p14/LAUNCH_PRETRUTH.md' 'LAUNCH_P14_MATCHED_PRETRUTH_DIRECT_V1' 'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do if grep -Fq "$x" /tmp/p15_pretruth_v2.sh; then echo "stale/posttruth/target token survived: $x" >&2; exit 1; fi; done
-          test ! -e orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md
-          echo PASS_P15_MATCHED_PRETRUTH_ARTIFACT_ONLY_ACTIVATION_AND_GUARD_REPAIR_SOURCE_FREEZE
-          echo NO_COMPARATOR_DOWNLOAD_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
+          python -m py_compile orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/p10.py
+          python orbittrace_density_contrast_p11/apply_p11_patch.py /tmp/p10.py /tmp/p11.py
+          echo '914913d0462ea6793af3836cef945f14a03cca205ac0755ed6cdadb63b8752f9  /tmp/p11.py' | sha256sum -c -
+          python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/p12.py
+          echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12.py' | sha256sum -c -
+          python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12.py /tmp/p15_dev.py
+          echo '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b  /tmp/p15_dev.py' | sha256sum -c -
+
+          python orbittrace_core_halo_p13_literature/apply_p12_matched_transport_patch_v2.py /tmp/p12.py /tmp/p12_v2.py
+          echo 'f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae  /tmp/p12_v2.py' | sha256sum -c -
+          python orbittrace_support_safe_rank_p14/apply_p12_snm_id_transport_from_v2.py /tmp/p12_v2.py /tmp/p12_v3.py
+          echo '55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415  /tmp/p12_v3.py' | sha256sum -c -
+          python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12_v3.py /tmp/p15_matched.py
+          echo '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6  /tmp/p15_matched.py' | sha256sum -c -
+
+          python orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py /tmp/p15_dev.py /tmp/p17_dev.py | tee /tmp/p17_dev.txt
+          python orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py /tmp/p15_matched.py /tmp/p17_matched.py | tee /tmp/p17_matched.txt
+          python -m py_compile /tmp/p17_dev.py /tmp/p17_matched.py
+
+          python - <<'PY'
+          from pathlib import Path
+          for label,path in [('dev',Path('/tmp/p17_dev.py')),('matched',Path('/tmp/p17_matched.py'))]:
+              t=path.read_text()
+              assert t.count('MIN_DIRECTION_NEGATIVES = 128')==1
+              assert t.count('P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE')==2
+              assert t.count('p17_reciprocal_p3_reliable = False')==1
+              assert 'p17_reciprocal_p3_reliable = True' not in t
+              assert t.count('missing reciprocal reliability without support-unavailable proof')==1
+              assert t.count('p17_record_count + p17_unavailable_count == 2')==1
+              assert t.count('p17_reciprocal_fail_closed')==1
+              assert t.count('p17_reciprocal_closure_sha256')>=3
+              # Existing P9 requires direction reliability AND reciprocal reliability;
+              # P17 changes only how an intentionally unavailable reciprocal is represented.
+              assert 'p9_reliable = bool(direction_reliable and p17_reciprocal_p3_reliable)' in t
+              for forbidden in ('OrbitTrace-April','target_coordinate'):
+                  assert forbidden not in t
+              print('P17_SOURCE_VALID',label)
+          print('PASS_P17_FAIL_CLOSED_SOURCE_SCOPE')
+          PY
+
+          # Canonical target-excluded development establishes that the new branch is vacuous:
+          # all 452 directions existed and min support was 2197. No fresh outcome is used here.
+          p=orbittrace_reciprocal_support_closure_p17/P17_PROTOCOL.md
+          for x in '452 reciprocal directions' 'minimum 2,197' 'missing reciprocal reliability does not exist only because' 'contributes zero proposals'; do grep -F "$x" "$p" || true; done
+          grep -E '^P17_OUTPUT_SHA256=' /tmp/p17_dev.txt
+          grep -E '^P17_OUTPUT_SHA256=' /tmp/p17_matched.txt
+          echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
