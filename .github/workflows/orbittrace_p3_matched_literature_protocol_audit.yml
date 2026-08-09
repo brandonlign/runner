@@ -1,0 +1,60 @@
+name: OrbitTrace P3 matched-literature protocol audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_PROTOCOL.md
+      - .github/workflows/orbittrace_p3_matched_literature_protocol_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove pre-result matched-literature freeze
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_PROTOCOL.md').read_text()
+          required=(
+              'authoritative P3 development run `31291214704` is still unresolved',
+              'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
+              'Sugar uncertainty-aware retained-master catalogue reconstruction',
+              'Peña-Asensio–Ferrari catalogue HDBSCAN transfer',
+              '7dbb920532f7dc429a6cd5961d80d480c5ff53c0122cf6e9ec04638c0730ed60',
+              '8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3',
+              '2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389',
+              '77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e',
+              'seed_floor_fd > 0.5',
+              'negative_tail_fd <= 0.10',
+              'BROAD_CATALOGUE_SUPERIORITY',
+              'SPARSE_STREAM_SUPERIORITY',
+              'NO_LITERATURE_SUPERIORITY',
+              '`4–9` P3 mean F1 >= comparator +0.10',
+              'combined `4–24` P3 mean F1 >= comparator +0.10',
+              'P3 macro F1 >= comparator macro F1 +0.05',
+              'P3 receives no native SonotaCo shower/background designation',
+              'MAARSY 2020/2021 remains unopened',
+              '20°–55°',
+          )
+          for token in required: assert token in p,token
+          assert 'No comparator may be rerun, retuned, re-filtered, re-ranked or replaced' in p
+          assert 'complete P3 payload is frozen' in p
+          assert 'Each method retains its own frozen scientific representation' in p
+          print('PASS_P3_MATCHED_LITERATURE_PREREGISTRATION_AUDIT')
+          PY
+      - name: Assert protocol-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/LITERATURE_RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_P3_LITERATURE_EXECUTION_NO_TARGET_ACCESS
