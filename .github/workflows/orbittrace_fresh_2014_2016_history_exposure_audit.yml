@@ -50,14 +50,14 @@ jobs:
 
           # Also search PR/issue text indexed before the reservation PR. Any hit on PR/issue number <792 is prior exposure.
           python - <<'PY'
-          import json,os,subprocess,urllib.parse
+          import json,os,subprocess
           repo=os.environ['REPO']
           terms=['"SonotaCo 2014"','"SonotaCo 2016"','"sonotaco_2014"','"sonotaco_2016"','"014a.zip"','"016a.zip"']
           bad=[]
           seen=[]
           for term in terms:
               q=f'repo:{repo} {term}'
-              raw=subprocess.check_output(['gh','api','search/issues','-f',f'q={q}','-f','per_page=100'],text=True)
+              raw=subprocess.check_output(['gh','api','--method','GET','search/issues','-f',f'q={q}','-f','per_page=100'],text=True)
               obj=json.loads(raw)
               for item in obj.get('items',[]):
                   num=int(item['number'])
