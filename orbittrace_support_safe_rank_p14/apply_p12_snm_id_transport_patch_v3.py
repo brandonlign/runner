@@ -9,6 +9,7 @@ from pathlib import Path
 
 EXACT_P12_SHA256 = "78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32"
 P12_MATCHED_V2_SHA256 = "f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae"
+P12_MATCHED_V3_SHA256 = "55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415"
 
 
 def sha256(path: Path) -> str:
@@ -70,6 +71,8 @@ def main() -> int:
 
     output.write_text(text, encoding="utf-8")
     result = sha256(output)
+    if result != P12_MATCHED_V3_SHA256:
+        raise RuntimeError(f"P14 P12 SNM ID transport output SHA changed: {result}")
     print(f"P14_P12_SNM_ID_TRANSPORT_INPUT_SHA256={P12_MATCHED_V2_SHA256}")
     print(f"P14_P12_SNM_ID_TRANSPORT_OUTPUT_SHA256={result}")
     print("P14_P12_SNM_ID_TRANSPORT_SCOPE=audit-only source_seed_years derives from existing explicit source_year; P12 numerical science/membership/gates unchanged; no data/truth/target access")
