@@ -22,6 +22,12 @@ For each independently frozen `(HDBSCAN|Sugar) × (2023|2025)` panel:
 
 No slice may alter the full center event window. No slice output may seed another slice. No score, distance, threshold, calibration event, proposal event, member, component, recurrence, family, or rank is recomputed by the combiner.
 
+## Frozen production fanout
+
+After the bounded real-data equivalence gate passes, full matched-literature execution uses exactly **8 deterministic exact shards per panel-year** and up to **4 contiguous exact-rescore workers per shard**. The four panel-year universes remain independent, giving 32 exact shard jobs in total. This is an execution partition only; shard count and worker count never enter a score or scientific gate.
+
+The shard scheduler is fixed before the v6-LF development verdict. It may not be changed from observed HDBSCAN/Sugar scientific outcomes. A technical resource failure may be retried with the exact same partition; changing the partition would require a separately source-audited execution-equivalence protocol and cannot change scientific values.
+
 ## Strict replay identity
 
 Exact byte equality of the captured proposal dictionaries is the fast path. If the deterministic non-exact replay differs in serialization, the fallback is frozen now to the same strict semantic standard used by the canonical development recovery:
@@ -37,12 +43,26 @@ Any structural/member/ID/order/discrete-value difference or float drift above to
 
 ## Firewall
 
-Before the complete v6-LF family/ranking freeze, the fanout may access only exact matched event IDs/geometry, immutable all-event calibration, and the source-audited ID manifest. It may not open the IAU truth mapping or use competitor cluster assignments. Native-background IDs in the manifest are checked only as a subset/count integrity field and are never used to select calibration events.
+Before the complete v6-LF family/ranking freeze, detector jobs may access only exact matched event IDs/geometry, immutable all-event calibration, the source-audited ID manifest, and the two hash-pinned SonotaCo archives. They may not have the raw HDBSCAN/Sugar assignment files or IAU truth mapping available on disk.
 
-Solar longitude 20°–55° remains excluded from every pretruth stage.
+The one input-preparation job is allowed to read the already-frozen comparator assignment artifacts solely through the source-audited ID-manifest builder that extracts the exact common event-ID universes. It then deletes every assignment directory before creating the reusable pretruth bundle. The uploaded pretruth bundle contains only the pinned runtime, ID-only manifest, and SonotaCo archives; filenames containing assignments/mapping/audit truth are rejected before upload.
+
+The four panel-year replay jobs produce pretruth checkpoints. The evaluation job downloads only those checkpoints and the ID-only bundle, constructs both recurrent v6-LF rankings, writes and SHA-256 freezes the complete pretruth ranking JSON, and asserts the raw comparator-assignment directories and truth mapping do not exist. Only after that freeze does it download the four comparator assignment artifacts and known-shower truth metadata.
+
+Native-background IDs in the manifest are checked only as a subset/count integrity field and are never used to select calibration events. Solar longitude 20°–55° remains excluded from every pretruth stage.
 
 ## Activation
 
-This fanout may be benchmarked for real execution equivalence only after exact v6-LF development PASS, using one bounded pretruth panel/center and no truth mapping. Full matched-literature execution is allowed only after that real equivalence audit passes.
+The bounded real equivalence gate requires a genuine exact v6-LF development PASS. It uses only HDBSCAN-2023 pretruth geometry and the cheapest real center that genuinely splits at 512 records, comparing complete-center scalar exact output against the production split/parallel path byte-for-byte. It opens no truth mapping and computes no literature endpoint.
+
+Full matched-literature fanout requires a three-line one-file child marker containing:
+
+1. `EXECUTE_V6_LF_MATCHED_LITERATURE_AFTER_REAL_EQUIVALENCE`;
+2. the exact v6-LF development PASS run ID;
+3. the successful bounded real-equivalence run ID.
+
+Authorization accepts exactly one valid v6-LF development-result artifact lineage: the original frozen fanout result or the pre-frozen strict-semantic recovery result, never both. It verifies all v6-LF development gates true and verifies the real-equivalence artifact before any matched panel is materialized.
+
+The final evaluation reuses the already-frozen `combine_pretruth.py` and `evaluate_frozen.py`, exact HDBSCAN/Sugar denominators, and unchanged `BROAD_CATALOGUE_SUPERIORITY` / `SPARSE_STREAM_SUPERIORITY` / `NO_LITERATURE_SUPERIORITY` classification rules. No alternative comparator, year, denominator, stratum, or superiority threshold may be selected from the result.
 
 A v6-LF development no-go permanently leaves this infrastructure dormant. A technical failure does not authorize changing any fanout or scientific rule.
