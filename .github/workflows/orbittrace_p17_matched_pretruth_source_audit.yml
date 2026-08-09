@@ -27,7 +27,7 @@ jobs:
           python -m py_compile "$gen" \
             orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py \
             orbittrace_reciprocal_support_closure_p17/augment_pretruth_checkpoint_p17.py
-          test "$(git hash-object "$gen")" = 'a505f0b3a7804a1924762a7ab2d3de118e679bd8'
+          test "$(git hash-object "$gen")" = 'f59ce54b5ba7321332372f6aa4a0032b7297275c'
           test "$(git hash-object orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py)" = '60d371b46d330ccbd59a08598fd36be88881c23d'
           test "$(git hash-object orbittrace_reciprocal_support_closure_p17/adjudicate_p17_development_vacuity.py)" = '5400c522b60dfaec7afcb803859b829e8582b279'
           test "$(git hash-object orbittrace_reciprocal_support_closure_p17/augment_pretruth_checkpoint_p17.py)" = '89a2e408aca91261eb5c5e1d5e5a5490d7e50b1e'
@@ -42,6 +42,9 @@ jobs:
             'PASS_P17_MATCHED_SOURCE_ACTIVE' \
             'P17_OUTPUT_SHA256=c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
             'P17_SCOPE=represent P15-unavailable reciprocal explicitly; missing reciprocal reliability is fail-closed false; no P12 threshold/model/geometry/rank/proposal change' \
+            "assert c['p13_transport_source_sha256']=='55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415'" \
+            "assert c['p13_transport_parent_source_sha256']=='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'" \
+            "assert c['p14_p12_snm_id_transport_scientific_delta'] is False" \
             'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' \
             'fetch_exact_assignment_artifact 9012424187' \
             'fetch_exact_assignment_artifact 8955917326' \
@@ -50,6 +53,10 @@ jobs:
             'prepare_strict_id_manifest.py' \
             'PASS_P14_DIRECT_ASSIGNMENT_IDS_FROZEN_CLUSTER_VALUES_UNREAD' \
             'exit 0'; do grep -F "$x" /tmp/p17_pretruth.sh; done
+          if grep -Fq "assert c['p13_transport_source_sha256']=='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'" /tmp/p17_pretruth.sh; then
+            echo 'obsolete P13 transport source equality survived P17 technical repair' >&2
+            exit 1
+          fi
           for x in \
             '31332157812' '9043232586' \
             'sha256:f89e1330da616e4224bec063e82194042f6e5625cf02cf851f8d6e511d408852' \
@@ -65,7 +72,6 @@ jobs:
           # barrier explicitly certifies cluster values remain unread. The generated shell
           # must contain no postfreeze truth/evaluator stage, external panel, or target surface.
           test "$(grep -Fc 'fetch_exact_assignment_artifact ' /tmp/p17_pretruth.sh)" -eq 4
-          # Exactly four calls are present: HDBSCAN 2023/2025 and Sugar 2023/2025.
           for forbidden in \
             'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' \
             'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' \
@@ -76,12 +82,10 @@ jobs:
               exit 1
             fi
           done
-          # The workflow may name evaluator/target tokens only once, inside its own
-          # defensive generated-shell rejection regex; they are never commands or inputs.
           for sentinel in 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do
             test "$(grep -Fc "$sentinel" "$wf")" -eq 1
           done
           test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
-          echo PASS_P17_MATCHED_PRETRUTH_LAUNCHER_SOURCE_FREEZE
-          echo FOUR_ASSIGNMENT_ARTIFACTS_ID_UNIVERSE_ONLY_CLUSTER_VALUES_UNREAD
+          echo PASS_P17_MATCHED_PRETRUTH_LAUNCHER_WITH_AUDITED_TRANSPORT_PROVENANCE_BARRIER
+          echo P17_SCIENTIFIC_SOURCE_UNCHANGED_TECHNICAL_BARRIER_ONLY
           echo NO_COMPARATOR_CLUSTER_VALUES_NO_KNOWN_SHOWER_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
