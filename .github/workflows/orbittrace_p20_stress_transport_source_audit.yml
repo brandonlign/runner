@@ -1,0 +1,73 @@
+name: OrbitTrace P20 stress transport source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_p20_preregistered_stress.yml
+      - .github/workflows/orbittrace_p20_stress_transport_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove P20 stress transport is preregistered against exact primary run
+        run: |
+          set -euo pipefail
+          w=.github/workflows/orbittrace_p20_preregistered_stress.yml
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_stress.py)" = '63c15023226595614cc6a11363839911dc5c783a'
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md)" = '94b732a303bd03d74317cf1101a0af5816bc06fd'
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/P20_STRESS_PROTOCOL.md)" = '3a18a9aebd179f6e214bd92cd54fec08fa51e56a'
+          test ! -e orbittrace_p20_recurrent_isolated_quartet/STRESS_RUN.md
+
+          for x in \
+            'RUN_FROZEN_P20_PREREGISTERED_THINNING_STRESS' \
+            '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f' \
+            '63c15023226595614cc6a11363839911dc5c783a' \
+            '94b732a303bd03d74317cf1101a0af5816bc06fd' \
+            '3a18a9aebd179f6e214bd92cd54fec08fa51e56a' \
+            'ref: c9d6c44704013ba0c9430100e98a29a56b453304' \
+            'd8258581af143308495bd97bedcc142abbbd951a' \
+            '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2' \
+            '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8' \
+            '7035daf3e670ab89c66c87035540419f549bab09' \
+            'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' \
+            'run-id: 31217916558' \
+            'run-id: 31341591263' \
+            "assert r['verdict']=='PASS_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT'" \
+            "assert all(r['scientific_gates'].values())" \
+            'PASS_EXACT_PREREGISTERED_P20_PRIMARY' \
+            'PYTHONPATH: execution:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8' \
+            '--p20-primary-result-json input/p20/p20_recurrent_isolated_quartet_development.json' \
+            'PASS_P20_PREREGISTERED_THINNING_STRESS' \
+            'FAIL_P20_PREREGISTERED_THINNING_STRESS'; do
+            grep -F "$x" "$w"
+          done
+
+          if grep -Eq 'workflow_dispatch|schedule:' "$w"; then
+            echo 'P20 stress workflow is independently dispatchable' >&2
+            exit 1
+          fi
+          grep -F 'test "${#files[@]}" -eq 1' "$w"
+          grep -F 'orbittrace_p20_recurrent_isolated_quartet/STRESS_RUN.md' "$w"
+          for forbidden in \
+            '013a.zip' '014a.zip' 'SNMv3/013' 'SNMv3/014' \
+            'MAARSY' 'zenodo.org' 'silseth_thesis_data' 'kep_collect.h5' \
+            'OrbitTrace-April' 'target_coordinate' 'F0059' \
+            '247.17' '-14.34' '37.62'; do
+            if grep -Fq -- "$forbidden" "$w"; then
+              echo "downstream/target surface leaked into P20 stress transport: $forbidden" >&2
+              exit 1
+            fi
+          done
+          echo PASS_P20_STRESS_EXECUTION_TRANSPORT_PREREGISTRATION
+          echo P20_EXACT_PRIMARY_PASS_REQUIRED
+          echo SONOTACO_2013_2014_AND_MAARSY_VALUES_UNOPENED
+          echo TARGET_REGION_UNAVAILABLE
