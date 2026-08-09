@@ -86,9 +86,9 @@ LEDGER_CODE='''    p17_reciprocal_closures = sorted(
 
 '''
 
-FIELDS_OLD='''        "p15_availability_sha256": p15_availability_sha256,
+FIELDS_OLD='''        "p15_secondary_characterization_only": True,
 '''
-FIELDS_NEW='''        "p15_availability_sha256": p15_availability_sha256,
+FIELDS_NEW='''        "p15_secondary_characterization_only": True,
         "p17_architecture": "P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE",
         "p17_bidirectional_reliability_threshold_changed": False,
         "p17_missing_reciprocal_creates_positive_evidence": False,
