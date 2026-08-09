@@ -1,0 +1,49 @@
+name: OrbitTrace P3 method precedence audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_p3_method_precedence/PROTOCOL.md
+      - .github/workflows/orbittrace_p3_method_precedence_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove outcome-independent P3 precedence
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_p3_method_precedence/PROTOCOL.md').read_text()
+          required=(
+              'before any P2 scientific PASS/FAIL is available',
+              'P3 cross-fitted seed-floor two-view membership',
+              'PR #610',
+              'PR #611: cross-year dual-null membership',
+              'PR #612: exact P1/P2 same-family consensus membership',
+              'not selectable based on future outcomes',
+              'A P3-crossfit scientific no-go does not authorize switching to PR #611 or PR #612',
+              'Technical/integrity P2 failure never activates P3',
+              '20°–55°',
+          )
+          for token in required:
+              assert token in p,token
+          assert 'does not make the scientifically rejected P1 membership assignment part of the new detector input' in p
+          assert 'Same promotion standard as P2' in p
+          print('PASS_P3_PRE_RESULT_METHOD_PRECEDENCE')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_SCIENTIFIC_EXECUTION_NO_TARGET_ACCESS
