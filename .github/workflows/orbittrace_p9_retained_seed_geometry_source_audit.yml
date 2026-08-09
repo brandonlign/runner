@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reconstruct exact P8 and audit P9 transform
+      - name: Reconstruct exact lineage and audit fully pinned P9 freeze
         run: |
           set -euo pipefail
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
@@ -37,53 +37,56 @@ jobs:
           python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
           echo 'd3bdcdaf18639e36cc02f5106b3a3c816f5e51eb19543f425717ba1c48a26470  /tmp/p8.py' | sha256sum -c -
           python orbittrace_retained_seed_geometry_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
-          python -m py_compile /tmp/p9.py
+          expected="$(tr -d '[:space:]' < orbittrace_retained_seed_geometry_p9/SOURCE_SHA256)"
+          test "$expected" = '646fc9f253b288d1c0096a794b4d38885245ca35f8f248fb3a3d2927ce9edc7b'
+          echo "$expected  /tmp/p9.py" | sha256sum -c -
+          python -m py_compile /tmp/p9.py orbittrace_retained_seed_geometry_p9/run_header_compatible.py
 
           python - <<'PY'
           from pathlib import Path
           p=Path('/tmp/p9.py').read_text()
           protocol=Path('orbittrace_retained_seed_geometry_p9/PROTOCOL.md').read_text()
-          required=(
+          wrapper=Path('orbittrace_retained_seed_geometry_p9/run_header_compatible.py').read_text()
+          workflow=Path('.github/workflows/orbittrace_p9_retained_seed_geometry_development.yml').read_text()
+          assert Path('orbittrace_retained_seed_geometry_p9/SOURCE_SHA256').read_text().strip()=='646fc9f253b288d1c0096a794b4d38885245ca35f8f248fb3a3d2927ce9edc7b'
+          for token in (
               'geometry_retained_seed_mask = np.asarray(pp >= membership_floor, dtype=bool)',
               'geometry_retained_seed_rows = np.asarray(xp[geometry_retained_seed_mask], dtype=np.float64)',
               'geometry_retained_seed_probabilities = np.asarray(pp[geometry_retained_seed_mask], dtype=np.float64)',
               'for seed_row in geometry_retained_seed_rows:',
               'np.all(geometry_retained_seed_rows >= seed_row[None, :], axis=1)',
-              'p9_geometry_retained_seed_count',
-              'p9_geometry_dropped_seed_count',
-              'p9_geometry_uses_only_p8_retained_seeds',
-              'p9_rank_one_geometry_unchanged',
-              'p9_every_surviving_proposal_supported_by_retained_seed_frontier',
-              'p9_geometry_change_nonvacuous',
-              'PASS_RETAINED_SEED_GEOMETRY_MEMBERSHIP_P9_DEVELOPMENT',
-              'FAIL_RETAINED_SEED_GEOMETRY_MEMBERSHIP_P9_NO_GO',
-              '"p9_new_numeric_threshold": None',
-              '"p9_parameter_search": False',
-              'retained_seed_geometry_membership_p9_development.json',
-              'p9_membership_pretruth.sha256',
-              'p9_decisions_pretruth.sha256',
-          )
-          for token in required: assert token in p, token
-          inherited=(
-              'P3_NEGATIVE_TAIL_MAX = 0.10',
-              'int(math.floor(P3_NEGATIVE_TAIL_MAX * (len(sorted_seed_probabilities) + 1)))',
-              'membership_floor = float(sorted_seed_probabilities[membership_floor_rank - 1])',
-              'negative_tail = float(np.mean(pn >= seed_floor))',
+              'p9_geometry_retained_seed_count','p9_geometry_dropped_seed_count',
+              'p9_geometry_uses_only_p8_retained_seeds','p9_rank_one_geometry_unchanged',
+              'p9_every_surviving_proposal_supported_by_retained_seed_frontier','p9_geometry_change_nonvacuous',
+              'PASS_RETAINED_SEED_GEOMETRY_MEMBERSHIP_P9_DEVELOPMENT','FAIL_RETAINED_SEED_GEOMETRY_MEMBERSHIP_P9_NO_GO',
+              '"p9_new_numeric_threshold": None','"p9_parameter_search": False',
+              'retained_seed_geometry_membership_p9_development.json','p9_membership_pretruth.sha256','p9_decisions_pretruth.sha256',
+              'P3_NEGATIVE_TAIL_MAX = 0.10','int(math.floor(P3_NEGATIVE_TAIL_MAX * (len(sorted_seed_probabilities) + 1)))',
               'feature_ceiling = np.max(xp, axis=0).astype(np.float64, copy=False)',
               'scoring_scaler, scoring_classifier = crossfit_runtime_models[scoring_fold]',
-              'membership_floor_allowed = probabilities >= float(gate["membership_floor"])',
               'RESPONSIBILITY_THRESHOLD = 0.5',
-          )
-          for token in inherited: assert token in p, token
+          ): assert token in p, token
           for token in (
               '742 inherited P5 frontier vectors','71 frontier vectors below','There is exactly one primary P9 configuration',
               'qualified known-shower matches >=95','Sparse-stream superiority against both Sugar and HDBSCAN',
           ): assert token in protocol, token
+          for token in (
+              "EXPECTED_P9_SOURCE = Path('/tmp/run_p9.py')",
+              "spec_from_file_location('orbittrace_p9_runtime', EXPECTED_P9_SOURCE)",
+              'module.exact_header_positions = compatible_exact_header_positions','PASS_P9_HEADER_WHITESPACE_COMPAT_SELF_TEST',
+          ): assert token in wrapper, token
+          for token in (
+              'EXECUTE_P9_AFTER_AUTHORITATIVE_P8_SCIENTIFIC_NO_GO','31296889081','9033444168',
+              'f9d91b1633022a2ca7d5386d3b8de2e9b81a4237fc115eb4cbf668edc0317979',
+              '646fc9f253b288d1c0096a794b4d38885245ca35f8f248fb3a3d2927ce9edc7b',
+              'RETAINED_SEED_GEOMETRY_MEMBERSHIP_P9_DEVELOPMENT.md','p9_geometry_dropped_seeds_total',
+              'orbittrace-retained-seed-geometry-membership-p9-development',
+          ): assert token in workflow, token
           for token in ('OrbitTrace-April','target_coordinate'):
-              assert token not in p, token
-          print('PASS_P9_RETAINED_SEED_GEOMETRY_SOURCE_AUDIT')
+              assert token not in p and token not in workflow, token
+          print('PASS_P9_RETAINED_SEED_GEOMETRY_FULL_FREEZE_AUDIT')
           PY
-          sha256sum /tmp/p9.py
+          sha256sum /tmp/p9.py orbittrace_retained_seed_geometry_p9/PROTOCOL.md orbittrace_retained_seed_geometry_p9/apply_p9_patch.py orbittrace_retained_seed_geometry_p9/run_header_compatible.py orbittrace_retained_seed_geometry_p9/SOURCE_SHA256 .github/workflows/orbittrace_p9_retained_seed_geometry_development.yml
 
       - name: Assert source-only firewall
         run: |
