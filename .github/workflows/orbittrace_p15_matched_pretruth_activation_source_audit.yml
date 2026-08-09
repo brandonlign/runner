@@ -65,4 +65,12 @@ jobs:
           python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12_panel_v3.py /tmp/p15_matched.py
           echo '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6  /tmp/p15_matched.py' | sha256sum -c -
           python orbittrace_support_safe_halo_p15/audit_matched_downstream_availability_assumptions.py /tmp/p15_matched.py
+          cp /tmp/p15_matched.py p15_matched_generated_source.py
           echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p15-generated-matched-source-audit
+          path: p15_matched_generated_source.py
+          if-no-files-found: error
+          retention-days: 30
