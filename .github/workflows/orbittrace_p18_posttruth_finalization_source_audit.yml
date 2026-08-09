@@ -63,18 +63,23 @@ jobs:
             "'target_information_access':False"; do
             grep -F "$x" "$runner"
           done
-          # Artifact-only finalization may download only the already-preserved raw result
-          # and already-frozen P18 pretruth checkpoint artifact. It may not stage comparator
-          # assignment files, raw SNM archives, evaluator code, detector code, external data, or target data.
           for forbidden in \
             'evaluate_frozen_blindsafe.py' \
             '9012424187' '8955917326' '8957940764' '8957263372' \
             '023a.zip' '025a.zip' \
             'generate_matched_pretruth' 'promote_p17_checkpoint_to_p18.py' \
             'apply_support_safe_halo_p15.py' 'apply_reciprocal_support_closure_p17.py' \
-            'MAARSY' 'OrbitTrace-April' 'target_coordinate' 'STAGE_A_RUN' 'STAGE_B_RUN'; do
+            'MAARSY' 'STAGE_A_RUN' 'STAGE_B_RUN'; do
             if grep -Fq "$forbidden" "$runner" "$wf" "$v2"; then
-              echo "forbidden truth-reopen/detector/external/target surface in posttruth finalizer: $forbidden" >&2
+              echo "forbidden truth-reopen/detector/external surface in posttruth finalizer: $forbidden" >&2
+              exit 1
+            fi
+          done
+          # Target names are permitted only as fail-closed rejection sentinels in the compatibility generator.
+          test "$(grep -Fc "for token in ('OrbitTrace-April','target_coordinate'):" "$v2")" -eq 1
+          for token in OrbitTrace-April target_coordinate; do
+            if grep -Fq "$token" "$runner" "$wf"; then
+              echo "target token leaked into posttruth execution surface: $token" >&2
               exit 1
             fi
           done
