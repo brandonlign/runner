@@ -1,0 +1,62 @@
+name: OrbitTrace P14 support-safe development adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-core-halo-pretruth-reservation
+    paths:
+      - orbittrace_support_safe_rank_p14/**
+      - .github/workflows/orbittrace_p14_support_safe_source_audit.yml
+      - .github/workflows/orbittrace_p14_support_safe_development.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Download immutable P13 and v8 development artifacts only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p13 /tmp/v8 output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9035081147/zip" -o /tmp/p13.zip
+          echo 'efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a  /tmp/p13.zip' | sha256sum -c -
+          unzip -q /tmp/p13.zip -d /tmp/p13
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o /tmp/v8.zip
+          echo '88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  /tmp/v8.zip' | sha256sum -c -
+          unzip -q /tmp/v8.zip -d /tmp/v8
+          test "$(find /tmp/p13 -type f -name p13_core_pretruth.json | wc -l)" -eq 1
+          test "$(find /tmp/v8 -type f -name pooled_year_centroid_v8_development.json | wc -l)" -eq 1
+          echo PASS_P14_IMMUTABLE_ARTIFACT_INPUTS
+      - name: Artifact-only P14 development finalization
+        run: |
+          set -euo pipefail
+          python orbittrace_support_safe_rank_p14/finalize_development.py \
+            --p13-dir /tmp/p13 --v8-dir /tmp/v8 --p13-zip /tmp/p13.zip --v8-zip /tmp/v8.zip --output output
+          python - <<'PY'
+          import json
+          r=json.load(open('output/support_safe_multiplicity_rank_p14_development.json'))
+          assert r['verdict']=='PASS_SUPPORT_SAFE_MULTIPLICITY_RANK_P14_DEVELOPMENT'
+          assert r['configuration']['support_safe_fallback_used_on_development'] is False
+          assert r['configuration']['episode_size']==128
+          assert r['gates']['all_226_development_families_exactly_v8_scorable'] is True
+          assert r['gates']['all_452_development_episodes_exactly_128'] is True
+          assert r['core_pretruth_sha256']=='12e6635085c77c8c705fe225e67811c659e98bf7cd1047649ec2b8d593261b3c'
+          assert r['halo_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert r['target_information_access'] is False and r['no_new_truth_query'] is True
+          print('PASS_P14_DEVELOPMENT_EXACT_BACKWARD_COMPATIBILITY')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-support-safe-multiplicity-rank-p14-development
+          path: output
+          retention-days: 90
