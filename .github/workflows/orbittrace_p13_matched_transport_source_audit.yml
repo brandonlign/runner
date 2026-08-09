@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install numpy==2.1.3 scipy==1.14.1 scikit-learn==1.5.2 pandas==2.2.3 requests==2.32.5 beautifulsoup4==4.12.3
-      - name: Reconstruct exact P12 and inspect adapter boundary
+      - name: Reconstruct exact P12 and audit matched pretruth transport
         run: |
           set -euo pipefail
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
@@ -49,18 +49,53 @@ jobs:
           echo '914913d0462ea6793af3836cef945f14a03cca205ac0755ed6cdadb63b8752f9  /tmp/p11.py' | sha256sum -c -
           python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/p12.py
           echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12.py' | sha256sum -c -
-          python -m py_compile /tmp/p12.py
-          echo P13_EXACT_P12_INTERFACE_BEGIN
+          python orbittrace_core_halo_p13_literature/apply_p12_matched_transport_patch.py /tmp/p12.py /tmp/p12_panel.py
+          python -m py_compile /tmp/p12_panel.py orbittrace_core_halo_p13_literature/apply_p12_matched_transport_patch.py
+          echo "P13_P12_MATCHED_TRANSPORT_SOURCE_SHA256=$(sha256sum /tmp/p12_panel.py | awk '{print $1}')"
           python - <<'PY'
           from pathlib import Path
-          p=Path('/tmp/p12.py').read_text().splitlines()
-          ranges=((1,85),(486,1110))
-          for lo,hi in ranges:
-              print(f'P13_P12_SOURCE_LINES={lo}:{hi}')
-              for n in range(lo-1,min(len(p),hi)):
-                  print(f'{n+1:05d}: {p[n]}')
+          p=Path('/tmp/p12_panel.py').read_text()
+          required=(
+              'YEARS = (2023, 2025)',
+              'for source_year, target_year in ((2023, 2025), (2025, 2023)):',
+              'P13 matched-literature pretruth core panel input',
+              'competitor_cluster_values_accessed"] is False',
+              'known_shower_truth_accessed"] is False',
+              'str(eid) in event_lookup_by_year[year]',
+              'P13 core identity changed before halo transport',
+              'p12_drift_pretruth.json',
+              'p3_crossfit_pretruth.json',
+              'p2_model_pretruth.json',
+              'p11_density_pretruth.json',
+              'p12_membership_pretruth.sha256',
+              'p12_decisions_pretruth.sha256',
+              'P13 matched transport stops exactly at the existing P12 truth firewall',
+              'P13_P12_HALO_PRETRUTH_FROZEN',
+              '"known_shower_truth_accessed": False',
+              '"competitor_cluster_values_accessed": False',
+              '"target_accessed": False',
+          )
+          for token in required: assert token in p,token
+          inherited=(
+              'P3_FOLD_COUNT = 5','P3_NEGATIVE_TAIL_MAX = 0.10','P3_SEED_FLOOR_MIN = 0.5','RESPONSIBILITY_THRESHOLD = 0.5',
+              'source_observation_model(rows_by_year[source_year], base)',
+              'positive_orb = min_exact_dsh_to_source',
+              'negative_orb = min_exact_dsh_to_source',
+              'membership_floor_rank = max(',
+              'scoring_scaler, scoring_classifier = crossfit_runtime_models[scoring_fold]',
+              'if not (bool(gate["reliable"]) and bool(reciprocal_gate["reliable"])):',
+              'density_contrast_scores(',
+              'p10_allowed = membership_floor_allowed & jointly_supported',
+              'allowed = p10_allowed & density_allowed',
+              'responsibility <= RESPONSIBILITY_THRESHOLD',
+          )
+          for token in inherited: assert token in p,token
+          assert 'p3_parse_truth_after_freeze(support, pretruth_ids)' not in p
+          assert 'evaluate_order(hidden_labels' not in p.split('P13 matched transport stops exactly at the existing P12 truth firewall')[0]
+          for forbidden in ('OrbitTrace-April','target_coordinate'):
+              assert forbidden not in p,forbidden
+          print('PASS_P13_EXACT_P12_MATCHED_TRANSPORT_SOURCE_AUDIT')
           PY
-          echo P13_EXACT_P12_INTERFACE_END
           echo CORRUPTED_LEGACY_PANEL_PATCH_NOT_USED
       - name: Audit no-result boundary
         run: |
