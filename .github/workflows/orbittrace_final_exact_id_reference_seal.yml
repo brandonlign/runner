@@ -1,0 +1,171 @@
+name: OrbitTrace exact-ID withheld reference seal
+
+on:
+  pull_request_target:
+    branches:
+      - agent/orbittrace-final-exact-id-stage-b-execution-freeze
+    paths:
+      - orbittrace_final_exact_id_firewall_v2/SEAL_WITHHELD_REFERENCE_REQUEST.json
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-final-exact-id-reference-seal
+  cancel-in-progress: false
+
+jobs:
+  seal:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact frozen base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          sparse-checkout: |
+            orbittrace_final_exact_id_firewall_v2
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Require execution-only child and parse seal request
+        id: request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          test "$HEAD_REPO" = "$GITHUB_REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          git fetch --no-tags --depth=2 origin "$HEAD_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          test "$changed" = 'orbittrace_final_exact_id_firewall_v2/SEAL_WITHHELD_REFERENCE_REQUEST.json'
+          git show "$HEAD_SHA:orbittrace_final_exact_id_firewall_v2/SEAL_WITHHELD_REFERENCE_REQUEST.json" > /tmp/seal-request.json
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          r=json.loads(Path('/tmp/seal-request.json').read_text())
+          expected={'schema','development_run_id','literature_run_id','holdout_run_id','source_reference_artifact_id','source_reference_zip_sha256'}
+          assert set(r)==expected,set(r)
+          assert r['schema']=='orbittrace-withheld-exact-id-seal-request-v1'
+          for key in ('development_run_id','literature_run_id','holdout_run_id','source_reference_artifact_id'):
+              assert re.fullmatch(r'[0-9]+',str(r[key])),key
+          assert re.fullmatch(r'[0-9a-f]{64}',str(r['source_reference_zip_sha256']))
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as fh:
+              for key in sorted(expected-{'schema'}): fh.write(f"{key}={r[key]}\n")
+          print('PASS_EXACT_ID_SEAL_REQUEST')
+          PY
+
+      - name: Verify all method-promotion gates before any target reference access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV_RUN: ${{ steps.request.outputs.development_run_id }}
+          LIT_RUN: ${{ steps.request.outputs.literature_run_id }}
+          HOLD_RUN: ${{ steps.request.outputs.holdout_run_id }}
+        run: |
+          set -euo pipefail
+          test "$(gh run view "$DEV_RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$LIT_RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$HOLD_RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+
+          mapfile -t dev_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$DEV_RUN/artifacts" --jq '.artifacts[].name')
+          dev_candidates=()
+          for name in orbittrace-v6-lf-all-event-null-development-v2 orbittrace-v6-lf-strict-semantic-development; do
+            if printf '%s\n' "${dev_names[@]}" | grep -qx "$name"; then dev_candidates+=("$name"); fi
+          done
+          test "${#dev_candidates[@]}" -eq 1
+          mapfile -t lit_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$LIT_RUN/artifacts" --jq '.artifacts[].name')
+          printf '%s\n' "${lit_names[@]}" | grep -qx 'orbittrace-v6-lf-matched-literature-fanout-v1-result'
+          mapfile -t hold_names < <(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$HOLD_RUN/artifacts" --jq '.artifacts[].name')
+          printf '%s\n' "${hold_names[@]}" | grep -qx 'orbittrace-v6-lf-gmn-2024-2025-holdout'
+
+          rm -rf /tmp/promotion && mkdir -p /tmp/promotion/{dev,lit,hold}
+          gh run download "$DEV_RUN" --repo "$GITHUB_REPOSITORY" --name "${dev_candidates[0]}" --dir /tmp/promotion/dev
+          gh run download "$LIT_RUN" --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-lf-matched-literature-fanout-v1-result --dir /tmp/promotion/lit
+          gh run download "$HOLD_RUN" --repo "$GITHUB_REPOSITORY" --name orbittrace-v6-lf-gmn-2024-2025-holdout --dir /tmp/promotion/hold
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          dev=json.loads(Path('/tmp/promotion/dev/v6_label_free_all_event_null_development.json').read_text())
+          assert dev['verdict']=='PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT'
+          assert dev['configuration']['years']==[2022,2023]
+          assert dev['configuration']['blind_exclusion']==[20.0,55.0]
+          assert dev['configuration']['calibration_reservoir']=='all geometrically valid target-excluded scan events; no shower-label selection'
+          assert dev['configuration']['parameter_search'] is False and dev['configuration']['null_trimming'] is False
+          assert all(dev['gates'].values())
+
+          lit=json.loads(Path('/tmp/promotion/lit/v6_lf_matched_literature.json').read_text())
+          assert lit['classification'] in {'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}
+          assert lit['years']==[2023,2025] and lit['blind_exclusion']==[20.0,55.0]
+          assert lit['pairwise_only_no_cross_denominator_comparison'] is True
+          assert lit['panels']['hdbscan']['exact_event_rows']=={'2023':26460,'2025':19658}
+          assert lit['panels']['sugar']['exact_event_rows']=={'2023':30414,'2025':23200}
+
+          hold=json.loads(Path('/tmp/promotion/hold/v6_lf_gmn_2024_2025_temporal_holdout.json').read_text())
+          assert hold['verdict']=='PASS_V6_LF_GMN_2024_2025_TEMPORAL_HOLDOUT'
+          cfg=hold['configuration']
+          assert cfg['years']==[2024,2025] and cfg['blind_exclusion']==[20.0,55.0]
+          assert cfg['parameter_search'] is False and cfg['null_trimming'] is False
+          assert all(hold['pretruth_integrity_power_gates'].values())
+          assert hold['scientific_gates'] is not None and all(hold['scientific_gates'].values())
+          assert hold['truth_accessed'] is True and hold['truth_event_universe_exact'] is True
+          print('PASS_EXACT_ID_SEAL_PROMOTION_GATES')
+          PY
+          rm -rf /tmp/promotion
+          test ! -e input
+          echo NO_WITHHELD_REFERENCE_ACCESSED_BEFORE_PROMOTION_GATES
+
+      - name: Download exact historical withheld-reference artifact only after promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_ID: ${{ steps.request.outputs.source_reference_artifact_id }}
+          REF_SHA: ${{ steps.request.outputs.source_reference_zip_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p input sealed
+          meta="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$REF_ID")"
+          test "$(printf '%s' "$meta" | jq -r .expired)" = false
+          curl --fail-with-body -L --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$REF_ID/zip" \
+            -o input/source-reference.zip
+          echo "$REF_SHA  input/source-reference.zip" | sha256sum -c -
+          echo PASS_WITHHELD_REFERENCE_ZIP_IDENTITY
+
+      - name: Scrub reference to exact ID and year only
+        env:
+          SOURCE_ID: ${{ steps.request.outputs.source_reference_artifact_id }}
+          SOURCE_SHA: ${{ steps.request.outputs.source_reference_zip_sha256 }}
+          FREEZE_COMMIT: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_final_exact_id_firewall_v2/seal_withheld_reference.py
+          python orbittrace_final_exact_id_firewall_v2/seal_withheld_reference.py \
+            --source-zip input/source-reference.zip \
+            --source-artifact-id "$SOURCE_ID" \
+            --source-zip-sha256 "$SOURCE_SHA" \
+            --seal-run-id "$GITHUB_RUN_ID" \
+            --freeze-commit "$FREEZE_COMMIT" \
+            --output sealed
+          grep -q '"target_ids_logged": false' sealed/seal_manifest.json
+          grep -q '"target_counts_logged": false' sealed/seal_manifest.json
+          grep -q '"coordinates_or_orbits_permitted": false' sealed/seal_manifest.json
+          rm -rf input
+
+      - name: Upload pre-Stage-A sealed exact-ID reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-withheld-exact-ids-v2-sealed
+          path: sealed
+          if-no-files-found: error
+          retention-days: 90
