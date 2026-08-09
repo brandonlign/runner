@@ -92,13 +92,20 @@ jobs:
           for forbidden in \
             'generate_matched_pretruth' 'promote_p17_checkpoint_to_p18.py' \
             'apply_support_safe_halo_p15.py' 'apply_reciprocal_support_closure_p17.py' \
-            'MAARSY' 'EXTERNAL_RUN' 'STAGE_A_RUN' 'STAGE_B_RUN' \
-            'OrbitTrace-April' 'target_coordinate'; do
+            'MAARSY' 'EXTERNAL_RUN' 'STAGE_A_RUN' 'STAGE_B_RUN'; do
             if grep -Fq "$forbidden" "$launcher" "$wf" "$helper"; then
-              echo "forbidden posttruth/external/target surface in P18 matched launcher: $forbidden" >&2
+              echo "forbidden posttruth/external surface in P18 matched launcher: $forbidden" >&2
               exit 1
             fi
           done
+          # Target names are allowed only as explicit rejection sentinels; generated runtime must contain neither.
+          test "$(grep -Fc "require('OrbitTrace-April' not in stage_p18 and 'target_coordinate' not in stage_p18" "$helper")" -eq 1
+          test "$(grep -Fc "require('OrbitTrace-April' not in evaluator and 'target_coordinate' not in evaluator" "$helper")" -eq 1
+          test "$(grep -Fc "if grep -Eq 'OrbitTrace-April|target_coordinate' /tmp/p18_stage.sh /tmp/p18_evaluator_once.sh; then" "$launcher")" -eq 1
+          if grep -Eq 'OrbitTrace-April|target_coordinate' /tmp/p18_stage.sh /tmp/p18_evaluator_once.sh; then
+            echo 'target token leaked into generated P18 matched runtime' >&2
+            exit 1
+          fi
           grep -F 'run the already-frozen blind-safe matched evaluator **once**' "$proto"
           grep -F 'No P17/P18 detector, halo proposal, family constructor, score, distance, membership model, threshold, merge, or ranking code may run after truth becomes available' "$proto"
           echo PASS_P18_MATCHED_TRUTH_LAUNCHER_SOURCE_FREEZE
