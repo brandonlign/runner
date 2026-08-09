@@ -16,7 +16,7 @@ python -m py_compile "$GEN" orbittrace_support_safe_rank_p14/generate_matched_pr
 bash -n "$OUT"
 grep -F "LAUNCH_P14_MATCHED_PRETRUTH_DIRECT_V1" "$OUT"
 grep -F "PASS_P14_DIRECT_ASSIGNMENT_IDS_FROZEN_CLUSTER_VALUES_UNREAD" "$OUT"
-grep -F "--p14-rank-module /tmp/p14_support_safe_rank.py" "$OUT"
+grep -F -- "--p14-rank-module /tmp/p14_support_safe_rank.py" "$OUT"
 grep -F "PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES" "$OUT"
 if grep -Fq "OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE" "$OUT"; then
   echo 'posttruth stage survived P14 direct pretruth generation' >&2
