@@ -32,7 +32,6 @@ jobs:
       - name: Prove year-only transport and generic exact/replay reuse
         run: |
           python - <<'PY'
-          import ast
           from pathlib import Path
           ctx=Path('orbittrace_v6_lf_gmn_2024_2025_holdout/holdout_context.py').read_text()
           assert 'HOLDOUT_YEARS=(2024,2025)' in ctx
@@ -76,19 +75,25 @@ jobs:
           assert 'parameter_search": False' in body and 'null_trimming": False' in body
           print('PASS_HOLDOUT_FROZEN_GATES_AND_TRUTH_FIREWALL')
           PY
-      - name: Prove workflow hard-gated by exact v6-LF development PASS
+      - name: Prove workflow requires development PASS and matched-literature superiority
         run: |
           python - <<'PY'
           from pathlib import Path
           w=Path('.github/workflows/orbittrace_v6_lf_gmn_holdout_execution.yml').read_text()
-          assert "EXECUTE_AFTER_V6_LF_DEVELOPMENT_PASS" in w
+          assert "EXECUTE_AFTER_V6_LF_DEVELOPMENT_AND_LITERATURE_SUPERIORITY" in w
           assert "orbittrace-v6-lf-all-event-null-development-v2" in w
+          assert "orbittrace-v6-lf-strict-semantic-development" in w
           assert "PASS_V6_LABEL_FREE_ALL_EVENT_NULL_DEVELOPMENT" in w
           assert "all(r['gates'].values())" in w
+          assert "orbittrace-v6-lf-matched-literature-fanout-v1-result" in w
+          assert "BROAD_CATALOGUE_SUPERIORITY" in w
+          assert "SPARSE_STREAM_SUPERIORITY" in w
+          assert "NO_LITERATURE_SUPERIORITY" not in w
+          assert "pairwise_only_no_cross_denominator_comparison" in w
           assert 'year: [2024, 2025]' in w
           assert "--year-2024 years/v6_lf_year_2024.pkl" in w
           assert "--year-2025 years/v6_lf_year_2025.pkl" in w
-          print('PASS_HOLDOUT_EXECUTION_PREREQUISITE_AND_YEARS')
+          print('PASS_HOLDOUT_EXECUTION_DEVELOPMENT_AND_LITERATURE_PREREQUISITES')
           PY
       - name: Assert source-only no-holdout boundary
         run: |
