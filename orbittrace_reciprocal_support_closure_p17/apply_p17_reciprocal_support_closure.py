@@ -8,11 +8,10 @@ from pathlib import Path
 P15_DEV_SHA='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'
 P15_MATCHED_SHA='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'
 
-OLD_COUNT='''    for family_id in family_order:
-        require(sum(1 for drec in direction_records if drec["family_id"] == family_id) == 2, f"family {family_id} missing reciprocal direction record")
+OLD_COUNT='''    require(all(sum(1 for d in directions if str(d["family_id"]) == fid) == 2 for fid in family_fold), "P3 family direction count changed")
 '''
-NEW_COUNT='''    for family_id in family_order:
-        p17_record_count = sum(1 for drec in direction_records if drec["family_id"] == family_id)
+NEW_COUNT='''    for family_id in family_fold:
+        p17_record_count = sum(1 for d in directions if str(d["family_id"]) == family_id)
         p17_unavailable_count = sum(1 for item in p15_unavailable_directions if item["family_id"] == family_id)
         require(p17_record_count + p17_unavailable_count == 2, f"family {family_id} reciprocal direction accounting changed")
         require(p17_record_count in {1, 2}, f"family {family_id} has no support-eligible characterization direction")
