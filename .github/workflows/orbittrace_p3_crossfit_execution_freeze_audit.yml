@@ -1,0 +1,79 @@
+name: OrbitTrace P3 cross-fit execution freeze audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py
+      - .github/workflows/orbittrace_p3_crossfit_seed_floor_development.yml
+      - .github/workflows/orbittrace_p3_crossfit_execution_freeze_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove exact execution-only transport and guards
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py)" = 'ea2dc8cb3c0267937755b654ce6afc68610b4cc4'
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          w=Path('orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py').read_text()
+          y=Path('.github/workflows/orbittrace_p3_crossfit_seed_floor_development.yml').read_text()
+          for token in (
+              "EXPECTED_P3_SOURCE = Path('/tmp/run_p3_crossfit.py')",
+              "fields[0] == 'Unique trajectory'",
+              "'id': exact('Unique trajectory')",
+              "'sol': exact('Sol lon')",
+              "'q': exact('q')",
+              "'e': exact('e')",
+              "'i': exact('i')",
+              "'peri': exact('peri')",
+              "'node': exact('node')",
+              "module.exact_header_positions = compatible_exact_header_positions",
+          ):
+              assert token in w,token
+          tree=ast.parse(w)
+          funcs={n.name for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert funcs=={'require','compatible_exact_header_positions','load_p3','self_test','main'},funcs
+          for token in (
+              'EXECUTE_P3_CROSSFIT_AFTER_AUTHORITATIVE_P2_NO_GO',
+              "test \"$p2_run\" = '31290531066'",
+              '9031238385',
+              'sha256:b7fe35500729d1bf6e9a20fe2f2dadbe0089733a865ab46ac3eb94e94963a0e7',
+              "FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO",
+              '0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f',
+              'b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e',
+              'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb',
+              'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185',
+              '3bbf4391d4d31b902973ae54430bdb2ca09a18bb',
+              '9c9c318ddb4cf1db31181c03c5f4ffa0f56e1266',
+              'ea2dc8cb3c0267937755b654ce6afc68610b4cc4',
+              'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
+              'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
+              'p3_label_values_unread_until_membership_freeze',
+              'orbittrace-p3-crossfit-seed-floor-development',
+          ):
+              assert token in y,token
+          assert "paths:\n      - orbittrace_crossfit_seed_floor_membership_p3/RUN.md" in y
+          assert 'git checkout --detach "$BASE_SHA"' in y
+          assert "test ! -e orbittrace_crossfit_seed_floor_membership_p3/RUN.md" in y
+          assert '20.0,55.0' in y
+          print('PASS_P3_EXECUTION_FREEZE_AUDIT')
+          PY
+      - name: Assert dormant no-data boundary
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_P3_EXECUTION_NO_TARGET_ACCESS
