@@ -67,8 +67,8 @@ jobs:
           hits=[i for i,x in enumerate(src) if x==step]
           assert len(hits)==1,hits
           i=hits[0]
-          assert src[i+7]==run,(i,src[i:i+10])
-          start=i+8
+          run_i=next(j for j in range(i+1,min(i+16,len(src))) if src[j]==run)
+          start=run_i+1
           end=next(j for j in range(start,len(src)) if src[j].startswith('      - uses:'))
           block=src[start:end]
           assert block and all((not x) or x.startswith('          ') for x in block)
