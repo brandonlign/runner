@@ -1,0 +1,61 @@
+name: OrbitTrace P3 cross-fit execution freeze v2 audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - .github/workflows/orbittrace_p3_crossfit_seed_floor_development.yml
+      - .github/workflows/orbittrace_p3_crossfit_execution_freeze_v2_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove dormant execution-only child
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          y=Path('.github/workflows/orbittrace_p3_crossfit_seed_floor_development.yml').read_text()
+          required=(
+              'EXECUTE_P3_CROSSFIT_AFTER_AUTHORITATIVE_P2_NO_GO',
+              "test \"$p2_run\" = '31290531066'",
+              '9031238385',
+              'sha256:b7fe35500729d1bf6e9a20fe2f2dadbe0089733a865ab46ac3eb94e94963a0e7',
+              'FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO',
+              '0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f',
+              'b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e',
+              '3bbf4391d4d31b902973ae54430bdb2ca09a18bb',
+              '9c9c318ddb4cf1db31181c03c5f4ffa0f56e1266',
+              '67f17772daa51ade7d943d7367463e48d2f70d07',
+              'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb',
+              'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185',
+              'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
+              'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
+              'p3_label_values_unread_until_membership_freeze',
+              'p3_every_surviving_proposal_meets_seed_floor',
+              'orbittrace-p3-crossfit-seed-floor-development',
+          )
+          for token in required: assert token in y,token
+          assert "branches:\n      - agent/orbittrace-p3-crossfit-execution-freeze-v2" in y
+          assert "paths:\n      - orbittrace_crossfit_seed_floor_membership_p3/RUN.md" in y
+          assert 'git checkout --detach "$BASE_SHA"' in y
+          assert "test ! -e orbittrace_crossfit_seed_floor_membership_p3/RUN.md" in y
+          assert 'python -u orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py' in y
+          assert '--output output' in y
+          print('PASS_P3_EXECUTION_FREEZE_V2_AUDIT')
+          PY
+      - name: Assert no execution or target data
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_P3_EXECUTION_NO_TARGET_ACCESS
