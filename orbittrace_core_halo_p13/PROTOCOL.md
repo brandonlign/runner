@@ -23,9 +23,24 @@ P13 is not allowed to relabel a failed P12 as successful merely because v8 cores
 9. No new membership threshold, pruning, confidence cutoff, family exception, rescue, ranking feature, model, parameter search or numeric constant is introduced.
 10. All P12 non-scientific integrity/nonvacuity/firewall gates must pass. P13 can only replace the six single-output P12 scientific gates with its prespecified core-discovery and halo-membership endpoint split.
 
+## No-recompute adjudication
+
+Because P13 changes no detector output, **it must not rerun the meteor catalogue or re-query known-shower truth after P12**. The preregistered `finalize_from_p12.py` is the authoritative P13 development adjudicator if P13 becomes eligible:
+- input 1 is the immutable authoritative P12 result JSON from a genuine `FAIL_DRIFT_CONDITIONED_TWO_VIEW_MEMBERSHIP_P12_NO_GO` artifact;
+- input 2 is the exact target-excluded 226-family structural core artifact already used throughout the lineage;
+- it requires every P12 non-scientific integrity/nonvacuity/firewall gate to be true;
+- it hashes exact core family/event identities independently;
+- it takes halo membership only from P12's already-frozen `membership_pretruth_sha256` and P12 halo metrics;
+- it performs **no catalogue fetch, no hidden-label read, no model fit, no proposal/assignment computation and no new truth query**;
+- its PASS/FAIL is the deterministic conjunction of exact-v8 core discovery identity and the three frozen halo membership-quality gates.
+
+Any future P13 workflow may only wrap that no-recompute finalizer and pin the exact P12 artifact/digest. A workflow that reruns P12/P13 science is ineligible even if it gives the same result.
+
 ## Comparator claim boundary
 
 If P13 becomes promoted, matched Sugar/HDBSCAN comparison semantics must be frozen before any comparator outcome is opened. Primary sparse/broad discovery superiority uses P13 **cores** against comparator catalogue clusters under a matched discovery evaluator. Halo membership is a separate secondary characterization endpoint and cannot be mixed into primary superiority or used to inflate rank/identity.
+
+The companion `MATCHED_BENCHMARK_PROTOCOL.md`, frozen before P12 truth, fixes the pairwise no-denominator-mixing rule, exact blind-safe comparator assignment identities/counts, inherited broad/sparse superiority bars, and the prohibition on choosing core versus halo after truth.
 
 Mandatory downstream hierarchy remains: sparse-stream superiority separately against both Sugar and catalogue HDBSCAN in both SonotaCo 2023 and 2025; then no-retuning external validation; only then final target-containing blind search and sealed exact-ID reveal.
 
