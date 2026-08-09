@@ -1,0 +1,122 @@
+name: OrbitTrace P17 explicit pretruth relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: orbittrace-p17-explicit-pretruth-relay
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.user.login == github.repository_owner &&
+      github.event.comment.body == 'EXECUTE_P17_PRETRUTH_RELAY_V1 PR=760 BASE=62fb6c2eda5a11ed06af5025c413269edb1fbb09 HEAD=0e70de7dc40be3437751933258d469fc8c65ca6c'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 1}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Authenticate exact PR child and publish run identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          test "$PR_NUMBER" = '760'
+          gh api "repos/$REPO/pulls/$PR_NUMBER" > /tmp/p17-pr.json
+          python - <<'PY'
+          import json
+          p=json.load(open('/tmp/p17-pr.json'))
+          assert p['number']==760 and p['state']=='open' and not p['draft'],p
+          assert p['user']['login']=='brandonlign',p
+          assert p['base']['ref']=='agent/orbittrace-p15-support-safe-halo-freeze',p
+          assert p['base']['sha']=='62fb6c2eda5a11ed06af5025c413269edb1fbb09',p
+          assert p['head']['ref']=='agent/orbittrace-p17-matched-pretruth-run-v6-target-relay',p
+          assert p['head']['sha']=='0e70de7dc40be3437751933258d469fc8c65ca6c',p
+          assert p['head']['repo']['full_name']=='brandonlign/runner',p
+          print('PASS_P17_EXPLICIT_RELAY_EXACT_PR_METADATA')
+          PY
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "P17_EXPLICIT_RELAY_RUN_ID=$GITHUB_RUN_ID BASE_SHA=62fb6c2eda5a11ed06af5025c413269edb1fbb09 HEAD_SHA=0e70de7dc40be3437751933258d469fc8c65ca6c EVENT=issue_comment"
+      - name: Execute exact frozen methodology-base P17 run block
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: 62fb6c2eda5a11ed06af5025c413269edb1fbb09
+          HEAD_SHA: 0e70de7dc40be3437751933258d469fc8c65ca6c
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          wf=.github/workflows/orbittrace_p17_matched_pretruth.yml
+          marker_path=orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 2
+          test "${files[0]}" = "$wf"
+          test "${files[1]}" = "$marker_path"
+          git show "$BASE_SHA:$wf" > /tmp/p17_base_workflow.yml
+          git show "$HEAD_SHA:$wf" > /tmp/p17_child_workflow.yml
+          test "$(tail -n 1 /tmp/p17_child_workflow.yml)" = '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1'
+          head -n -1 /tmp/p17_child_workflow.yml > /tmp/p17_child_without_nonce.yml
+          cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml
+          marker="$(git show "$HEAD_SHA:$marker_path")"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P17_MATCHED_PRETRUTH'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31332157812'
+          test "$(printf '%s\n' "$marker" | sed -n '3p')" = '9043232586'
+          test "$(printf '%s\n' "$marker" | sed -n '4p')" = 'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd'
+          test "$(printf '%s\n' "$marker" | sed -n '5p')" = 'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 5
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('/tmp/p17_base_workflow.yml').read_text().splitlines()
+          step='      - name: Bind exact P17 development PASS, freeze both checkpoints, stop pretruth'
+          run='        run: |'
+          hits=[i for i,x in enumerate(src) if x==step]
+          assert len(hits)==1,hits
+          i=hits[0]
+          run_i=next(j for j in range(i+1,min(i+16,len(src))) if src[j]==run)
+          start=run_i+1
+          end=next(j for j in range(start,len(src)) if src[j].startswith('      - uses:'))
+          block=src[start:end]
+          assert block and all((not x) or x.startswith('          ') for x in block)
+          out='\n'.join(x[10:] if x else '' for x in block)+'\n'
+          required=(
+              'set -euo pipefail',
+              'PASS_P17_CHILD_WORKFLOW_DIFF_IS_INERT_NONCE_ONLY',
+              'git checkout --detach "$BASE_SHA"',
+              '31332157812','9043232586',
+              'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a',
+              'PASS_P17_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH',
+          )
+          for x in required: assert x in out,x
+          for x in ('OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE','evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
+              assert x not in out,x
+          Path('/tmp/p17_exact_base_run.sh').write_text(out)
+          print('PASS_P17_EXPLICIT_RELAY_EXTRACTED_EXACT_BASE_RUN_BLOCK')
+          PY
+          bash -n /tmp/p17_exact_base_run.sh
+          chmod +x /tmp/p17_exact_base_run.sh
+          /tmp/p17_exact_base_run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p17-matched-pretruth-checkpoints-explicit-relay
+          path: pretruth
+          if-no-files-found: warn
+          retention-days: 90
