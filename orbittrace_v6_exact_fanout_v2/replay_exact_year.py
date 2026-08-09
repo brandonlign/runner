@@ -44,6 +44,34 @@ def load_pickle_with_sidecar(path: Path) -> tuple[Any, str]:
     return pickle.loads(raw), digest
 
 
+def align_exact_outputs_to_records(
+    outputs: list[dict[str, Any]], records: list[dict[str, Any]], center: float
+) -> tuple[list[dict[str, Any]], bool]:
+    """Recover the exact captured proposal order without changing any output value.
+
+    Every exact shard already proved immediately after scalar rescoring that its
+    output proposal_anchor_id sequence equalled its captured input sequence. The
+    fanout replay additionally requires proposal IDs to be unique and the saved
+    output/input ID sets to be exactly identical. If deserialized list order is
+    nevertheless different, realign only by the immutable unique proposal ID.
+    """
+    input_ids = [str(row["proposal_anchor_id"]) for row in records]
+    output_ids = [str(row["proposal_anchor_id"]) for row in outputs]
+    require(len(input_ids) == len(set(input_ids)), f"duplicate captured proposal anchor center {center}")
+    require(len(output_ids) == len(set(output_ids)), f"duplicate exact output proposal anchor center {center}")
+    require(len(output_ids) == len(input_ids), f"exact output cardinality mismatch center {center}")
+    require(set(output_ids) == set(input_ids), f"exact output proposal set mismatch center {center}")
+    if output_ids == input_ids:
+        return outputs, False
+    by_anchor = {str(row["proposal_anchor_id"]): row for row in outputs}
+    aligned = [by_anchor[proposal_id] for proposal_id in input_ids]
+    require(
+        [str(row["proposal_anchor_id"]) for row in aligned] == input_ids,
+        f"exact output realignment failed center {center}",
+    )
+    return aligned, True
+
+
 def main() -> int:
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -101,6 +129,7 @@ def main() -> int:
 
     original_exact = v6.exact_rescore_window_v6
     replayed: list[float] = []
+    realigned_centers: list[float] = []
 
     def replay_exact(old_arg, records, window_events, event_lookup, support_arg, base_arg):
         del old_arg, event_lookup, support_arg, base_arg
@@ -112,8 +141,10 @@ def main() -> int:
         require(canonical_sha(records) == spec["records_sha256"], f"proposal records changed before replay center {center}")
         ids = [str(row["id"]) for row in window_events]
         require(canonical_sha(ids) == spec["window_event_ids_sha256"], f"window events changed before replay center {center}")
-        outputs = exact_by_center[center]
-        require([str(row["proposal_anchor_id"]) for row in outputs] == [str(row["proposal_anchor_id"]) for row in records], f"exact output order mismatch center {center}")
+        outputs, realigned = align_exact_outputs_to_records(exact_by_center[center], records, center)
+        if realigned:
+            realigned_centers.append(center)
+            print(f"V6_FANOUT_REPLAY_REALIGNED_BY_ANCHOR year={args.year} center={center:.1f}", flush=True)
         replayed.append(center)
         return outputs
 
@@ -140,6 +171,9 @@ def main() -> int:
             "exact_fanout_v2": True,
             "exact_shard_count": shard_count,
             "preexact_sha256": pre_sha,
+            "replay_anchor_alignment_repair": True,
+            "realigned_center_count": len(realigned_centers),
+            "realigned_centers": realigned_centers,
         },
         "audit": audit,
         "anchors": anchors,
@@ -162,8 +196,14 @@ def main() -> int:
         "components": len(components),
         "exact_shard_count": shard_count,
         "preexact_sha256": pre_sha,
+        "realigned_center_count": len(realigned_centers),
+        "realigned_centers": realigned_centers,
     }, indent=2, sort_keys=True) + "\n")
-    print(f"PASS_V6_FANOUT_YEAR_REPLAY year={args.year} anchors={len(anchors)} components={len(components)} sha={digest}", flush=True)
+    print(
+        f"PASS_V6_FANOUT_YEAR_REPLAY year={args.year} anchors={len(anchors)} "
+        f"components={len(components)} realigned_centers={len(realigned_centers)} sha={digest}",
+        flush=True,
+    )
     return 0
 
 
