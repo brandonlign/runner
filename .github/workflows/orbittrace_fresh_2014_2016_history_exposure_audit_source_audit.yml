@@ -1,0 +1,46 @@
+name: OrbitTrace fresh 2014/2016 history audit source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_fresh_2014_2016_history_exposure_audit.yml
+      - .github/workflows/orbittrace_fresh_2014_2016_history_exposure_audit_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify history audit is identity/text-only and cannot access reserved scientific data
+        run: |
+          set -euo pipefail
+          w=.github/workflows/orbittrace_fresh_2014_2016_history_exposure_audit.yml
+          for x in \
+            'AUDIT_PRE_RESERVATION_SONOTACO_2014_2016_EXPOSURE' \
+            "cutoff='2026-08-09T21:32:20Z'" \
+            '014a\.zip' '016a\.zip' \
+            'num < 792' \
+            'PASS_FRESH_SONOTACO_2014_2016_PREACCESS_HISTORY_AUDIT' \
+            "'archive_accessed':False" \
+            "'event_values_accessed':False" \
+            "'known_shower_truth_accessed':False" \
+            "'comparator_cluster_values_accessed':False" \
+            "'target_information_access':False"; do
+            grep -F "$x" "$w"
+          done
+          # Network is limited to Git/GitHub metadata/history. No scientific archive or comparator artifact download surface.
+          for forbidden in \
+            'astro.sk/iaumdcDB/public/data' 'actions/artifacts/' \
+            'evaluate_frozen' 'literature_comparators.py' \
+            'gmn-python-api' 'data_directory' \
+            'target_coordinate' 'OrbitTrace-April'; do
+            if grep -Fq "$forbidden" "$w"; then echo "scientific-data/target surface in history audit: $forbidden" >&2; exit 1; fi
+          done
+          test ! -e orbittrace_post_p18_fresh_matched/HISTORY_AUDIT_RUN.md
+          echo PASS_FRESH_2014_2016_HISTORY_AUDIT_SOURCE_FREEZE
+          echo GIT_GITHUB_METADATA_ONLY_NO_RESERVED_SCIENTIFIC_DATA_ACCESS
