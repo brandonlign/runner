@@ -7,6 +7,7 @@ on:
     paths:
       - orbittrace_support_safe_halo_p15/**
       - .github/workflows/orbittrace_p15_halo_source_context_audit.yml
+      - .github/workflows/orbittrace_p15_support_safe_halo_development.yml
 
 permissions:
   contents: read
@@ -48,4 +49,18 @@ jobs:
           python orbittrace_support_safe_halo_p15/audit_support_safe_halo_p15_source.py /tmp/p12.py /tmp/p15_dev.py /tmp/p12_panel_v3.py /tmp/p15_matched.py
           grep -F "DEV_P15_SHA256='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
           grep -F "MATCHED_P15_SHA256='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+
+          dev=.github/workflows/orbittrace_p15_support_safe_halo_development.yml
+          grep -F 'EXECUTE_P15_DEVELOPMENT_COMPATIBILITY_ON_FROZEN_2022_2023' "$dev"
+          grep -F "test \"\$(printf '%s\\n' \"\$marker\" | sed -n '2p')\" = '31327637103'" "$dev"
+          grep -F "22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b" "$dev"
+          grep -F "p15_unavailable_direction_count']==0" "$dev"
+          grep -F "len(r['direction_audits'])==452" "$dev"
+          grep -F "f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3" "$dev"
+          grep -F "PASS_P15_SUPPORT_SAFE_HALO_DEVELOPMENT_COMPATIBILITY" "$dev"
+          if grep -Eq '9041833656|8955917326|9012424187|evaluate_frozen_blindsafe|OrbitTrace-April|target_coordinate' "$dev"; then
+            echo 'matched/target input leaked into P15 development workflow' >&2
+            exit 1
+          fi
+          echo PASS_P15_DEVELOPMENT_LAUNCHER_SOURCE_FREEZE
           echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
