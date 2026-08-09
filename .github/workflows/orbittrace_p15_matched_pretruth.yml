@@ -1,0 +1,49 @@
+name: OrbitTrace P15 matched pretruth checkpoints
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/P15_MATCHED_PRETRUTH_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p15-matched-pretruth
+  cancel-in-progress: false
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify exact P15 development PASS and freeze both matched checkpoints
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          chmod +x orbittrace_support_safe_halo_p15/run_matched_pretruth_p15.sh
+          orbittrace_support_safe_halo_p15/run_matched_pretruth_p15.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p15-matched-pretruth-checkpoints
+          path: pretruth
+          if-no-files-found: warn
+          retention-days: 90
