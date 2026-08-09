@@ -1,0 +1,108 @@
+name: OrbitTrace P17 matched pretruth checkpoints
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p17-matched-pretruth
+  cancel-in-progress: false
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Bind artifact-only development, run P17 source closure, freeze both checkpoints, stop pretruth
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md'
+          marker="$(git show "$HEAD_SHA":orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md)"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P17_MATCHED_PRETRUTH'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31329529635'
+          test "$(printf '%s\n' "$marker" | sed -n '3p')" = '9042508082'
+          test "$(printf '%s\n' "$marker" | sed -n '4p')" = '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 4
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
+
+          # Sole development evidence: immutable artifact-only P15 PASS plus source-proven
+          # P17 branch vacuity when unavailable_direction_count=0.
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/artifacts/9042508082" -o /tmp/p15dev-meta.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/artifacts/9042508082/zip" -o /tmp/p15dev.zip
+          echo 'f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96  /tmp/p15dev.zip' | sha256sum -c -
+          rm -rf /tmp/p15dev && mkdir -p /tmp/p15dev
+          unzip -q /tmp/p15dev.zip -d /tmp/p15dev
+          mapfile -t devhits < <(find /tmp/p15dev -type f -name support_safe_secondary_halo_p15_development_artifact_adjudication.json -print | sort)
+          test "${#devhits[@]}" -eq 1
+          echo '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e  '"${devhits[0]}" | sha256sum -c -
+          python orbittrace_reciprocal_support_closure_p17/adjudicate_p17_development_vacuity.py --p15-artifact-only-result "${devhits[0]}" --p17-patcher orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py --output /tmp/p17_dev_vacuity.json
+          grep -F '"verdict": "PASS_P17_RECIPROCAL_SUPPORT_CLOSURE_DEVELOPMENT_VACUITY"' /tmp/p17_dev_vacuity.json
+          grep -F '"post_result_numeric_tolerance_used": false' /tmp/p17_dev_vacuity.json
+
+          python orbittrace_reciprocal_support_closure_p17/generate_matched_pretruth_p17.py orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p17_pretruth.sh
+          bash -n /tmp/p17_pretruth.sh
+          for x in 'PASS_P15_OUTER_ONE_FILE_ACTIVATION_ALREADY_VERIFIED' 'PASS_P15_MATCHED_SUPPORT_SAFE_HALO_SOURCE_ACTIVE' 'PASS_P17_MATCHED_SOURCE_ACTIVE' 'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' 'exit 0'; do grep -F "$x" /tmp/p17_pretruth.sh; done
+          if grep -Eq 'OPEN TRUTH \+ COMPETITOR CLUSTER VALUES EXACTLY ONCE|evaluate_frozen_blindsafe.py|finalize_p3_evaluator_result.py|OrbitTrace-April|target_coordinate' /tmp/p17_pretruth.sh; then exit 1; fi
+          chmod +x /tmp/p17_pretruth.sh
+          /tmp/p17_pretruth.sh
+
+          # Existing P15 barrier has now frozen both checkpoints. Add only P17 closure
+          # provenance from each still-pretruth halo checkpoint.
+          for panel in hdbscan sugar; do
+            mapfile -t halos < <(find "pretruth/$panel" -type f -name '*halo_pretruth.pkl' -print | sort)
+            test "${#halos[@]}" -eq 1
+            python orbittrace_reciprocal_support_closure_p17/augment_pretruth_checkpoint_p17.py --checkpoint "pretruth/checkpoints/$panel.pkl" --halo-pretruth "${halos[0]}"
+          done
+          python - <<'PY'
+          import hashlib,pickle
+          from pathlib import Path
+          for panel in ('hdbscan','sugar'):
+              p=Path(f'pretruth/checkpoints/{panel}.pkl'); raw=p.read_bytes(); cp=pickle.loads(raw)
+              assert p.with_suffix(p.suffix+'.sha256').read_text().strip()==hashlib.sha256(raw).hexdigest()
+              assert cp['competitor_cluster_values_accessed'] is False and cp['known_shower_truth_accessed'] is False
+              assert cp['p17_architecture']=='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'
+              assert cp['p17_bidirectional_reliability_threshold_changed'] is False
+              assert cp['p17_missing_reciprocal_creates_positive_evidence'] is False
+              assert cp['p17_reciprocal_closure_frozen_before_truth'] is True
+              assert cp['p3_diagnostics']['p17_fail_closed_no_proposals'] is True
+              for x in cp['p17_reciprocal_closures']:
+                  assert x['reciprocal_reliability_available'] is False and x['reciprocal_direction_unavailable'] is True
+                  assert x['p9_reliable'] is False and x['proposal_count']==0
+              print('P17_PRETRUTH_PANEL_VALID',panel,'closures',cp['p17_reciprocal_closure_count'])
+          print('PASS_P17_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH')
+          PY
+          echo NO_COMPARATOR_CLUSTER_VALUES_NO_KNOWN_SHOWER_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS > pretruth/P17_FIREWALL.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p17-matched-pretruth-checkpoints
+          path: pretruth
+          if-no-files-found: warn
+          retention-days: 90
