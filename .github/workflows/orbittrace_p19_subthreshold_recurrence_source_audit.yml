@@ -92,6 +92,13 @@ jobs:
             'git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py' \
             '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2' \
             '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8' \
+            '7035daf3e670ab89c66c87035540419f549bab09' \
+            'python orbittrace_wavelet_catalogue_v3/audit_development_source.py' \
+            "test \"$(cat output/development_source_sha256.txt)\" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'" \
+            "test -f /tmp/run_wavelet_catalogue_v3_development.py" \
+            "test \"$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)\" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'" \
+            "assert r['held_out_catalogues_loaded'] is False" \
+            "assert r['target_information_present'] is False" \
             'PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8'; do
             grep -F "$x" "$w"
           done
@@ -108,4 +115,5 @@ jobs:
             exit 1
           fi
           echo PASS_P19_SUBTHRESHOLD_RECURRENCE_SOURCE_FREEZE
+          echo PASS_P19_EXACT_CATALOGUE_RUNTIME_DECODE_TRANSPORT
           echo TARGET_REGION_UNAVAILABLE
