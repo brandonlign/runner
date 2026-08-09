@@ -27,7 +27,24 @@ Known-shower truth is opened only after all candidate/comparator outputs for the
 
 A method that requires privileged survey-native truth information may still be scientifically described as an operational pipeline, but it is **ineligible for the final same-information literature-superiority claim** and therefore cannot unlock the OrbitTrace target under this project goal.
 
-## 3. Integrity gates
+## 3. Single primary catalogue output
+
+The final candidate must emit exactly **one primary catalogue output** before known-shower truth is opened. That output freezes, for every reported family:
+
+- the family identifier;
+- the final event/member-ID set used to represent that family;
+- the final catalogue rank/order;
+- any deterministic family suppression, merging, or deduplication already applied by the method.
+
+All final literature-test precision, recall, F1, size-stratum, recovered-shower, and uncertainty calculations for OrbitTrace must use those **same frozen final member sets**. The benchmark may not score a smaller discovery core while treating a larger halo as the method's real membership output, nor score a halo for characterization while reverting to a core for superiority.
+
+An architecture may internally use seeds, cores, envelopes, halos, or multiple representations. If so, it must freeze a deterministic, label-free rule that produces the one primary member set per output family before truth access. Secondary representations may be reported only as diagnostics and cannot replace the primary member set in the superiority calculation after results are visible.
+
+No result-dependent core/halo switch, member-set substitution, family filtering, or alternative ranking is permitted. This rule explicitly supersedes historical P13/P18-style dual-output evaluation semantics for the final test; those historical results remain unchanged and are not retroactively reinterpreted.
+
+The same principle applies to comparators: each comparator's frozen primary catalogue output is what is scored.
+
+## 4. Integrity gates
 
 Every final-test result must satisfy all of the following before performance is interpreted:
 
@@ -37,13 +54,14 @@ Every final-test result must satisfy all of the following before performance is 
 - SonotaCo 2013 and 2014 are both evaluated;
 - solar longitude 20°–55° is removed before any target-sensitive processing or truth access;
 - output candidates/families/members/ranks are frozen before known-shower truth is opened;
+- the primary catalogue output satisfies Section 3 and is the sole OrbitTrace output used for superiority scoring;
 - pairwise exact-row manifests and hashes are preserved;
 - no target information is present in source, inputs, parameters, logs, or evaluation logic;
 - no post-result thresholding, family filtering, remapping, or manual adjudication is allowed.
 
 An integrity failure produces no scientific superiority verdict.
 
-## 4. Broad catalogue superiority
+## 5. Broad catalogue superiority
 
 `PASS_FINAL_BROAD_CATALOGUE_SUPERIORITY` requires, independently against **each comparator in each test year**:
 
@@ -55,7 +73,7 @@ An integrity failure produces no scientific superiority verdict.
 
 These are the pre-existing broad-superiority effect bars carried forward from the earlier frozen literature protocol.
 
-## 5. Sparse/weak-stream superiority without overall sacrifice
+## 6. Sparse/weak-stream superiority without overall sacrifice
 
 `PASS_FINAL_SPARSE_STREAM_SUPERIORITY` requires, independently against **each comparator in each test year**:
 
@@ -68,7 +86,7 @@ These are the pre-existing broad-superiority effect bars carried forward from th
 
 The first two effect-size bars are inherited from the earlier preregistered sparse-superiority definition. The tightened macro-F1/shower-count conditions implement the current project requirement that sparse superiority must not be purchased by a meaningful loss of overall catalogue performance.
 
-## 6. Cross-year uncertainty check
+## 7. Cross-year uncertainty check
 
 A point-estimate pass is necessary but not sufficient. For whichever superiority route is claimed, a deterministic **10,000-replicate stratified bootstrap over known-shower-year evaluation units** must be run separately for Sugar and HDBSCAN, preserving test-year strata.
 
@@ -78,7 +96,7 @@ For sparse superiority, the 95% bootstrap lower bounds of both the pairwise 4–
 
 Bootstrap seed, unit construction, missing-stratum behavior, and aggregation formulas must be frozen in the final-candidate test implementation before scientific truth access. Bootstrap results may confirm or reject a point-estimate pass; they may not be used to change the method or gate.
 
-## 7. Final literature verdict
+## 8. Final literature verdict
 
 The final matched literature stage returns exactly one of:
 
@@ -89,7 +107,7 @@ The final matched literature stage returns exactly one of:
 
 A pass requires the same route (broad or sparse) against **both Sugar and HDBSCAN across both 2013 and 2014**, plus its uncertainty check. A mixture such as broad-vs-one-comparator and sparse-vs-the-other is diagnostic only and does not pass the final gate.
 
-## 8. Consequence
+## 9. Consequence
 
 Only a final literature PASS may activate the permanent MAARSY 2020/2021 no-retuning external validation.
 
