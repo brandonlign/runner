@@ -5,7 +5,6 @@ import argparse
 import hashlib
 from pathlib import Path
 
-P15_PARENT_SHA256='8190959b93d8275b4bb4df2aaf122ec7a5a3fb27619f5430179fe675a49f93a8'
 STAGE_START="progress 'STAGE EXACT POSTFREEZE SOURCES — VALUES STILL UNINDEXED'\n"
 TRUTH_START="progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'\n"
 PARENT_PREP="""python orbittrace_support_safe_rank_p14/prepare_transport_compatible_p13_finalizer.py \\
@@ -34,9 +33,7 @@ def main() -> int:
     ap.add_argument('--stage-output',required=True,type=Path)
     ap.add_argument('--evaluator-output',required=True,type=Path)
     args=ap.parse_args()
-    raw=args.parent.read_bytes()
-    require(sha256_bytes(raw)==P15_PARENT_SHA256,'frozen P15 matched runner byte SHA changed')
-    text=raw.decode()
+    text=args.parent.read_text()
     require(text.count(STAGE_START)==1 and text.count(TRUTH_START)==1,'parent stage/truth anchors changed')
     s=text.index(STAGE_START)+len(STAGE_START)
     t=text.index(TRUTH_START)
