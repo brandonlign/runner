@@ -1,0 +1,88 @@
+name: OrbitTrace P13 matched run status recorder
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-launcher-v2
+    paths:
+      - orbittrace_core_halo_p13_literature/STATUS_CAPTURE.md
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Validate one-file status child
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_core_halo_p13_literature/STATUS_CAPTURE.md'
+          m="$(git show "$HEAD_SHA":orbittrace_core_halo_p13_literature/STATUS_CAPTURE.md)"
+          test "$(printf '%s\n' "$m" | sed -n '1p')" = 'CAPTURE_P13_MATCHED_RUN_STATUS'
+          test "$(printf '%s\n' "$m" | sed -n '2p')" = '31307057800'
+          test "$(printf '%s\n' "$m" | wc -l)" -eq 2
+      - name: Record exact run and result state on scientific PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN=31307057800
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" > /tmp/run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/jobs?per_page=100" > /tmp/jobs.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/artifacts?per_page=100" > /tmp/artifacts.json
+          python - <<'PY' > /tmp/base.md
+          import json
+          r=json.load(open('/tmp/run.json')); j=json.load(open('/tmp/jobs.json')); a=json.load(open('/tmp/artifacts.json'))
+          print('P13 MATCHED RUN STATUS CAPTURE')
+          print(f"- workflow: `{r.get('id')}` / `{r.get('name')}`")
+          print(f"- status: `{r.get('status')}`")
+          print(f"- conclusion: `{r.get('conclusion')}`")
+          print(f"- head SHA: `{r.get('head_sha')}`")
+          print(f"- updated: `{r.get('updated_at')}`")
+          for job in j.get('jobs',[]):
+              print(f"- job `{job.get('id')}` `{job.get('name')}`: `{job.get('status')}/{job.get('conclusion')}`")
+              for s in job.get('steps',[]): print(f"  - step {s.get('number')} `{s.get('name')}`: `{s.get('status')}/{s.get('conclusion')}`")
+          arts=a.get('artifacts',[])
+          print(f"- artifacts: `{len(arts)}`")
+          for x in arts: print(f"  - `{x.get('id')}` `{x.get('name')}` digest `{x.get('digest')}` size `{x.get('size_in_bytes')}` expired `{x.get('expired')}`")
+          PY
+          rm -rf /tmp/matched-artifacts && mkdir -p /tmp/matched-artifacts
+          python - <<'PY'
+          import json,subprocess,os
+          a=json.load(open('/tmp/artifacts.json'))
+          for x in a.get('artifacts',[]):
+              aid=str(x['id']); d=f'/tmp/matched-artifacts/{aid}'; os.makedirs(d,exist_ok=True)
+              subprocess.run(['gh','run','download','31307057800','--repo',os.environ['GITHUB_REPOSITORY'],'--name',x['name'],'--dir',d],check=False)
+          PY
+          python - <<'PY' >> /tmp/base.md
+          import json
+          from pathlib import Path
+          roots=list(Path('/tmp/matched-artifacts').rglob('p13_matched_literature_result.json'))
+          print(f"- final result files found: `{len(roots)}`")
+          for p in roots:
+              r=json.loads(p.read_text())
+              print(f"- authoritative matched verdict candidate: `{r.get('verdict')}`")
+              print(f"- classification: `{r.get('classification')}`")
+              print(f"- external validation authorized: `{r.get('external_validation_authorized')}`")
+              print(f"- target access authorized: `{r.get('target_access_authorized')}`")
+              for panel,q in r.get('panels',{}).items():
+                  print(f"  - {panel}: status `{q.get('status')}`, sparse `{q.get('sparse_pairwise_pass')}`, broad `{q.get('broad_pairwise_pass')}`, year sparse `{q.get('year_sparse_pass')}`")
+          p3=list(Path('/tmp/matched-artifacts').rglob('p3_evaluator_result.json'))
+          print(f"- underlying evaluator result files found: `{len(p3)}`")
+          checkpoints=list(Path('/tmp/matched-artifacts').rglob('*.pkl'))
+          print(f"- pretruth checkpoint files found: `{len(checkpoints)}`")
+          PY
+          gh pr comment 680 --repo "$GITHUB_REPOSITORY" --body-file /tmp/base.md
+          cat /tmp/base.md
