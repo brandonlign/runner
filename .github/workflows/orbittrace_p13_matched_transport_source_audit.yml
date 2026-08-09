@@ -51,16 +51,14 @@ jobs:
           echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12.py' | sha256sum -c -
           python -m py_compile /tmp/p12.py
           echo P13_EXACT_P12_INTERFACE_BEGIN
-          grep -nE "^def (parse_args|main|source_observation_model|mahalanobis_distance)|parse_catalogue|parse_geometry|v6_structural|families =|v8_order|p12_.*pretruth|membership_pretruth|decisions_pretruth|hidden_labels|baseline_full|evaluate_order|args.output" /tmp/p12.py | tail -n 260
           python - <<'PY'
           from pathlib import Path
           p=Path('/tmp/p12.py').read_text().splitlines()
-          for i,line in enumerate(p):
-              if line.startswith('def main'):
-                  lo=max(0,i-25); hi=min(len(p),i+430)
-                  print(f'P13_P12_MAIN_LINES={lo+1}:{hi}')
-                  for n in range(lo,hi): print(f'{n+1:05d}: {p[n]}')
-                  break
+          ranges=((1,85),(486,1110))
+          for lo,hi in ranges:
+              print(f'P13_P12_SOURCE_LINES={lo}:{hi}')
+              for n in range(lo-1,min(len(p),hi)):
+                  print(f'{n+1:05d}: {p[n]}')
           PY
           echo P13_EXACT_P12_INTERFACE_END
           echo CORRUPTED_LEGACY_PANEL_PATCH_NOT_USED
