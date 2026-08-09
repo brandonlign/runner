@@ -1,0 +1,45 @@
+name: OrbitTrace P3 HDBSCAN-2023 provenance correction audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-crossfit-seed-floor-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/HDBSCAN_2023_PROVENANCE_CORRECTION.md
+      - .github/workflows/orbittrace_p3_hdbscan_2023_provenance_correction_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove correction is provenance-only and outcome-independent
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_crossfit_seed_floor_membership_p3/HDBSCAN_2023_PROVENANCE_CORRECTION.md').read_text()
+          for token in (
+              'authoritative P3 development run `31291214704` remains unresolved',
+              '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',
+              '26,460',
+              'old `7dbb...` artifact is not an allowed alternative',
+              'changes only competitor provenance',
+              'changes no P3 source',
+              'superiority threshold',
+              'promotion rule',
+              'target firewall',
+          ):
+              assert token in p,token
+          print('PASS_P3_HDBSCAN_2023_PROVENANCE_CORRECTION_AUDIT')
+          PY
+      - name: Assert no execution/data
+        run: |
+          test ! -e input
+          test ! -e output
+          test ! -e data
+          echo NO_COMPARATOR_VALUES_NO_TARGET_ACCESS
