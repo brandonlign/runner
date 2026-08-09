@@ -1,0 +1,88 @@
+name: OrbitTrace final exact-ID firewall v2 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_final_exact_id_firewall_v2/PROTOCOL.md
+      - orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py
+      - .github/workflows/orbittrace_final_exact_id_firewall_v2_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-final-exact-id-firewall-v2-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-exact-id-firewall-v2
+      - name: Compile and prove exact-ID-only reveal semantics
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py
+          sha256sum orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py')
+          text=p.read_text(); tree=ast.parse(text); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          constants={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: constants[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert constants['YEARS']==(2022,2023)
+          assert constants['FULL_RANK_MAX']==25
+          assert constants['PARTIAL_RANK_MAX']==100
+          assert constants['MIN_OVERLAP_PER_YEAR']==4
+          assert constants['MIN_OVERLAP_TOTAL']==8
+          target=ast.get_source_segment(text,defs['load_target_ids'])
+          assert 'set(event)=={"id","year"}' in target
+          for forbidden in ('ra','dec','vg','orbit','radiant','solar','activity','score','rank'):
+              assert f'"{forbidden}"' not in target.lower(), forbidden
+          main_node=defs['main']; main=ast.get_source_segment(text,main_node)
+          assert 'by_year[year]&target[year]' in main
+          assert 'FULL_BLIND_RECOVERY' in main and 'PARTIAL_BLIND_RECOVERY' in main and 'NO_BLIND_RECOVERY' in main
+          assert 'post_reveal_geometry_search":False' in main
+          assert 'post_reveal_reranking":False' in main
+
+          executable_names=[]
+          for node in ast.walk(main_node):
+              if isinstance(node,ast.Call):
+                  fn=node.func
+                  if isinstance(fn,ast.Name): executable_names.append(fn.id.lower())
+                  elif isinstance(fn,ast.Attribute): executable_names.append(fn.attr.lower())
+              elif isinstance(node,ast.Attribute):
+                  executable_names.append(node.attr.lower())
+          for forbidden in ('dsh','distance','nearest','cluster','radiant','orbit'):
+              assert not any(forbidden in name for name in executable_names), (forbidden, executable_names)
+
+          protocol=Path('orbittrace_final_exact_id_firewall_v2/PROTOCOL.md').read_text()
+          assert 'GMN 2022 and 2023' in protocol
+          assert 'rank <= 25' in protocol and 'rank <= 100' in protocol
+          assert '4 exact withheld target IDs in each of 2022 and 2023' in protocol
+          assert 'total exact withheld-target overlap >= 8 IDs' in protocol
+          assert 'BROAD_CATALOGUE_SUPERIORITY' in protocol and 'SPARSE_STREAM_SUPERIORITY' in protocol
+          assert 'separately frozen prospective or external generalization gate' in protocol
+          assert 'PASS_V6_LF_MAARSY_2018_2019_EXTERNAL_VALIDATION' in protocol
+          assert 'PR #589' in protocol
+          assert 'PR #453 / run `31235104333`' in protocol
+          assert 'invalid as an authorization source' in protocol
+          assert 'matched literature panel cannot silently double-count' in protocol.lower()
+          assert 'before the first target-region discovery row is accessed' in protocol
+          print('PASS_ORBITTRACE_FINAL_EXACT_ID_FIREWALL_V2_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          test ! -e input
+          test ! -e target
+          test ! -e output
+          echo NO_TARGET_REFERENCE_NO_TARGET_COORDINATES_NO_TARGET_IDS
