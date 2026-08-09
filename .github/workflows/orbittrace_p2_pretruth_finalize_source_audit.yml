@@ -1,0 +1,66 @@
+name: OrbitTrace P2 immutable-pretruth direct finalizer source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p2-header-compat-recovery-freeze
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py
+      - .github/workflows/orbittrace_p2_pretruth_finalize_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove immutable pretruth identity and evaluation-only scope
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_crossyear_two_view_membership_p2/finalize_from_frozen_pretruth.py').read_text()
+          required=(
+            "P2_SOURCE_SHA256='f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb'",
+            "EXPECTED_MODEL_SHA256='0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'",
+            "EXPECTED_MEMBERSHIP_SHA256='b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e'",
+            "EXPECTED_FAMILY_COUNT=226",
+            "EXPECTED_BASELINE_QUALIFIED=95",
+            "EXPECTED_BASELINE_RECOVERY100=58",
+            "TOP100_PRECISION_FLOOR=0.65",
+            "MACRO_F1_GAIN_GATE=0.08",
+            "LARGE_RECALL_MULTIPLIER=1.5",
+            "LARGE_PRECISION_FLOOR=0.85",
+            "baseline_full=v8.mult.evaluate_order(hidden_labels,seeds,order)",
+            "p2_full=v8.mult.evaluate_order(hidden_labels,expanded,order)",
+            "baseline_large=p2.large_summary",
+            "p2_large=p2.large_summary",
+            "PASS_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT",
+            "FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO",
+            "pretruth_source_run':31289791712",
+            "pretruth_artifact_id':9031107930",
+          )
+          for token in required: assert token in p, token
+          forbidden=('OAS(','LogisticRegression(','classifier.fit(','predict_proba(','source_observation_model(','mahalanobis_distance(','min_exact_dsh_to_source(','wrapped_window_mask(')
+          for token in forbidden: assert token not in p, token
+          tree=ast.parse(p)
+          funcs={n.name for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert funcs=={'require','sha256_file','load_module','canonical_sha','reconstruct_seed_families','main'},funcs
+          assert 'support.parse_catalogue(base)' in p
+          assert "not(20.0<=float(e['sol'])<=55.0)" in p
+          assert "membership_frozen_before_truth_evaluation" in p
+          assert "model_frozen_before_truth_evaluation" in p
+          print('PASS_P2_PRETRUTH_DIRECT_FINALIZER_SOURCE_AUDIT')
+          PY
+      - name: Assert no-data boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_GMN_DATA_NO_TRUTH_NO_TARGET_ACCESS_NO_FINALIZATION
