@@ -1,0 +1,62 @@
+name: OrbitTrace P18 one-time matched truth opening
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p18-matched-truth-once
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install exact frozen evaluator dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r exact-lit/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Validate immutable P18 checkpoints, open matched truth once, and finalize frozen verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          chmod +x orbittrace_p17_rank_halo_membership_p18/run_matched_truth_once.sh
+          orbittrace_p17_rank_halo_membership_p18/run_matched_truth_once.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p18-matched-literature-result
+          path: output
+          if-no-files-found: warn
+          retention-days: 90
