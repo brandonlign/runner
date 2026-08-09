@@ -103,18 +103,19 @@ jobs:
             input/vmods/orbittrace_cross_year_conformal_density_expansion_v3/run_development.py \
             input/vmods/orbittrace_cross_year_trajectory_conformal_expansion_v4/run_development.py \
             input/dsh/literature_comparators.py \
-            orbittrace_background_odds_membership_b1/run_development.py
+            orbittrace_background_odds_membership_b1/run_development.py \
+            orbittrace_background_odds_membership_b1/run_header_compatible.py
           rm -rf output/*
           echo PASS_B1_PREDATA_GUARDS
 
-      - name: Execute frozen target-excluded B1
+      - name: Execute frozen target-excluded B1 through pre-existing P10 schema transport
         env:
           PYTHONPATH: input/v1:input/vmods:input/v3score:input/dsh:orbittrace_wavelet_catalogue_v3:.
           PYTHONUNBUFFERED: '1'
         run: |
           set -euo pipefail
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
-          python -u orbittrace_background_odds_membership_b1/run_development.py \
+          python -u orbittrace_background_odds_membership_b1/run_header_compatible.py \
             --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
@@ -164,6 +165,7 @@ jobs:
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
           sha256sum orbittrace_background_odds_membership_b1/run_development.py \
+            orbittrace_background_odds_membership_b1/run_header_compatible.py \
             orbittrace_background_odds_membership_b1/PROTOCOL.md \
             .github/workflows/orbittrace-background-odds-membership-b1.yml \
             > output/b1_source_sha256.txt
