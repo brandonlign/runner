@@ -33,10 +33,11 @@ jobs:
             'SPARSE_STREAM_SUPERIORITY' \
             'PASS_P15_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
             'target_reference_accessed=false' \
-            'exact-ID evaluator from PR #540'; do
+            'exact-ID evaluator from PR #540' \
+            'No coordinate, radiant, velocity, orbital, activity, distance, nearest-neighbor, clustering, family-merging, membership-expansion, or reranking operation is allowed after the withheld reference becomes visible.'; do
             grep -F "$x" "$p"
           done
-          if grep -Eq 'rank <=[0-9]+.*changed|nearest-neighbor.*allowed|target_coordinate|OrbitTrace-April|prior.*rank 59|95 canonical|247\.|-14\.|37\.62' "$p"; then
+          if grep -Eq 'rank <=[0-9]+.*changed|target_coordinate|OrbitTrace-April|prior.*rank 59|95 canonical|247\.|-14\.|37\.62' "$p"; then
             echo 'target-specific or post-reveal adaptation leaked into P15 final addendum' >&2
             exit 1
           fi
