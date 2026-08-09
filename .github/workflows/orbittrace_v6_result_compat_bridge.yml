@@ -1,0 +1,81 @@
+name: OrbitTrace v6 result compatibility bridge
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - orbittrace_v6_result_bridge/RUN.md
+      - .github/workflows/orbittrace_v6_result_compat_bridge.yml
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  bridge:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require exact bridge intent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          content="$(gh api "repos/$GITHUB_REPOSITORY/contents/orbittrace_v6_result_bridge/RUN.md?ref=$HEAD_SHA" --jq .content | tr -d '\n' | base64 --decode)"
+          test "$content" = 'BRIDGE_EXACT_SHARDED_V6_FAIL_TO_LEGACY_P1_ARTIFACT'
+      - name: Download authoritative exact-sharded result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p source bridged
+          gh run download 31281800086 --repo "$GITHUB_REPOSITORY" \
+            --name orbittrace-v3-catalogue-v6-repaired-execution --dir source
+          test -f source/v3_primary_catalogue_v6_development.json
+          cp source/v3_primary_catalogue_v6_development.json bridged/v3_primary_catalogue_v6_development.json
+      - name: Verify byte identity and frozen scientific failure
+        run: |
+          set -euo pipefail
+          cmp source/v3_primary_catalogue_v6_development.json bridged/v3_primary_catalogue_v6_development.json
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          source=Path('source/v3_primary_catalogue_v6_development.json').read_bytes()
+          bridge=Path('bridged/v3_primary_catalogue_v6_development.json').read_bytes()
+          assert source==bridge
+          r=json.loads(source)
+          assert r['verdict']=='FAIL_V3_PRIMARY_CATALOGUE_V6_DEVELOPMENT',r['verdict']
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['primary_alpha']==0.05
+          assert r['configuration']['rescue_queue']=='fixed4 p <= 1/129; never inserted into v3 primary ranking'
+          assert all(a['proposal_cap_per_window']==512 for a in r['year_audits'])
+          assert all(a['max_primary_proposals_per_year']==36864 for a in r['year_audits'])
+          assert not all(r['gates'].values())
+          assert r['evaluation']['v3_family_count']==12
+          assert r['evaluation']['qualified_matches']==5
+          assert r['evaluation']['recovered_at_100']==5
+          digest=hashlib.sha256(source).hexdigest()
+          Path('bridged/BRIDGE_PROVENANCE.json').write_text(json.dumps({
+            'classification':'integrity-only artifact-name compatibility bridge; no scientific transformation',
+            'source_run_id':31281800086,
+            'source_artifact':'orbittrace-v3-catalogue-v6-repaired-execution',
+            'source_artifact_id':9029581823,
+            'source_artifact_digest':'sha256:aab8886a6b49bea0897d85931cd62c86739fcfe7f69701685938da2ae8a9415a',
+            'result_json_sha256':digest,
+            'bridged_artifact_name':'orbittrace-v6-fanout-v2-development',
+            'byte_identity':True,
+            'scientific_result_changed':False,
+            'target_accessed':False,
+          },indent=2,sort_keys=True)+'\n')
+          print('PASS_V6_RESULT_COMPAT_BRIDGE',digest)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v6-fanout-v2-development
+          path: bridged
+          if-no-files-found: error
+          retention-days: 90
