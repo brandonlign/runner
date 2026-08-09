@@ -2,7 +2,7 @@
 
 ## Status
 
-Protocol-only decision freeze created while the authoritative repaired-v6 development run `31282128101` has no scientific verdict and while the independently frozen v6-LF all-event-null development run has no scientific verdict. This file runs no detector, reads no catalogue result, and accesses no OrbitTrace target information.
+Protocol-only decision freeze created while the authoritative repaired-v6 scientific verdict remains unknown and while the independently frozen v6-LF all-event-null development run has no scientific verdict. The only currently authorized source of an ordinary-v6 PASS/FAIL is strict semantic-replay recovery run `31285583731`, which reuses the immutable preexact/exact artifacts from original fanout run `31282128101` but requires full discrete/structural proposal identity with only <=1e-12 floating drift. The broader-signature rerun of `31282128101` is explicitly non-authoritative for scientific routing. This file runs no detector, reads no catalogue result, and accesses no OrbitTrace target information.
 
 Its purpose is to remove a newly identified post-result degree of freedom: ordinary repaired v6 and v6-LF are both frozen architectures, but they differ in one scientifically important respect. Ordinary v6 constructs its Mondrian calibration reservoir from catalogue events labelled `SPORADIC`; v6-LF uses every geometrically valid target-excluded event and does not read shower labels before its ranking is frozen. We must not wait for their unknown scores and then choose whichever looks better.
 
@@ -19,6 +19,12 @@ The hierarchy is fixed now:
 
 This changes only project-level method selection. It changes no detector parameter, score, threshold, calibration rule, proposal budget, recurrence rule, ranking rule, membership rule, benchmark criterion, or target firewall.
 
+## Ordinary-v6 canonicality rule
+
+For purposes of this hierarchy, "ordinary v6 passes/fails" means only the strict semantic-replay result produced by run `31285583731` (or an exact successor explicitly frozen before that run's verdict if the strict recovery itself ends technically without a scientific result). A result from the broader replay guard, including any later completion under original run ID `31282128101`, cannot activate literature, C1, P1, validation, or target work.
+
+A strict semantic-replay technical failure is not an ordinary-v6 scientific failure. It leaves ordinary v6 unresolved until an equivalence-preserving recovery satisfies the canonicality rule.
+
 ## Literature-comparison succession
 
 ### If v6-LF passes development
@@ -33,7 +39,7 @@ A v6-LF literature no-go advances only to a successor architecture whose relatio
 
 ### If v6-LF fails development scientifically
 
-If ordinary repaired v6 passes development, ordinary v6 proceeds under the already-frozen matched-literature protocol and its explicit information-parity limitation: any win is an operational-pipeline result using native-background calibration, not a same-information fully label-free algorithmic-superiority claim.
+If ordinary repaired v6 passes development under the canonical strict semantic-replay rule, ordinary v6 proceeds under the already-frozen matched-literature protocol and its explicit information-parity limitation: any win is an operational-pipeline result using native-background calibration, not a same-information fully label-free algorithmic-superiority claim.
 
 If ordinary v6 then fails the literature objective, the already-frozen ordinary-v6-core C1 succession applies. If ordinary v6 satisfies the literature objective, it proceeds without retuning to its frozen external-transfer/generalization route.
 
@@ -48,7 +54,7 @@ The order in which GitHub Actions finishes does not determine scientific priorit
 - If ordinary v6 finishes first and passes, matched-literature execution must wait until v6-LF has a genuine scientific development verdict.
 - If ordinary v6 finishes first and fails, P1 must wait until v6-LF has a genuine scientific development verdict.
 - If v6-LF finishes first and passes, its priority is fixed immediately; ordinary v6 may finish for completeness but cannot displace it by score.
-- If v6-LF finishes first and fails scientifically, ordinary v6 may determine the next branch once its own development verdict is available.
+- If v6-LF finishes first and fails scientifically, ordinary v6 may determine the next branch once its own canonical development verdict is available.
 
 Technical failures remain technical regardless of timing.
 
