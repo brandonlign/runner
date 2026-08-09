@@ -1,0 +1,63 @@
+name: OrbitTrace P17 main-base activation relay source audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/orbittrace_p17_main_base_activation_relay.yml
+      - .github/workflows/orbittrace_p17_main_base_activation_relay_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove relay executes only authenticated frozen methodology-base run block
+        run: |
+          set -euo pipefail
+          wf=.github/workflows/orbittrace_p17_main_base_activation_relay.yml
+          for x in \
+            'pull_request_target:' \
+            "github.event.pull_request.head.ref == 'agent/orbittrace-p17-main-activation-run-v1'" \
+            'orbittrace_reciprocal_support_closure_p17/MAIN_RELAY_ACTIVATE.md' \
+            'EXECUTE_P17_MAIN_RELAY_V1' \
+            'PR=760' \
+            '62fb6c2eda5a11ed06af5025c413269edb1fbb09' \
+            '0e70de7dc40be3437751933258d469fc8c65ca6c' \
+            'agent/orbittrace-p17-matched-pretruth-run-v6-target-relay' \
+            '31332157812' '9043232586' \
+            'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1' \
+            'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml' \
+            'P17_MAIN_RELAY_RUN_ID=$GITHUB_RUN_ID' \
+            "step='      - name: Bind exact P17 development PASS, freeze both checkpoints, stop pretruth'" \
+            "Path('/tmp/p17_exact_base_run.sh').write_text(out)" \
+            '/tmp/p17_exact_base_run.sh' \
+            'orbittrace-p17-matched-pretruth-checkpoints-main-relay'; do
+            grep -F "$x" "$wf"
+          done
+          # Relay must never checkout or execute activation-PR code; only trusted main plus
+          # exact git-show bytes from the pinned methodology commits are used.
+          test "$(grep -Fc 'uses: actions/checkout@v4' "$wf")" -eq 2
+          test "$(grep -Fc 'git show 62fb6c2eda5a11ed06af5025c413269edb1fbb09:' "$wf")" -ge 1
+          test "$(grep -Fc 'git show 0e70de7dc40be3437751933258d469fc8c65ca6c:' "$wf")" -ge 1
+          if grep -Fq 'ref: ${{ github.event.pull_request.head.sha }}' "$wf"; then
+            echo 'relay checks out untrusted activation PR head' >&2
+            exit 1
+          fi
+          # Exactly one write capability: telemetry comment. Repository/actions remain read-only.
+          grep -F 'issues: write' "$wf"
+          grep -F 'contents: read' "$wf"
+          grep -F 'actions: read' "$wf"
+          test "$(grep -Fc 'gh pr comment ' "$wf")" -eq 1
+          # Posttruth/target strings occur only as rejection sentinels in the extractor.
+          for sentinel in 'OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE' 'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' 'OrbitTrace-April' 'target_coordinate'; do
+            test "$(grep -Fc "$sentinel" "$wf")" -eq 1
+          done
+          test ! -e orbittrace_reciprocal_support_closure_p17/MAIN_RELAY_ACTIVATE.md
+          echo PASS_P17_MAIN_BASE_ACTIVATION_RELAY_SOURCE_AUDIT
+          echo INFRASTRUCTURE_ONLY_NO_COMPARATOR_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
