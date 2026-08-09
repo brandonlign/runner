@@ -1,0 +1,244 @@
+name: OrbitTrace final exact-ID Stage B reveal
+
+on:
+  pull_request_target:
+    branches:
+      - agent/orbittrace-final-exact-id-stage-b-execution-freeze
+    paths:
+      - orbittrace_final_exact_id_firewall_v2/STAGE_B_EXECUTION_REQUEST.json
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-final-exact-id-stage-b
+  cancel-in-progress: false
+
+jobs:
+  reveal:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact frozen reveal base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          sparse-checkout: |
+            orbittrace_final_exact_id_firewall_v2
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Require execution-only child and parse Stage-B request
+        id: request
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          test "$HEAD_REPO" = "$GITHUB_REPOSITORY"
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          git fetch --no-tags --depth=2 origin "$HEAD_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          test "$changed" = 'orbittrace_final_exact_id_firewall_v2/STAGE_B_EXECUTION_REQUEST.json'
+          git show "$HEAD_SHA:orbittrace_final_exact_id_firewall_v2/STAGE_B_EXECUTION_REQUEST.json" > /tmp/stage-b-request.json
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          r=json.loads(Path('/tmp/stage-b-request.json').read_text())
+          assert set(r)=={'schema','stage_a_run_id','seal_run_id'}
+          assert r['schema']=='orbittrace-final-exact-id-stage-b-request-v1'
+          for key in ('stage_a_run_id','seal_run_id'):
+              assert re.fullmatch(r'[0-9]+',str(r[key])),key
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as fh:
+              fh.write(f"stage_a_run_id={r['stage_a_run_id']}\n")
+              fh.write(f"seal_run_id={r['seal_run_id']}\n")
+          print('PASS_EXACT_ID_STAGE_B_REQUEST')
+          PY
+
+      - name: Verify seal completed before Stage A began
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGE_RUN: ${{ steps.request.outputs.stage_a_run_id }}
+          SEAL_RUN: ${{ steps.request.outputs.seal_run_id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STAGE_RUN" > /tmp/stage-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SEAL_RUN" > /tmp/seal-run.json
+          python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+          stage=json.loads(Path('/tmp/stage-run.json').read_text())
+          seal=json.loads(Path('/tmp/seal-run.json').read_text())
+          assert stage['status']=='completed' and stage['conclusion']=='success'
+          assert seal['status']=='completed' and seal['conclusion']=='success'
+          assert stage['name']=='OrbitTrace v6-LF final blind Stage-A execution',stage['name']
+          assert seal['name']=='OrbitTrace exact-ID withheld reference seal',seal['name']
+          assert stage['event']=='pull_request'
+          assert seal['event']=='pull_request_target'
+          def dt(value): return datetime.fromisoformat(value.replace('Z','+00:00'))
+          stage_start=dt(stage['run_started_at'] or stage['created_at'])
+          seal_done=dt(seal['updated_at'])
+          assert seal_done < stage_start,(seal['updated_at'],stage['run_started_at'])
+          stage_bases={pr.get('base',{}).get('ref') for pr in stage.get('pull_requests',[])}
+          seal_bases={pr.get('base',{}).get('ref') for pr in seal.get('pull_requests',[])}
+          assert 'agent/orbittrace-v6-lf-final-stage-a-execution-freeze' in stage_bases,stage_bases
+          assert 'agent/orbittrace-final-exact-id-stage-b-execution-freeze' in seal_bases,seal_bases
+          print('PASS_SEAL_PRECEDES_STAGE_A')
+          PY
+
+      - name: Download and validate immutable Stage A before target access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGE_RUN: ${{ steps.request.outputs.stage_a_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/stage-a output
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$STAGE_RUN/artifacts" > /tmp/stage-artifacts.json
+          python - <<'PY' > /tmp/stage-artifact.env
+          import json
+          a=json.load(open('/tmp/stage-artifacts.json'))['artifacts']
+          rows=[x for x in a if x['name']=='orbittrace-v6-lf-final-stage-a' and not x['expired']]
+          assert len(rows)==1,[(x['name'],x['id']) for x in a]
+          row=rows[0]
+          print(f"ARTIFACT_ID={row['id']}")
+          print(f"ARTIFACT_DIGEST={row.get('digest') or ''}")
+          PY
+          source /tmp/stage-artifact.env
+          curl --fail-with-body -L --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+            -o input/stage-a.zip
+          if [[ "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "${ARTIFACT_DIGEST#sha256:}  input/stage-a.zip" | sha256sum -c -
+          fi
+          python - <<'PY'
+          import hashlib, importlib.util, json, zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('input/stage-a.zip') as zf:
+              names=[n for n in zf.namelist() if n.endswith('stage_a_ranked_families.json')]
+              sides=[n for n in zf.namelist() if n.endswith('stage_a_ranked_families.json.sha256')]
+              assert len(names)==1 and len(sides)==1,(names,sides)
+              Path('input/stage-a/stage_a_ranked_families.json').write_bytes(zf.read(names[0]))
+              Path('input/stage-a/stage_a_ranked_families.json.sha256').write_bytes(zf.read(sides[0]))
+          p=Path('input/stage-a/stage_a_ranked_families.json')
+          stage=json.loads(p.read_text())
+          canonical=json.dumps(stage,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+          assert hashlib.sha256(canonical).hexdigest()==Path('input/stage-a/stage_a_ranked_families.json.sha256').read_text().strip()
+          spec=importlib.util.spec_from_file_location('reveal','orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py')
+          module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          module.load_stage_a(p)
+          assert stage['method_id']=='v6-LF-all-event-Mondrian-null'
+          print('PASS_STAGE_A_EXACT_ID_PREFLIGHT_BEFORE_TARGET_ACCESS')
+          PY
+          test ! -e input/sealed
+
+      - name: Download pre-Stage-A sealed exact-ID reference only after Stage-A preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEAL_RUN: ${{ steps.request.outputs.seal_run_id }}
+          FREEZE_COMMIT: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/sealed
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$SEAL_RUN/artifacts" > /tmp/seal-artifacts.json
+          python - <<'PY' > /tmp/seal-artifact.env
+          import json
+          a=json.load(open('/tmp/seal-artifacts.json'))['artifacts']
+          rows=[x for x in a if x['name']=='orbittrace-withheld-exact-ids-v2-sealed' and not x['expired']]
+          assert len(rows)==1,[(x['name'],x['id']) for x in a]
+          row=rows[0]
+          print(f"ARTIFACT_ID={row['id']}")
+          print(f"ARTIFACT_DIGEST={row.get('digest') or ''}")
+          PY
+          source /tmp/seal-artifact.env
+          curl --fail-with-body -L --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+            -o input/sealed.zip
+          if [[ "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "${ARTIFACT_DIGEST#sha256:}  input/sealed.zip" | sha256sum -c -
+          fi
+          python - <<'PY'
+          import hashlib, importlib.util, json, os, zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('input/sealed.zip') as zf:
+              payloads=[n for n in zf.namelist() if n.endswith('withheld_exact_ids.json')]
+              sides=[n for n in zf.namelist() if n.endswith('withheld_exact_ids.json.sha256')]
+              manifests=[n for n in zf.namelist() if n.endswith('seal_manifest.json')]
+              assert len(payloads)==len(sides)==len(manifests)==1,(payloads,sides,manifests)
+              Path('input/sealed/withheld_exact_ids.json').write_bytes(zf.read(payloads[0]))
+              Path('input/sealed/withheld_exact_ids.json.sha256').write_bytes(zf.read(sides[0]))
+              Path('input/sealed/seal_manifest.json').write_bytes(zf.read(manifests[0]))
+          payload=json.loads(Path('input/sealed/withheld_exact_ids.json').read_text())
+          canonical=json.dumps(payload,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+          digest=hashlib.sha256(canonical).hexdigest()
+          assert digest==Path('input/sealed/withheld_exact_ids.json.sha256').read_text().strip()
+          seal=json.loads(Path('input/sealed/seal_manifest.json').read_text())
+          assert seal['schema']=='orbittrace-withheld-exact-ids-seal-v1'
+          assert seal['freeze_commit']==os.environ['FREEZE_COMMIT']
+          assert seal['seal_run_id']==os.environ['SEAL_RUN']
+          assert seal['sealed_payload_sha256']==digest
+          assert seal['sealed_payload_schema']=='orbittrace-withheld-exact-ids-v2'
+          assert seal['discovery_years']==[2022,2023]
+          assert seal['target_ids_logged'] is False and seal['target_counts_logged'] is False
+          assert seal['coordinates_or_orbits_permitted'] is False
+          spec=importlib.util.spec_from_file_location('reveal','orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py')
+          module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          module.load_target_ids(Path('input/sealed/withheld_exact_ids.json'))
+          print('PASS_SEALED_EXACT_ID_REFERENCE_PREFLIGHT')
+          PY
+
+      - name: Execute one-shot exact-ID reveal only
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py)" = '4d9f10e56c5151ac755f098c9752f664da264218'
+          python -m py_compile orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py
+          python orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py \
+            --stage-a input/stage-a/stage_a_ranked_families.json \
+            --target-exact-ids input/sealed/withheld_exact_ids.json \
+            --output output/final_exact_id_reveal.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/final_exact_id_reveal.json').read_text())
+          assert r['verdict'] in {'FULL_BLIND_RECOVERY','PARTIAL_BLIND_RECOVERY','NO_BLIND_RECOVERY'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['full_rank_max']==25 and r['configuration']['partial_rank_max']==100
+          assert r['configuration']['min_overlap_per_year']==4 and r['configuration']['min_overlap_total']==8
+          assert r['configuration']['matching']=='exact stable event-ID set intersection only'
+          assert r['configuration']['post_reveal_geometry_search'] is False
+          assert r['configuration']['post_reveal_reranking'] is False
+          print('ORBITTRACE_FINAL_EXACT_ID_REVEAL_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'selected_family':r['selected_family'],'stage_a_sha256':r['stage_a_sha256'],'withheld_exact_id_payload_sha256':r['withheld_exact_id_payload_sha256']},indent=2,sort_keys=True))
+          print('ORBITTRACE_FINAL_EXACT_ID_REVEAL_END')
+          PY
+
+      - name: Record reveal provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/reveal_freeze_commit.txt
+          sha256sum /tmp/stage-b-request.json input/stage-a.zip input/sealed.zip orbittrace_final_exact_id_firewall_v2/evaluate_reveal.py > output/reveal_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+
+      - name: Upload immutable exact-ID reveal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-exact-id-stage-b
+          path: output
+          if-no-files-found: error
+          retention-days: 90
