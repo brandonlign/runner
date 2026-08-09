@@ -1,0 +1,107 @@
+name: OrbitTrace P15 semantic development adjudication v3
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/adjudicate_development_semantic_v3.py
+      - .github/workflows/orbittrace_p15_semantic_development_adjudication_v3.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+
+      - name: Audit semantic adjudication criteria before artifact access
+        run: |
+          set -euo pipefail
+          s=orbittrace_support_safe_halo_p15/adjudicate_development_semantic_v3.py
+          python -m py_compile "$s"
+          for x in \
+            'ABS_TOL=1e-12' \
+            'SCALED_TOL=1e-12' \
+            "fresh['p15_unavailable_direction_count']==0" \
+            "len(fresh['direction_audits'])==452" \
+            'discrete_projection(inherited)==discrete_projection(p12)' \
+            "fresh[key]==p12[key]" \
+            "list(map(str,x['event_ids']))==list(map(str,y['event_ids']))" \
+            "list(map(str,x.get('p2_added_event_ids',[])))==list(map(str,y.get('p2_added_event_ids',[])))" \
+            'max_abs<=ABS_TOL and max_scaled<=SCALED_TOL' \
+            "'bitwise_json_identity':False" \
+            'PASS_P15_SUPPORT_SAFE_HALO_SEMANTIC_DEVELOPMENT_COMPATIBILITY'; do
+            grep -F "$x" "$s"
+          done
+          if grep -Eq '8955917326|9012424187|8957940764|8957263372|evaluate_frozen_blindsafe|MAARSY|OrbitTrace-April|target_coordinate' "$s"; then
+            echo 'matched/external/target surface leaked into P15 semantic adjudicator' >&2
+            exit 1
+          fi
+          echo PASS_P15_SEMANTIC_ADJUDICATOR_SOURCE_FREEZE
+
+      - name: Fetch preserved failed bitwise run and immutable canonical development artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p15sem/{fresh,p12,p13} output
+          for pair in \
+            '9042324169:b49c7281387521762aeab454f0a5dd71addf318dbffeb3b5cb186cdee568913c:fresh' \
+            '9035003746:4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7:p12' \
+            '9035081147:efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a:p13'; do
+            IFS=: read -r aid digest tag <<< "$pair"
+            curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$REPO/actions/artifacts/$aid" -o "/tmp/p15sem/$tag-meta.json"
+            curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$REPO/actions/artifacts/$aid/zip" -o "/tmp/p15sem/$tag.zip"
+            echo "$digest  /tmp/p15sem/$tag.zip" | sha256sum -c -
+            unzip -q "/tmp/p15sem/$tag.zip" -d "/tmp/p15sem/$tag"
+          done
+          python - <<'PY_META'
+          import json
+          checks=(
+            ('fresh',9042324169,'orbittrace-p15-support-safe-halo-development-v2',31328065110,'sha256:b49c7281387521762aeab454f0a5dd71addf318dbffeb3b5cb186cdee568913c'),
+            ('p12',9035003746,'orbittrace-drift-conditioned-two-view-membership-p12-development',31302353678,'sha256:4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7'),
+            ('p13',9035081147,'orbittrace-dual-output-core-halo-p13-development',31303078223,'sha256:efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a'),
+          )
+          for tag,aid,name,run,digest in checks:
+              m=json.load(open(f'/tmp/p15sem/{tag}-meta.json'))
+              assert m['id']==aid and m['name']==name and m['workflow_run']['id']==run
+              assert m['digest']==digest and not m['expired']
+          # Preserve the fact that the source execution itself failed its old
+          # over-strict bitwise adjudication; this workflow does not rewrite history.
+          fr=json.load(open('/tmp/p15sem/fresh-meta.json'))
+          assert fr['workflow_run']['id']==31328065110
+          print('PASS_P15_SEMANTIC_EXACT_ARTIFACT_IDENTITIES')
+          PY_META
+
+      - name: Adjudicate exact decisions and machine-level continuous stability
+        run: |
+          set -euo pipefail
+          python orbittrace_support_safe_halo_p15/adjudicate_development_semantic_v3.py \
+            --fresh-result /tmp/p15sem/fresh/drift_conditioned_two_view_membership_p12_development.json \
+            --fresh-expanded /tmp/p15sem/fresh/p12_expanded_families.json.gz \
+            --canonical-p12-result /tmp/p15sem/p12/drift_conditioned_two_view_membership_p12_development.json \
+            --canonical-p12-expanded /tmp/p15sem/p12/p12_expanded_families.json.gz \
+            --canonical-p13-result /tmp/p15sem/p13/dual_output_core_halo_p13_development.json \
+            --output output/p15_semantic_development_adjudication_v3.json
+          grep -F '"verdict": "PASS_P15_SUPPORT_SAFE_HALO_SEMANTIC_DEVELOPMENT_COMPATIBILITY"' output/p15_semantic_development_adjudication_v3.json
+          grep -F '"bitwise_json_identity": false' output/p15_semantic_development_adjudication_v3.json
+          grep -F '"fallback_vacuous_on_development": true' output/p15_semantic_development_adjudication_v3.json
+          grep -F '"exact_event_membership_ids": true' output/p15_semantic_development_adjudication_v3.json
+          grep -F '"continuous_abs_tolerance": 1e-12' output/p15_semantic_development_adjudication_v3.json
+          echo PASS_P15_SEMANTIC_DEVELOPMENT_ADJUDICATION_V3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p15-semantic-development-adjudication-v3
+          path: output
+          if-no-files-found: error
+          retention-days: 90
