@@ -1,0 +1,76 @@
+name: OrbitTrace P13 matched to external eligibility router
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-launcher-v2
+    paths:
+      - orbittrace_core_halo_p13_literature/ROUTE_EXTERNAL.md
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  route:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Require one-file routing child
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_core_halo_p13_literature/ROUTE_EXTERNAL.md'
+          m="$(git show "$HEAD_SHA":orbittrace_core_halo_p13_literature/ROUTE_EXTERNAL.md)"
+          test "$(printf '%s\n' "$m" | sed -n '1p')" = 'ROUTE_P13_MATCHED_TO_EXTERNAL_IF_AND_ONLY_IF_PASS'
+          test "$(printf '%s\n' "$m" | sed -n '2p')" = '31307057800'
+          test "$(printf '%s\n' "$m" | wc -l)" -eq 2
+      - name: Route only exact frozen sparse PASS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN=31307057800
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" > /tmp/run.json
+          STATUS=$(python -c 'import json; print(json.load(open("/tmp/run.json"))["status"])')
+          if [ "$STATUS" != completed ]; then
+            gh pr comment 681 --repo "$GITHUB_REPOSITORY" --body 'P13 matched router checked run `31307057800`: still in progress. External reservation remains dormant.'
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/artifacts?per_page=100" > /tmp/artifacts.json
+          rm -rf /tmp/a && mkdir -p /tmp/a
+          python - <<'PY'
+          import json,subprocess,os
+          for x in json.load(open('/tmp/artifacts.json')).get('artifacts',[]):
+              d=f"/tmp/a/{x['id']}"; os.makedirs(d,exist_ok=True)
+              subprocess.run(['gh','run','download','31307057800','--repo',os.environ['GITHUB_REPOSITORY'],'--name',x['name'],'--dir',d],check=False)
+          PY
+          python - <<'PY' > /tmp/route.json
+          import json
+          from pathlib import Path
+          fs=list(Path('/tmp/a').rglob('p13_matched_literature_result.json'))
+          out={'eligible':False,'reason':'NO_AUTHORITATIVE_FINAL_RESULT'}
+          if len(fs)==1:
+              r=json.loads(fs[0].read_text())
+              exact=(r.get('verdict')=='PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' and r.get('classification')=='SPARSE_STREAM_SUPERIORITY' and r.get('external_validation_authorized') is True and r.get('target_access_authorized') is False and all(r.get('panels',{}).get(p,{}).get('sparse_pairwise_pass') is True and all(r.get('panels',{}).get(p,{}).get('year_sparse_pass',{}).get(str(y)) is True for y in (2023,2025)) for p in ('hdbscan','sugar')))
+              out={'eligible':bool(exact),'reason':'EXACT_FROZEN_MATCHED_PASS' if exact else 'MATCHED_RESULT_NOT_EXACT_SPARSE_PASS','verdict':r.get('verdict'),'classification':r.get('classification')}
+          print(json.dumps(out))
+          PY
+          ELIGIBLE=$(python -c 'import json; print("true" if json.load(open("/tmp/route.json"))["eligible"] else "false")')
+          if [ "$ELIGIBLE" = true ]; then
+            gh pr edit 681 --repo "$GITHUB_REPOSITORY" --title '[eligible after matched sparse PASS] Reserve P13 no-retuning MAARSY 2020/2021 external validation'
+            gh pr comment 681 --repo "$GITHUB_REPOSITORY" --body 'Eligibility gate passed from exact matched artifact: `PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS`. This only authorizes implementing/executing the already-frozen no-retuning MAARSY protocol; target access remains forbidden.'
+          else
+            REASON=$(python -c 'import json; print(json.load(open("/tmp/route.json"))["reason"])')
+            gh pr edit 681 --repo "$GITHUB_REPOSITORY" --title '[dormant; matched sparse PASS not established] Reserve P13 no-retuning MAARSY 2020/2021 external validation'
+            gh pr comment 681 --repo "$GITHUB_REPOSITORY" --body "Matched-to-external router did not authorize MAARSY: \`$REASON\`. External scientific values remain unopened; target access remains forbidden."
+          fi
+          cat /tmp/route.json
