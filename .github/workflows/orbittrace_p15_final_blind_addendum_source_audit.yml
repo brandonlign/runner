@@ -1,0 +1,46 @@
+name: OrbitTrace P15 final blind addendum source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/P15_FINAL_BLIND_AUTHORIZATION_ADDENDUM.md
+      - .github/workflows/orbittrace_p15_final_blind_addendum_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify final authorization remains exact-ID, pre-result, and target-free
+        run: |
+          set -euo pipefail
+          p=orbittrace_support_safe_halo_p15/P15_FINAL_BLIND_AUTHORIZATION_ADDENDUM.md
+          for x in \
+            'full GMN 2022 and 2023' \
+            'no withheld OrbitTrace reference may be downloaded' \
+            'FULL_BLIND_RECOVERY' \
+            'rank <=25' \
+            'rank <=100' \
+            'at least 4 exact withheld target IDs in each of 2022 and 2023' \
+            'at least 8 exact target IDs total' \
+            '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b' \
+            '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6' \
+            'SPARSE_STREAM_SUPERIORITY' \
+            'PASS_P15_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            'target_reference_accessed=false' \
+            'exact-ID evaluator from PR #540'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'rank <=[0-9]+.*changed|nearest-neighbor.*allowed|target_coordinate|OrbitTrace-April|prior.*rank 59|95 canonical|247\.|-14\.|37\.62' "$p"; then
+            echo 'target-specific or post-reveal adaptation leaked into P15 final addendum' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_support_safe_halo_p15/STAGE_A_RUN.md
+          test ! -e orbittrace_support_safe_halo_p15/STAGE_B_RUN.md
+          echo PASS_P15_FINAL_BLIND_AUTHORIZATION_ADDENDUM_SOURCE_FREEZE
+          echo NO_TARGET_REFERENCE_NO_TARGET_REGION_EVENT_NO_STAGE_A_NO_STAGE_B
