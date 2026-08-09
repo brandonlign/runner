@@ -1,0 +1,71 @@
+name: OrbitTrace P11 density-contrast pretruth reservation audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p10-floor-consistent-geometry-freeze
+    paths:
+      - orbittrace_density_contrast_p11/**
+      - .github/workflows/orbittrace_p11_density_contrast_pretruth_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact helper dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install numpy==2.1.3 scipy==1.14.1
+      - name: Audit preregistered P11 helper and protocol
+        run: |
+          set -euo pipefail
+          python orbittrace_density_contrast_p11/density_helper.py
+          python - <<'PY'
+          from pathlib import Path
+          protocol=Path('orbittrace_density_contrast_p11/PROTOCOL.md').read_text()
+          helper=Path('orbittrace_density_contrast_p11/density_helper.py').read_text()
+          for token in (
+              'INELIGIBLE unless authoritative exact P10 is a genuine scientific development no-go',
+              '5230139141','5230285375','5230292345','5230298947','5230302320',
+              'cross-fit local density-contrast order-statistic membership',
+              'P3_NEGATIVE_TAIL_MAX=0.10',
+              'globally-v8-seed-excluded unlabeled',
+              'No alternate nearest-neighbor',
+              'qualified known-shower matches >=95',
+              'both Sugar and catalogue HDBSCAN in both SonotaCo 2023 and 2025',
+              'Solar longitude 20°–55° remains inaccessible',
+          ):
+              assert token in protocol,token
+          for token in (
+              'P11_ALPHA = 0.10',
+              'cKDTree',
+              'k=2, p=2, eps=0.0, workers=1',
+              'np.argsort(np.asarray(unlabeled_ids, dtype=str), kind="stable")',
+              'max(1, int(math.floor(P11_ALPHA * (n + 1))))',
+              'if bool(zero_denominator):',
+              'return False',
+              'exact_inherited_rank_formula',
+              'candidate_self_exclusion',
+              'duplicate_zero_denominator_rejection',
+              'infinite_threshold_semantics',
+          ):
+              assert token in helper,token
+          for token in ('OrbitTrace-April','target_coordinate'):
+              assert token not in protocol and token not in helper,token
+          print('PASS_P11_DENSITY_CONTRAST_PRETRUTH_RESERVATION_AUDIT')
+          PY
+      - name: Assert no P11 execution path
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_density_contrast_p11/RUN.md
+          test ! -e orbittrace_density_contrast_p11/RUN_RECOVERY.md
+          test ! -e target
+          ! grep -R --line-number --fixed-strings 'workflow_dispatch:' orbittrace_density_contrast_p11 .github/workflows/orbittrace_p11_density_contrast_pretruth_audit.yml
+          echo NO_P11_TRUTH_EXECUTION_NO_TARGET_ACCESS
