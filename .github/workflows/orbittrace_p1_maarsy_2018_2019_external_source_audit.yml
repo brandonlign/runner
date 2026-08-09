@@ -1,0 +1,91 @@
+name: OrbitTrace P1 MAARSY 2018/2019 external source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p1-maarsy-2018-2019-external-freeze
+    paths:
+      - orbittrace_probabilistic_membership_p1/maarsy_2018_2019_transport.py
+      - orbittrace_probabilistic_membership_p1/run_maarsy_2018_2019_geometry_membership_freeze.py
+      - orbittrace_probabilistic_membership_p1/run_maarsy_2018_2019_orbital_validation.py
+      - .github/workflows/orbittrace_p1_maarsy_2018_2019_external_execution.yml
+      - .github/workflows/orbittrace_p1_maarsy_2018_2019_external_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile frozen P1 external implementation
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_probabilistic_membership_p1/maarsy_2018_2019_transport.py \
+            orbittrace_probabilistic_membership_p1/run_maarsy_2018_2019_geometry_membership_freeze.py \
+            orbittrace_probabilistic_membership_p1/run_maarsy_2018_2019_orbital_validation.py
+      - name: Prove exact preregistered firewalls and endpoints
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          t=Path('orbittrace_probabilistic_membership_p1/maarsy_2018_2019_transport.py').read_text()
+          g=Path('orbittrace_probabilistic_membership_p1/run_maarsy_2018_2019_geometry_membership_freeze.py').read_text()
+          o=Path('orbittrace_probabilistic_membership_p1/run_maarsy_2018_2019_orbital_validation.py').read_text()
+          w=Path('.github/workflows/orbittrace_p1_maarsy_2018_2019_external_execution.yml').read_text()
+          tree=ast.parse(t); defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert 'YEARS=(2018,2019)' in t and 'BLIND_LOW=20.0' in t and 'BLIND_HIGH=55.0' in t and 'MAX_EVENTS_PER_BIN=10_000' in t
+          assert 'EXPECTED_FILE_SIZE=21_485_785_089' in t and 'EXPECTED_FILE_MD5="01820c6a90ea1415b011bb013a4d9213"' in t
+          assert 'STOP_PREFIX="data/2020/"' in t
+          geom=ast.get_source_segment(t,defs['parse_geometry_member']) or ''
+          orbit=ast.get_source_segment(t,defs['read_needed_orbits']) or ''
+          assert 'sol_all=np.asarray(h["sun_lon"][()]' in geom
+          assert 'blind=valid_sol&(sol_all>=BLIND_LOW)&(sol_all<=BLIND_HIGH)' in geom
+          assert '_read_retained(h["slat"],keep)' in geom and '_read_retained(h["slon"],keep)' in geom and '_read_retained(h["vels"],keep)' in geom
+          assert '"kepler"' not in geom and 'h["kepler"]' in orbit and 'h["kepler_std"]' not in orbit
+          assert 'geometry_fields_opened_this_stage":False' in t and 'kepler_std_opened":False' in t
+
+          assert "P1_SOURCE_SHA256='e7847e067bab8d07038c998359ccbf0ca6e2ccf257f27f27f4aef999cc7a0508'" in g
+          assert "V8_SOURCE_COMMIT='c9d6c44704013ba0c9430100e98a29a56b453304'" in g
+          assert 'MIN_RECURRENT_FAMILIES=100' in g
+          assert 'v8core.label_free_scan_year' in g and "rank_scored(scored,'multiplicity')" in g
+          assert 'transfer.apply_exact_p1_membership' in g
+          assert "require(canonical_sha(canonical_expanded)==canonical_sha(expanded)" in g
+          assert "'candidate_pairs':candidate_pairs" in g and "'shell_pairs':shell_pairs" in g
+          assert "'competition_responsibilities':competition" in g and "'assignments':" in g
+          assert "'deterministic_shell_controls':controls" in g
+          assert "hashlib.sha256((eid+fid).encode()).hexdigest()" in g
+          assert "'orbit_access':False" in g and "'label_access':False" in g and "'target_information_access':False" in g
+          assert "'new_members_can_seed_growth':False" in g and "'parameter_search':False" in g
+
+          for token in ('DSH_THRESHOLD=0.05','MIN_YEAR_COMPONENT=4','MIN_FAMILY_PRECISION=0.50','MIN_Q_SEED=30','MIN_VALID_ADDITIONS=200','MIN_ADDITION_FAMILIES=30','MIN_VALID_CONTROLS=200','MIN_ADDITION_PRECISION=0.60','MIN_CONTROL_ADVANTAGE=0.15','MAX_FISHER_P=0.01','MIN_COHERENT_SUPPORT_RATIO=1.20'):
+              assert token in o,token
+          assert 'transport.read_needed_orbits(needed,args.output)' in o
+          assert "opposite=YEARS[1] if year==YEARS[0] else YEARS[0]" in o
+          assert 'matrix=dsh_values([eid],opposite_seeds,orbits,dsh)' in o
+          assert "alternative='greater'" in o
+          assert "q_p1>=q_seed" in o and "precision_a>=MIN_ADDITION_PRECISION" in o and "precision_a>=precision_c+MIN_CONTROL_ADVANTAGE" in o and "fisher_p<=MAX_FISHER_P" in o and "coherent_p1>=MIN_COHERENT_SUPPORT_RATIO*coherent_seed" in o
+          assert "PASS_P1_MAARSY_2018_2019_EXTERNAL_VALIDATION" in o
+          assert "alternate_control_resampling':False" in o and "alternate_year_or_subset_search':False" in o
+
+          assert 'EXECUTE_P1_MAARSY_2018_2019_AFTER_DEVELOPMENT_AND_LITERATURE_PASS' in w
+          assert "PASS_PROBABILISTIC_MEMBERSHIP_P1_DEVELOPMENT" in w
+          assert "{'BROAD_CATALOGUE_SUPERIORITY','SPARSE_STREAM_SUPERIORITY'}" in w
+          assert 'PASS_P1_MAARSY_2018_2019_PRISTINE_HISTORY' in w
+          assert w.index('Execute geometry-only promoted-v8 plus exact P1 membership freeze') < w.index('Execute frozen post-membership physical validation')
+          assert "verdict != 'PASS_P1_MAARSY_2018_2019_GEOMETRY_MEMBERSHIP_FREEZE'" in w
+          assert "verdict == 'PASS_P1_MAARSY_2018_2019_GEOMETRY_MEMBERSHIP_FREEZE'" in w
+          print('PASS_P1_MAARSY_2018_2019_EXTERNAL_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only pristine boundary
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_probabilistic_membership_p1/RUN_MAARSY_2018_2019.md
+          test ! -e input
+          test ! -e output
+          test ! -e preorbit
+          echo NO_MAARSY_2018_2019_VALUES_NO_ORBIT_VALUES_NO_TARGET_ACCESS
