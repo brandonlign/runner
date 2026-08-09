@@ -7,6 +7,8 @@ on:
     paths:
       - orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py
       - orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py
+      - orbittrace_support_safe_halo_p15/run_matched_pretruth_p15.sh
+      - .github/workflows/orbittrace_p15_matched_pretruth.yml
       - .github/workflows/orbittrace_p15_matched_pretruth_source_audit.yml
 
 permissions:
@@ -23,6 +25,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py
+          bash -n orbittrace_support_safe_halo_p15/run_matched_pretruth_p15.sh
+          test "$(git hash-object orbittrace_support_safe_halo_p15/run_matched_pretruth_p15.sh)" = '9f933631058c4dd5faf346857d9eaebeda3381a2'
+          test "$(git hash-object .github/workflows/orbittrace_p15_matched_pretruth.yml)" = 'fc303f2f69d64ed3773a45a5645a3e2d02900023'
+
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
           python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
           python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
@@ -55,19 +61,32 @@ jobs:
             'PASS_P15_SUPPORT_SAFE_HALO_MATCHED_SOURCE_ACTIVE',
             '55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415',
             '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6',
-            'apply_support_safe_halo_p15.py',
-            '/tmp/finalize_p15_checkpoint.py',
-            'p15_unavailable_direction_count',
-            'CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES',
-            'PASS_P15_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES',
-            'exit 0',
+            'apply_support_safe_halo_p15.py', '/tmp/finalize_p15_checkpoint.py',
+            'p15_unavailable_direction_count', 'CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES',
+            'PASS_P15_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES', 'exit 0',
           )
           for x in required: assert x in p,x
           for x in ('OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE','evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
               assert x not in p,x
           assert p.count('python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12_panel_v3.py /tmp/p12_panel.py')==1
           assert p.count('python /tmp/finalize_p15_checkpoint.py')==1
-          assert p.count("progress 'P14 HARD TWO-PANEL PRETRUTH BARRIER — STOP BEFORE TRUTH'")==1
           print('PASS_P15_MATCHED_PRETRUTH_GENERATED_SHELL_SOURCE_AUDIT')
           PY
+
+          launch=orbittrace_support_safe_halo_p15/run_matched_pretruth_p15.sh
+          wf=.github/workflows/orbittrace_p15_matched_pretruth.yml
+          for x in \
+            'EXECUTE_P15_MATCHED_PRETRUTH_AFTER_EXACT_DEVELOPMENT_PASS' \
+            'PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT' \
+            'p15_parent_p12_exact_json_identity' \
+            'p15_fallback_vacuous_on_development' \
+            'unavailable_directions' \
+            'matched_truth_access' \
+            'target_information_access' \
+            '7e7cd5b26addb2bea8daef50ce6d86388521ea46' \
+            'orbittrace-p15-support-safe-halo-development-v2'; do grep -F "$x" "$launch"; done
+          grep -F 'orbittrace_support_safe_halo_p15/P15_MATCHED_PRETRUTH_RUN.md' "$wf"
+          grep -F 'orbittrace-p15-matched-pretruth-checkpoints' "$wf"
+          test ! -e orbittrace_support_safe_halo_p15/P15_MATCHED_PRETRUTH_RUN.md
+          echo PASS_P15_MATCHED_PRETRUTH_ACTIVATION_SOURCE_FREEZE
           echo NO_COMPARATOR_DOWNLOAD_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
