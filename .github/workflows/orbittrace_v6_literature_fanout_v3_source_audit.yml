@@ -1,0 +1,76 @@
+name: OrbitTrace v6 matched-literature fanout v3 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-literature-performance-v1
+    paths:
+      - orbittrace_v6_literature_fanout_v3/**
+      - .github/workflows/orbittrace_v6_literature_fanout_v3_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-v6-literature-fanout-v3-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v6-literature-fanout-v3
+      - name: Prove exact decomposition and replay identity boundary
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_v6_literature_fanout_v3/*.py
+          cat orbittrace_v3_catalogue_v6/exact_parts/part*.b64 \
+            | tr -d '\n\r' | base64 --decode | gzip --decompress > /tmp/v6.frozen.py
+          echo 'a139802f328e0721a6b48b9b41e098660d03e0e218cec49f1d6251981a2828c9  /tmp/v6.frozen.py' | sha256sum -c -
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          def function(tree,name):
+              return next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name)
+          def calls(tree,name):
+              return [n for n in ast.walk(tree) if isinstance(n,ast.Call) and ((isinstance(n.func,ast.Name) and n.func.id==name) or (isinstance(n.func,ast.Attribute) and n.func.attr==name))]
+
+          vtext=Path('/tmp/v6.frozen.py').read_text(); vtree=ast.parse(vtext)
+          exact=function(vtree,'exact_rescore_window_v6'); exact_text=ast.get_source_segment(vtext,exact)
+          assert 'proposal_anchor_id = str(record["proposal_anchor_id"])' in exact_text
+          assert 'exact = dict(record)' in exact_text
+          for key in ('proposal_brown_score','fixed4_score','v3_score','v3_anchor_id','v3_member_ids','proposal_member_ids','exact_rescore'):
+              assert f'"{key}"' in exact_text,key
+          scan=function(vtree,'scan_year_v6'); scan_text=ast.get_source_segment(vtext,scan)
+          assert 'bin_index = int(exact["bin"])' in scan_text
+          assert 'str(primary["proposal_anchor_id"])' in scan_text
+          assert len(calls(scan,'exact_rescore_window_v6'))==1
+
+          root=Path('orbittrace_v6_literature_fanout_v3')
+          capture=(root/'capture_preexact_panel.py').read_text(); runner=(root/'run_exact_slice_panel.py').read_text(); replay=(root/'replay_pretruth_panel.py').read_text(); panel=(root/'panel_common.py').read_text()
+          for text in (capture,runner,replay):
+              assert 'evaluate_frozen' not in text
+              assert 'parse_truth' not in text
+          assert 'v6.exact_rescore_window_v6=capture' in capture
+          assert runner.count('v6.exact_rescore_window_v6(')==1
+          assert 'exact_scientific_signature' in replay
+          assert '(str(r["proposal_anchor_id"]),int(r["bin"]),float(r["window_center"]))' in replay
+          assert 'current_sig==captured_sig' in replay
+          assert 'canonical_sha(ids)==spec["window_event_ids_sha256"]' in replay
+          assert 'exact_scientific_signature(outputs)==current_sig' in replay
+          assert 'nonsemantic_record_drift_centers' in replay
+          assert 'competitor_cluster_labels_accessed":False' in capture
+          assert 'truth_accessed":False' in capture
+          assert 'truth_accessed' not in panel or 'False' in panel
+          print('PASS_V6_LITERATURE_FANOUT_V3_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only firewall
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_BENCHMARK_ARCHIVE_NO_TRUTH_VALUE_NO_TARGET_ACCESS
