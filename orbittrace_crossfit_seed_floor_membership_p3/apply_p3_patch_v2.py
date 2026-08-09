@@ -10,7 +10,8 @@ spec=importlib.util.spec_from_file_location('p3_patch_v1',HERE/'apply_p3_patch.p
 if spec is None or spec.loader is None: raise RuntimeError('cannot load P3 v1 patch')
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
-# Correct anchors to the exact canonical P2 v2 source.
+# Correct anchors to the exact canonical P2 v2 source. These are source-shape
+# corrections only; they do not alter the preregistered P3 scientific rules.
 m.GATES_ANCHOR='''        "model_frozen_before_truth_evaluation": bool(model_sha),
         "membership_frozen_before_truth_evaluation": bool(membership_sha),
         "classifier_converged": int(np.max(classifier.n_iter_)) < LOGISTIC_MAX_ITER,
@@ -48,23 +49,29 @@ m.OUTFILE_ANCHOR='''    (args.output / "crossyear_two_view_membership_p2_develop
 '''
 m.OUTFILE_REPL='''    (args.output / "crossfit_seed_floor_membership_p3_development.json").write_text(json.dumps(result, indent=2) + "\\n")
 '''
-# Keep the existing markdown filename to avoid needing a second replacement for
-# the immediately following read/print. The content title is P3 and the JSON
-# scientific result has a P3-specific filename/verdict.
+# Keep the existing markdown filename to avoid changing the immediately following
+# read/print plumbing. Its title is replaced with P3 and the scientific JSON is
+# P3-specific.
 m.MD_ANCHOR='''    (args.output / "CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_DEVELOPMENT.md").write_text(
 '''
 m.MD_REPL=m.MD_ANCHOR
+m.DIAG_BUG_ANCHOR='''            "valid_nonseed_events_by_year": {str(year): len(valid_nonseed_by_year[year]) for year in YEARS},
+'''
+m.DIAG_BUG_REPL='''            "nonseed_events_by_year": {str(year): len(nonseed_by_year[year]) for year in YEARS},
+            "p3_reliable_directions": sum(bool(r["reliable"]) for r in reliability.values()),
+            "p3_unreliable_directions": sum(not bool(r["reliable"]) for r in reliability.values()),
+'''
 
 # Inject a physical truth firewall. This code is adapted from the already-used
-# v6-LF geometry/truth split and uses no label column in the pretruth parser.
+# v6-LF geometry/truth split and never reads a label value in the pretruth pass.
 TRUTH_HELPER_ANCHOR='''def main() -> int:
 '''
 TRUTH_HELPER_REPL='''def p3_geometry_arrays(frame: Any, columns: dict[str, str]):
     ids=frame[columns["id"]].astype(str).to_numpy()
-    sol=np.asarray(frame[columns["sol"]], dtype=np.float64)
-    lam=np.asarray(frame[columns["lam"]], dtype=np.float64)
-    bet=np.asarray(frame[columns["bet"]], dtype=np.float64)
-    vg=np.asarray(frame[columns["vg"]], dtype=np.float64)
+    sol=frame[columns["sol"]].to_numpy(dtype=np.float64, na_value=np.nan)
+    lam=frame[columns["lam"]].to_numpy(dtype=np.float64, na_value=np.nan)
+    bet=frame[columns["bet"]].to_numpy(dtype=np.float64, na_value=np.nan)
+    vg=frame[columns["vg"]].to_numpy(dtype=np.float64, na_value=np.nan)
     return ids,sol,lam,bet,vg
 
 
@@ -132,8 +139,8 @@ RESULT_AUDIT_REPL='''        "geometry_audits": geometry_audits,
         "direction_audits": direction_audits,
 '''
 
-# Wrap v1 main: first run its fixed deterministic P3 transform to a temporary,
-# then add the stricter truth firewall as a second exactly anchored transform.
+# Run the fixed deterministic P3 transform first, then add only the stricter
+# truth-firewall transform using exact source anchors.
 def main()->int:
     if len(sys.argv)!=3: raise SystemExit('usage: apply_p3_patch_v2.py CANONICAL_P2 OUTPUT')
     source=Path(sys.argv[1]); output=Path(sys.argv[2]); tmp=output.with_suffix(output.suffix+'.stage1')
