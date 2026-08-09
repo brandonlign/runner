@@ -1,0 +1,140 @@
+name: OrbitTrace P3 immutable result finalizer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p3-result-finalizer-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/FINALIZE_RESULT.md
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Require one-file finalization child
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_crossfit_seed_floor_membership_p3/FINALIZE_RESULT.md'
+          content="$(git show "$HEAD_SHA":orbittrace_crossfit_seed_floor_membership_p3/FINALIZE_RESULT.md)"
+          test "$(printf '%s\n' "$content" | sed -n '1p')" = 'FINALIZE_IMMUTABLE_P3_RESULT_AFTER_POSTRESULT_ASSERTION_BUG'
+          test "$(printf '%s\n' "$content" | sed -n '2p')" = '31291214704'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/FINALIZE_RESULT.md
+
+      - name: Verify source run and immutable artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh run view 31291214704 --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = failure
+          a="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/31291214704/artifacts")"
+          test "$(printf '%s' "$a" | jq -r '[.artifacts[]|select(.name=="orbittrace-crossfit-seed-floor-membership-p3-development")]|length')" -eq 1
+          test "$(printf '%s' "$a" | jq -r '.artifacts[]|select(.name=="orbittrace-crossfit-seed-floor-membership-p3-development")|.id')" = '9031626210'
+          test "$(printf '%s' "$a" | jq -r '.artifacts[]|select(.name=="orbittrace-crossfit-seed-floor-membership-p3-development")|.digest')" = 'sha256:b4855118119760f9aa4b94ceb77ad445bd6649eaeff09b32150360804b7d76f8'
+          rm -rf source output && mkdir -p source output
+          gh run download 31291214704 --repo "$GITHUB_REPOSITORY" --name orbittrace-crossfit-seed-floor-membership-p3-development --dir source
+          echo 'f6547943f14bef1dfe320a6c53d38b11f2b131f5e4588f85f3a2c62d99729229  source/crossfit_seed_floor_membership_p3_development.json' | sha256sum -c -
+          test "$(cat source/p3_crossfit_pretruth.sha256)" = 'e00331e51ad7eff2f20df446dfe66fe659caaaa814ef60ae50d19b156a0f2854'
+          test "$(cat source/p2_model_pretruth.sha256)" = '0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          test "$(cat source/p3_membership_pretruth.sha256)" = '240ffa9027829f9c49413c9ed1b65f5d9c60d4e8bff577b4366bf70293991c5a'
+          test "$(cat source/p3_decisions_pretruth.sha256)" = '3ccd2749e5e71b31522207c05d342a727866e294d33e787061698a5937192d10'
+
+      - name: Verify scientific result and classify source failure as assertion-only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('source/crossfit_seed_floor_membership_p3_development.json').read_text())
+          assert r['verdict']=='FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO'
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['p3_fold_count']==5
+          assert r['configuration']['p3_negative_tail_max']==0.10
+          assert r['configuration']['parameter_search'] is False
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert abs(r['baseline_v8']['macro_f1']-0.1736657194465356)<1e-15
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert r['p3']['qualified_matches']==90
+          assert r['p3']['recovered_at_100']==58
+          assert abs(r['p3']['macro_f1']-0.471038167294719)<1e-12
+          assert abs(r['p3']['top100_dominant_precision']-0.6586118830480205)<1e-12
+          assert abs(r['p3_large_shower']['mean_recall']-0.34916528970875726)<1e-12
+          assert abs(r['p3_large_shower']['mean_precision']-0.8081618015600882)<1e-12
+          integrity=(
+              'exact_v8_226_family_order','exact_v8_seed_members_preserved','v8_baseline_reproduced','exact_dsh_source_identity',
+              'model_frozen_before_truth_evaluation','membership_frozen_before_truth_evaluation','classifier_converged',
+              'p3_exact_five_crossfit_folds','p3_crossfit_frozen_before_truth','p3_decisions_frozen_before_truth',
+              'p3_label_values_unread_until_membership_freeze','p3_every_family_in_exactly_one_fold',
+              'p3_no_heldout_family_in_own_fold_training','p3_every_direction_has_one_heldout_gate',
+              'p3_exact_seed_floor_and_tail_rule','p3_no_unreliable_direction_can_propose','p3_every_surviving_proposal_meets_seed_floor',
+          )
+          assert all(r['gates'][k] is True for k in integrity)
+          assert r['gates']['expansion_nonvacuous'] is True
+          assert r['gates']['recovery_at_100_no_regression'] is True
+          assert r['gates']['top100_dominant_precision_at_least_065'] is True
+          assert r['gates']['macro_f1_gain_at_least_008'] is True
+          assert r['gates']['large_shower_mean_recall_at_least_15x_v8'] is True
+          assert r['gates']['qualified_matches_no_regression'] is False
+          assert r['gates']['large_shower_mean_precision_at_least_085'] is False
+          assert all(a['label_value_accessed'] is False for a in r['geometry_audits'])
+          assert all(a['label_value_accessed_only_after_blind_and_dedup'] is True for a in r['truth_audits'])
+          assert r['diagnostics']['assigned_nonseed_events']==36742
+          assert r['diagnostics']['p3_reliable_directions']==439
+          assert r['diagnostics']['p3_unreliable_directions']==13
+          PY
+          gh run view 31291214704 --repo "$GITHUB_REPOSITORY" --log-failed > /tmp/source_failed.log
+          grep -Fq "KeyError: 'geometry_audits'" /tmp/source_failed.log
+          ! grep -Fq 'Traceback' <(gh run view 31291214704 --repo "$GITHUB_REPOSITORY" --log | sed -n '/Execute one-shot target-excluded P3 development/,/Enforce frozen P3 result/p') || true
+          echo PASS_P3_IMMUTABLE_RESULT_AND_ASSERTION_ONLY_FAILURE
+
+      - name: Emit canonical finalized result without recomputation
+        run: |
+          set -euo pipefail
+          cp source/crossfit_seed_floor_membership_p3_development.json output/crossfit_seed_floor_membership_p3_development.json
+          cp source/CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT.md output/CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT.md
+          cp source/p3_crossfit_pretruth.sha256 source/p2_model_pretruth.sha256 source/p3_membership_pretruth.sha256 source/p3_decisions_pretruth.sha256 output/
+          cat > output/P3_FINALIZATION_PROVENANCE.json <<'JSON'
+          {
+            "classification": "immutable result finalization after post-result assertion-only workflow failure",
+            "source_run": 31291214704,
+            "source_artifact_id": 9031626210,
+            "source_artifact_digest": "sha256:b4855118119760f9aa4b94ceb77ad445bd6649eaeff09b32150360804b7d76f8",
+            "source_result_sha256": "f6547943f14bef1dfe320a6c53d38b11f2b131f5e4588f85f3a2c62d99729229",
+            "scientific_recomputation": false,
+            "membership_recomputed": false,
+            "model_refit": false,
+            "result_changed": false,
+            "target_information_access": false
+          }
+          JSON
+          echo 'f6547943f14bef1dfe320a6c53d38b11f2b131f5e4588f85f3a2c62d99729229  output/crossfit_seed_floor_membership_p3_development.json' | sha256sum -c -
+          echo ORBITTRACE_P3_FINALIZED_RESULT_BEGIN
+          cat output/CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT.md
+          echo ORBITTRACE_P3_FINALIZED_RESULT_END
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p3-finalized-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
