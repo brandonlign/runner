@@ -5,12 +5,12 @@ import argparse
 import hashlib
 import json
 import math
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-from orbittrace_v16_v15_joint_conformal_membership_v1.evaluate_exposed import evaluate
+from scipy.optimize import linear_sum_assignment
 
 LAMBDAS=(0.0,0.2,0.4,0.6,0.8)
 SCALES=(0.75,1.0,1.5)
@@ -36,6 +36,85 @@ def tag(lam: float,scale: float)->str:
 
 def displacement(lam: float,scale: float)->float:
     return math.sqrt(((lam-0.8)/0.8)**2+((scale-1.0)/0.75)**2)
+
+
+def evaluate(families: list[dict[str, Any]], truth: dict[str,str], budget: int)->dict[str,Any]:
+    """Exact one-to-one equal-budget F1 matching semantics used by the frozen #854 evaluator.
+
+    This local copy is transport-only: v18 run 31411061554 proved that importing the helper
+    package was not reliable on this branch after all 30 candidate outputs had already frozen.
+    No metric, threshold, budget, truth filtering, assignment, or tie semantics are changed.
+    """
+    counts=Counter(v for v in truth.values() if v!='SPORADIC')
+    labels=sorted(k for k,n in counts.items() if n>=4)
+    truth_sets={label:{eid for eid,v in truth.items() if v==label} for label in labels}
+    truth_ids=set(truth)
+
+    active=[]
+    for family in families:
+        members=set(map(str,family['event_ids'])) & truth_ids
+        if members:
+            active.append((int(family['rank']),str(family['family_id']),members))
+    active=sorted(active,key=lambda x:(x[0],x[1]))[:int(budget)]
+
+    f1=np.zeros((len(labels),len(active)),dtype=np.float64)
+    overlap=np.zeros_like(f1,dtype=np.int64)
+    precision=np.zeros_like(f1,dtype=np.float64)
+    recall=np.zeros_like(f1,dtype=np.float64)
+    for i,label in enumerate(labels):
+        actual=truth_sets[label]
+        for j,(_rank,_fid,pred) in enumerate(active):
+            ov=len(actual & pred)
+            overlap[i,j]=ov
+            if ov:
+                p=ov/len(pred)
+                r=ov/len(actual)
+                precision[i,j]=p
+                recall[i,j]=r
+                f1[i,j]=2.0*p*r/(p+r)
+
+    n=max(len(labels),len(active))
+    cost=np.zeros((n,n),dtype=np.float64)
+    cost[:len(labels),:len(active)]=-f1
+    ri,cj=linear_sum_assignment(cost)
+
+    assigned=[]
+    per_shower=[]
+    for i,j in zip(ri.tolist(),cj.tolist()):
+        if i>=len(labels):
+            continue
+        if j<len(active):
+            rank,fid,pred=active[j]
+            score=float(f1[i,j])
+            ov=int(overlap[i,j])
+            p=float(precision[i,j])
+            r=float(recall[i,j])
+            predicted=len(pred)
+        else:
+            rank=fid=None
+            score=p=r=0.0
+            ov=predicted=0
+        assigned.append(score)
+        per_shower.append({
+            'truth_label':labels[i],
+            'truth_members':len(truth_sets[labels[i]]),
+            'family_id':fid,
+            'family_rank':rank,
+            'overlap':ov,
+            'predicted_members':predicted,
+            'precision':p,
+            'recall':r,
+            'f1':score,
+        })
+
+    return {
+        'eligible_showers':len(labels),
+        'macro_f1':float(np.mean(assigned)) if assigned else 0.0,
+        'recovered_f1_gt_0_5':int(sum(x>0.5 for x in assigned)),
+        'candidate_available_with_year_members':sum(bool(set(map(str,f['event_ids'])) & truth_ids) for f in families),
+        'candidate_used':len(active),
+        'per_shower':per_shower,
+    }
 
 
 def main()->int:
