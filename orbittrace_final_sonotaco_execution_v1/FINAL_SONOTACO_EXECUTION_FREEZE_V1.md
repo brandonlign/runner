@@ -21,31 +21,40 @@ M1 and M2 are ineligible. M2's initial calibration improvement does not override
 
 ## Required generator identity
 
-Before SonotaCo access, the pair-portable hard/P19/P20 generator must produce an exact GMN structural-equivalence artifact whose verdict is exactly:
+The exact P19 source can reproduce all discrete family semantics while derived floating distances differ at machine-roundoff scale across otherwise identical executions. Because `soft_trigger_max_seed_distance` is an actual frozen #839 ranking feature, this is **not** waived as irrelevant metadata.
 
-`PASS_URC_PAIR_PORTABLE_GENERATOR_GMN_EQUIVALENCE`
+Before the current strengthened #862 equivalence result is known, the acceptance rule is frozen as follows. The pair-portable hard/P19/P20 generator must return exactly:
 
-and whose frozen GMN counts are exactly:
+`PASS_URC_PAIR_PORTABLE_GENERATOR_GMN_OPERATIONAL_EQUIVALENCE`
+
+with frozen GMN counts:
 
 - hard = 226;
 - P19-soft = 1,075;
 - P20-soft = 3,203;
 - union = 4,504.
 
-The artifact must also state:
+The artifact must prove all of:
 
 - exact hard order match = true;
 - exact hard family match = true;
-- exact P19 family match = true;
+- exact P19 **discrete** match = true, including family order/IDs, component IDs, event/member IDs, trigger/support IDs, years, counts, booleans, and all other non-floating structure;
+- P19 floating leaves satisfy **absolute tolerance 1e-12 and relative tolerance 1e-12**;
+- the reported maximum absolute P19 floating difference is <=1e-12;
 - exact P20 family match = true;
 - exact P20 isolated-quartet match = true;
+- regenerated-vs-frozen #839 34-column feature matrices are numerically equivalent under the same 1e-12 absolute/relative rule;
+- serialized-model prediction maximum absolute difference is <=1e-12;
+- the final #839 diversity order is **exactly identical**, with deployment application-order SHA-256 `9063270f131b81bb0032026b2742b985ab0f8d5655abb46a1d405d30501b6d7d`;
 - performance metric computed = false;
-- truth labels used by generator = false;
+- truth labels used by generator/ranker = false;
 - SonotaCo 2013/2014 access = false;
 - MAARSY scientific access = false;
 - target information access = false.
 
-The final execution workflow must pin the **specific passing #862 source commit, workflow run ID, artifact ID, and artifact digest** before any SonotaCo archive is opened. No tolerance-based or partial structural match satisfies this prerequisite.
+Thus the only relaxed identity is machine-level representation of derived P19 floating descriptors. Candidate existence, membership, ordering, discrete structure, and the **actual frozen downstream ranking must remain exact**. A tolerance-only match without exact final-order invariance does not pass.
+
+The final execution workflow must pin the **specific passing #862 source commit, workflow run ID, artifact ID, and artifact digest** before any SonotaCo archive is opened.
 
 ## Required ranker identity
 
