@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -15,6 +16,11 @@ LOWER_CAPS = (96, 64, 32)
 def require(ok: bool, message: str) -> None:
     if not ok:
         raise RuntimeError(message)
+
+
+def canonical_sha(value: Any) -> str:
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return hashlib.sha256(raw).hexdigest()
 
 
 def load(path: Path, cap: int) -> dict[str, Any]:
@@ -35,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     for cap in CAPS:
         p.add_argument(f"--cap-{cap}", dest=f"cap_{cap}", type=Path, required=True)
+    p.add_argument("--v5-reference-dir", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     return p.parse_args()
 
@@ -44,9 +51,21 @@ def main() -> int:
     runs = {cap: load(getattr(a, f"cap_{cap}"), cap) for cap in CAPS}
     reference = runs[128]
 
+    v5_result = json.loads((a.v5_reference_dir / "multiplicity_v5_holdout.json").read_text())
+    v5_rankings = json.loads((a.v5_reference_dir / "multiplicity_v5_rankings.json").read_text())
+    v5_order = [str(x) for x in v5_rankings["multiplicity"]]
+    v5_universe_sha = canonical_sha(sorted(v5_order))
+    v5_order_sha = canonical_sha(v5_order)
+
     universes = {runs[cap]["family_universe_sha256"] for cap in CAPS}
     family_counts = {int(runs[cap]["family_count"]) for cap in CAPS}
     integrity = {
+        "cap128_exact_family_universe_matches_direct_v5": (
+            reference["family_universe_sha256"] == v5_universe_sha
+            and int(reference["family_count"]) == int(v5_result["family_count"])
+        ),
+        "cap128_exact_multiplicity_order_matches_direct_v5": reference["multiplicity_order_sha256"] == v5_order_sha,
+        "cap128_exact_multiplicity_metrics_match_direct_v5": reference["multiplicity_metrics"] == v5_result["metrics"]["multiplicity"],
         "same_family_universe_all_caps": len(universes) == 1 and len(family_counts) == 1,
         "all_brown_equivalence_within_1e_10": all(float(runs[c]["max_brown_equivalence_difference"]) <= 1e-10 for c in CAPS),
         "all_synthetic_checks_present": all(len(runs[c]["synthetic_cardinality_checks"]) == 7 for c in CAPS),
@@ -94,6 +113,12 @@ def main() -> int:
         "stress_caps": list(CAPS),
         "reference_cap": 128,
         "reference_metrics": refm,
+        "direct_v5_reference": {
+            "family_count": int(v5_result["family_count"]),
+            "family_universe_sha256": v5_universe_sha,
+            "multiplicity_order_sha256": v5_order_sha,
+            "multiplicity_metrics": v5_result["metrics"]["multiplicity"],
+        },
         "required_recovery_at_100": required_recovery,
         "family_count": int(reference["family_count"]),
         "family_universe_sha256": reference["family_universe_sha256"],
