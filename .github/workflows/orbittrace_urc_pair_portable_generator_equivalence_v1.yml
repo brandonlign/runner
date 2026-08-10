@@ -53,10 +53,24 @@ jobs:
           python -m py_compile \
             orbittrace_urc_pair_portable_generators_v1/generators.py \
             orbittrace_urc_pair_portable_generators_v1/verify_gmn_equivalence.py \
-            orbittrace_urc_pair_portable_generators_v1/diagnose_gmn_equivalence.py \
             orbittrace_p19_subthreshold_recurrence/run_development.py \
             orbittrace_p20_recurrent_isolated_quartet/run_development.py \
+            orbittrace_urc_unseen_ranker_v1/application.py \
             frozen-v8/orbittrace_pooled_year_centroid_v8/run_development.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-urc-final-full-gmn-ranker-v1
+          path: input/model
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344776617
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-pooled-year-centroid-v8-development
@@ -78,23 +92,27 @@ jobs:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: 31341591263
-      - name: Verify immutable development structures
+      - name: Verify immutable development structures and deployment identities
         run: |
           set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/model/urc_final_ranker.joblib | cut -d' ' -f1)" = 'ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909'
           test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
           test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
           test "$(sha256sum input/p20/p20_prelabel_payload.json | cut -d' ' -f1)" = '8ca358ae0f3ac96b188de9eac7bcfd6f870470873a2b7ee73b7ae76497c12734'
           test "$(git hash-object orbittrace_p19_subthreshold_recurrence/run_development.py)" = 'f230fc775b38df1e9d447bba33419abd5f6f6ef1'
           test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
-      - name: Prove exact GMN structural equivalence
+      - name: Prove GMN operational equivalence through frozen ranker
         env:
-          PYTHONPATH: .:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+          PYTHONPATH: .:input/ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_urc_pair_portable_generators_v1/diagnose_gmn_equivalence.py \
+          python -u orbittrace_urc_pair_portable_generators_v1/verify_gmn_equivalence.py \
             --v8-source frozen-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
             --p19-source orbittrace_p19_subthreshold_recurrence/run_development.py \
             --p20-source orbittrace_p20_recurrent_isolated_quartet/run_development.py \
+            --active-ranker-source input/ranker/run_urc_union_ranker.py \
+            --model-joblib input/model/urc_final_ranker.joblib \
             --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
@@ -110,10 +128,12 @@ jobs:
           sha256sum \
             orbittrace_urc_pair_portable_generators_v1/generators.py \
             orbittrace_urc_pair_portable_generators_v1/verify_gmn_equivalence.py \
-            orbittrace_urc_pair_portable_generators_v1/diagnose_gmn_equivalence.py \
+            orbittrace_urc_unseen_ranker_v1/application.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/model/urc_final_ranker.joblib \
             orbittrace_p19_subthreshold_recurrence/run_development.py \
             orbittrace_p20_recurrent_isolated_quartet/run_development.py \
-            frozen-v8/orbittrace_pooled_year_centroid_v8/run_development.py > output/source_sha256.txt 2>/dev/null || true
+            frozen-v8/orbittrace_pooled_year_centroid_v8/run_development.py > output/source_model_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
