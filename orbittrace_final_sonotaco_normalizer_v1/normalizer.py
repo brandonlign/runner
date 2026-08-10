@@ -7,8 +7,8 @@ The 20°–55° target interval is rejected immediately after solar longitude is
 any other scientific field is interpreted. The shower field is never read.
 
 The shared manifest deliberately carries every raw observable needed by the frozen final methods:
-OrbitTrace geometry, Sugar RA/Dec/Vg uncertainties, and the q/e/convergence-angle fields required
-by the frozen catalogue-HDBSCAN quality interface. Carrying a field does not select on it; each
+OrbitTrace geometry, Sugar RA/Dec/Vg uncertainties and convergence angle, and the q/e/quality fields
+required by the frozen catalogue-HDBSCAN interface. Carrying a field does not select on it; each
 method's pairwise eligibility is applied only after the common base manifest is frozen and before
 truth is opened.
 """
@@ -138,7 +138,7 @@ def normalize_annual_csv(
         event_id = f"{prefix}:{physical_row}"
         require(event_id not in seen_ids, f"duplicate generated event ID: {event_id}")
         seen_ids.add(event_id)
-        events.append({
+        event = {
             "id": event_id,
             "year": int(year),
             "sol": float(sol),
@@ -159,19 +159,11 @@ def normalize_annual_csv(
             "ncam": float(ncam),
             "iau": 0,
             "complex_key": "HIDDEN",
-        })
+        }
+        events.append(event)
         counts["retained"] += 1
-        counts["retained_with_positive_sugar_uncertainties"] += int(
-            values["rasddeg"] is not None and values["rasddeg"] > 0.0
-            and values["desddeg"] is not None and values["desddeg"] > 0.0
-            and values["vgsdkms"] is not None and values["vgsdkms"] > 0.0
-        )
-        counts["retained_with_hdbscan_quality_fields"] += int(
-            values["qcdeg"] is not None
-            and values["vgsdkms"] is not None
-            and values["qau"] is not None
-            and values["e"] is not None
-        )
+        counts["retained_sugar_pairwise_eligible"] += int(sugar_pairwise_eligible(event))
+        counts["retained_hdbscan_pairwise_eligible"] += int(hdbscan_pairwise_eligible(event))
         counts["retained_with_complete_orbit"] += int(all(
             values[name] is not None for name in ("qau", "e", "perideg", "nodedeg", "incldeg")
         ))
@@ -207,18 +199,36 @@ def normalize_annual_csv(
 
 
 def sugar_pairwise_eligible(event: dict[str, Any]) -> bool:
-    """Frozen structural eligibility for the uncertainty-aware Sugar comparator."""
-    return all(
-        event[name] is not None and math.isfinite(float(event[name])) and float(event[name]) > 0.0
-        for name in ("ra_sd", "dec_sd", "vg_sd")
+    """Exact label-free final #820 structural eligibility for Sugar.
+
+    Base shared-manifest cuts already enforce multi-camera validity and 5<=Vg<=75. The final
+    same-information Sugar freeze additionally requires strict convergence angle >15 degrees,
+    finite nonnegative marginal uncertainties, and vg_sd <= 0.1*vg + 1 km/s.
+    """
+    values = {name: event.get(name) for name in ("ra_sd", "dec_sd", "vg_sd", "qc", "vg")}
+    if any(value is None for value in values.values()):
+        return False
+    try:
+        ra_sd, dec_sd, vg_sd, qc, vg = (float(values[k]) for k in ("ra_sd", "dec_sd", "vg_sd", "qc", "vg"))
+    except (TypeError, ValueError):
+        return False
+    if not all(math.isfinite(x) for x in (ra_sd, dec_sd, vg_sd, qc, vg)):
+        return False
+    return (
+        ra_sd >= 0.0
+        and dec_sd >= 0.0
+        and vg_sd >= 0.0
+        and qc > 15.0
+        and vg > 0.0
+        and vg_sd <= 0.10 * vg + 1.0
     )
 
 
 def hdbscan_pairwise_eligible(event: dict[str, Any]) -> bool:
-    """Frozen label-free physical eligibility for final catalogue HDBSCAN.
+    """Exact label-free physical eligibility for final catalogue HDBSCAN.
 
-    Base shared-manifest geometry/ncam cuts are already satisfied. This function implements only
-    the additional final #820 HDBSCAN requirements and never reads shower truth.
+    Base shared-manifest geometry/ncam cuts are already satisfied. This function implements the
+    frozen #820 algorithm/source requirements and never reads shower truth.
     """
     qc = event.get("qc")
     vg = event.get("vg")
@@ -290,12 +300,17 @@ def self_test() -> None:
     ))
     writer.writerow(row("100", vg="4.9"))
     writer.writerow(row("110", ncam="1"))
-    writer.writerow(row("120", ra="200", dec="-10", vg="50", ncam="3", ra_sd="0", vg_sd="6", q="", qc="10"))
-    # Base-valid rows that exercise the exact frozen HDBSCAN lower bounds without changing the base manifest.
+    # Base-valid row rejected by both pairwise interfaces.
+    writer.writerow(row("120", ra="200", dec="-10", vg="50", ncam="3", ra_sd="0", vg_sd="6.1", q="", qc="10"))
+    # HDBSCAN exact lower-bound tests.
     writer.writerow(row("130", q="0", e="0.5"))
     writer.writerow(row("140", q="0.5", e="-0.01"))
+    # Sugar-specific boundary tests: strict qc>15 and vg_sd <= 0.1*vg+1; zero uncertainty is valid.
+    writer.writerow(row("150", qc="15", vg_sd="0.4"))
+    writer.writerow(row("160", qc="15.0001", vg="30", vg_sd="4.0001"))
+    writer.writerow(row("170", qc="15.0001", vg="30", ra_sd="0", dec_sd="0", vg_sd="0"))
     events, audit = normalize_annual_csv(buf.getvalue().encode("utf-8"), year=2013, base=_synthetic_base(), id_prefix="X")
-    assert [e["sol"] for e in events] == [10.0, 120.0, 130.0, 140.0]
+    assert [e["sol"] for e in events] == [10.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0]
     assert audit["counts"]["blind_removed_before_any_other_scientific_field"] == 1
     assert audit["counts"]["invalid_geometry_or_quality"] == 2
     assert audit["shower_column_row_accessed"] is False
@@ -308,6 +323,9 @@ def self_test() -> None:
     assert orbit_pairwise_eligible(events[1]) is False
     assert hdbscan_pairwise_eligible(events[2]) is False
     assert hdbscan_pairwise_eligible(events[3]) is False
+    assert sugar_pairwise_eligible(events[4]) is False  # qc == 15 is excluded by Sugar
+    assert sugar_pairwise_eligible(events[5]) is False  # vg_sd exceeds 0.1*vg+1 by 1e-4
+    assert sugar_pairwise_eligible(events[6]) is True   # zero reported uncertainty remains a valid finite sigma
     assert events[0]["ra_sd"] == 0.2 and events[0]["q"] == 0.5 and events[0]["qc"] == 20.0
     assert all(e["complex_key"] == "HIDDEN" and e["iau"] == 0 for e in events)
     assert all(20.0 > e["sol"] or e["sol"] > 55.0 for e in events)

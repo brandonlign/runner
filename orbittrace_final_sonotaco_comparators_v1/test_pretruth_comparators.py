@@ -36,8 +36,11 @@ class FakeSugar:
     MIN_SAMPLES=5; EPS_PERCENTILE=23.0; CLONE_ITERATIONS=1000
     MERGE_OVERLAP_FRACTION=0.5; MIN_RECURRENCE=100; STRONG_RECURRENCE=500; SEED_ROOT=20170209
     OverlapGraphMerger=FakeMerger
+    seeds=[]
     @staticmethod
-    def stable_seed(*parts): return abs(hash(tuple(parts))) % (2**32)
+    def stable_seed(*parts):
+        FakeSugar.seeds.append(parts)
+        return 12345
     @staticmethod
     def feature_matrix_from_equatorial(sol,ra,dec,vg): return np.zeros((len(sol),6))
     @staticmethod
@@ -68,13 +71,29 @@ class FakeHDB:
         return labels,p,{"cluster_count":2}
 
 
-def test_sugar_truth_free():
+def test_sugar_truth_free_and_seed_contract():
+    FakeSugar.seeds=[]
     out=adapter.run_sugar(records(),year=2013,sugar=FakeSugar)
     assert out["truth_accessed"] is False
     assert out["corpus_namespace"]=="sonotaco-final-label-free-sugar-v1"
+    assert out["comparator_pair_identifier"]=="ORBITTRACE_VS_SUGAR"
     assert out["clone_iterations"]==1000
+    assert len(FakeSugar.seeds)==1000
+    assert FakeSugar.seeds[0]==(20170209,"sonotaco-final-label-free-sugar-v1",2013,"ORBITTRACE_VS_SUGAR",0)
+    assert FakeSugar.seeds[-1]==(20170209,"sonotaco-final-label-free-sugar-v1",2013,"ORBITTRACE_VS_SUGAR",999)
     assert out["retained_family_count"]==1
     assert out["families"][0]["member_ids"]==["E000","E001","E002","E003","E004"]
+
+
+def test_sugar_quality_fails_closed():
+    cases=[("qc",15.0,"convergence-angle"),("vg_sd",4.0001,"speed-uncertainty"),("ra_sd",-0.1,"uncertainty")]
+    for key,value,text in cases:
+        rs=records(); rs[0][key]=value
+        try: adapter.run_sugar(rs,year=2013,sugar=FakeSugar)
+        except RuntimeError as exc: assert text in str(exc)
+        else: raise AssertionError(f"invalid Sugar {key} accepted")
+    rs=records(); rs[0]["ra_sd"]=0.0; rs[0]["dec_sd"]=0.0; rs[0]["vg_sd"]=0.0
+    assert adapter.run_sugar(rs,year=2013,sugar=FakeSugar)["truth_accessed"] is False
 
 
 def test_hdbscan_truth_free():
@@ -108,5 +127,5 @@ def test_source_identity_fails_closed():
 
 
 if __name__=="__main__":
-    test_sugar_truth_free(); test_hdbscan_truth_free(); test_truth_key_fails_closed(); test_year_mismatch_fails_closed(); test_source_identity_fails_closed()
+    test_sugar_truth_free_and_seed_contract(); test_sugar_quality_fails_closed(); test_hdbscan_truth_free(); test_truth_key_fails_closed(); test_year_mismatch_fails_closed(); test_source_identity_fails_closed()
     print("PASS_FINAL_PRETRUTH_COMPARATOR_ADAPTER_SYNTHETIC_TESTS")

@@ -16,6 +16,7 @@ from typing import Any, Sequence
 import numpy as np
 
 SUGAR_CORPUS = "sonotaco-final-label-free-sugar-v1"
+SUGAR_PAIR_ID = "ORBITTRACE_VS_SUGAR"
 SUGAR_CORE_SHA256 = "5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb"
 HDBSCAN_SOURCE_SHA256 = "a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2"
 
@@ -114,10 +115,17 @@ def run_sugar(
     require(getattr(sugar, "__source_sha256__", None) == SUGAR_CORE_SHA256,
             "Sugar decoded-source SHA drift")
     for row in records:
-        for key in ("ra", "dec", "ra_sd", "dec_sd", "vg_sd"):
+        for key in ("ra", "dec", "ra_sd", "dec_sd", "vg_sd", "qc"):
             require(row.get(key) is not None and math.isfinite(float(row[key])), f"Sugar missing {key}")
-        require(float(row["ra_sd"]) > 0 and float(row["dec_sd"]) > 0 and float(row["vg_sd"]) > 0,
+        ra_sd = float(row["ra_sd"])
+        dec_sd = float(row["dec_sd"])
+        vg_sd = float(row["vg_sd"])
+        qc = float(row["qc"])
+        vg = float(row["vg"])
+        require(ra_sd >= 0.0 and dec_sd >= 0.0 and vg_sd >= 0.0,
                 "Sugar uncertainty eligibility violated")
+        require(qc > 15.0, "Sugar convergence-angle eligibility violated")
+        require(vg_sd <= 0.10 * vg + 1.0, "Sugar speed-uncertainty eligibility violated")
 
     require(int(sugar.MIN_SAMPLES) == SUGAR_MIN_SAMPLES, "Sugar MIN_SAMPLES drift")
     require(float(sugar.EPS_PERCENTILE) == SUGAR_EPS_PERCENTILE, "Sugar epsilon percentile drift")
@@ -144,7 +152,9 @@ def run_sugar(
     merger = sugar.OverlapGraphMerger(len(records))
     iteration_cluster_counts: list[int] = []
     for iteration in range(SUGAR_CLONE_ITERATIONS):
-        seed = sugar.stable_seed(SUGAR_SEED_ROOT, SUGAR_CORPUS, int(year), int(iteration))
+        seed = sugar.stable_seed(
+            SUGAR_SEED_ROOT, SUGAR_CORPUS, int(year), SUGAR_PAIR_ID, int(iteration)
+        )
         clone_features = sugar.clone_feature_matrix(
             sol, ra, dec, vg, ra_sd, dec_sd, vg_sd, seed=seed
         )
@@ -165,6 +175,7 @@ def run_sugar(
         "year": int(year),
         "source_sha256": SUGAR_CORE_SHA256,
         "corpus_namespace": SUGAR_CORPUS,
+        "comparator_pair_identifier": SUGAR_PAIR_ID,
         "event_count": len(records),
         "epsilon": float(epsilon),
         "clone_iterations": SUGAR_CLONE_ITERATIONS,
