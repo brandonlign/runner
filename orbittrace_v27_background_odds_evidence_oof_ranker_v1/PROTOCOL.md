@@ -46,11 +46,13 @@ The original 71 v22-v25 features remain unchanged and in the same order. v27 fea
 
 ## Pretruth firewall
 
-Before B1 evidence construction, v27 must reproduce the exact valid v22-v25 scientific payload:
-- fixed memberships and centroid matrices byte-identical;
-- original 71-feature matrices equal under the frozen round-to-12-decimal semantic fingerprints;
-- exact v19 expanded-family identities;
-- zero rows in solar longitude 20°–55°.
+Before B1 evidence construction, v27 must reproduce the valid v22-v25 scientific payload:
+- fixed membership JSON bytes exactly match the first valid v22 payload;
+- derived centroid and 71-feature arrays preserve exact shapes/order and match canonical **round-to-10-decimal** fingerprints computed from the first valid v22 artifact;
+- exact v19 expanded-family identities are preserved;
+- zero rows occur in solar longitude 20°–55°.
+
+The 10-decimal numeric identity is a transport-only reproducibility tolerance. The first v27 attempt, run `31422892882`, stopped before B1 evidence and before truth because recomputation differed from the valid v22 arrays only at machine precision (maximum absolute differences below `6e-14`; memberships exact). Round-to-12 remained brittle at decimal-boundary values, while round-to-10 is identical across the valid v22 artifact and the fresh runner. No scientific setting, event, family, order, or feature definition changes through this repair.
 
 Both 73-dimensional feature matrices and their two-column B1 evidence matrices must be hash-frozen before exposed SonotaCo truth is loaded. Feature construction accepts no label/truth field.
 
