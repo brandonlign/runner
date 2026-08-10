@@ -53,7 +53,7 @@ jobs:
             python orbittrace_wavelet_catalogue_v3/audit_development_source.py
             test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
           )
-          python -m py_compile orbittrace_event_membership_calibration_lab_v1/run_lab.py
+          python -m py_compile orbittrace_event_membership_calibration_lab_v1/run_lab.py orbittrace_event_membership_calibration_lab_v1/run_strict_group.py
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-pooled-year-centroid-v8-development
@@ -77,10 +77,10 @@ jobs:
           test "$(sha256sum input/p12/drift_conditioned_two_view_membership_p12_development.json | cut -d' ' -f1)" = '96698c1a7ba700716a79e7bc8b7bc9acb2f9aec653095a5d7e33b14000b87a38'
       - name: Run strict-group event-level membership calibration lab
         env:
-          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8:.
         run: |
           set -euo pipefail
-          python -u orbittrace_event_membership_calibration_lab_v1/run_lab.py \
+          python -u orbittrace_event_membership_calibration_lab_v1/run_strict_group.py \
             --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
@@ -93,7 +93,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_event_membership_calibration_lab_v1/run_lab.py input/p12/p12_expanded_families.json.gz input/p12/p12_decisions_pretruth.json.gz > output/source_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_event_membership_calibration_lab_v1/run_lab.py orbittrace_event_membership_calibration_lab_v1/run_strict_group.py input/p12/p12_expanded_families.json.gz input/p12/p12_decisions_pretruth.json.gz > output/source_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
