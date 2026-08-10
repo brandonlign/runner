@@ -1,0 +1,125 @@
+name: OrbitTrace v16 label-free multiscale source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_v16_label_free_multiscale_v1/**'
+      - '.github/workflows/orbittrace_v16_label_free_multiscale_v1_source_audit.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify predecessor provenance and source-only boundary
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin b1e257e9961c9240215a8ba2d64e1f7f8aa17a6e
+          git show FETCH_HEAD:orbittrace_label_free_sparse_support_v6/run_development.py > /tmp/label_free_v6.py
+          test "$(git hash-object /tmp/label_free_v6.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
+          git fetch --no-tags --depth=1 origin a46ad1c6668d06a3e707cff6a8307f8e0969bb82
+          git show FETCH_HEAD:orbittrace_multiscale_consensus_v15/rank_pretruth.py > /tmp/v15_rank.py
+          test "$(git hash-object /tmp/v15_rank.py)" = '47e47f48efe149811f836a825d460081246fcbf2'
+          git show FETCH_HEAD:orbittrace_multiscale_consensus_v15/PROTOCOL.md > /tmp/v15_protocol.md
+          test "$(git hash-object /tmp/v15_protocol.md)" = 'b7218d64d720d03f7a8bfdc109b34d7fad9b2d26'
+          git fetch --no-tags --depth=1 origin c9d6c44704013ba0c9430100e98a29a56b453304
+          git show FETCH_HEAD:orbittrace_sparse_support_multiplicity_v5/run_holdout.py > /tmp/v5.py
+          test "$(git hash-object /tmp/v5.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
+          test "$(git hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '674eaec2acd8bf908bde797243c9414f0fa9559d'
+          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          test ! -e orbittrace_v16_label_free_multiscale_v1/RUN.md
+          test ! -e orbittrace_v16_label_free_multiscale_v1/EXECUTE.md
+      - name: Audit frozen architecture constants and pretruth ordering
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          fam=Path('orbittrace_v16_label_free_multiscale_v1/family_builder.py').read_text()
+          multi=Path('orbittrace_v16_label_free_multiscale_v1/multiscale.py').read_text()
+          geom=Path('orbittrace_v16_label_free_multiscale_v1/gmn_geometry.py').read_text()
+          ev=Path('orbittrace_v16_label_free_multiscale_v1/evaluate_development.py').read_text()
+          protocol=Path('orbittrace_v16_label_free_multiscale_v1/PROTOCOL.md').read_text()
+          for token in (
+              'FIRST_SHORTLIST = 64', 'AUDIT_SHORTLIST = 128', 'MIN_ANCHOR_COUNT = 2',
+              'MAX_QUARTETS_PER_BIN = 512', 'FAMILY_LINK_RADIUS = 1.5',
+              'score_threshold_applied": False', 'calibration_events_used": 0',
+          ):
+              assert token in fam, token
+          for token in (
+              'ALL_CAPS = (16, 24, 32, 48, 64, 72, 96, 128)',
+              '128: (128, 96, 64)', '96: (96, 72, 48)', '64: (64, 48, 32)', '32: (32, 24, 16)',
+              'statistics.median', 'min(cap,N_local); fail only if N_local<4',
+          ):
+              assert token in multi, token
+          assert 'normalize_label' not in geom
+          assert '["label"]' not in geom and "['label']" not in geom
+          assert 'geometry_column_map' in geom and 'truth_column_resolved": False' in geom
+          assert ev.index('manifest_path.write_text') < ev.index('support.parse_catalogue')
+          assert ev.index('all_orders = {') < ev.index('support.parse_catalogue')
+          assert 'PASS_LABEL_FREE_MULTISCALE_CONSENSUS_V16_TARGET_EXCLUDED_DEVELOPMENT' in protocol
+          assert 'both' in protocol.lower() and '2020/2021' in protocol and '2022/2023' in protocol
+          print('PASS_V16_STATIC_SOURCE_FIREWALL')
+          PY
+      - name: Compile and run synthetic tests
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 scipy==1.11.4 scikit-learn==1.4.2
+          python -m py_compile \
+            orbittrace_v16_label_free_multiscale_v1/family_builder.py \
+            orbittrace_v16_label_free_multiscale_v1/gmn_geometry.py \
+            orbittrace_v16_label_free_multiscale_v1/multiscale.py \
+            orbittrace_v16_label_free_multiscale_v1/run_gmn_pretruth.py \
+            orbittrace_v16_label_free_multiscale_v1/evaluate_development.py \
+            orbittrace_v16_label_free_multiscale_v1/aggregate.py \
+            orbittrace_v16_label_free_multiscale_v1/test_v16.py
+          python -m unittest orbittrace_v16_label_free_multiscale_v1.test_v16 -v
+      - name: Emit source-only audit
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          paths=[
+              'orbittrace_v16_label_free_multiscale_v1/PROTOCOL.md',
+              'orbittrace_v16_label_free_multiscale_v1/family_builder.py',
+              'orbittrace_v16_label_free_multiscale_v1/gmn_geometry.py',
+              'orbittrace_v16_label_free_multiscale_v1/multiscale.py',
+              'orbittrace_v16_label_free_multiscale_v1/run_gmn_pretruth.py',
+              'orbittrace_v16_label_free_multiscale_v1/evaluate_development.py',
+              'orbittrace_v16_label_free_multiscale_v1/aggregate.py',
+          ]
+          out={
+              'verdict':'PASS_V16_LABEL_FREE_MULTISCALE_SOURCE_AUDIT',
+              'files':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths},
+              'predecessor_label_free_v6_blob':'7995fc6b75d1fd51eb4b304ace39db28a5a1e876',
+              'predecessor_v15_rank_blob':'47e47f48efe149811f836a825d460081246fcbf2',
+              'predecessor_v5_blob':'0136cb1603c947070947d1754bc83910b76415b9',
+              'catalogue_access':False,
+              'truth_access':False,
+              'sonotaco_access':False,
+              'maarsy_access':False,
+              'target_information_access':False,
+          }
+          Path('output/source_audit.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v16-label-free-multiscale-source-audit
+          path: output/source_audit.json
+          if-no-files-found: error
+          retention-days: 90
