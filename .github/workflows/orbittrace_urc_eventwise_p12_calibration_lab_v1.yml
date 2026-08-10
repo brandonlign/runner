@@ -67,10 +67,19 @@ jobs:
           test "$(sha256sum /tmp/run_urc_union.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
           python -m py_compile \
             orbittrace_urc_eventwise_p12_calibration_lab_v1/run_lab.py \
-            orbittrace_urc_eventwise_p12_calibration_lab_v1/run_artifact_hash_compatible.py \
+            orbittrace_urc_eventwise_p12_calibration_lab_v1/run_strict_group.py \
             /tmp/run_urc_union.py \
             urc-source/orbittrace_unified_recurrent_catalogue_lab_v1/run_lab.py \
             urc-source/orbittrace_unified_recurrent_catalogue_lab_v2/run_lab.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_urc_eventwise_p12_calibration_lab_v1/run_lab.py').read_text()
+          assert p.count('if not truth["positive"] or truth["best_label"] is None:') == 1
+          a=Path('orbittrace_urc_eventwise_p12_calibration_lab_v1/run_strict_group.py').read_text()
+          assert 'if truth[\\"best_label\\"] is None:' in a
+          assert 'all hard fragments with an eligible best-known GMN shower' in a
+          print('PASS_PREEXEC_STRICT_GROUP_ADAPTER_GUARD')
+          PY
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-pooled-year-centroid-v8-development
@@ -137,7 +146,7 @@ jobs:
           PYTHONPATH: .:urc-source:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_urc_eventwise_p12_calibration_lab_v1/run_artifact_hash_compatible.py \
+          python -u orbittrace_urc_eventwise_p12_calibration_lab_v1/run_strict_group.py \
             --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
@@ -162,7 +171,7 @@ jobs:
           git rev-parse HEAD > output/lab_commit.txt
           sha256sum \
             orbittrace_urc_eventwise_p12_calibration_lab_v1/run_lab.py \
-            orbittrace_urc_eventwise_p12_calibration_lab_v1/run_artifact_hash_compatible.py \
+            orbittrace_urc_eventwise_p12_calibration_lab_v1/run_strict_group.py \
             /tmp/run_urc_union.py \
             input/union/urc_union_ranking_lab_v1.json \
             input/p12/drift_conditioned_two_view_membership_p12_development.json \
