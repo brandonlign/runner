@@ -99,8 +99,6 @@ def _families_from_labels(
             row["membership_probability_mean"] = float(np.mean(ps))
             row["membership_probability_max"] = max(ps)
         families.append(row)
-    # Primary output order is deterministic and independent of truth. Native label comes from the
-    # frozen algorithm; family ID is only a stable content-derived external identifier.
     families.sort(key=lambda row: (int(row["native_label"]), str(row["family_id"])))
     return families
 
@@ -113,6 +111,8 @@ def run_sugar(
 ) -> dict[str, Any]:
     """Execute exact frozen Sugar core on an already pairwise-eligible shared manifest."""
     _validate_records(records, year)
+    require(getattr(sugar, "__source_sha256__", None) == SUGAR_CORE_SHA256,
+            "Sugar decoded-source SHA drift")
     for row in records:
         for key in ("ra", "dec", "ra_sd", "dec_sd", "vg_sd"):
             require(row.get(key) is not None and math.isfinite(float(row[key])), f"Sugar missing {key}")
@@ -186,6 +186,8 @@ def run_hdbscan(
 ) -> dict[str, Any]:
     """Execute exact frozen catalogue-HDBSCAN functions on pairwise-eligible shared rows."""
     _validate_records(records, year)
+    require(getattr(hdbscan_runner, "__source_sha256__", None) == HDBSCAN_SOURCE_SHA256,
+            "HDBSCAN decoded-source SHA drift")
     require(int(hdbscan_runner.MIN_CLUSTER_SIZE) == HDBSCAN_MIN_CLUSTER_SIZE,
             "HDBSCAN min-cluster-size drift")
     require(str(hdbscan_runner.HDBSCAN_VERSION) == HDBSCAN_VERSION, "HDBSCAN version drift")
