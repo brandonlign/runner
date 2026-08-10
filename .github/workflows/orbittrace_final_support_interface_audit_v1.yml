@@ -41,12 +41,11 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import inspect, pathlib, types
+          import inspect, pathlib
           import orbittrace_p19_subthreshold_recurrence.run_development as p19
           runtime=p19.mult.load_frozen_runtime()
           support=runtime.load_support_module(pathlib.Path('frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts'))
           print('support.load_sources',inspect.signature(support.load_sources))
-          print(inspect.getsource(support.load_sources))
           print('support.parse_catalogue',inspect.signature(support.parse_catalogue))
           print('runtime attrs',sorted(x for x in dir(runtime) if 'load' in x.lower() or 'source' in x.lower()))
           class A: pass
@@ -59,6 +58,7 @@ jobs:
               print('base wrap180',inspect.signature(base.wrap180))
           except Exception as exc:
               print('load_sources_without_baseline_json=FAIL',type(exc).__name__,str(exc))
+              raise
           print('PASS_FINAL_SUPPORT_INTERFACE_AUDIT')
           print('SCIENTIFIC_DATA_ACCESSED=false TARGET_ACCESSED=false')
           PY
