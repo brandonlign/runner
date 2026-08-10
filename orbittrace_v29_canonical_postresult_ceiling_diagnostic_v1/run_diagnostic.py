@@ -9,10 +9,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from scipy.optimize import Bounds, LinearConstraint, milp
+from scipy.optimize import Bounds, LinearConstraint, linear_sum_assignment, milp
 from scipy.sparse import lil_matrix
-
-from orbittrace_v29_purity_diversity_sonotaco_canonical_v1 import evaluate_exposed as exact_eval
 
 PANELS=(('sugar',2013),('sugar',2014),('hdbscan',2013),('hdbscan',2014))
 CATALOGUE_SHA='dd751abd4330f58b4056eb8da473ee4d19ae756211f0538c41b252ffc9fb352b'
@@ -23,6 +21,35 @@ def require(ok:bool,msg:str)->None:
     if not ok: raise RuntimeError(msg)
 def sha(p:Path)->str: return hashlib.sha256(p.read_bytes()).hexdigest()
 def dump(p:Path,obj:Any)->None: p.write_text(json.dumps(obj,indent=2,sort_keys=True,allow_nan=False)+'\n')
+
+
+def evaluate_exact(families:list[dict[str,Any]],truth:dict[str,str],budget:int)->dict[str,Any]:
+    """Exact inline transport of PR #973 evaluate(); no diagnostic rule enters here."""
+    counts=Counter(v for v in truth.values() if v!='SPORADIC')
+    labels=sorted(k for k,n in counts.items() if n>=4)
+    truth_sets={l:{eid for eid,v in truth.items() if v==l} for l in labels}; truth_ids=set(truth)
+    active=[]
+    for family in families:
+        members=set(map(str,family['event_ids'])) & truth_ids
+        if members: active.append((int(family['rank']),str(family['family_id']),members))
+    active=sorted(active,key=lambda x:(x[0],x[1]))[:int(budget)]
+    mat=np.zeros((len(labels),len(active)),dtype=np.float64)
+    for i,label in enumerate(labels):
+        actual=truth_sets[label]
+        for j,(_r,_fid,pred) in enumerate(active):
+            ov=len(actual&pred)
+            if ov:
+                precision=ov/len(pred); recall=ov/len(actual); mat[i,j]=2*precision*recall/(precision+recall)
+    n=max(len(labels),len(active)); cost=np.zeros((n,n),dtype=np.float64); cost[:len(labels),:len(active)]=-mat
+    ri,cj=linear_sum_assignment(cost)
+    vals=[]; matches=[]
+    for i,j in zip(ri.tolist(),cj.tolist()):
+        if i>=len(labels): continue
+        val=float(mat[i,j]) if j<len(active) else 0.0; vals.append(val)
+        if j<len(active) and val>0:
+            rank,fid,pred=active[j]; actual=truth_sets[labels[i]]; ov=len(actual&pred); precision=ov/len(pred); recall=ov/len(actual)
+            matches.append({'label':labels[i],'family_id':fid,'rank':rank,'f1':val,'overlap':ov,'precision':precision,'recall':recall})
+    return {'eligible_showers':len(labels),'macro_f1':float(np.mean(vals)) if vals else 0.0,'recovered_f1_gt_0_5':int(sum(x>0.5 for x in vals)),'candidate_used':len(active),'matched_positive_pairs':matches}
 
 
 def f1_matrix(families:list[dict[str,Any]],truth:dict[str,str]):
@@ -83,7 +110,7 @@ def main()->int:
     all_headroom=True
     for route,year in PANELS:
         truth=json.loads((a.truth_root/f'truth_{route}_{year}.json').read_text()); ev=json.loads((a.truth_root/f'evaluation_{route}_{year}.json').read_text())
-        budget=int(ev['candidate_budget']['comparator_budget']); lit=ev['comparator_summary']; cur=exact_eval.evaluate(families,truth,budget); prior=frozen_by[(route,year)]
+        budget=int(ev['candidate_budget']['comparator_budget']); lit=ev['comparator_summary']; cur=evaluate_exact(families,truth,budget); prior=frozen_by[(route,year)]
         require(abs(float(cur['macro_f1'])-float(prior['candidate_macro_f1']))<1e-12 and int(cur['recovered_f1_gt_0_5'])==int(prior['candidate_recovered_f1_gt_0_5']),'#973 panel reproduction failed')
         labels,active,mat=f1_matrix(families,truth); require(len(labels)==int(cur['eligible_showers']),'eligible shower semantics changed')
         top=sorted(range(len(active)),key=lambda j:(active[j]['rank'],active[j]['family_id']))[:budget]
