@@ -1,0 +1,94 @@
+name: OrbitTrace v15 canonical event adapters v1 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_v15_canonical_events_v1/**'
+      - '.github/workflows/orbittrace_v15_canonical_event_adapters_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run synthetic equivalence and firewall tests
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v15_canonical_events_v1/canonical.py \
+            orbittrace_v15_canonical_events_v1/test_canonical.py
+          PYTHONPATH=. python orbittrace_v15_canonical_events_v1/test_canonical.py
+      - name: Audit transport-only source and frozen mappings
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          root=Path('orbittrace_v15_canonical_events_v1')
+          src=(root/'canonical.py').read_text()
+          protocol=(root/'PROTOCOL.md').read_text()
+          tree=ast.parse(src)
+          imports=set()
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import):
+                  imports.update(x.name.split('.')[0] for x in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module:
+                  imports.add(n.module.split('.')[0])
+          forbidden_imports={'requests','urllib','http','socket','subprocess','h5py','tarfile','zipfile','gmn_python_api','pandas','numpy'}
+          assert not imports.intersection(forbidden_imports), imports.intersection(forbidden_imports)
+
+          for token in (
+              'CANONICAL_FIELDS',
+              '"id"', '"year"', '"sol"', '"sun_lon"', '"ecl_lat"', '"vg"',
+              '"iau"', '"complex_key"',
+              'MAARSY_FINAL_YEARS = (2021, 2022)',
+              'BLIND_LOW = 20.0', 'BLIND_HIGH = 55.0',
+              'return project_existing(record, allowed_years=(2013, 2014))',
+              'sun_lon=wrap180(slon)',
+              'speed = math.sqrt(sum(x * x for x in components))',
+          ):
+              assert token in src, token
+
+          # No replacement-catalogue or target surface belongs in this transport layer.
+          low=(src+'\n'+protocol).lower()
+          for token in ('dms1991', 'orbittrace-april', 'target_ra', 'target_dec', 'target_coordinate'):
+              assert token not in low, token
+          assert 'no dms route' in protocol.lower()
+          assert 'format/transport refactor only' in protocol.lower()
+          assert 'survey identity may not branch the scientific detector' in protocol.lower()
+
+          # Existing frozen survey normalizers must expose the same geometry definitions.
+          son=Path('orbittrace_final_sonotaco_normalizer_v1/normalizer.py').read_text()
+          assert '"sol": float(sol)' in son
+          assert '"sun_lon": float(base.wrap180(float(ecl_lon) - float(sol)))' in son
+          assert '"ecl_lat": float(ecl_lat)' in son
+          assert '"vg": float(vg)' in son
+
+          maa=Path('orbittrace_final_maarsy_normalizer_v1/normalizer.py').read_text()
+          assert '"sol": float(sol[j])' in maa
+          assert '"sun_lon": float(wrap180(float(slon[j])))' in maa
+          assert '"ecl_lat": float(slat[j])' in maa
+          assert 'speed = np.linalg.norm(vels, axis=1)' in maa
+
+          assert not (root/'RUN.md').exists()
+          assert not (root/'EXTERNAL_RUN.md').exists()
+          print('PASS_ORBITTRACE_V15_CANONICAL_EVENT_ADAPTERS_SOURCE_AUDIT')
+          print('NO_SCIENTIFIC_DATA_NO_METHOD_CHANGE_NO_TARGET_ACCESS')
+          PY
+      - name: Record source identities
+        run: |
+          set -euo pipefail
+          sha256sum \
+            orbittrace_v15_canonical_events_v1/PROTOCOL.md \
+            orbittrace_v15_canonical_events_v1/canonical.py \
+            orbittrace_v15_canonical_events_v1/test_canonical.py
