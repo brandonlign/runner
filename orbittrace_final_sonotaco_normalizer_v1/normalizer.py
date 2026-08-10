@@ -6,11 +6,11 @@ spent SonotaCo schema knowledge before either reserved 2013/2014 scientific arch
 The 20°–55° target interval is rejected immediately after solar longitude is decoded and before
 any other scientific field is interpreted. The shower field is never read.
 
-The shared manifest deliberately carries every raw observable needed by any frozen final method:
-OrbitTrace geometry, Sugar RA/Dec/Vg uncertainties, and native orbital elements that a promoted
-P12/M2 membership layer would require. Carrying a field does not authorize an algorithm to use it;
-each frozen method still consumes only its predeclared inputs. This prevents a weaker comparator
-from being created merely because the common parser discarded uncertainty fields.
+The shared manifest deliberately carries every raw observable needed by the frozen final methods:
+OrbitTrace geometry, Sugar RA/Dec/Vg uncertainties, and the q/e/convergence-angle fields required
+by the frozen catalogue-HDBSCAN quality interface. Carrying a field does not select on it; each
+method's pairwise eligibility is applied only after the common base manifest is frozen and before
+truth is opened.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ EXPECTED_EFFECTIVE_HEADER = (
 REQUIRED_GEOMETRY_HEADERS = {"soldeg", "radeg", "dedeg", "vgkms", "ncam"}
 SHARED_NUMERIC_HEADERS = {
     "radeg", "rasddeg", "dedeg", "desddeg", "vgkms", "vgsdkms",
-    "qau", "e", "perideg", "nodedeg", "incldeg", "ncam",
+    "qau", "e", "perideg", "nodedeg", "incldeg", "qcdeg", "ncam",
 }
 
 
@@ -83,9 +83,8 @@ def normalize_annual_csv(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Return target-excluded shared rows and a structural/quality audit.
 
-    The common row keeps uncertainty/orbit values even when they are missing/nonfinite (as None).
-    Pairwise frozen adapters may later require positive uncertainties or complete orbital elements;
-    those pairwise eligibility rules are applied before any truth is opened.
+    The common row keeps uncertainty/orbit/quality values even when missing/nonfinite (as None).
+    Frozen pairwise adapters apply their own structural eligibility before any truth is opened.
     """
     require(year in {2013, 2014}, f"normalizer is reserved only for SonotaCo 2013/2014, got {year}")
     text = payload.decode("utf-8-sig")
@@ -152,12 +151,13 @@ def normalize_annual_csv(
             "dec": float(dec),
             "dec_sd": values["desddeg"],
             "vg_sd": values["vgsdkms"],
-            # Native orbital elements for a possible already-frozen M2/P12 membership transport.
+            # Native orbit/quality fields carried for exact label-free comparator eligibility.
             "q": values["qau"],
             "e": values["e"],
             "peri": values["perideg"],
             "node": values["nodedeg"],
             "inc": values["incldeg"],
+            "qc": values["qcdeg"],
             "ncam": float(ncam),
             "iau": 0,
             "complex_key": "HIDDEN",
@@ -168,6 +168,12 @@ def normalize_annual_csv(
             and values["desddeg"] is not None and values["desddeg"] > 0.0
             and values["vgsdkms"] is not None and values["vgsdkms"] > 0.0
         )
+        counts["retained_with_hdbscan_quality_fields"] += int(
+            values["qcdeg"] is not None
+            and values["vgsdkms"] is not None
+            and values["qau"] is not None
+            and values["e"] is not None
+        )
         counts["retained_with_complete_orbit"] += int(all(
             values[name] is not None for name in ("qau", "e", "perideg", "nodedeg", "incldeg")
         ))
@@ -175,7 +181,7 @@ def normalize_annual_csv(
     output_fields = [
         "id", "year", "sol", "sun_lon", "ecl_lat", "vg",
         "ra", "ra_sd", "dec", "dec_sd", "vg_sd",
-        "q", "e", "peri", "node", "inc", "ncam", "iau", "complex_key",
+        "q", "e", "peri", "node", "inc", "qc", "ncam", "iau", "complex_key",
     ]
     audit = {
         "year": int(year),
@@ -195,7 +201,7 @@ def normalize_annual_csv(
         "target_region_non_solar_fields_decoded": False,
         "output_fields": output_fields,
         "raw_fields_carried_for_same_information_parity": [
-            "ra", "ra_sd", "dec", "dec_sd", "vg", "vg_sd", "q", "e", "peri", "node", "inc", "ncam"
+            "ra", "ra_sd", "dec", "dec_sd", "vg", "vg_sd", "q", "e", "peri", "node", "inc", "qc", "ncam"
         ],
     }
     require(len(events) == len(seen_ids), "normalized event ID collision")
@@ -210,8 +216,34 @@ def sugar_pairwise_eligible(event: dict[str, Any]) -> bool:
     )
 
 
+def hdbscan_pairwise_eligible(event: dict[str, Any]) -> bool:
+    """Frozen label-free physical eligibility for final catalogue HDBSCAN.
+
+    Base shared-manifest geometry/ncam cuts are already satisfied. This function implements only
+    the additional final #820 HDBSCAN requirements and never reads shower truth.
+    """
+    qc = event.get("qc")
+    vg = event.get("vg")
+    vg_sd = event.get("vg_sd")
+    q = event.get("q")
+    ecc = event.get("e")
+    if any(value is None for value in (qc, vg, vg_sd, q, ecc)):
+        return False
+    values = [float(qc), float(vg), float(vg_sd), float(q), float(ecc)]
+    if not all(math.isfinite(value) for value in values):
+        return False
+    qc_f, vg_f, vg_sd_f, q_f, e_f = values
+    return (
+        qc_f >= 15.0
+        and vg_f > 0.0
+        and vg_sd_f / vg_f <= 0.10
+        and e_f <= 1.0
+        and q_f <= 1.0
+    )
+
+
 def orbit_pairwise_eligible(event: dict[str, Any]) -> bool:
-    """Structural orbit completeness for an already-frozen P12/M2 transport, if M2 is promoted."""
+    """Historical structural orbit-completeness helper; unused by final M0/#839."""
     values = [event[name] for name in ("q", "e", "peri", "node", "inc")]
     return all(value is not None and math.isfinite(float(value)) for value in values)
 
@@ -237,13 +269,13 @@ def self_test() -> None:
         ra: str = "100", dec: str = "20", vg: str = "30", ncam: str = "2",
         ra_sd: str = "0.2", dec_sd: str = "0.3", vg_sd: str = "0.4",
         q: str = "0.5", e: str = "0.8", peri: str = "120", node: str = "220", inc: str = "10",
-        shower: str = "SECRET",
+        qc: str = "20", shower: str = "SECRET",
     ) -> list[str]:
         values = ["0"] * EFFECTIVE_HEADER_WIDTH
         for key, value in {
             "soldeg": sol, "radeg": ra, "dedeg": dec, "vgkms": vg, "ncam": ncam,
             "rasddeg": ra_sd, "desddeg": dec_sd, "vgsdkms": vg_sd,
-            "qau": q, "e": e, "perideg": peri, "nodedeg": node, "incldeg": inc,
+            "qau": q, "e": e, "perideg": peri, "nodedeg": node, "incldeg": inc, "qcdeg": qc,
             "shower": shower,
         }.items():
             values[idx[key]] = value
@@ -257,11 +289,12 @@ def self_test() -> None:
     writer.writerow(row(
         "30", ra="NOT_A_NUMBER", dec="NOT_A_NUMBER", vg="NOT_A_NUMBER", ncam="X",
         ra_sd="BAD", dec_sd="BAD", vg_sd="BAD", q="BAD", e="BAD", peri="BAD", node="BAD", inc="BAD",
-        shower="TARGET_SECRET",
+        qc="BAD", shower="TARGET_SECRET",
     ))
     writer.writerow(row("100", vg="4.9"))
     writer.writerow(row("110", ncam="1"))
-    writer.writerow(row("120", ra="200", dec="-10", vg="50", ncam="3", ra_sd="0", q=""))
+    # Base-valid row that is intentionally ineligible for both Sugar and HDBSCAN pairwise universes.
+    writer.writerow(row("120", ra="200", dec="-10", vg="50", ncam="3", ra_sd="0", vg_sd="6", q="", qc="10"))
     events, audit = normalize_annual_csv(buf.getvalue().encode("utf-8"), year=2013, base=_synthetic_base(), id_prefix="X")
     assert [e["sol"] for e in events] == [10.0, 120.0]
     assert audit["counts"]["blind_removed_before_any_other_scientific_field"] == 1
@@ -269,10 +302,12 @@ def self_test() -> None:
     assert audit["shower_column_row_accessed"] is False
     assert audit["target_region_non_solar_fields_decoded"] is False
     assert sugar_pairwise_eligible(events[0]) is True
+    assert hdbscan_pairwise_eligible(events[0]) is True
     assert orbit_pairwise_eligible(events[0]) is True
     assert sugar_pairwise_eligible(events[1]) is False
+    assert hdbscan_pairwise_eligible(events[1]) is False
     assert orbit_pairwise_eligible(events[1]) is False
-    assert events[0]["ra_sd"] == 0.2 and events[0]["q"] == 0.5
+    assert events[0]["ra_sd"] == 0.2 and events[0]["q"] == 0.5 and events[0]["qc"] == 20.0
     assert all(e["complex_key"] == "HIDDEN" and e["iau"] == 0 for e in events)
     assert all(20.0 > e["sol"] or e["sol"] > 55.0 for e in events)
 
