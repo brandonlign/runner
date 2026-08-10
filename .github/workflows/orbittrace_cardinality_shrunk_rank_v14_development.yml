@@ -33,9 +33,9 @@ jobs:
           test "$(cat orbittrace_cardinality_shrunk_rank_v14/RUN.md)" = 'EXECUTE_CARDINALITY_SHRUNK_RANK_V14_TARGET_EXCLUDED_DEVELOPMENT'
           test "$(git hash-object orbittrace_cardinality_shrunk_rank_v14/PROTOCOL.md)" = 'f53c92cb5815e7ba22e3c062330595fa9bcbec28'
           test "$(git hash-object orbittrace_cardinality_shrunk_rank_v14/rank_pretruth.py)" = '3ed0807d82a301bdcc217456f612831f7d77738c'
-          test "$(git hash-object orbittrace_cardinality_shrunk_rank_v14/evaluate_frozen.py)" = '59a619a20280a3aad0b86fb1295474a3696ef466'
+          test "$(git hash-object orbittrace_cardinality_shrunk_rank_v14/evaluate_frozen.py)" = '8a0009bee0f4337bd69e90dbaa4b6484930975af'
           python -m py_compile orbittrace_cardinality_shrunk_rank_v14/rank_pretruth.py orbittrace_cardinality_shrunk_rank_v14/evaluate_frozen.py
-          if git grep -Eiq '013a\.zip|014a\.zip|MAARSY|OrbitTrace-April|target_ra|target_dec|target_member' -- orbittrace_cardinality_shrunk_rank_v14/*.py; then
+          if git grep -Eiq '013a\.zip|014a\.zip|astro\.sk|requests\.|urllib|curl |wget |OrbitTrace-April|target_ra|target_dec|target_member' -- orbittrace_cardinality_shrunk_rank_v14/*.py; then
             echo 'forbidden external/target transport surface in v14 runtime source' >&2
             exit 1
           fi
@@ -52,8 +52,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          p=Path('input/v13-result/v13_development_result.json')
-          r=json.loads(p.read_text())
+          r=json.loads(Path('input/v13-result/v13_development_result.json').read_text())
           assert r['verdict']=='FAIL_DENSITY_CAPPED_MULTIPLICITY_V13_TARGET_EXCLUDED_DEVELOPMENT'
           assert r['sonotaco_2013_2014_access'] is False
           assert r['maarsy_access'] is False
