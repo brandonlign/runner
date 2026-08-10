@@ -1,0 +1,65 @@
+name: OrbitTrace final comparator selected source audit v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - '.github/workflows/orbittrace_final_comparator_selected_source_audit_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd
+          path: sugar-source
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: a15737166cc9e1917f2e3d1b63cc42096008ae2e
+          path: hdbscan-source
+      - name: Print only adapter-relevant frozen source blocks
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast,base64,gzip,hashlib
+          from pathlib import Path
+          def decode(paths):
+              e=''.join(''.join(Path(p).read_text().split()) for p in paths)
+              return gzip.decompress(base64.b64decode(e,validate=True)).decode()
+          core=decode([f'sugar-source/orbittrace_literature_comparison/sugar_uncertainty_core_parts/part{i:02d}.b64' for i in range(3)])
+          sr=decode([f'sugar-source/orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part{i:02d}.b64' for i in range(4)])
+          hr=decode([f'hdbscan-source/orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part{i:02d}.b64' for i in range(5)])
+          assert hashlib.sha256(core.encode()).hexdigest()=='5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb'
+          assert hashlib.sha256(hr.encode()).hexdigest()=='a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'
+          def block(src,names,label):
+              tree=ast.parse(src)
+              lines=src.splitlines()
+              for node in tree.body:
+                  if isinstance(node,ast.FunctionDef) and node.name in names:
+                      print(f'===== {label}:{node.name} =====')
+                      print('\n'.join(lines[node.lineno-1:node.end_lineno]))
+          block(core,{'transferred_epsilon','dbscan_clusters','hard_assignment'},'SUGAR_CORE')
+          block(sr,{'score_iteration','master_summary'},'SUGAR_RUNNER')
+          # Print the master-cluster construction statements from main, not archive/truth parsing.
+          tree=ast.parse(sr); lines=sr.splitlines()
+          main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+          main_lines=lines[main.lineno-1:main.end_lineno]
+          keys=('cluster_instances','master','overlap','connected','recurrence','hard_assignment','score_iteration')
+          for i,line in enumerate(main_lines):
+              if any(k in line for k in keys):
+                  lo=max(0,i-3); hi=min(len(main_lines),i+5)
+                  print('===== SUGAR_MAIN_CONTEXT =====')
+                  print('\n'.join(main_lines[lo:hi]))
+          block(hr,{'quality_pass','feature_matrix','run_hdbscan'},'HDBSCAN')
+          print('PASS_FINAL_COMPARATOR_SELECTED_SOURCE_AUDIT')
+          print('SCIENTIFIC_DATA_ACCESSED=false TARGET_ACCESSED=false')
+          PY
