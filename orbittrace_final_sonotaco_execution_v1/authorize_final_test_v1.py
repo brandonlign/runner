@@ -20,7 +20,11 @@ NOT_READY_EVALUATOR = "NOT_AUTHORIZED_EVALUATOR_IDENTITY"
 NOT_READY_EXTERNAL = "NOT_AUTHORIZED_EXTERNAL_GATE_FREEZE"
 INVALID_FIREWALL = "NOT_AUTHORIZED_FIREWALL_INTEGRITY"
 
-GENERATOR_PASS = "PASS_URC_PAIR_PORTABLE_GENERATOR_GMN_EQUIVALENCE"
+GENERATOR_PASS = "PASS_URC_PAIR_PORTABLE_GENERATOR_GMN_OPERATIONAL_EQUIVALENCE"
+GENERATOR_NUMERIC_ATOL = 1e-12
+GENERATOR_NUMERIC_RTOL = 1e-12
+GENERATOR_PREDICTION_ATOL = 1e-12
+GENERATOR_FINAL_ORDER_SHA = "9063270f131b81bb0032026b2742b985ab0f8d5655abb46a1d405d30501b6d7d"
 MODEL_SHA = "ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909"
 FEATURE_SHA = "5d215c5562c0ccce967d81ff0a087ca83b1afda95a269888d2219ef669d198d1"
 PREDICTION_SHA = "493d39cd57f272ee088b1c1c80240c2af99595a5e8a3c91defe693cd460041ac"
@@ -43,6 +47,14 @@ def is_sha(x: Any) -> bool:
 
 def is_digest(x: Any) -> bool:
     return isinstance(x, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", x) is not None
+
+
+def exact_float(x: Any, expected: float) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and float(x) == expected
+
+
+def bounded_nonnegative_float(x: Any, ceiling: float) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and 0.0 <= float(x) <= ceiling
 
 
 def result(state: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -79,13 +91,21 @@ def adjudicate(p: dict[str, Any]) -> dict[str, Any]:
         "p19_soft_count": g.get("p19_soft_count") == 1075,
         "p20_soft_count": g.get("p20_soft_count") == 3203,
         "union_count": g.get("union_count") == 4504,
-        "hard_order": g.get("exact_hard_order_match") is True,
-        "hard_family": g.get("exact_hard_family_match") is True,
-        "p19_family": g.get("exact_p19_family_match") is True,
-        "p20_family": g.get("exact_p20_family_match") is True,
-        "p20_quartets": g.get("exact_p20_isolated_quartet_match") is True,
+        "hard_order_exact": g.get("exact_hard_order_match") is True,
+        "hard_family_exact": g.get("exact_hard_family_match") is True,
+        "p19_discrete_exact": g.get("exact_p19_discrete_match") is True,
+        "p19_numeric_equivalent": g.get("p19_numeric_equivalent") is True,
+        "p19_atol_frozen": exact_float(g.get("p19_numeric_atol"), GENERATOR_NUMERIC_ATOL),
+        "p19_rtol_frozen": exact_float(g.get("p19_numeric_rtol"), GENERATOR_NUMERIC_RTOL),
+        "p19_max_abs_bounded": bounded_nonnegative_float(g.get("p19_numeric_max_abs_difference"), GENERATOR_NUMERIC_ATOL),
+        "p20_family_exact": g.get("exact_p20_family_match") is True,
+        "p20_quartets_exact": g.get("exact_p20_isolated_quartet_match") is True,
+        "features_numeric_equivalent": g.get("feature_matrix_numeric_equivalent") is True,
+        "prediction_bounded": bounded_nonnegative_float(g.get("prediction_max_abs_difference"), GENERATOR_PREDICTION_ATOL),
+        "final_order_exact": g.get("exact_final_application_order_match") is True,
+        "final_order_identity": g.get("final_application_order_sha256") == GENERATOR_FINAL_ORDER_SHA,
         "no_performance": g.get("performance_metric_computed") is False,
-        "no_truth": g.get("truth_labels_used_by_generator") is False,
+        "no_truth": g.get("truth_labels_used_by_generator_or_ranker") is False,
         "no_sonotaco": g.get("sonotaco_2013_2014_access") is False,
         "no_maarsy": g.get("maarsy_scientific_access") is False,
         "no_target": g.get("target_information_access") is False,
