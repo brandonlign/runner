@@ -60,6 +60,32 @@ def dedup(families: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(out.values())
 
 
+def best_family_truth(
+    hidden: dict[str, str],
+    eligible_labels: dict[str, Counter[int]],
+    family: dict[str, Any],
+) -> tuple[str | None, bool]:
+    """Exact URC-v1 family-truth semantics: one best-F1 label per family."""
+    ids = [str(x) for x in family["event_ids"]]
+    if not ids:
+        return None, False
+    counts = Counter(hidden.get(eid, "SPORADIC") for eid in ids)
+    rows = []
+    for label, per_year in eligible_labels.items():
+        overlap = int(counts.get(label, 0))
+        if overlap <= 0:
+            continue
+        total = int(sum(per_year.values()))
+        precision = overlap / len(ids)
+        recall = overlap / total
+        f1 = 2.0 * precision * recall / (precision + recall) if precision + recall else 0.0
+        rows.append((f1, precision, overlap, label))
+    if not rows:
+        return None, False
+    _f1, precision, overlap, label = max(rows, key=lambda r: (r[0], r[1], r[2], r[3]))
+    return str(label), bool(precision >= 0.5 and overlap >= 4)
+
+
 def qualified_labels(
     hidden: dict[str, str],
     eligible_labels: dict[str, Counter[int]],
@@ -67,16 +93,9 @@ def qualified_labels(
 ) -> set[str]:
     qualified: set[str] = set()
     for fam in families:
-        ids = [str(x) for x in fam["event_ids"]]
-        if not ids:
-            continue
-        counts = Counter(hidden.get(eid, "SPORADIC") for eid in ids)
-        for label, overlap in counts.items():
-            if label not in eligible_labels or overlap < 4:
-                continue
-            precision = overlap / len(ids)
-            if precision >= 0.5:
-                qualified.add(label)
+        label, positive = best_family_truth(hidden, eligible_labels, fam)
+        if positive and label is not None:
+            qualified.add(label)
     return qualified
 
 
@@ -134,6 +153,8 @@ def main() -> int:
         "p21_augmented_union": dedup(hard + p19_soft + p20_soft + p21_soft),
     }
     coverage = {name: qualified_labels(hidden, eligible_labels, fams) for name, fams in groups.items()}
+    require(len(coverage["hard"]) == 95, f"exact URC hard coverage reproduction failed: {len(coverage['hard'])}")
+    require(len(coverage["existing_union"]) == 256, f"exact P19+P20 union coverage reproduction failed: {len(coverage['existing_union'])}")
     increment = coverage["p21_augmented_union"] - coverage["existing_union"]
     p21_only_vs_existing = coverage["p21_soft"] - coverage["existing_union"]
 
@@ -148,6 +169,7 @@ def main() -> int:
         "configuration": {
             "years": list(YEARS),
             "blind_exclusion": list(BLIND),
+            "coverage_semantics": "exact URC-v1 one-best-F1-label-per-family truth semantics",
             "material_increment_gate": {"new_qualified_labels_at_least": 10, "new_8_24_labels_at_least": 3},
         },
         "eligible_known_showers": len(eligible_labels),
@@ -161,6 +183,8 @@ def main() -> int:
         },
         "p21_soft_only_beyond_existing_union_count": len(p21_only_vs_existing),
         "integrity": {
+            "reproduces_hard_coverage_95": len(coverage["hard"]) == 95,
+            "reproduces_p19_p20_union_coverage_256": len(coverage["existing_union"]) == 256,
             "candidate_generation_recomputed": False,
             "frozen_prelabel_payloads_only": True,
             "sonotaco_2013_2014_access": False,
@@ -172,6 +196,7 @@ def main() -> int:
     (args.output / "P21_UNION_INCREMENT_LAB_V1.md").write_text(
         "# P21 unique-coverage increment diagnostic\n\n"
         f"- verdict: `{verdict}`\n"
+        f"- exact hard coverage reproduction: **{len(coverage['hard'])}**\n"
         f"- existing P19+P20 union qualified coverage: **{len(coverage['existing_union'])}**\n"
         f"- P21-augmented qualified coverage: **{len(coverage['p21_augmented_union'])}**\n"
         f"- new qualified streams from P21: **{len(increment)}**\n"
