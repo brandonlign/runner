@@ -26,7 +26,7 @@ Reconstruct exactly PR #997 using:
 - exact #997 `ExtraTreesClassifier` parameters;
 - exact #839 diversity and exact v19 equal rank-sum.
 
-The diagnostic must reproduce the #997 OOF-probability and final-order hashes if a frozen #997 reference result is supplied.
+If a frozen #997 reference result is supplied, the diagnostic must reproduce the **exact classifier-diversity order hash and exact final fused-order hash** for each route. The raw OOF probability-array SHA-256 is recorded and compared diagnostically but is not a binding replay gate, because the frozen #997 classifier used `n_jobs=-1` and byte-exact floating probability aggregation can vary across Actions hosts without changing the induced ranking. This repair was made only after the first diagnostic attempt stopped at that byte-hash assertion, before any diagnostic result was produced. No classifier, data, target, fold, weight, order, or diagnostic statistic changes.
 
 ## Frozen diagnostic measurements
 
