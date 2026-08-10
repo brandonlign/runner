@@ -31,6 +31,7 @@ jobs:
           test ! -e orbittrace_final_sonotaco_one_shot_v1/RUN.md
           test ! -e orbittrace_final_sonotaco_one_shot_v1/EXECUTE_V2.md
           w=.github/workflows/orbittrace_final_sonotaco_one_shot_v2.yml
+          e=orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py
           src=("$w" orbittrace_final_sonotaco_one_shot_v1/*.py)
           for x in \
             'orbittrace_final_sonotaco_one_shot_v1/EXECUTE_V2.md' \
@@ -45,6 +46,8 @@ jobs:
             'orbittrace-final-comparator-source-export-v1' \
             'hdbscan_2025_runner.py' \
             'sugar_uncertainty_core.py' \
+            "'numpy==2.1.3'" \
+            "'scipy==1.14.1'" \
             'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip' \
             'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'; do
             grep -F "$x" "${src[@]}" >/dev/null
@@ -55,6 +58,12 @@ jobs:
           fi
           if grep -F 'hdbscan_catalogue_runner.py' "$w" >/dev/null; then
             echo 'stale HDBSCAN export filename present in v2' >&2
+            exit 1
+          fi
+          grep -F 'evaluation=evaluator.evaluate_pair(eval_payload)' "$e" >/dev/null
+          grep -F 'final=evaluator.final_verdict(pair_results)' "$e" >/dev/null
+          if grep -F 'evaluator.evaluate_pair(candidate_families' "$e" >/dev/null; then
+            echo 'legacy non-payload evaluator call survived' >&2
             exit 1
           fi
       - name: Compile final orchestration
@@ -79,17 +88,34 @@ jobs:
         run: |
           set -euo pipefail
           PYTHONPATH=. python orbittrace_final_sonotaco_truth_v1/test_truth_boundary.py
-      - name: Run exact frozen evaluator self-test
+      - name: Run exact frozen evaluator self-test and interface audit
         run: |
           set -euo pipefail
+          python -m pip install --disable-pip-version-check --upgrade 'numpy==2.1.3' 'scipy==1.14.1'
+          python - <<'PY'
+          import numpy,scipy
+          assert numpy.__version__=='2.1.3',numpy.__version__
+          assert scipy.__version__=='1.14.1',scipy.__version__
+          print('PASS_EXACT_FROZEN_854_NUMERICAL_RUNTIME')
+          PY
           base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/orbittrace_final_matched_evaluator_v1.py
           test "$(sha256sum /tmp/orbittrace_final_matched_evaluator_v1.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
           PYTHONPATH=/tmp python orbittrace_final_matched_evaluator_v1/self_test.py
-      - name: Source guard against target and stale datasets
+          python - <<'PY'
+          import importlib.util,inspect
+          p='/tmp/orbittrace_final_matched_evaluator_v1.py'
+          spec=importlib.util.spec_from_file_location('frozen_eval',p)
+          assert spec and spec.loader
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          assert str(inspect.signature(m.evaluate_pair)) == "(payload: 'dict[str, Any]') -> 'dict[str, Any]'"
+          assert str(inspect.signature(m.final_verdict)) == "(pair_results: 'list[dict[str, Any]]') -> 'dict[str, Any]'"
+          print('PASS_EXACT_FROZEN_854_CALLABLE_INTERFACE')
+          PY
+      - name: Source guard against target, MAARSY, or stale datasets
         run: |
           set -euo pipefail
-          if grep -REiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|SonotaCo 2023|SonotaCo 2025|MAARSY 2020|MAARSY 2023' orbittrace_final_sonotaco_one_shot_v1 .github/workflows/orbittrace_final_sonotaco_one_shot_v2.yml; then
-            echo 'forbidden target/stale-dataset surface in final one-shot v2 source' >&2
+          if grep -REiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|SonotaCo 2023|SonotaCo 2025|MAARSY 2020|MAARSY 2021|MAARSY 2022|MAARSY 2023' orbittrace_final_sonotaco_one_shot_v1 .github/workflows/orbittrace_final_sonotaco_one_shot_v2.yml; then
+            echo 'forbidden target/MAARSY/stale-dataset surface in final one-shot v2 source' >&2
             exit 1
           fi
           echo PASS_FINAL_SONOTACO_ONE_SHOT_V2_SOURCE_FREEZE
