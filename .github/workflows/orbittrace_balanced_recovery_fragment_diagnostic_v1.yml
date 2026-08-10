@@ -1,0 +1,130 @@
+name: OrbitTrace balanced-recovery fragment-vs-group diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-balanced-recovery-order-diagnostic-v1
+    paths:
+      - 'orbittrace_balanced_recovery_fragment_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_balanced_recovery_fragment_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-balanced-recovery-fragment-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact replay runtime and pin diagnostic sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/ref input/truth output
+          test "$(git hash-object orbittrace_sonotaco_balanced_recovery_oof_v1/train_evaluate.py)" = 'f2d443dbef2457c7432a7b3b21392f897e512ca0'
+          test "$(git hash-object orbittrace_v23_worst_year_oof_ranker_v1/train_evaluate.py)" = '67ce5e68106e5ce34f3ea4ad2afc9f49824698c5'
+          test "$(git hash-object orbittrace_balanced_recovery_fragment_diagnostic_v1/PROTOCOL.md)" = '0ec868e897dc172525bbfe92d947fd421a973802'
+          test "$(git hash-object orbittrace_balanced_recovery_fragment_diagnostic_v1/run_diagnostic.py)" = '7ac719f3b62334796ae0a925f580cb4cbfd2c0b6'
+          python -m py_compile orbittrace_balanced_recovery_fragment_diagnostic_v1/run_diagnostic.py orbittrace_sonotaco_balanced_recovery_oof_v1/train_evaluate.py orbittrace_v23_worst_year_oof_ranker_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify exact #839 source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-sonotaco-balanced-recovery-oof-development-v1
+          path: input/ref
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31443291930
+      - name: Verify immutable #997 reference artifact
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,pathlib
+          r=json.load(open('input/ref/result/SONOTACO_BALANCED_RECOVERY_OOF_RESULT.json'))
+          assert r['verdict']=='FAIL_BALANCED_RECOVERY_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT'
+          assert r['feature_dimension']==71 and r['strict_whole_shower_oof'] is True and r['post_result_second_search'] is False
+          for route in ('sugar','hdbscan'):
+              root=pathlib.Path('input/ref')/route
+              m=json.load(open(root/'V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Verify immutable exposed truth package
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('input/truth/V15_FINAL_LITERATURE_RESULT.json'))
+          assert r['verdict']=='FAIL_FINAL_LITERATURE_SUPERIORITY'
+          PY
+      - name: Diagnose group recognition versus fragment selection
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_balanced_recovery_fragment_diagnostic_v1/run_diagnostic.py \
+            --sugar-root input/ref/sugar \
+            --hdbscan-root input/ref/hdbscan \
+            --truth-root input/truth \
+            --ranker-source input/ranker/run_urc_union_ranker.py \
+            --reference-result input/ref/result/SONOTACO_BALANCED_RECOVERY_OOF_RESULT.json \
+            --output output
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/BALANCED_RECOVERY_FRAGMENT_DIAGNOSTIC_V1.json'))
+          assert r['verdict']=='PASS_BALANCED_RECOVERY_FRAGMENT_DIAGNOSTIC_COMPLETE'
+          assert r['feature_dimension']==71 and r['new_literature_promotion_evaluation_performed'] is False and r['successor_defined'] is False
+          assert r['alternate_order_selected'] is False and r['candidate_membership_changed'] is False
+          assert r['feature_search'] is False and r['target_search'] is False and r['model_search'] is False and r['class_weight_selected'] is False and r['probability_calibration_selected'] is False
+          assert r['diversity_selected'] is False and r['fusion_weight_selected'] is False and r['parameter_search'] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_balanced_recovery_fragment_diagnostic_v1/PROTOCOL.md orbittrace_balanced_recovery_fragment_diagnostic_v1/run_diagnostic.py orbittrace_sonotaco_balanced_recovery_oof_v1/train_evaluate.py orbittrace_v23_worst_year_oof_ranker_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py input/ref/result/SONOTACO_BALANCED_RECOVERY_OOF_RESULT.json > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-balanced-recovery-fragment-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
