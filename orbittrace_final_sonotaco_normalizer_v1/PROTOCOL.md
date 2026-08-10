@@ -4,7 +4,7 @@
 
 Freeze the candidate/comparator row-normalization contract before either reserved SonotaCo 2013 or 2014 scientific archive is opened. The exact annual-U2 schema is known only from already-spent historical SonotaCo interfaces. This source contains no reserved-year URL/hash/row count and cannot access either final-test archive.
 
-V2 fixes one preaccess fairness omission in v1: the shared manifest **carries, without selecting on,** the raw uncertainty fields required by frozen Sugar and native orbit fields already present in the validated schema. Final OrbitTrace M0/#839 ignores the orbit fields; they remain carried only so the shared parser does not silently define a method-specific row universe. OrbitTrace, Sugar, and HDBSCAN consume only their frozen predeclared fields. No known-shower/background truth is exposed before output freeze.
+The shared manifest **carries, without selecting on,** every raw field required by the frozen final methods: OrbitTrace geometry, Sugar RA/Dec/Vg uncertainties, and catalogue-HDBSCAN physical-quality fields. Final OrbitTrace M0/#839 ignores comparator-only fields. No known-shower/background truth is exposed before output freeze.
 
 ## Fixed schema
 
@@ -30,21 +30,24 @@ Every retained base row carries:
 - stable `id`, explicit `year`, `sol`, `sun_lon`, `ecl_lat`, `vg`;
 - raw `ra`, `dec`;
 - raw Sugar uncertainty inputs `ra_sd`, `dec_sd`, `vg_sd`;
-- native orbit inputs `q`, `e`, `peri`, `node`, `inc`;
+- native `q`, `e`, `peri`, `node`, `inc`;
+- native convergence angle `qc` from U2 `qcdeg`;
 - `ncam`;
 - hidden placeholders `iau=0`, `complex_key=HIDDEN`.
 
-Missing/nonfinite uncertainty or orbit values are represented as null and do **not** remove an otherwise valid base row. This prevents the shared parser from silently choosing one comparator's structural universe.
+Missing/nonfinite comparator-only values are represented as null and do **not** remove an otherwise valid base row. This prevents the shared parser from silently choosing one comparator's structural universe.
 
 ## Pairwise structural eligibility
 
 Before truth is opened:
 
 - **Sugar pairwise universe** additionally requires positive finite `ra_sd`, `dec_sd`, and `vg_sd`, because the frozen uncertainty-clone algorithm cannot faithfully operate without them.
-- **HDBSCAN pairwise universe** uses the base geometry rows and ignores uncertainty/orbit fields except for any exact label-free physical quality fields already frozen in its final comparator interface.
-- **OrbitTrace M0/#839** uses the base geometry rows and ignores uncertainty/orbit fields.
+- **HDBSCAN pairwise universe** applies exactly the label-free physical-quality requirements frozen in #820 after the shared base cuts: finite `qc`, `vg_sd`, `q`, and `e`; `qc >= 15°`; `vg_sd / vg <= 0.10`; `e <= 1.0`; and `q <= 1.0 AU`.
+- **OrbitTrace M0/#839** uses the base geometry rows and ignores uncertainty/orbit/convergence-angle fields.
 
 For each comparator, the exact pairwise common-row universe is the intersection of the final candidate's frozen structural eligibility and that comparator's frozen structural eligibility. No pairwise structural filter may depend on shower truth, method score, target identity, or post-output performance.
+
+The normalizer implements these two comparator eligibility predicates separately. They are deterministic functions of carried label-free fields and do not mutate the base manifest.
 
 ## Stable identity
 
