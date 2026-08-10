@@ -28,11 +28,18 @@ The adapter calls the exact frozen Sugar functions/classes rather than reproduci
 
 Frozen constants are checked at runtime: min samples 5, epsilon percentile 23, 1000 clone iterations, 0.5 overlap, minimum recurrence 100, strong recurrence 500, seed root 20170209.
 
-The remaining seed namespace is fixed pre-data as:
+The input rows must already satisfy the exact final #820 Sugar pairwise rule, which is also rechecked at execution: multi-camera/base validity, **strict convergence angle `qc > 15°`**, finite nonnegative RA/Dec/Vg uncertainty, and **`vg_sd <= 0.10*vg + 1.0 km/s`**. Zero uncertainty is a valid zero-width Gaussian; negative uncertainty is rejected.
 
-`sonotaco-final-label-free-sugar-v1`
+The remaining deterministic seed identities are fixed pre-data as:
 
-Each clone seed is the exact frozen core call `stable_seed(20170209, namespace, year, iteration)`. This namespace may not change after any SonotaCo value is opened.
+- corpus namespace: `sonotaco-final-label-free-sugar-v1`;
+- comparator-pair identifier: `ORBITTRACE_VS_SUGAR`.
+
+Each clone seed is the exact frozen-core call:
+
+`stable_seed(20170209, "sonotaco-final-label-free-sugar-v1", year, "ORBITTRACE_VS_SUGAR", iteration)`
+
+Both strings are frozen before final-year scientific access and may not change afterward.
 
 The primary Sugar catalogue is the exact recurrence>=100 `hard_assignment` output. Families contain exactly the event IDs assigned to each nonnegative native label. Probabilities are recorded diagnostically but do not alter membership.
 
