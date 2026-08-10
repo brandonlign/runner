@@ -33,7 +33,7 @@ Both #839 candidate jobs completed all source/runtime/model restoration and bega
 
 Comparator execution issues are separate from the decisive #839 applicability failure:
 
-- Sugar 2014 successfully produced and froze a truth-free comparator primary output in r4.
+- Sugar 2013 and Sugar 2014 both successfully produced and froze truth-free comparator primary outputs in r4.
 - r4 catalogue HDBSCAN reached its exact frozen `fit_predict` call but hit the scikit-learn keyword rename (`ensure_all_finite` versus `force_all_finite`). This is an execution-compatibility issue, not a clustering result.
 - PR `#903` adds only a fail-closed argument-name compatibility shim while preserving exact scikit-learn 1.4.2, HDBSCAN 0.8.44, inputs, and clustering settings; both SonotaCo source audits passed and PR #903 was merged at `4aacd75cd990c9ca87ba2f50687b5971a4401719`.
 
@@ -41,14 +41,14 @@ Completing comparator plumbing cannot rescue the final comparison because the fr
 
 ## Truth and firewall state
 
+- final pretruth all-output freeze completed: **false**
 - post-output known-shower truth opened: **false**
 - frozen #854 evaluator executed on SonotaCo: **false**
-- final pretruth all-output freeze completed: **false**
 - OrbitTrace target information accessed: **false**
 - OrbitTrace target region opened: **false**
 - MAARSY scientific data accessed: **false**
 
-The workflow therefore produced no matched-performance verdict and no basis for claiming that #839 beat or lost to either comparator.
+The workflow's `freeze` and `truth_and_evaluate` jobs were skipped. It therefore produced no matched-performance verdict and no basis for claiming that #839 beat or lost to either comparator.
 
 ## Scientific interpretation
 
