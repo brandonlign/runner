@@ -1,0 +1,195 @@
+name: OrbitTrace v28 frozen post-membership two-head execution
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v28-postmembership-twohead-contingency-freeze-v1
+    paths:
+      - 'orbittrace_v28_postmembership_twohead_oof_v1/RUN.md'
+      - '.github/workflows/orbittrace_v28_postmembership_twohead_execution_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v28-postmembership-twohead-execution-v1
+      - name: Enforce frozen v28 source and one-file activation intent
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v28_postmembership_twohead_oof_v1/PROTOCOL.md)" = '062ae9656fec952ef6d40ac999210f3d226273f6'
+          test "$(git hash-object orbittrace_v28_postmembership_twohead_oof_v1/train_evaluate.py)" = '7ca4f0940022d6ea4d90ccbf83fbdbd6bfca5dcd'
+          test "$(cat orbittrace_v28_postmembership_twohead_oof_v1/RUN.md)" = 'EXECUTE_FROZEN_V28_ONLY_AFTER_VALID_V27_PRETRUTH_PASS'
+          python -m py_compile orbittrace_v28_postmembership_twohead_oof_v1/train_evaluate.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact ranking runtime
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v27 input/v5 input/ranker input/truth output
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v27-postmembership-feature-pretruth-freeze-schema-compatible-v7
+          path: input/v27
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31425363499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v27-postmembership-feature-pretruth-freeze-id-bound-v5
+          path: input/v5
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31424616547
+      - name: Restore exact pretruth stage1 bases required by frozen v28 evaluator
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v5/base-sugar/V22_PRETRUTH_FEATURE_MANIFEST.json | cut -d' ' -f1)" = '78dcf37d25898d71651cbd1dbbe0b8f5e5a11621ad75f236c53c88e52818ae79'
+          test "$(sha256sum input/v5/base-sugar/centroids.npy | cut -d' ' -f1)" = 'afe777b62b32dc2c18b6036939b64f1f1390b0383507c157b4682c386a2c94f5'
+          test "$(sha256sum input/v5/base-hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json | cut -d' ' -f1)" = '8f885f0b3eb900f6315feb8fc16324e1fcec73ed53d0b3a6c685b64d08da4881'
+          test "$(sha256sum input/v5/base-hdbscan/centroids.npy | cut -d' ' -f1)" = '619d13b46fb286e46135fb1984264ed2323efa36da2be516c0832962825f4452'
+          python - <<'PY'
+          import json
+          import shutil
+          from pathlib import Path
+          for route in ['sugar','hdbscan']:
+              src=Path('input/v5')/f'base-{route}'
+              m=json.load(open(src/'V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              assert m['feature_dimension']==71
+              assert m['truth_accessed'] is False
+              assert m['target_information_access'] is False
+              assert m['maarsy_scientific_access'] is False
+              assert m['dms_scientific_access'] is False
+              dst=Path('input/v27')/f'base-{route}'
+              dst.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(src/'V22_PRETRUTH_FEATURE_MANIFEST.json',dst/'V22_PRETRUTH_FEATURE_MANIFEST.json')
+              shutil.copy2(src/'centroids.npy',dst/'centroids.npy')
+          print('PASS_RESTORED_IMMUTABLE_PRETRUTH_STAGE1_BASES')
+          PY
+      - name: Authorize exact immutable v27 pretruth interface
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          expected={
+            'sugar':{
+              'stable':'911bbc1d763f79ee661863a6d5c2cc98d97d0debd276e64461d45a5447c7bfeb',
+              'post':'f0d3d51020887f7d1552c01b5bf50b898fd6668d42c53b16979b66d5357d26c0',
+              'combined':'e933fb7af4bb298610b3e83f6dcd6bc86cf13adc17a0e11afc72b22e4021856e',
+              'payload':'8f4d72f3d4026e80b7a267b5765f6159436ac5487381bab07542d7d85482cc27'},
+            'hdbscan':{
+              'stable':'7137a5c0892e5d316db38915ff164f2a8fb6e8fbe8e0ed2cfa063097968a1895',
+              'post':'58eacf8e880b7129d392a39e23b2a43c0e9cec58b99020976d0c74e64cd14d87',
+              'combined':'3c3b6fb0867e2d3802814e068fa9e5251fdb9e7b71a1e8063558c69bb57f5b85',
+              'payload':'51e1e9e02807516d6c075226e2183dc49d9a9af09abcee869872d44c4f0b97dd'} }
+          for route,e in expected.items():
+              m=json.load(open(f'input/v27/v27-{route}/V27_POSTMEMBERSHIP_FEATURE_MANIFEST.json'))
+              assert m['verdict']=='PASS_V27_POSTMEMBERSHIP_FEATURE_PRETRUTH_FREEZE'
+              assert (m['base_feature_dimension'],m['post_membership_feature_dimension'],m['combined_feature_dimension'])==(71,16,87)
+              assert len(m['stage1_top100_family_ids'])==100
+              assert m['stage1_family_identity_key']=='family_id'
+              assert m['per_family_expanded_membership_identity_pass'] is True
+              assert m['stable_v19_expanded_family_sha256']==e['stable']
+              assert m['post_membership_features_top100_sha256']==e['post']
+              assert m['combined_features_top100_sha256']==e['combined']
+              assert m['expanded_top100_family_payload_sha256']==e['payload']
+              assert m['successor_model_trained'] is False
+              assert m['literature_evaluation_performed'] is False
+              assert m['truth_accessed'] is False
+              assert m['target_information_access'] is False
+              assert m['maarsy_scientific_access'] is False
+              assert m['dms_scientific_access'] is False
+          print('PASS_EXACT_V27_PRETRUTH_AUTHORIZATION')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify exact frozen #839 ranker source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Verify immutable exposed truth/comparator package
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('input/truth/V15_FINAL_LITERATURE_RESULT.json'))
+          assert r['verdict']=='FAIL_FINAL_LITERATURE_SUPERIORITY'
+          print('PASS_IMMUTABLE_EXPOSED_TRUTH_PACKAGE')
+          PY
+      - name: Execute exact frozen v28 strict-group OOF evaluation
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v28_postmembership_twohead_oof_v1/train_evaluate.py \
+            --v27-root input/v27 \
+            --truth-root input/truth \
+            --ranker-source input/ranker/run_urc_union_ranker.py \
+            --output output
+      - name: Enforce no protected-data access in v28 result
+        if: always()
+        run: |
+          set +e
+          if test -f output/V28_EXPOSED_POSTMEMBERSHIP_TWOHEAD_RESULT.json; then
+            python - <<'PY'
+          import json
+          r=json.load(open('output/V28_EXPOSED_POSTMEMBERSHIP_TWOHEAD_RESULT.json'))
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False
+          assert r['post_result_second_search'] is False
+          PY
+          fi
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v28_postmembership_twohead_oof_v1/PROTOCOL.md \
+            orbittrace_v28_postmembership_twohead_oof_v1/train_evaluate.py \
+            input/v27/v27-sugar/V27_POSTMEMBERSHIP_FEATURE_MANIFEST.json \
+            input/v27/v27-hdbscan/V27_POSTMEMBERSHIP_FEATURE_MANIFEST.json \
+            input/v27/base-sugar/V22_PRETRUTH_FEATURE_MANIFEST.json \
+            input/v27/base-sugar/centroids.npy \
+            input/v27/base-hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json \
+            input/v27/base-hdbscan/centroids.npy \
+            input/ranker/run_urc_union_ranker.py \
+            > output/V28_SOURCE_INPUT_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v28-postmembership-twohead-oof-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
