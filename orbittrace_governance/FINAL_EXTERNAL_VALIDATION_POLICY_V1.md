@@ -2,9 +2,9 @@
 
 ## Permanent panel
 
-The only final external-generalization panel is **MAARSY 2022**.
+The only final external-generalization panel is **MAARSY 2020 + 2021**.
 
-No unfavorable scientific result may trigger a switch to another external survey or year. The panel is validation data, never development data.
+No unfavorable scientific result may trigger a switch to another external survey or year pair. The panel is validation data, never development data.
 
 ## Preflight allowed before final-candidate declaration
 
@@ -13,7 +13,7 @@ A source/schema/transport-only preflight may determine:
 - which raw observables are natively present;
 - exact field semantics and units;
 - deterministic quality-cut implementability;
-- year/archive availability and integrity;
+- both annual partitions' archive availability and integrity;
 - whether the frozen target exclusion can be applied before any target-sensitive processing;
 - whether the final candidate's required observables can be reproduced exactly without proxy or imputation.
 
@@ -23,9 +23,10 @@ The preflight may not inspect event-level scientific values, shower labels, dete
 
 At `FINAL_FOR_LITERATURE_TEST` declaration, **before SonotaCo 2013/2014 scientific access and before MAARSY scientific access**, the project must freeze:
 
-- the exact MAARSY transport/adapter;
+- the exact MAARSY 2020/2021 transport/adapter;
 - every quality cut and support rule;
 - the exact no-retuning parameter mapping from the GMN candidate to MAARSY;
+- the exact two-year recurrence mapping (2020 as one annual scan, 2021 as the other; no pseudo-years);
 - the external evaluation unit and known-shower mapping, if labels are part of evaluation;
 - an objective power floor;
 - all external performance/effect-size gates;
@@ -50,7 +51,7 @@ MAARSY execution permits **zero** post-freeze changes to:
 - calibration architecture;
 - success gates.
 
-If an exact required observable is unavailable, the verdict is `EXTERNAL_ARCHITECTURE_INCOMPATIBLE`, not permission to invent a substitute.
+If an exact required observable, annual partition, or recurrence input is unavailable, the verdict is `EXTERNAL_ARCHITECTURE_INCOMPATIBLE`, not permission to invent a substitute or split one year into pseudo-years.
 
 ## Power
 
@@ -60,7 +61,7 @@ Neither `EXTERNAL_ARCHITECTURE_INCOMPATIBLE` nor `EXTERNAL_POWER_INCONCLUSIVE` s
 
 ## Required final external verdict
 
-Only an exact preregistered `PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION` satisfies the external-generalization requirement.
+Only an exact preregistered `PASS_FINAL_MAARSY_2020_2021_NO_RETUNING_GENERALIZATION` satisfies the external-generalization requirement.
 
 A scientific FAIL is final for that frozen candidate. No MAARSY-based retuning and no replacement validation dataset are allowed.
 
