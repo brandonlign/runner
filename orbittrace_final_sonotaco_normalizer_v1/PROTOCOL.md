@@ -42,7 +42,7 @@ Missing/nonfinite comparator-only values are represented as null and do **not** 
 Before truth is opened:
 
 - **Sugar pairwise universe** additionally requires positive finite `ra_sd`, `dec_sd`, and `vg_sd`, because the frozen uncertainty-clone algorithm cannot faithfully operate without them.
-- **HDBSCAN pairwise universe** applies exactly the label-free physical-quality requirements frozen in #820 after the shared base cuts: finite `qc`, `vg_sd`, `q`, and `e`; `qc >= 15°`; `vg_sd / vg <= 0.10`; `e <= 1.0`; and `q <= 1.0 AU`.
+- **HDBSCAN pairwise universe** applies exactly the label-free physical-quality requirements frozen in #820 after the shared base cuts: finite `qc`, `vg_sd`, `q`, and `e`; `qc >= 15°`; `vg_sd / vg <= 0.10`; **`0 <= e <= 1.0`**; and **`0 < q <= 1.0 AU`**.
 - **OrbitTrace M0/#839** uses the base geometry rows and ignores uncertainty/orbit/convergence-angle fields.
 
 For each comparator, the exact pairwise common-row universe is the intersection of the final candidate's frozen structural eligibility and that comparator's frozen structural eligibility. No pairwise structural filter may depend on shower truth, method score, target identity, or post-output performance.
