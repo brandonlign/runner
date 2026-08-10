@@ -44,7 +44,7 @@ jobs:
             'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'; do
             grep -F "$x" "$w" >/dev/null
           done
-      - name: Compile final orchestration and run existing firewall unit tests
+      - name: Compile final orchestration
         run: |
           set -euo pipefail
           python -m py_compile \
@@ -54,9 +54,21 @@ jobs:
             orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py \
             orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py \
             orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py
-          python orbittrace_final_sonotaco_normalizer_v1/normalizer.py
+      - name: Run final SonotaCo normalizer self-test
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_final_sonotaco_normalizer_v1/normalizer.py
+      - name: Run truth-free comparator adapter tests
+        run: |
+          set -euo pipefail
           PYTHONPATH=. python orbittrace_final_sonotaco_comparators_v1/test_pretruth_comparators.py
+      - name: Run post-output truth-boundary tests
+        run: |
+          set -euo pipefail
           PYTHONPATH=. python orbittrace_final_sonotaco_truth_v1/test_truth_boundary.py
+      - name: Run exact frozen evaluator self-test
+        run: |
+          set -euo pipefail
           base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/evaluator.py
           test "$(sha256sum /tmp/evaluator.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
           PYTHONPATH=/tmp python orbittrace_final_matched_evaluator_v1/self_test.py
