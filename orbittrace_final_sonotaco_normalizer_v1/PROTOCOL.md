@@ -4,7 +4,7 @@
 
 Freeze the candidate/comparator row-normalization contract before either reserved SonotaCo 2013 or 2014 scientific archive is opened. The exact annual-U2 schema is known only from already-spent historical SonotaCo interfaces. This source contains no reserved-year URL/hash/row count and cannot access either final-test archive.
 
-V2 fixes one preaccess fairness omission in v1: the shared manifest now **carries**, without selecting on, the raw uncertainty fields required by frozen Sugar and the orbital elements that an already-frozen M2/P12 membership layer would require if M2 is ultimately promoted. OrbitTrace, Sugar, and HDBSCAN still consume only their frozen predeclared fields. No algorithm receives a field that is hidden from another algorithm on the same pairwise row universe.
+V2 fixes one preaccess fairness omission in v1: the shared manifest **carries, without selecting on,** the raw uncertainty fields required by frozen Sugar and native orbit fields already present in the validated schema. Final OrbitTrace M0/#839 ignores the orbit fields; they remain carried only so the shared parser does not silently define a method-specific row universe. OrbitTrace, Sugar, and HDBSCAN consume only their frozen predeclared fields. No known-shower/background truth is exposed before output freeze.
 
 ## Fixed schema
 
@@ -41,11 +41,10 @@ Missing/nonfinite uncertainty or orbit values are represented as null and do **n
 Before truth is opened:
 
 - **Sugar pairwise universe** additionally requires positive finite `ra_sd`, `dec_sd`, and `vg_sd`, because the frozen uncertainty-clone algorithm cannot faithfully operate without them.
-- **HDBSCAN pairwise universe** uses the base geometry rows and ignores uncertainty/orbit fields.
-- **OrbitTrace M0** uses the base geometry rows and ignores uncertainty/orbit fields.
-- If **M2** is promoted, its separately frozen transport may additionally require complete finite `q,e,peri,node,inc`; that requirement must be applied symmetrically to the OrbitTrace-vs-comparator common-row universe before outputs and before truth.
+- **HDBSCAN pairwise universe** uses the base geometry rows and ignores uncertainty/orbit fields except for any exact label-free physical quality fields already frozen in its final comparator interface.
+- **OrbitTrace M0/#839** uses the base geometry rows and ignores uncertainty/orbit fields.
 
-No pairwise structural filter may depend on shower truth, method score, target identity, or post-output performance.
+For each comparator, the exact pairwise common-row universe is the intersection of the final candidate's frozen structural eligibility and that comparator's frozen structural eligibility. No pairwise structural filter may depend on shower truth, method score, target identity, or post-output performance.
 
 ## Stable identity
 
@@ -57,10 +56,8 @@ For each comparator/year, candidate and comparator receive the exact same pairwi
 
 ## Activation boundary
 
-Passing the synthetic/source audit does **not** authorize SonotaCo 2013/2014 access. Final-test scientific access remains forbidden until:
+GMN methodology selection is complete: **M0/#839 is final and M2 is a permanent no-go**. Passing this normalizer's synthetic/source audit still does **not** authorize SonotaCo 2013/2014 access.
 
-1. GMN M0/M2 adjudication is complete;
-2. the exact integrated candidate executable is frozen;
-3. the candidate is explicitly declared `FINAL_FOR_LITERATURE_TEST`.
+Final-test scientific access remains forbidden until the exact pair-portable #839 generator passes strict GMN structural equivalence and the fail-closed final-test authorization contract in `orbittrace_final_sonotaco_execution_v1/` is satisfied.
 
-MAARSY 2020/2021 and OrbitTrace/20°–55° remain sealed.
+The external endpoint remains **MAARSY 2022**, with **MAARSY 2021 only as permanently unlabeled recurrence support**. MAARSY event-level scientific values and OrbitTrace/20°–55° remain sealed.
