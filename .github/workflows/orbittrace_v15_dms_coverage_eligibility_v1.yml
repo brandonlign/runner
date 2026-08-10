@@ -29,24 +29,29 @@ jobs:
           test "${changed[0]}" = 'orbittrace_v15_dms_coverage_eligibility_v1/RUN.md'
           test "$(cat orbittrace_v15_dms_coverage_eligibility_v1/RUN.md)" = 'EXECUTE_DMS_COVERAGE_ONLY_ELIGIBILITY_V1'
           test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/PROTOCOL.md)" = '5b810e7fe0b418b70ebb6e67fbc3ca707ebdabd5'
-          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py)" = '25b087969ceb10a2b57ecc17a7b09c332a9cfc39'
+          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py)" = '11b9ccf9cb07927df68bffb9b8b36e174e227549'
           python -m py_compile orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py
-      - name: Prove parser ignores forbidden scientific values and pair selection is deterministic
+      - name: Prove preamble discovery ignores forbidden scientific values and pair selection is deterministic
         run: |
           set -euo pipefail
           python - <<'PY'
           import csv,io
           from orbittrace_v15_dms_coverage_eligibility_v1 import audit_coverage as a
           header=['Yr','Mn','Day','LS','RA','DEC','Vg','q','e','i','Sh']
-          b=io.StringIO(newline=''); w=csv.writer(b); w.writerow(header)
+          b=io.StringIO(newline='')
+          b.write('DMS metadata preamble line one\n')
+          b.write('DMS metadata preamble line two\n')
+          w=csv.writer(b); w.writerow(header)
           for year in (1991,1992):
               for bin_id in range(12,24):
                   for repeat in range(7):
                       ls=bin_id*10+1
                       w.writerow([year,6,10.5,ls,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
           w.writerow([1991,4,15.5,30,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
-          raw=b.getvalue().encode(); indices=a.resolve_allowed_indices(header)
-          cov=a.parse_coverage(raw,'utf-8',header,indices)
+          raw=b.getvalue().encode(); text=raw.decode()
+          line_index,delimiter,found_header,indices=a.find_allowed_header(text)
+          assert line_index==2 and found_header==header
+          cov=a.parse_coverage(raw,'utf-8',line_index,delimiter,found_header,indices)
           assert cov[1991]['usable_target_excluded_rows']==84
           assert cov[1992]['usable_target_excluded_rows']==84
           assert cov[1991]['occupied_10deg_bin_count']==12
@@ -57,7 +62,7 @@ jobs:
           for year in (1993,1994,1995):
               fake[year]={'eligible':True,'occupied_10deg_bin_count':15,'usable_target_excluded_rows':100}
           assert a.choose_pair(fake)==(1993,1994)
-          print('PASS_DMS_COVERAGE_ONLY_SYNTHETIC_FIREWALL')
+          print('PASS_DMS_COVERAGE_ONLY_PREAMBLE_AND_FIELD_FIREWALL')
           PY
       - name: Run single official DMS coverage-only eligibility audit with persisted diagnostics
         run: |
