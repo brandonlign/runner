@@ -135,7 +135,7 @@ A pass requires the same route (broad or sparse) against **both Sugar and HDBSCA
 
 ## 10. Consequence
 
-Only a final literature PASS may activate the permanent **MAARSY 2020/2021** no-retuning external validation.
+Only a final literature PASS may activate the permanent **MAARSY 2022** scored no-retuning external validation. The frozen #839 transport may use **MAARSY 2021 only as the predeclared unlabeled annual-recurrence support scan**; no 2021 truth or performance endpoint is permitted.
 
 A final literature failure is final for that frozen candidate on this panel. The candidate may not be tuned to the result and re-tested on SonotaCo 2013/2014 as if fresh, and no replacement SonotaCo year may be opened because the result was unfavorable.
 

@@ -4,62 +4,64 @@
 
 This is a metadata/source-only preflight permitted by `FINAL_EXTERNAL_VALIDATION_POLICY_V1.md`. It is performed before any SonotaCo 2013/2014 scientific access, before any MAARSY event-level scientific value is opened, and before any target access.
 
-It answers one narrow question: can the already-frozen #839 URC discovery architecture be transported **unchanged** to the currently frozen single-year MAARSY 2022 validation panel?
+It asks whether the frozen #839 URC architecture can be transported unchanged while keeping **MAARSY 2022 as the sole scored validation endpoint**.
 
-This file does not replace the validation dataset, inspect a MAARSY event, run the detector, compute a performance endpoint, or authorize external/target access.
+No archive payload, event-level row, shower truth, detector output, or performance endpoint was inspected.
 
 ## Public schema/time-span evidence only
 
-The public MAARSY head-echo catalogue metadata is sufficient to establish that the survey itself is not missing the basic physical-observable class needed for meteor-stream work:
+Public MAARSY metadata establishes:
 
-- Zenodo record `10.5281/zenodo.15553437` identifies the public **MAARSY 2016–2024 Meteor Head Echo RCS Dataset**.
-- Vierinen et al., EGU General Assembly 2025, `10.5194/egusphere-egu25-18621`, describes a nearly continuous 2016–2024 MAARSY catalogue containing atmospheric trajectories, Doppler shifts and radar-cross-section estimates, with Keplerian orbital elements computed for each meteor.
-- The 2026 Atmospheric Measurement Techniques MAARSY study (`Monitoring of lower thermospheric neutral density variations using meteor head echoes`, AMT 19, 4277–4294) describes the processed 2016–2023 survey as providing three-dimensional meteor trajectories and geocentric velocities.
+- Zenodo record `10.5281/zenodo.15553437` identifies the public **MAARSY 2016–2024 Meteor Head Echo RCS Dataset**;
+- Vierinen et al., EGU 2025, `10.5194/egusphere-egu25-18621`, describes a nearly continuous 2016–2024 catalogue with atmospheric trajectories, Doppler information, radar-cross-section estimates, and derived Keplerian orbital elements;
+- Huyghebaert et al., AMT 2026, describes a 2016–2023 processed MAARSY meteor-head-echo catalogue with three-dimensional trajectories and geocentric velocities and explicitly analyzes interannual measurements.
 
-Only these dataset-level descriptions were inspected. No archive payload or event-level row was opened.
+Thus the survey provides both the required physical-observable class and adjacent annual scans including 2021 and 2022 at the dataset-description level.
 
 ## Frozen URC temporal contract
 
-The already-frozen URC proposal architecture is intrinsically a **two-annual-scan recurrence method** rather than a single-catalogue clustering method.
+The #839 proposal architecture is intrinsically a **two-distinct-annual-scan recurrence method**:
 
-The pair-portable #839 generator source makes that contract explicit:
+- application input is an ordered two-year pair with distinct years;
+- hard-v8 family construction uses components from both annual scans;
+- P19 adds cross-year reciprocal recurrence;
+- P20 matches reciprocal isolated quartets across the two annual scans and retains exact 4+4 recurrent membership.
 
-- application input is `years: tuple[int, int]` with two distinct year values;
-- the scan must contain exactly those two year keys;
-- hard-v8 family construction is performed on components from both annual scans;
-- P19 is a recurrence layer constructed after both annual scans exist;
-- P20 forms reciprocal isolated-quartet families by matching quartets from the first supplied year to quartets from the second supplied year, with every retained family carrying both years and exact 4+4 membership.
+The portable adapter may generalize literal year addressing but may not change annual-recurrence semantics, thresholds, density assumptions, family-existence rules, memberships, or ranking.
 
-The portable adapter generalizes literal year addressing only. It does **not** change annual-recurrence semantics, proposal thresholds, event density, or family-existence rules.
+## Initial incompatibility finding
 
-## Compatibility result for the frozen panel
+A literal single-scan interpretation of “MAARSY 2022” is incompatible with the frozen method. Splitting 2022 into pseudo-years would replace independent annual recurrence with within-year subsampling and would therefore be a scientific method change rather than transport.
 
-The frozen validation panel is **MAARSY 2022**, i.e. one calendar year.
+That initial finding remains valid: **MAARSY 2022 alone cannot run full #839 unchanged.**
 
-A single 2022 annual scan cannot satisfy the frozen method's requirement for two distinct annual scans. Creating two pseudo-years by splitting 2022 events would not be a transport operation: it would change the statistical sampling density and, more importantly, replace independent annual recurrence with within-year subsampling. That would alter the scientific family-existence mechanism and is forbidden by the no-retuning/no-proxy external policy.
+## Pre-result transport resolution
 
-Therefore the current combination
+The incompatibility is resolved without changing the scored validation endpoint or the method:
 
-`#839 URC annual-recurrence architecture + MAARSY 2022 single-year validation panel`
+- ordered detector input pair: **MAARSY 2021 + MAARSY 2022**;
+- **2021 role:** permanently unlabeled recurrence-support scan only;
+- **2022 role:** sole scored external-validation year;
+- 2021 is the immediately preceding annual scan in the same public near-continuous survey and was selected mechanically before event-level access;
+- no 2021 known-shower truth, mapping, recovery metric, performance value, selection statistic, or success criterion may ever be opened or computed;
+- only 2022 candidate memberships are evaluated after all detector outputs are frozen;
+- no pseudo-year, alternate support year, alternate scored year, or post-result substitution is permitted.
 
-is **structurally incompatible for full-method no-retuning external validation**.
-
-This conclusion is independent of whether M0 or M2 membership ultimately wins, because M2 is allowed to alter membership only; the hard/P19/P20 two-year proposal architecture remains fixed.
+This preserves the exact scientific requirement that a family demonstrate annual recurrence while retaining MAARSY 2022 as the one validation endpoint requested by the project design.
 
 ## Preaccess verdict
 
-`MAARSY_2022_SINGLE_YEAR_FULL_URC_PREFLIGHT = INCOMPATIBLE`
+`MAARSY_2022_WITH_FIXED_2021_UNLABELED_SUPPORT_PREFLIGHT = STRUCTURALLY_COMPATIBLE`
 
-This is not a scientific performance FAIL and does not consume the external validation panel. It is an architecture/panel compatibility finding made without event values.
+This verdict is transport/schema compatibility only. It is **not** a scientific external-validation PASS, does not consume the MAARSY scientific panel, and does not authorize event-level access.
 
-No external-generalization PASS can be claimed by running a scientifically altered one-year approximation of the URC method. The incompatibility must be resolved at the governance/validation-design level **before** SonotaCo 2013/2014 scientific access if the project is to retain a defensible no-retuning generalization requirement.
-
-This preflight does not itself authorize a dataset substitution or year addition.
+A later source audit must still prove the final pair-portable #839 generator/ranker application can map the MAARSY observables exactly, and the complete 2022 truth/power/performance gate must be frozen before SonotaCo 2013/2014 scientific access.
 
 ## Firewall
 
 - SonotaCo 2013/2014 scientific access: false.
-- MAARSY event-level scientific access: false.
-- MAARSY performance access: false.
+- MAARSY 2021 event-level scientific access: false.
+- MAARSY 2022 event-level scientific access: false.
+- MAARSY truth/performance access: false.
 - solar longitude 20°–55° target-region access: false.
 - OrbitTrace coordinates, members, identity, and prior recovery information: inaccessible.
