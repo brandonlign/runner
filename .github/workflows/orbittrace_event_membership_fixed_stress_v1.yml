@@ -28,6 +28,8 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Enforce one-file activation
         run: |
           set -euo pipefail
@@ -130,6 +132,7 @@ jobs:
         if: always()
         run: |
           set +e
+          mkdir -p output
           sha256sum orbittrace_event_membership_fixed_stress_v1/run_stress.py orbittrace_event_membership_fixed_stress_v1/run_corrected.py event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py input/846/event_membership_calibration_lab_v1.json > output/stress_provenance_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
