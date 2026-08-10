@@ -24,6 +24,7 @@ def configure_pair(
     *,
     support: Any,
     mult: Any,
+    v6: Any,
     v8: Any,
     p19: Any,
     p20: Any,
@@ -36,6 +37,10 @@ def configure_pair(
     mult.YEARS = years
     mult.MONTH_KEYS = month_keys
     mult.TOP_K = 100
+    # v6 is the shared label-free within-year proposal source imported by P19/P20.
+    # Rebind it explicitly rather than relying on its development defaults.
+    v6.YEARS = years
+    v6.MONTH_KEYS = month_keys
     v8.YEARS = years
     v8.MONTH_KEYS = month_keys
     p19.YEARS = years
@@ -102,6 +107,9 @@ def build_p19_pair(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Exact P19 recurrence layer after pair globals have been rebound."""
     require(tuple(p19.YEARS) == tuple(years), "P19 pair configuration changed")
+    # The frozen P19 execution set this support context before building the layer.
+    # Preserve it exactly; the string is not allowed to become an unseen-data tuning knob.
+    support.CORPUS = p19.CORPUS
     soft, diagnostics = p19.build_soft_recurrence(
         hard["components"], hard["hard_families"], scan_by_year, support, base
     )
@@ -206,6 +214,8 @@ def build_p20_pair(
     base: Any,
     p20: Any,
 ) -> dict[str, Any]:
+    # Preserve the frozen P20 support context independently of P19.
+    support.CORPUS = p20.CORPUS
     quartets_by_year: dict[int, list[dict[str, Any]]] = {}
     isolated_audits: dict[str, Any] = {}
     for year in years:
@@ -246,7 +256,10 @@ def build_union_pair(
     p20: Any,
     mult: Any,
 ) -> dict[str, Any]:
-    configure_pair(years, support=support, mult=mult, v8=v8, p19=p19, p20=p20)
+    configure_pair(years, support=support, mult=mult, v6=v6, v8=v8, p19=p19, p20=p20)
+    # P19's frozen run constructs the shared hard graph in the P19 support context.
+    # Hard structures are known to be identical in the P19 and P20 frozen artifacts.
+    support.CORPUS = p19.CORPUS
     hard = build_hard_v8_pair(
         years=years,
         scan_by_year=scan_by_year,
