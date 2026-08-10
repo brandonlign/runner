@@ -27,19 +27,26 @@ V19_METRICS={
     ('sugar',2013):(0.2813397742020527,17),('sugar',2014):(0.3328665843994243,18),
     ('hdbscan',2013):(0.1386807102765093,9),('hdbscan',2014):(0.11367457228624304,5),
 }
-EXPECTED_FILE_SHA={
+# Exact discrete/scientific payload bytes from the first valid v22 run.
+EXPECTED_EXACT_FILE_SHA={
     'sugar':{
-        'features.npy':'3b5ad5b7f900b03ba45b0aadf2f1a71dab054ae56e4d7aca7a880a9216486286',
         'centroids.npy':'afe777b62b32dc2c18b6036939b64f1f1390b0383507c157b4682c386a2c94f5',
         'family_memberships.json':'be5f559f27c1a18dcda28c20b6197278473cdb458ddfd29ec61bc468e33c352a',
-        'V22_PRETRUTH_FEATURE_MANIFEST.json':'bea982e3b44053a785c45a5e8875dcfb64941cc6cc56ff2102905105830e9359',
     },
     'hdbscan':{
-        'features.npy':'ee56b824dc59d5af1a03ccf37d77886a7adaeac18f378137de6647c000101fa6',
         'centroids.npy':'619d13b46fb286e46135fb1984264ed2323efa36da2be516c0832962825f4452',
         'family_memberships.json':'99640747e935df2f4a7c7983bdde843ea59e1814388b8418e040dc04628aee13',
-        'V22_PRETRUTH_FEATURE_MANIFEST.json':'2a81721343dc795e925b1ffea39e50c963a696fcca47ab7784abe6f5f10e9980',
     },
+}
+# Hosted-runner recomputation changed only 3-4 values in feature column 13 by <=1.25e-14.
+# A 12-decimal canonical fingerprint is therefore the frozen semantic identity guard.
+EXPECTED_ROUNDED12_FEATURE_SHA={
+    'sugar':'64a846220928aa9d8cde77462796f8b38c0c00ce605b1a4711fbad2205d08c03',
+    'hdbscan':'2a0e3a06a70601d8045a2d33eadd70c17a65078a7473f51a577bfcf34aa66577',
+}
+EXPECTED_V19_FAMILY_SHA={
+    'sugar':'911bbc1d763f79ee661863a6d5c2cc98d97d0debd276e64461d45a5447c7bfeb',
+    'hdbscan':'7137a5c0892e5d316db38915ff164f2a8fb6e8fbe8e0ed2cfa063097968a1895',
 }
 
 
@@ -56,6 +63,9 @@ def load_module(path: Path,name: str)->Any:
 
 def array_sha(x: np.ndarray)->str:
     a=np.ascontiguousarray(x); h=hashlib.sha256(); h.update(str(a.dtype).encode()); h.update(json.dumps(list(a.shape),separators=(',',':')).encode()); h.update(a.tobytes(order='C')); return h.hexdigest()
+
+def rounded12_sha(x: np.ndarray)->str:
+    return array_sha(np.round(np.asarray(x,dtype=np.float64),12))
 
 
 def eligible_from_year_truth(by_year: dict[int,dict[str,str]])->dict[str,Counter[int]]:
@@ -126,10 +136,16 @@ def main()->int:
     a=p.parse_args(); a.output.mkdir(parents=True,exist_ok=True); require(sha(a.ranker_source)==RANKER_SOURCE_SHA,'#839 ranker source changed')
     roots={'sugar':a.sugar_root,'hdbscan':a.hdbscan_root}
 
-    # Fail closed unless v23 is training on the exact valid v22 pretruth bytes.
+    # Fail closed before reading truth unless the regenerated v22 payload is scientifically identical.
     for route in ROUTES:
-        for name,expected in EXPECTED_FILE_SHA[route].items():
+        for name,expected in EXPECTED_EXACT_FILE_SHA[route].items():
             require(sha(roots[route]/name)==expected,f'{route} {name} differs from valid v22 pretruth payload')
+        pre_X=np.load(roots[route]/'features.npy',allow_pickle=False)
+        require(pre_X.shape[1]==FEATURE_DIM,f'{route} feature dimension changed')
+        require(rounded12_sha(pre_X)==EXPECTED_ROUNDED12_FEATURE_SHA[route],f'{route} semantic feature payload differs from valid v22 beyond machine-epsilon tolerance')
+        pre_meta=json.loads((roots[route]/'V22_PRETRUTH_FEATURE_MANIFEST.json').read_text())
+        require(pre_meta['feature_dimension']==FEATURE_DIM and pre_meta['truth_accessed'] is False,f'{route} invalid pretruth manifest')
+        require(pre_meta['v19_family_sha256']==EXPECTED_V19_FAMILY_SHA[route],f'{route} v19 family identity changed')
 
     truth_year={}; frozen_eval={}
     for route,year in PANELS:
@@ -214,7 +230,7 @@ def main()->int:
     result={
         'scientific_stage':'V23_EXPOSED_SONOTACO_WORST_YEAR_STRICT_GROUP_OOF_RANKING_DEVELOPMENT',
         'sole_scientific_change_from_v22':'regression target combined-two-year F1 -> min per-year F1 for exact v22 best_label',
-        'feature_dimension':FEATURE_DIM,'exact_v22_pretruth_file_identity_pass':True,
+        'feature_dimension':FEATURE_DIM,'exact_v22_discrete_pretruth_identity_pass':True,'v22_feature_semantic_identity_rounded12_pass':True,
         'same_shower_all_fragments_both_routes_same_fold':True,'folds':fold_diag,'target_diagnostics':target_diag,'order_diagnostics':order_diag,
         'v19_control_reproduction_pass':True,'v19_control':control_panels,'all_results':rows,'winner':winner,
         'verdict':'PASS_V23_EXPOSED_WORST_YEAR_OOF_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT' if passed else 'FAIL_V23_WORST_YEAR_OOF_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT',
