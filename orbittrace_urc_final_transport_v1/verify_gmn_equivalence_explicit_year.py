@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""GMN implementation-equivalence test for explicit-year generic URC transport."""
+"""GMN implementation-equivalence test for explicit-year generic URC transport.
+
+This test is implementation-only. It requires byte-identical hard/P19/P20 candidate payloads and
+#853 feature semantics, the exact serialized #853 model, and the deterministic single-thread
+prediction path already frozen by #860. It computes no shower-performance metric.
+"""
 from __future__ import annotations
 
 import argparse
@@ -21,10 +26,10 @@ from orbittrace_urc_final_transport_v1 import generic_two_year_inference_explici
 YEARS = (2022, 2023)
 MONTH_KEYS = tuple(f"{y}-{m:02d}" for y in YEARS for m in range(1, 13))
 EXPECTED_FEATURE_SHA = "5d215c5562c0ccce967d81ff0a087ca83b1afda95a269888d2219ef669d198d1"
-EXPECTED_PREDICTION_SHA = "493d39cd57f272ee088b1c1c80240c2af99595a5e8a3c91defe693cd460041ac"
+EXPECTED_SINGLE_THREAD_PREDICTION_SHA = "0c74aa2bebf82f6e465574baada63a7fb3ac7316c95a77d3f90b3f48a9b450eb"
 EXPECTED_MODEL_SHA = "ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909"
 EXPECTED_ACTIVE_SOURCE_SHA = "dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990"
-EXPECTED_UNSEEN_APPLICATION_SHA = "70f264c5e9f326a68ad88857a522d9ec5789e2d8"
+EXPECTED_UNSEEN_APPLICATION_GIT_BLOB = "1949415fa1d40c0ad4ebedbf5f0fe916886c71d0"
 
 
 def require(ok: bool, msg: str) -> None:
@@ -34,6 +39,11 @@ def require(ok: bool, msg: str) -> None:
 
 def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def git_blob_sha1(path: Path) -> str:
+    data = path.read_bytes()
+    return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
 
 def array_sha(a: np.ndarray) -> str:
@@ -77,7 +87,8 @@ def main() -> int:
     a = parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     require(sha(a.active_ranker_source) == EXPECTED_ACTIVE_SOURCE_SHA, "active URC source changed")
-    require(sha(a.unseen_application) == EXPECTED_UNSEEN_APPLICATION_SHA, "#860 unseen application source changed")
+    require(git_blob_sha1(a.unseen_application) == EXPECTED_UNSEEN_APPLICATION_GIT_BLOB,
+            "#860 unseen application Git blob changed")
     require(sha(a.model) == EXPECTED_MODEL_SHA, "full-GMN fitted model changed")
     urc = load_module(a.active_ranker_source, "active_urc")
     unseen = load_module(a.unseen_application, "unseen_application")
@@ -118,12 +129,23 @@ def main() -> int:
         base=base,
         frozen_ranker_module=urc,
     )
-    require(array_sha(X) == EXPECTED_FEATURE_SHA, f"feature transport mismatch: {array_sha(X)}")
-    model = joblib.load(a.model)
-    pred = np.asarray(model.predict(X), dtype=np.float64)
-    require(array_sha(pred) == EXPECTED_PREDICTION_SHA, f"prediction transport mismatch: {array_sha(pred)}")
+    feature_sha = array_sha(X)
+    require(feature_sha == EXPECTED_FEATURE_SHA, f"feature transport mismatch: {feature_sha}")
+
     ranked = generic.rank_generated_union(generated, scan, YEARS, support, base, urc, unseen, a.model)
     require(np.array_equal(ranked["feature_matrix"], X), "rank feature matrix changed")
+    prediction_sha = unseen.array_sha256(np.asarray(ranked["prediction"], dtype=np.float64))
+    require(prediction_sha == EXPECTED_SINGLE_THREAD_PREDICTION_SHA,
+            f"deterministic prediction transport mismatch: {prediction_sha}")
+    require(int(ranked["prediction_n_jobs"]) == 1, "generic deployment prediction is not deterministic single-thread")
+
+    # Independent deterministic model execution guard.
+    model = joblib.load(a.model)
+    if hasattr(model, "set_params"):
+        model.set_params(n_jobs=1)
+    pred = np.asarray(model.predict(X), dtype=np.float64)
+    require(np.array_equal(pred, np.asarray(ranked["prediction"], dtype=np.float64)),
+            "generic adapter and deterministic serialized-model predictions differ")
 
     result = {
         "verdict": "PASS_GENERIC_TWO_YEAR_URC_EXPLICIT_YEAR_GMN_EQUIVALENCE",
@@ -137,9 +159,9 @@ def main() -> int:
         "hard_payload_sha256": json_sha(hard_payload),
         "p19_payload_sha256": json_sha(p19_payload),
         "p20_payload_sha256": json_sha(p20_payload),
-        "feature_matrix_sha256": array_sha(X),
+        "feature_matrix_sha256": feature_sha,
         "centroid_matrix_sha256": array_sha(cm),
-        "prediction_sha256": array_sha(pred),
+        "deterministic_prediction_sha256": prediction_sha,
         "deployment_rank_sha256": str(ranked["order_sha256"]),
         "tie_rows": len(tie),
         "event_year_addressing": "explicit scan bucket / event-year map; no event-ID encoding assumption",
