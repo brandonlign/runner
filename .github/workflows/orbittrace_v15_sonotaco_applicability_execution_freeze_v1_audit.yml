@@ -1,0 +1,73 @@
+name: OrbitTrace v15 SonotaCo applicability execution freeze audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - '.github/workflows/orbittrace_v15_sonotaco_applicability_v1.yml'
+      - '.github/workflows/orbittrace_v15_sonotaco_applicability_execution_freeze_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove prerequisite ordering and dormant one-file execution boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow=Path('.github/workflows/orbittrace_v15_sonotaco_applicability_v1.yml').read_text()
+          low=workflow.lower()
+
+          required=(
+              'run-id: 31394545821',
+              "q['verdict']=='PASS_V15_LABEL_FREE_V8_DEPLOYMENT_QUALIFICATION'",
+              "assert all(q['direct_v8_identity_gates'].values())",
+              "assert all(q['v15_preservation_gates'].values())",
+              'run-id: 31354363306',
+              'name: orbittrace-final-sonotaco-label-free-preparation-v2',
+              'EXECUTE_V15_SONOTACO_2013_2014_ENGINEERING_APPLICABILITY_V1',
+              "test \"${#changed[@]}\" -eq 1",
+              "test \"${changed[0]}\" = 'orbittrace_v15_sonotaco_applicability_v1/RUN.md'",
+              "assert r['truth_mapping_accessed'] is False",
+              "assert r['comparator_output_accessed'] is False",
+              "assert r['recovery_metric_computed'] is False",
+              "assert r['precision_metric_computed'] is False",
+              "assert r['mrr_computed'] is False",
+          )
+          for token in required:
+              assert token in workflow, token
+
+          one_file=workflow.index('Enforce one-file child before any artifact/data access')
+          qualification_download=workflow.index('Download exact preceding GMN qualification artifact')
+          qualification_gate=workflow.index('Require exact GMN qualification PASS before SonotaCo input access')
+          sonotaco_download=workflow.index('Download already-exposed frozen SonotaCo label-free preparation')
+          sonotaco_execute=workflow.index('Execute no-truth SonotaCo engineering applicability')
+          assert one_file < qualification_download < qualification_gate < sonotaco_download < sonotaco_execute
+
+          # The application workflow may reference the frozen label-free preparation only;
+          # it must never download truth or comparator artifacts.
+          forbidden=(
+              'truth-boundary',
+              'known-shower',
+              'sugar-pretruth',
+              'hdbscan-pretruth',
+              'comparator-source',
+              'final-evaluator',
+          )
+          for token in forbidden:
+              assert token not in low, token
+
+          # Source freeze itself remains dormant; only a later exact one-file child can trigger it.
+          assert not Path('orbittrace_v15_sonotaco_applicability_v1/RUN.md').exists()
+          assert 'workflow_dispatch:' not in workflow
+          print('PASS_V15_SONOTACO_APPLICABILITY_EXECUTION_FREEZE_AUDIT')
+          print('QUALIFICATION_GATE_PRECEDES_SONOTACO_INPUT_ACCESS')
+          PY
