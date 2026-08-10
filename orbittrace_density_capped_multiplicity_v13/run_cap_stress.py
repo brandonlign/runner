@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Target-excluded cardinality stress wrapper for density-capped multiplicity v13.
 
-This imports the frozen multiplicity-v5 holdout implementation and changes only local-episode
-cardinality from an exact fixed cap to min(cap, available local events). Proposal generation,
-family construction, wavelet geometry, multiplicity definition, ranking and evaluation remain
-in the frozen v5 module.
+This imports the frozen multiplicity-v5 holdout through its already-audited loader correction and
+changes only local-episode cardinality from an exact fixed cap to min(cap, available local events).
+Proposal generation, family construction, wavelet geometry, multiplicity definition, ranking and
+evaluation remain in the frozen v5 module.
 """
 from __future__ import annotations
 
@@ -17,8 +17,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import run_holdout_loader_corrected as v5_loader
 
-from orbittrace_sparse_support_multiplicity_v5 import run_holdout as v5
+v5 = v5_loader.core
 
 ALLOWED_CAPS = (32, 64, 96, 128)
 SYNTHETIC_SIZES = (4, 8, 16, 32, 64, 96, 128)
