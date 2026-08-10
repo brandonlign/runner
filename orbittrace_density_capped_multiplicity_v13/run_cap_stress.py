@@ -23,6 +23,7 @@ v5 = v5_loader.core
 
 ALLOWED_CAPS = (32, 64, 96, 128)
 SYNTHETIC_SIZES = (4, 8, 16, 32, 64, 96, 128)
+ACTIVE_CAP = 128
 
 
 def require(ok: bool, message: str) -> None:
@@ -43,7 +44,7 @@ def adaptive_local_episode(
     base: Any,
 ) -> tuple[Any, dict[str, Any]]:
     """Frozen v5 local episode with only exact-cardinality requirement replaced by min(cap,N)."""
-    cap = int(v5.EPISODE_SIZE)
+    cap = int(ACTIVE_CAP)
     require(cap in ALLOWED_CAPS, f"unexpected stress cap {cap}")
     centroid = family.get("centroids", {}).get(str(year))
     require(centroid is not None, f"family {family['family_id']} missing centroid for {year}")
@@ -114,11 +115,15 @@ def parse_wrapper_args() -> tuple[argparse.Namespace, list[str]]:
 
 
 def main() -> int:
+    global ACTIVE_CAP
     wrapper, remaining = parse_wrapper_args()
     checks = synthetic_cardinality_checks()
 
-    # Scientific intervention is exactly these two assignments before any catalogue access.
-    v5.EPISODE_SIZE = int(wrapper.cap)
+    # Keep frozen v5's EPISODE_SIZE=128 untouched so its source/runtime identity guard
+    # remains exact. The successor intervention is only the separate adaptive cap used
+    # by the patched local-episode builder after the frozen runtime has been verified.
+    require(int(v5.EPISODE_SIZE) == 128, "frozen v5 episode-size identity changed")
+    ACTIVE_CAP = int(wrapper.cap)
     v5.build_local_episode = adaptive_local_episode
 
     sys.argv = [sys.argv[0], *remaining]
