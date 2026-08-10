@@ -42,19 +42,24 @@ jobs:
               m=json.load(open(f'input/v22/{r}/V22_PRETRUTH_FEATURE_MANIFEST.json')); f=json.load(open(f'input/v22/{r}/family_memberships.json'))
               assert m['truth_accessed'] is False and f['truth_accessed'] is False and m['feature_dimension']==71
           PY
-      - name: Restore immutable truth-free B1 census
-        env: {GH_TOKEN: '${{ github.token }}'}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v27-b1-applicability-census-v1, path: input/census, github-token: '${{ github.token }}', repository: '${{ github.repository }}', run-id: 31424328582}
+      - name: Verify immutable truth-free B1 census contents
         run: |
           set -euo pipefail
-          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9076629789/zip' -o input/census.zip
-          echo 'da1bfcb566ce4b20150e06fb2a0d58d4a4ce15dc78088830f072e724fa9e7d42  input/census.zip' | sha256sum -c -
-          unzip -q input/census.zip -d input/census
+          test "$(sha256sum input/census/census-sugar/V27_B1_APPLICABILITY_CENSUS_SUGAR.json | cut -d' ' -f1)" = 'c1e4cc51dd6eaa1adf3dff227614899ffa9a43fc79a460804ddbc0a0ad4a0870'
+          test "$(sha256sum input/census/census-hdbscan/V27_B1_APPLICABILITY_CENSUS_HDBSCAN.json | cut -d' ' -f1)" = 'cd6f5927a9f9810f439a54cbd67fa4626aad88c21599936d1fa9e1af15e4d33b'
           python - <<'PY'
           import json
+          expected={'sugar':(534,165,197),'hdbscan':(458,155,180)}
           for r in ['sugar','hdbscan']:
               d=json.load(open(f'input/census/census-{r}/V27_B1_APPLICABILITY_CENSUS_{r.upper()}.json'))
+              assert d['stage']=='V27_EXACT_B1_TRUTH_FREE_APPLICABILITY_CENSUS'
               assert d['truth_accessed'] is False and d['scientific_performance_evaluated'] is False and d['target_information_access'] is False
-              assert set(d['annual_status_counts']) <= {'PASS','LT4_SCREENED_LOCAL_FIELD','LT4_SOURCE_SEEDS'}
+              assert d['maarsy_scientific_access'] is False and d['dms_scientific_access'] is False
+              assert set(d['annual_status_counts']) == {'PASS','LT4_SCREENED_LOCAL_FIELD','LT4_SOURCE_SEEDS'}
+              assert (d['annual_total'],d['family_all_years_applicable'],d['family_any_year_applicable'])==expected[r]
+          print('PASS_IMMUTABLE_B1_CENSUS_CONTENT_IDENTITY')
           PY
       - name: Freeze v28 Sugar features before truth
         run: |
