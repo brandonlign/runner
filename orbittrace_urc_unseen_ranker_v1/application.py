@@ -3,11 +3,12 @@
 
 This is a transport adapter, not a new method. The trained estimator, feature definitions,
 source indicators, neighbor descriptors, diversity lambda/scale and tie rule are fixed by
-#839/#853. The only adaptation is replacing development-only literal 2022/2023 references
-with an explicit ordered two-year pair and an explicit event->year map.
+#839/#853. The only scientific-data adaptation is replacing development-only literal 2022/2023
+references with an explicit ordered two-year pair and an explicit event->year map.
 
-The adapter is admissible only if its GMN 2022/2023 verification reproduces the exact #853
-feature-matrix and fitted-prediction hashes. No truth labels are accepted by this module.
+Prediction is executed with the already-serialized forest at n_jobs=1. This changes no tree,
+weight, fitted parameter or prediction formula; it only fixes floating-point accumulation order
+so application is deterministic across runners. No truth labels are accepted by this module.
 """
 from __future__ import annotations
 
@@ -207,7 +208,6 @@ def build_feature_matrix(
 
     lookup, event_year_by_id = event_lookup_pair(scan_by_year, years)
     centroids = centroid_matrix_pair(families, years)
-    # Exact label-free #839 neighbor descriptors depend only on the 8-column centroid matrix.
     neighbors = np.asarray(frozen_ranker_module.neighbor_features(centroids), dtype=np.float64)
     require(neighbors.shape == (len(families), 6) and np.all(np.isfinite(neighbors)), "invalid neighbor features")
 
@@ -260,6 +260,9 @@ def score_and_rank(
     )
     model = joblib.load(model_path)
     require(int(getattr(model, "n_features_in_", -1)) == EXPECTED_FEATURES, "serialized ranker feature count changed")
+    serialized_n_jobs = getattr(model, "n_jobs", None)
+    if hasattr(model, "set_params") and serialized_n_jobs is not None:
+        model.set_params(n_jobs=1)
     scores = np.asarray(model.predict(X), dtype=np.float64)
     require(scores.shape == (len(families),) and np.all(np.isfinite(scores)), "invalid ranker predictions")
     order_idx = frozen_ranker_module.diversity_order(scores, centroid_matrix, DIVERSITY_LAMBDA, DIVERSITY_SCALE, tie)
@@ -274,6 +277,8 @@ def score_and_rank(
         "years": list(years),
         "candidate_count": len(families),
         "label_inputs_used": False,
+        "serialized_model_n_jobs": serialized_n_jobs,
+        "prediction_n_jobs": 1,
         "diversity_lambda": DIVERSITY_LAMBDA,
         "diversity_scale": DIVERSITY_SCALE,
     }
