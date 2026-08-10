@@ -1,0 +1,205 @@
+name: OrbitTrace v27 background-odds evidence clean retry
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v26-expanded-cohesion-oof-ranker-dev-v1
+    paths:
+      - '.github/workflows/orbittrace_v27_background_odds_evidence_oof_ranker_repair_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v27-background-odds-evidence-oof-ranker-dev-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin frozen runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/ranker input/model input/prepare input/v15-result input/b1deps/orbittrace_cross_year_seed_support_expansion_v1 input/b1deps/orbittrace_cross_year_conformal_density_expansion_v3 input/b1deps/orbittrace_cross_year_trajectory_conformal_expansion_v4 output/v22-sugar output/v22-hdbscan output/v27-sugar output/v27-hdbscan output/result
+          touch input/b1deps/orbittrace_cross_year_seed_support_expansion_v1/__init__.py input/b1deps/orbittrace_cross_year_conformal_density_expansion_v3/__init__.py input/b1deps/orbittrace_cross_year_trajectory_conformal_expansion_v4/__init__.py
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          ( cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py )
+          test "$(cat frozen-v8/output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          test "$(git hash-object orbittrace_p19_subthreshold_recurrence/run_development.py)" = 'f230fc775b38df1e9d447bba33419abd5f6f6ef1'
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          test "$(git hash-object orbittrace_v19_quality_consensus_fusion_v1/run_variants_pretruth.py)" = '7602a08cb2c01df4d64534e309aa160959cc490b'
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py)" = '046795db6913c6831a0643abf30ce20055ef3024'
+          test "$(git hash-object orbittrace_v23_worst_year_oof_ranker_v1/train_evaluate.py)" = '67ce5e68106e5ce34f3ea4ad2afc9f49824698c5'
+      - name: Reconstruct exact frozen B1 scientific dependencies
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin b9d945bce95a02ed5bb4499f541d5a010df898c1
+          git show FETCH_HEAD:orbittrace_background_odds_membership_b1/run_development.py > input/b1deps/b1_runtime.py
+          echo '8b848cad728ad2370d1bf538b3ccc7f71d1b65c1f8d483838374aa6e12bbbb0d  input/b1deps/b1_runtime.py' | sha256sum -c -
+          git fetch --no-tags --depth=1 origin e87a61909f06b2c8f4e763a2f915d13b5c365620
+          git show FETCH_HEAD:orbittrace_cross_year_seed_support_expansion_v1/run_development.py > input/b1deps/orbittrace_cross_year_seed_support_expansion_v1/run_development.py
+          test "$(git hash-object input/b1deps/orbittrace_cross_year_seed_support_expansion_v1/run_development.py)" = '2f48496362494d600652ae35d721e3b107c19a22'
+          git fetch --no-tags --depth=1 origin c386f1570a82ce0ce9700e962bb650c3ba5af66e
+          git show FETCH_HEAD:orbittrace_cross_year_conformal_density_expansion_v3/run_development.py > input/b1deps/orbittrace_cross_year_conformal_density_expansion_v3/run_development.py
+          test "$(git hash-object input/b1deps/orbittrace_cross_year_conformal_density_expansion_v3/run_development.py)" = 'a80f6d7c7f0b85bf8225bf790ed54ca667ee37f0'
+          git fetch --no-tags --depth=1 origin d178ad4bca2991356bbafcd1b92b233ad2a25f44
+          git show FETCH_HEAD:orbittrace_cross_year_trajectory_conformal_expansion_v4/run_development.py > input/b1deps/orbittrace_cross_year_trajectory_conformal_expansion_v4/run_development.py
+          test "$(git hash-object input/b1deps/orbittrace_cross_year_trajectory_conformal_expansion_v4/run_development.py)" = '1062645993ed6c568f883bae624e0f02e8e5fb54'
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/b1deps/literature_comparators.py
+          test "$(git hash-object input/b1deps/literature_comparators.py)" = 'ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/b1deps/literature_comparators.py' | sha256sum -c -
+          python -m py_compile input/b1deps/b1_runtime.py input/b1deps/orbittrace_cross_year_seed_support_expansion_v1/run_development.py input/b1deps/orbittrace_cross_year_conformal_density_expansion_v3/run_development.py input/b1deps/orbittrace_cross_year_trajectory_conformal_expansion_v4/run_development.py input/b1deps/literature_comparators.py orbittrace_v27_background_odds_evidence_oof_ranker_v1/augment_pretruth.py orbittrace_v27_background_odds_evidence_oof_ranker_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-urc-final-full-gmn-ranker-v1
+          path: input/model
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344776617
+      - name: Verify immutable ranker identities
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/model/urc_final_ranker.joblib | cut -d' ' -f1)" = 'ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909'
+      - name: Restore exposed label-free SonotaCo rows without truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9050107352/zip' -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+          python - <<'PY'
+          import json
+          m=json.load(open('input/prepare/label_free_preparation_manifest.json'))
+          assert m['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert m['shower_truth_accessed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False
+          for year in (2013,2014):
+              rows=json.load(open(f'input/prepare/base_{year}.json'))
+              assert all(not (20.0 <= float(r['sol'])%360.0 <= 55.0) for r in rows)
+              assert all(all(k in r for k in ('q','e','inc','peri','node')) for r in rows)
+          print('PASS_V27_SONOTACO_ORBITAL_LABEL_FREE_SURFACE')
+          PY
+      - name: Regenerate Sugar-route fixed pretruth payload
+        env:
+          PYTHONPATH: .:input/ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py --comparator sugar --rows-2013 input/prepare/sugar_2013.json --rows-2014 input/prepare/sugar_2014.json --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 --ranker-source input/ranker/run_urc_union_ranker.py --original-model input/model/urc_final_ranker.joblib --output output/v22-sugar
+      - name: Regenerate HDBSCAN-route fixed pretruth payload
+        env:
+          PYTHONPATH: .:input/ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py --comparator hdbscan --rows-2013 input/prepare/hdbscan_2013.json --rows-2014 input/prepare/hdbscan_2014.json --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 --ranker-source input/ranker/run_urc_union_ranker.py --original-model input/model/urc_final_ranker.joblib --output output/v22-hdbscan
+      - name: Require repaired numeric-semantic base identity before B1 evidence
+        run: |
+          set -euo pipefail
+          echo 'be5f559f27c1a18dcda28c20b6197278473cdb458ddfd29ec61bc468e33c352a  output/v22-sugar/family_memberships.json' | sha256sum -c -
+          echo '99640747e935df2f4a7c7983bdde843ea59e1814388b8418e040dc04628aee13  output/v22-hdbscan/family_memberships.json' | sha256sum -c -
+          python - <<'PY'
+          import hashlib,json,numpy as np
+          expected={
+            'sugar':{'features':'fdde227d9c26e7ddd257fd94a7d50701d2767a0b095534eff4deb5d35d3570c0','centroids':'0ba57360bbd9b8b2fe659c58e4374412475971da44eacefd2e842ddf96e6633d','family':'911bbc1d763f79ee661863a6d5c2cc98d97d0debd276e64461d45a5447c7bfeb'},
+            'hdbscan':{'features':'65da6e5a639102a62078dea6676dd91dc5379a38b7c88b89f9e89e394dc63ec6','centroids':'b46f365ebf079fdacc9aa69797e84cbc2e890c5a58dfefcccdd6ed5b13971034','family':'7137a5c0892e5d316db38915ff164f2a8fb6e8fbe8e0ed2cfa063097968a1895'},
+          }
+          def h10(x):
+              a=np.ascontiguousarray(np.round(np.asarray(x,dtype=np.float64),10)); z=hashlib.sha256(); z.update(str(a.dtype).encode()); z.update(json.dumps(list(a.shape),separators=(',',':')).encode()); z.update(a.tobytes(order='C')); return z.hexdigest()
+          for route,path in [('sugar','output/v22-sugar'),('hdbscan','output/v22-hdbscan')]:
+              X=np.load(f'{path}/features.npy',allow_pickle=False); C=np.load(f'{path}/centroids.npy',allow_pickle=False)
+              assert X.shape[1]==71 and C.shape[1]==8
+              assert h10(X)==expected[route]['features'],(route,'features',h10(X))
+              assert h10(C)==expected[route]['centroids'],(route,'centroids',h10(C))
+              m=json.load(open(f'{path}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71 and m['v19_family_sha256']==expected[route]['family']
+          print('PASS_V27_REPAIRED_BASE_PRETRUTH_IDENTITY')
+          PY
+      - name: Freeze Sugar B1 background-odds evidence before truth
+        env:
+          PYTHONPATH: input/b1deps:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v27_background_odds_evidence_oof_ranker_v1/augment_pretruth.py --comparator sugar --rows-2013 input/prepare/sugar_2013.json --rows-2014 input/prepare/sugar_2014.json --v22-root output/v22-sugar --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 --output output/v27-sugar
+      - name: Freeze HDBSCAN B1 background-odds evidence before truth
+        env:
+          PYTHONPATH: input/b1deps:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v27_background_odds_evidence_oof_ranker_v1/augment_pretruth.py --comparator hdbscan --rows-2013 input/prepare/hdbscan_2013.json --rows-2014 input/prepare/hdbscan_2014.json --v22-root output/v22-hdbscan --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 --output output/v27-hdbscan
+      - name: Freeze both 73-feature outputs before truth
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          for route in ['sugar','hdbscan']:
+              m=json.load(open(f'output/v27-{route}/V27_PRETRUTH_FEATURE_MANIFEST.json'))
+              assert m['scientific_stage']=='V27_FIXED_MEMBERSHIP_B1_BACKGROUND_ODDS_PRETRUTH_FEATURE_FREEZE'
+              assert m['feature_dimension']==73 and m['background_odds_dimension']==2
+              assert m['b1_event_acceptance_cutoff_used'] is False and m['membership_changed'] is False
+              assert m['protected_interval_rows']==0 and m['truth_accessed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          PY
+          sha256sum output/v27-sugar/features_v27.npy output/v27-sugar/background_odds_evidence.npy output/v27-sugar/V27_PRETRUTH_FEATURE_MANIFEST.json output/v27-hdbscan/features_v27.npy output/v27-hdbscan/background_odds_evidence.npy output/v27-hdbscan/V27_PRETRUTH_FEATURE_MANIFEST.json > output/V27_ALL_PRETRUTH_SHA256.txt
+      - name: Load immutable exposed SonotaCo truth only after v27 feature freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/v15-result.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/v15-result.zip' | sha256sum -c -
+          unzip -q input/v15-result.zip -d input/v15-result
+          python - <<'PY'
+          import json
+          r=json.load(open('input/v15-result/V15_FINAL_LITERATURE_RESULT.json')); assert r['verdict']=='FAIL_FINAL_LITERATURE_SUPERIORITY'
+          PY
+      - name: Train and evaluate frozen v27 B1-evidence two-head OOF ranker
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v27_background_odds_evidence_oof_ranker_v1/train_evaluate.py --sugar-v22-root output/v22-sugar --hdbscan-v22-root output/v22-hdbscan --sugar-v27-root output/v27-sugar --hdbscan-v27-root output/v27-hdbscan --truth-root input/v15-result --ranker-source input/ranker/run_urc_union_ranker.py --output output/result
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v27_background_odds_evidence_oof_ranker_v1/PROTOCOL.md orbittrace_v27_background_odds_evidence_oof_ranker_v1/augment_pretruth.py orbittrace_v27_background_odds_evidence_oof_ranker_v1/train_evaluate.py input/b1deps/b1_runtime.py input/b1deps/orbittrace_cross_year_conformal_density_expansion_v3/run_development.py input/b1deps/orbittrace_cross_year_trajectory_conformal_expansion_v4/run_development.py input/b1deps/literature_comparators.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py input/ranker/run_urc_union_ranker.py > output/V27_SOURCE_SHA256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v27-background-odds-evidence-clean-retry-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
