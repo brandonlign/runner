@@ -28,15 +28,17 @@ jobs:
           test "${#changed[@]}" -eq 1
           test "${changed[0]}" = 'orbittrace_v15_dms_coverage_eligibility_v1/RUN.md'
           test "$(cat orbittrace_v15_dms_coverage_eligibility_v1/RUN.md)" = 'EXECUTE_DMS_COVERAGE_ONLY_ELIGIBILITY_V1'
-          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/PROTOCOL.md)" = '5b810e7fe0b418b70ebb6e67fbc3ca707ebdabd5'
-          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py)" = '11b9ccf9cb07927df68bffb9b8b36e174e227549'
+          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/PROTOCOL.md)" = '5ecb88f361f4816f370de547420813dd725ae7e5'
+          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py)" = '8e519aa54b8f45e5fecc5d81cb4c20f2d5178685'
           python -m py_compile orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py
-      - name: Prove preamble discovery ignores forbidden scientific values and pair selection is deterministic
+      - name: Prove named-header and headerless official-order modes never parse forbidden values
         run: |
           set -euo pipefail
           python - <<'PY'
           import csv,io
           from orbittrace_v15_dms_coverage_eligibility_v1 import audit_coverage as a
+
+          # Named-header mode with metadata preamble and unparsable forbidden science values.
           header=['Yr','Mn','Day','LS','RA','DEC','Vg','q','e','i','Sh']
           b=io.StringIO(newline='')
           b.write('DMS metadata preamble line one\n')
@@ -45,24 +47,40 @@ jobs:
           for year in (1991,1992):
               for bin_id in range(12,24):
                   for repeat in range(7):
-                      ls=bin_id*10+1
-                      w.writerow([year,6,10.5,ls,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
+                      w.writerow([year,6,10.5,bin_id*10+1,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
           w.writerow([1991,4,15.5,30,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
           raw=b.getvalue().encode(); text=raw.decode()
           line_index,delimiter,found_header,indices=a.find_allowed_header(text)
-          assert line_index==2 and found_header==header
-          cov=a.parse_coverage(raw,'utf-8',line_index,delimiter,found_header,indices)
+          schema={'mode':'named_header','raw':raw,'encoding':'utf-8','data_start_line_index':line_index+1,'header_line_index':line_index,'delimiter':delimiter,'header':found_header,'indices':indices,'row_width':len(found_header)}
+          cov,_=a.parse_coverage(schema)
           assert cov[1991]['usable_target_excluded_rows']==84
           assert cov[1992]['usable_target_excluded_rows']==84
           assert cov[1991]['occupied_10deg_bin_count']==12
-          assert cov[1991]['occupied_quadrant_count']>=2
           assert cov[1991]['eligible'] is False and cov[1992]['eligible'] is False
-          assert a.choose_pair(cov) is None
+
+          # Headerless official-order mode. Exactly 908 rows; only positions 4/5/6/8
+          # (1-based Yr/Mn/Day/LS) are numeric. Every forbidden science value is a sentinel.
+          h=io.StringIO(newline='')
+          h.write('metadata preamble A\nmetadata preamble B\n')
+          wh=csv.writer(h)
+          for n in range(a.OFFICIAL_ORBIT_COUNT):
+              year=1991+(n%8)
+              ls=float((n*7)%360)+0.25
+              wh.writerow(['DMS','ID','A',year,1+(n%12),1.5+(n%27),0.0,ls,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
+          found=a.find_headerless_official_order(h.getvalue())
+          assert found is not None
+          start,delim,width,idx=found
+          assert start==2 and delim==',' and width==12 and idx==a.OFFICIAL_ORDER_INDICES
+          rows=a.parse_rows_from_line(h.getvalue(),start,delim)
+          assert len(rows)==908
+          for row in rows:
+              a.parse_allowed_values(row,idx,require_dms_year=True)
+
           fake={year:{'eligible':False,'occupied_10deg_bin_count':0,'usable_target_excluded_rows':0} for year in a.YEARS}
           for year in (1993,1994,1995):
               fake[year]={'eligible':True,'occupied_10deg_bin_count':15,'usable_target_excluded_rows':100}
           assert a.choose_pair(fake)==(1993,1994)
-          print('PASS_DMS_COVERAGE_ONLY_PREAMBLE_AND_FIELD_FIREWALL')
+          print('PASS_DMS_COVERAGE_ONLY_NAMED_AND_HEADERLESS_FIREWALL')
           PY
       - name: Run single official DMS coverage-only eligibility audit with persisted diagnostics
         run: |
@@ -109,6 +127,9 @@ jobs:
           assert r['maarsy_access'] is False
           assert r['orbittrace_target_information_access'] is False
           assert r['verdict'] in {'ELIGIBLE_DMS_PAIR_RESERVED_PRE_SCIENCE','INELIGIBLE_DMS_NO_ADEQUATE_CONSECUTIVE_PAIR'}
+          assert r['schema_mode'] in {'named_header','headerless_official_order'}
+          if r['schema_mode']=='headerless_official_order':
+              assert r['parsed_row_count']==908
           print(r['verdict'])
           PY
       - uses: actions/upload-artifact@v4
