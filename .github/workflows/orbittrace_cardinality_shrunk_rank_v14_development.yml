@@ -1,0 +1,229 @@
+name: OrbitTrace cardinality-shrunk rank v14 target-excluded development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-cardinality-shrunk-rank-v14-development
+    paths:
+      - 'orbittrace_cardinality_shrunk_rank_v14/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  V13_RUN_ID: '31356056453'
+  V13_HEAD_SHA: 'c95f5f4199a1e414b973ab4504f710b2f6bb6bab'
+
+jobs:
+  sanitize_pretruth_inputs:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require exact one-file execution child and frozen source identities
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}')
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'orbittrace_cardinality_shrunk_rank_v14/RUN.md'
+          test "$(cat orbittrace_cardinality_shrunk_rank_v14/RUN.md)" = 'EXECUTE_CARDINALITY_SHRUNK_RANK_V14_TARGET_EXCLUDED_DEVELOPMENT'
+          test "$(git hash-object orbittrace_cardinality_shrunk_rank_v14/PROTOCOL.md)" = 'f53c92cb5815e7ba22e3c062330595fa9bcbec28'
+          test "$(git hash-object orbittrace_cardinality_shrunk_rank_v14/rank_pretruth.py)" = '3ed0807d82a301bdcc217456f612831f7d77738c'
+          test "$(git hash-object orbittrace_cardinality_shrunk_rank_v14/evaluate_frozen.py)" = '59a619a20280a3aad0b86fb1295474a3696ef466'
+          python -m py_compile orbittrace_cardinality_shrunk_rank_v14/rank_pretruth.py orbittrace_cardinality_shrunk_rank_v14/evaluate_frozen.py
+          if git grep -Eiq '013a\.zip|014a\.zip|MAARSY|OrbitTrace-April|target_ra|target_dec|target_member' -- orbittrace_cardinality_shrunk_rank_v14/*.py; then
+            echo 'forbidden external/target transport surface in v14 runtime source' >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-capped-multiplicity-v13-development
+          path: input/v13-result
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - name: Require exact failed-v13 provenance before reusing frozen artifacts
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('input/v13-result/v13_development_result.json')
+          r=json.loads(p.read_text())
+          assert r['verdict']=='FAIL_DENSITY_CAPPED_MULTIPLICITY_V13_TARGET_EXCLUDED_DEVELOPMENT'
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['maarsy_access'] is False
+          assert r['target_information_access'] is False
+          assert r['family_count']==92
+          assert r['no_best_cap_selection'] is True
+          print('PASS_EXACT_V13_RESULT_PROVENANCE')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-32
+          path: input/raw/cap32
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-64
+          path: input/raw/cap64
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-96
+          path: input/raw/cap96
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-128
+          path: input/raw/cap128
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - name: Build label-free whitelist artifact without parsing truth payloads
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          for cap in 32 64 96 128; do
+            mkdir -p "output/cap${cap}"
+            test -f "input/raw/cap${cap}/v5/multiplicity_v5_rankings.json"
+            test -f "input/raw/cap${cap}/v5/multiplicity_v5_family_scores.json.gz"
+            test -f "input/raw/cap${cap}/v13_summary.json"
+            cp "input/raw/cap${cap}/v5/multiplicity_v5_rankings.json" "output/cap${cap}/"
+            cp "input/raw/cap${cap}/v5/multiplicity_v5_family_scores.json.gz" "output/cap${cap}/"
+            cp "input/raw/cap${cap}/v13_summary.json" "output/cap${cap}/"
+          done
+          test "$(find output -type f | wc -l)" -eq 12
+          if find output -type f | grep -Eiq 'evaluation|families|holdout|label|truth'; then
+            echo 'label-bearing or non-whitelisted payload escaped sanitization' >&2
+            exit 1
+          fi
+          printf '%s\n' "$V13_RUN_ID" > output/V13_RUN_ID.txt
+          printf '%s\n' "$V13_HEAD_SHA" > output/V13_HEAD_SHA.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v14-label-free-rank-inputs
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  rank_pretruth:
+    needs: sanitize_pretruth_inputs
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v14-label-free-rank-inputs
+          path: input/rank
+      - name: Prove no label-bearing files exist and freeze all v14 orders
+        run: |
+          set -euo pipefail
+          test "$(cat input/rank/V13_RUN_ID.txt)" = "$V13_RUN_ID"
+          test "$(cat input/rank/V13_HEAD_SHA.txt)" = "$V13_HEAD_SHA"
+          if find input/rank -type f | grep -Eiq 'evaluation|families|holdout|label|truth'; then
+            echo 'label-bearing payload present in rank job' >&2
+            exit 1
+          fi
+          python -u orbittrace_cardinality_shrunk_rank_v14/rank_pretruth.py --input-root input/rank --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v14-frozen-pretruth-orders
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: rank_pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v14-frozen-pretruth-orders
+          path: input/orders
+      - name: Require pretruth rank freeze before any evaluation artifact download
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('input/orders/v14_pretruth_audit.json').read_text())
+          assert a['verdict']=='PASS_V14_PRETRUTH_RANK_FREEZE'
+          assert a['all_rankings_frozen_before_labels'] is True
+          assert a['sonotaco_2013_2014_access'] is False
+          assert a['maarsy_access'] is False
+          assert a['target_information_access'] is False
+          print('PASS_V14_RANKS_FROZEN_BEFORE_LABEL_DOWNLOAD')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-direct-v5-reference
+          path: input/reference
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-32
+          path: input/cap32
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-64
+          path: input/cap64
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-96
+          path: input/cap96
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-128
+          path: input/cap128
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - name: Evaluate frozen orders and apply unchanged robustness gates
+        run: |
+          set -euo pipefail
+          python -u orbittrace_cardinality_shrunk_rank_v14/evaluate_frozen.py \
+            --orders-dir input/orders \
+            --reference-dir input/reference \
+            --cap-32-dir input/cap32 \
+            --cap-64-dir input/cap64 \
+            --cap-96-dir input/cap96 \
+            --cap-128-dir input/cap128 \
+            --output output
+          cat output/v14_development_result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-cardinality-shrunk-rank-v14-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
