@@ -1,0 +1,153 @@
+name: OrbitTrace v29 nested whole-shower capacity OOF development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v24-two-head-annual-oof-ranker-dev-v1
+    paths:
+      - 'orbittrace_v29_nested_capacity_oof_ranker_v1/**'
+      - '.github/workflows/orbittrace_v29_nested_capacity_oof_ranker_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v29-nested-capacity-oof-ranker-dev-v1
+      - name: Enforce frozen v29 source and activation
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v29_nested_capacity_oof_ranker_v1/PROTOCOL.md)" = '73d2860d6294fad2a859d8948739b0d189e10c66'
+          test "$(git hash-object orbittrace_v29_nested_capacity_oof_ranker_v1/train_evaluate.py)" = '6085bac1364bd484e3de64ba03e37e21841c0194'
+          test "$(git hash-object orbittrace_v24_two_head_annual_oof_ranker_v1/train_evaluate.py)" = '9bce73980d62ff261ca1fd1ed23520a588ef44de'
+          test "$(cat orbittrace_v29_nested_capacity_oof_ranker_v1/RUN.md)" = 'EXECUTE_FROZEN_V29_NESTED_CAPACITY_OOF_EXPOSED_DEVELOPMENT'
+          python -m py_compile orbittrace_v29_nested_capacity_oof_ranker_v1/train_evaluate.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact ranking runtime
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/pretruth input/ranker input/truth output
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v27-postmembership-feature-pretruth-freeze-id-bound-v5
+          path: input/pretruth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31424616547
+      - name: Verify exact pretruth-only 71D payload
+        run: |
+          set -euo pipefail
+          echo '78dcf37d25898d71651cbd1dbbe0b8f5e5a11621ad75f236c53c88e52818ae79  input/pretruth/base-sugar/V22_PRETRUTH_FEATURE_MANIFEST.json' | sha256sum -c -
+          echo 'd1bac73c57a136744b4ec6377f840dd99c8bdd0518ddaa126919ff10858765ad  input/pretruth/base-sugar/features.npy' | sha256sum -c -
+          echo 'afe777b62b32dc2c18b6036939b64f1f1390b0383507c157b4682c386a2c94f5  input/pretruth/base-sugar/centroids.npy' | sha256sum -c -
+          echo 'be5f559f27c1a18dcda28c20b6197278473cdb458ddfd29ec61bc468e33c352a  input/pretruth/base-sugar/family_memberships.json' | sha256sum -c -
+          echo '8f885f0b3eb900f6315feb8fc16324e1fcec73ed53d0b3a6c685b64d08da4881  input/pretruth/base-hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json' | sha256sum -c -
+          echo '1345a24032391c31db7ff29688ae994f7313a4ee01d33d049d11c0eaafefb4f9  input/pretruth/base-hdbscan/features.npy' | sha256sum -c -
+          echo '619d13b46fb286e46135fb1984264ed2323efa36da2be516c0832962825f4452  input/pretruth/base-hdbscan/centroids.npy' | sha256sum -c -
+          echo '99640747e935df2f4a7c7983bdde843ea59e1814388b8418e040dc04628aee13  input/pretruth/base-hdbscan/family_memberships.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          for r in ['sugar','hdbscan']:
+              m=json.load(open(f'input/pretruth/base-{r}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/pretruth/base-{r}/family_memberships.json'))
+              assert m['feature_dimension']==71 and m['truth_accessed'] is False
+              assert f['truth_accessed'] is False
+          print('PASS_EXACT_PRETRUTH_71D_IDENTITY')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify exact frozen #839 ranker source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Verify immutable exposed truth package
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('input/truth/V15_FINAL_LITERATURE_RESULT.json'))
+          assert r['verdict']=='FAIL_FINAL_LITERATURE_SUPERIORITY'
+          print('PASS_IMMUTABLE_EXPOSED_TRUTH_PACKAGE')
+          PY
+      - name: Execute exact frozen v29 nested whole-shower OOF evaluation
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v29_nested_capacity_oof_ranker_v1/train_evaluate.py \
+            --sugar-root input/pretruth/base-sugar \
+            --hdbscan-root input/pretruth/base-hdbscan \
+            --truth-root input/truth \
+            --ranker-source input/ranker/run_urc_union_ranker.py \
+            --output output
+      - name: Enforce protected-data/result firewall
+        if: always()
+        run: |
+          set +e
+          if test -f output/V29_EXPOSED_NESTED_CAPACITY_OOF_RESULT.json; then
+            python - <<'PY'
+          import json
+          r=json.load(open('output/V29_EXPOSED_NESTED_CAPACITY_OOF_RESULT.json'))
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['oracle_order_used'] is False
+          assert r['post_result_second_search'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False
+          PY
+          fi
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v29_nested_capacity_oof_ranker_v1/PROTOCOL.md \
+            orbittrace_v29_nested_capacity_oof_ranker_v1/train_evaluate.py \
+            input/pretruth/base-sugar/V22_PRETRUTH_FEATURE_MANIFEST.json \
+            input/pretruth/base-sugar/features.npy \
+            input/pretruth/base-sugar/centroids.npy \
+            input/pretruth/base-sugar/family_memberships.json \
+            input/pretruth/base-hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json \
+            input/pretruth/base-hdbscan/features.npy \
+            input/pretruth/base-hdbscan/centroids.npy \
+            input/pretruth/base-hdbscan/family_memberships.json \
+            input/ranker/run_urc_union_ranker.py \
+            > output/V29_SOURCE_INPUT_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v29-nested-capacity-oof-ranking-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
