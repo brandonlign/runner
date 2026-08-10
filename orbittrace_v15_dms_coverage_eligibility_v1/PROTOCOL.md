@@ -31,7 +31,34 @@ Catalogue/source identity fields may be read only if needed to prove that every 
 
 All other columns are forbidden for this audit, including RA, DEC, Vg/Vi/Vh, q, e, i, argument of perihelion, node, shower/classification fields, and uncertainties in those scientific quantities.
 
-The audit output must contain only aggregate coverage statistics, archive/member hashes, schema-name confirmation for the allowed fields, the deterministic pair decision, and firewall booleans.
+The audit output must contain only aggregate coverage statistics, archive/member hashes, schema confirmation for the four allowed fields, the deterministic pair decision, and firewall booleans.
+
+## Frozen structural parser rule
+
+The first two live execution attempts established **only a structural fact** before any DMS event value was parsed: the official ZIP is reachable, but its data member does not expose a delimited `Yr/Mn/Day/LS` header in the initial preamble. No coverage statistic or DMS scientific value was obtained from those attempts.
+
+The current official IAU MDC Video Catalogs page publicly defines the database parameter order beginning:
+
+`DB, IC, Ano, Yr, Mn, Day, delta_Day, LS, ...`
+
+Therefore the coverage parser is frozen to the following two-stage schema rule before any DMS coverage values are accepted:
+
+1. **Named-header mode:** if exactly one header line resolves the four allowed concepts, use those named columns.
+2. **Headerless official-order mode:** only if named-header mode finds no candidate, test delimited table members against the official parameter order above and interpret **only** zero-based positions `3,4,5,7` as `Yr,Mn,Day,LS`.
+
+Headerless official-order mode is accepted only if exactly one member/delimiter combination passes all of these fail-closed structural checks using only the four allowed columns:
+
+- at least 8 columns per nonblank row;
+- constant row width across the parsed table;
+- every parsed year is an integer in 1991–1998;
+- every parsed month is an integer 1–12;
+- every parsed day is finite and in `(0,32)`;
+- every parsed solar longitude is finite;
+- the number of parsed rows equals **908**, the already-public official DMS orbit count.
+
+No value from any other column may be converted, compared, logged, hashed separately, or used to choose the delimiter/member. If more than one member/delimiter satisfies the allowed-column structural checks, fail closed rather than selecting one.
+
+This parser repair changes no eligibility threshold, year/pair rule, sealed interval, or scientific permission.
 
 ## Sealed target interval
 
@@ -77,7 +104,7 @@ During this coverage audit:
 - SonotaCo 2013/2014 must not be accessed;
 - DMS scientific fields beyond year/date/LS must not be inspected or emitted.
 
-If the archive/schema cannot be parsed using only the allowed fields, fail closed as an integrity/transport failure rather than broadening access.
+If the archive/schema cannot be parsed using only the allowed fields and the frozen structural rule above, fail closed as an integrity/transport failure rather than broadening access.
 
 ## Authorization after a pass
 
