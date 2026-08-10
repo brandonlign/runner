@@ -60,7 +60,13 @@ def main()->int:
     require(array_sha(x71)==meta['feature_sha256'],'base feature internal hash mismatch')
     expanded=membership['families']; ids=list(map(str,meta['family_ids']))
     require([str(f['family_id']) for f in expanded]==ids,'expanded membership alignment changed')
-    require(canonical_sha(expanded)==EXPECTED_V19_FAMILY_SHA[a.comparator],'expanded family canonical identity changed')
+    # family_memberships.json is intentionally aligned to candidate-ID order for the feature matrix,
+    # whereas v19_family_sha256 was frozen over the exact v19 rank-sum order. Verify the same
+    # membership objects after reordering by the already-frozen v19 order; do not alter feature order.
+    by_id={str(f['family_id']):f for f in expanded}
+    v19_order=list(map(str,meta['v19_order']))
+    require(len(v19_order)==len(ids) and set(v19_order)==set(ids),'v19 order/family universe changed')
+    require(canonical_sha([by_id[fid] for fid in v19_order])==EXPECTED_V19_FAMILY_SHA[a.comparator],'expanded family canonical identity changed')
 
     raw={2013:json.loads(a.rows_2013.read_text()),2014:json.loads(a.rows_2014.read_text())}
     forbidden={'label','shower','truth','known_shower','native_background','sporadic'}
