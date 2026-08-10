@@ -41,18 +41,22 @@ The canonical SonotaCo adapter only validates/projects the output of that frozen
 
 ## MAARSY adapter
 
-Use the already-frozen public schema mapping unchanged:
+Use the preserved public RCS HDF5 schema and the already-executed geometry-only transport unchanged:
 
-- native `sun_lon` -> canonical `sol`;
-- native `slon` -> canonical `sun_lon` after `wrap180`;
-- native `slat` -> canonical `ecl_lat`;
-- native `vels` -> canonical `vg = ||vels||` in km/s.
+- native `sun_lon`: row-aligned scalar solar longitude in degrees -> canonical `sol`;
+- native `slon`: row-aligned scalar Sun-centered geocentric radiant longitude in degrees -> canonical `sun_lon` after `wrap180`;
+- native `slat`: row-aligned scalar geocentric radiant latitude in degrees -> canonical `ecl_lat`;
+- native `vels`: row-aligned **scalar geocentric speed** in km/s -> canonical `vg` directly.
+
+The preserved schema-only HDF5 audit showed each of `sun_lon`, `slon`, `slat`, and `vels` as a numeric one-dimensional dataset with common row alignment. The later frozen MAARSY geometry runner required `ds.shape == (n,)` for all four, applied the already-frozen `5 <= vels <= 75` quality cut after the target firewall, and assigned `vg = float(vels[row])`. Therefore a vector-norm interpretation of `vels` is stale and forbidden for the final route.
 
 Stable final-pipeline identity is `MAARSY|YEAR|ARCHIVE_MEMBER|ROW_INDEX_0BASED`.
 
 For the fixed final external route, only year 2021 is the unlabeled recurrence-support scan and year 2022 is the scored validation scan. The adapter itself never opens truth. The scientific runner must read/normalize `sun_lon` first and remove every row with `20 <= sol <= 55` before reading/passing `slon`, `slat`, or `vels` for that row. The adapter rejects any blinded row that nevertheless reaches it.
 
-No proxy radiant, learned transform, unit inference, orbit substitution, or pseudo-year is permitted.
+The frozen MAARSY 5–75 km/s quality cut remains an upstream transport cut; the canonical interface does not redefine it or apply it to other surveys.
+
+No proxy radiant, learned transform, unit inference, orbit substitution, pseudo-year, or alternate interpretation of `vels` is permitted.
 
 ## Shared-detector rule
 
@@ -66,7 +70,7 @@ Before any new scientific execution, all must hold:
 
 1. canonical records contain exactly the eight fields above;
 2. GMN and SonotaCo projection preserves their existing geometry values exactly as floats;
-3. MAARSY mapping exactly reproduces the frozen `sun_lon/slon/slat/vels` transform;
+3. MAARSY mapping exactly reproduces the frozen scalar `sun_lon/slon/slat/vels` geometry transform;
 4. year is explicit and never inferred from event IDs;
 5. target interval 20°–55° cannot enter the MAARSY geometry adapter;
 6. truth-bearing keys are rejected before projection;

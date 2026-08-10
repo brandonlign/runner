@@ -158,25 +158,22 @@ def from_maarsy_retained_geometry(
     native_sun_lon_deg: Any,
     native_slon_deg: Any,
     native_slat_deg: Any,
-    native_vels_km_s: Iterable[Any],
+    native_vels_km_s: Any,
 ) -> dict[str, Any]:
     """Map one already-firewalled MAARSY geometry row to the canonical detector record.
 
-    The caller must have read native sun_lon first and only then read slon/slat/vels for rows
-    passing `maarsy_keep_from_solar_longitude`. This function independently rejects a blinded row.
+    The frozen public RCS HDF5 interface stores `vels` as a one-dimensional row-aligned scalar
+    geocentric speed in km/s. The caller must have read native `sun_lon` first and only then read
+    `slon`/`slat`/`vels` for rows passing `maarsy_keep_from_solar_longitude`. This function
+    independently rejects a blinded row. Survey-specific quality cuts (including the frozen
+    MAARSY 5--75 km/s cut) remain upstream and are not redefined here.
     """
     sol = finite_float(native_sun_lon_deg, "MAARSY sun_lon")
     require(maarsy_keep_from_solar_longitude(sol), "blinded MAARSY row reached geometry adapter")
     slon = finite_float(native_slon_deg, "MAARSY slon")
     slat = finite_float(native_slat_deg, "MAARSY slat")
     require(-90.0 <= slat <= 90.0, "MAARSY slat outside [-90,90]")
-    try:
-        raw_components = tuple(native_vels_km_s)
-    except TypeError as exc:
-        raise RuntimeError("MAARSY vels must be an iterable vector") from exc
-    require(len(raw_components) >= 2, "MAARSY vels must be a vector")
-    components = [finite_float(x, "MAARSY velocity component") for x in raw_components]
-    speed = math.sqrt(sum(x * x for x in components))
+    speed = finite_float(native_vels_km_s, "MAARSY vels")
     return canonical_record(
         event_id=maarsy_event_id(year, archive_member, row_index_0based),
         year=year,

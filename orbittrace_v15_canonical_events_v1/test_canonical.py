@@ -40,7 +40,7 @@ def test_gmn_and_sonotaco_exact_projection() -> None:
     assert c.science_tuple(got_son) == (100.0, -20.0, 12.5, 30.0)
 
 
-def test_maarsy_exact_frozen_mapping() -> None:
+def test_maarsy_exact_frozen_scalar_mapping() -> None:
     row = c.from_maarsy_retained_geometry(
         year=2022,
         archive_member="synthetic.h5",
@@ -48,12 +48,17 @@ def test_maarsy_exact_frozen_mapping() -> None:
         native_sun_lon_deg=100.0,
         native_slon_deg=340.0,
         native_slat_deg=12.5,
-        native_vels_km_s=(18.0, 24.0, 0.0),
+        native_vels_km_s=30.0,
     )
     assert row["id"] == "MAARSY|2022|synthetic.h5|7"
     assert c.science_tuple(row) == (100.0, -20.0, 12.5, 30.0)
     # Same physical tuple reaches the detector regardless of survey representation.
     assert c.science_tuple(row) == c.science_tuple(c.from_gmn(base_event("G", 2022), allowed_years=(2022, 2023)))
+    # The preserved RCS HDF5 schema is scalar; the stale vector interpretation must fail closed.
+    expect_fail(lambda: c.from_maarsy_retained_geometry(
+        year=2022, archive_member="synthetic.h5", row_index_0based=8,
+        native_sun_lon_deg=100.0, native_slon_deg=340.0, native_slat_deg=12.5,
+        native_vels_km_s=(18.0, 24.0, 0.0)), "MAARSY vels is not numeric")
 
 
 def test_target_firewall_and_roles_fail_closed() -> None:
@@ -64,7 +69,7 @@ def test_target_firewall_and_roles_fail_closed() -> None:
     expect_fail(lambda: c.from_maarsy_retained_geometry(
         year=2022, archive_member="x", row_index_0based=0,
         native_sun_lon_deg=20.0, native_slon_deg=0.0, native_slat_deg=0.0,
-        native_vels_km_s=(1.0, 1.0, 1.0)), "blinded MAARSY row")
+        native_vels_km_s=30.0), "blinded MAARSY row")
     expect_fail(lambda: c.maarsy_event_id(2020, "x", 0), "outside fixed 2021-support/2022-scored")
     expect_fail(lambda: c.from_sonotaco(base_event("x", 2015)), "outside caller-frozen years")
 
@@ -90,7 +95,7 @@ def test_no_cross_survey_quality_recut() -> None:
 
 if __name__ == "__main__":
     test_gmn_and_sonotaco_exact_projection()
-    test_maarsy_exact_frozen_mapping()
+    test_maarsy_exact_frozen_scalar_mapping()
     test_target_firewall_and_roles_fail_closed()
     test_truth_and_schema_fail_closed()
     test_no_cross_survey_quality_recut()
