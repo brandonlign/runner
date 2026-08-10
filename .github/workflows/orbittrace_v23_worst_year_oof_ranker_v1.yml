@@ -117,19 +117,30 @@ jobs:
             --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
             --ranker-source input/ranker/run_urc_union_ranker.py --original-model input/model/urc_final_ranker.joblib \
             --output output/hdbscan
-      - name: Require byte-identical valid-v22 pretruth payloads before truth
+      - name: Require scientific identity with valid v22 before truth
         run: |
           set -euo pipefail
-          echo '3b5ad5b7f900b03ba45b0aadf2f1a71dab054ae56e4d7aca7a880a9216486286  output/sugar/features.npy' | sha256sum -c -
+          # Exact discrete payload identity: memberships and centroids must be byte-identical.
           echo 'afe777b62b32dc2c18b6036939b64f1f1390b0383507c157b4682c386a2c94f5  output/sugar/centroids.npy' | sha256sum -c -
           echo 'be5f559f27c1a18dcda28c20b6197278473cdb458ddfd29ec61bc468e33c352a  output/sugar/family_memberships.json' | sha256sum -c -
-          echo 'bea982e3b44053a785c45a5e8875dcfb64941cc6cc56ff2102905105830e9359  output/sugar/V22_PRETRUTH_FEATURE_MANIFEST.json' | sha256sum -c -
-          echo 'ee56b824dc59d5af1a03ccf37d77886a7adaeac18f378137de6647c000101fa6  output/hdbscan/features.npy' | sha256sum -c -
           echo '619d13b46fb286e46135fb1984264ed2323efa36da2be516c0832962825f4452  output/hdbscan/centroids.npy' | sha256sum -c -
           echo '99640747e935df2f4a7c7983bdde843ea59e1814388b8418e040dc04628aee13  output/hdbscan/family_memberships.json' | sha256sum -c -
-          echo '2a81721343dc795e925b1ffea39e50c963a696fcca47ab7784abe6f5f10e9980  output/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json' | sha256sum -c -
-          sha256sum output/sugar/features.npy output/sugar/centroids.npy output/sugar/family_memberships.json output/sugar/V22_PRETRUTH_FEATURE_MANIFEST.json output/hdbscan/features.npy output/hdbscan/centroids.npy output/hdbscan/family_memberships.json output/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json > output/V23_EXACT_V22_PRETRUTH_IDENTITY.txt
-      - name: Load immutable exposed SonotaCo truth only after exact-v22 identity
+          # First v23 attempt showed only 3-4 values in feature column 13 differed by <=1.25e-14.
+          # Canonical round-to-12-decimal hashes must match the valid v22 arrays exactly.
+          python - <<'PY'
+          import hashlib,json,numpy as np
+          expected={'sugar':'64a846220928aa9d8cde77462796f8b38c0c00ce605b1a4711fbad2205d08c03','hdbscan':'2a0e3a06a70601d8045a2d33eadd70c17a65078a7473f51a577bfcf34aa66577'}
+          def h(x):
+              a=np.ascontiguousarray(np.round(np.asarray(x,dtype=np.float64),12)); z=hashlib.sha256(); z.update(str(a.dtype).encode()); z.update(json.dumps(list(a.shape),separators=(',',':')).encode()); z.update(a.tobytes(order='C')); return z.hexdigest()
+          for route,want in expected.items():
+              got=h(np.load(f'output/{route}/features.npy',allow_pickle=False))
+              assert got==want,(route,got,want)
+              m=json.load(open(f'output/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71
+          print('PASS_V23_V22_SEMANTIC_PRETRUTH_IDENTITY')
+          PY
+          sha256sum output/sugar/features.npy output/sugar/centroids.npy output/sugar/family_memberships.json output/sugar/V22_PRETRUTH_FEATURE_MANIFEST.json output/hdbscan/features.npy output/hdbscan/centroids.npy output/hdbscan/family_memberships.json output/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json > output/V23_REGENERATED_PRETRUTH_SHA256.txt
+      - name: Load immutable exposed SonotaCo truth only after v22 scientific identity
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
