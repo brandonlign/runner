@@ -1,0 +1,45 @@
+name: OrbitTrace final pretruth output contract v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_governance/FINAL_PRETRUTH_OUTPUT_CONTRACT_V1.md'
+      - 'orbittrace_governance/canonical_pretruth_output_v1.py'
+      - '.github/workflows/orbittrace_final_pretruth_output_contract_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify canonical serializer and no-data boundary
+        run: |
+          set -euo pipefail
+          python orbittrace_governance/canonical_pretruth_output_v1.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          paths=[Path('orbittrace_governance/FINAL_PRETRUTH_OUTPUT_CONTRACT_V1.md'),Path('orbittrace_governance/canonical_pretruth_output_v1.py')]
+          text='\n'.join(p.read_text() for p in paths)
+          forbidden=('013a.zip','014a.zip','_U2_20130101_S.csv','_U2_20140101_S.csv','OrbitTrace-April','247.17','-14.34','37.62','target_coordinate')
+          lower=text.lower()
+          for token in forbidden:
+              assert token.lower() not in lower, token
+          tree=ast.parse(paths[1].read_text())
+          imports={n.names[0].name for n in ast.walk(tree) if isinstance(n,ast.Import)}
+          imports|={n.module for n in ast.walk(tree) if isinstance(n,ast.ImportFrom) and n.module}
+          assert not ({'requests','urllib','gmn_python_api'} & imports)
+          for phrase in ('truth_accessed=false','before truth is opened','complete output'):
+              assert phrase in lower
+          print('PASS_FINAL_PRETRUTH_OUTPUT_CONTRACT_V1_SOURCE_AUDIT')
+          PY
+          python -m py_compile orbittrace_governance/canonical_pretruth_output_v1.py
+          sha256sum orbittrace_governance/FINAL_PRETRUTH_OUTPUT_CONTRACT_V1.md orbittrace_governance/canonical_pretruth_output_v1.py
