@@ -212,7 +212,17 @@ jobs:
       - name: Install exact comparator dependencies
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2' 'hdbscan==0.8.44'
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python - <<'PY'
+          import hdbscan,numpy,scipy,sklearn
+          assert numpy.__version__=='1.26.4',numpy.__version__
+          assert scipy.__version__=='1.11.4',scipy.__version__
+          assert sklearn.__version__=='1.4.2',sklearn.__version__
+          from importlib.metadata import version
+          assert version('hdbscan')=='0.8.44',version('hdbscan')
+          print('PASS_EXACT_FROZEN_COMPARATOR_RUNTIME')
+          PY
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-final-sonotaco-label-free-preparation-v2
