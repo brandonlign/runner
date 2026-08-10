@@ -9,6 +9,7 @@ in the frozen v5 module.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -26,6 +27,11 @@ SYNTHETIC_SIZES = (4, 8, 16, 32, 64, 96, 128)
 def require(ok: bool, message: str) -> None:
     if not ok:
         raise RuntimeError(message)
+
+
+def canonical_sha(value: Any) -> str:
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return hashlib.sha256(raw).hexdigest()
 
 
 def adaptive_local_episode(
@@ -76,7 +82,6 @@ def synthetic_cardinality_checks() -> dict[str, Any]:
         lon = np.linspace(-150.0, 150.0, n, dtype=np.float64)
         lat = np.linspace(-45.0, 45.0, n, dtype=np.float64)
         vg = np.linspace(20.0, 60.0, n, dtype=np.float64)
-        # Four deterministic coherent anchors; the remaining rows are dispersed.
         lon[:4] = np.asarray([10.0, 10.2, 9.8, 10.1])
         lat[:4] = np.asarray([5.0, 5.1, 4.9, 5.05])
         vg[:4] = np.asarray([35.0, 35.2, 34.9, 35.1])
@@ -119,7 +124,6 @@ def main() -> int:
     rc = int(v5.main())
     require(rc == 0, f"frozen v5 execution returned {rc}")
 
-    # The frozen v5 output is descriptive input for the preregistered v13 aggregate gates.
     output_arg = None
     for i, token in enumerate(remaining):
         if token == "--output":
@@ -127,6 +131,8 @@ def main() -> int:
             break
     require(output_arg is not None, "missing forwarded --output")
     result = json.loads((output_arg / "multiplicity_v5_holdout.json").read_text())
+    rankings = json.loads((output_arg / "multiplicity_v5_rankings.json").read_text())
+    order = [str(x) for x in rankings["multiplicity"]]
     scoring = result["family_scoring_summary"]
     summary = {
         "method": "orbittrace_density_capped_multiplicity_v13_stress",
@@ -134,6 +140,8 @@ def main() -> int:
         "adaptive_rule": "K=min(cap,N_local); fail only if N_local<4",
         "synthetic_cardinality_checks": checks,
         "family_count": int(result["family_count"]),
+        "family_universe_sha256": canonical_sha(sorted(order)),
+        "multiplicity_order_sha256": canonical_sha(order),
         "episode_sizes_observed": list(scoring["episode_sizes"]),
         "max_brown_equivalence_difference": float(scoring["max_brown_equivalence_difference"]),
         "multiplicity_metrics": result["metrics"]["multiplicity"],
