@@ -12,7 +12,7 @@ No final target-containing execution is permitted until the exact frozen candida
 
 1. its target-excluded GMN 2022/2023 development/final-candidate requirements;
 2. `PASS_FINAL_BROAD_CATALOGUE_SUPERIORITY` or `PASS_FINAL_SPARSE_STREAM_SUPERIORITY` on the permanent SonotaCo 2013/2014 test;
-3. `PASS_FINAL_MAARSY_2020_2021_NO_RETUNING_GENERALIZATION` under the candidate-specific external protocol frozen before final-test access;
+3. `PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION` under the candidate-specific external protocol frozen before final-test access;
 4. a source/transport audit proving this blind-search firewall is implemented unchanged for the final candidate.
 
 Any missing prerequisite keeps the target inaccessible.
