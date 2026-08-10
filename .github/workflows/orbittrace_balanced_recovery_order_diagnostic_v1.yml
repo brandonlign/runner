@@ -37,8 +37,8 @@ jobs:
           mkdir -p input/ranker input/ref input/truth output
           test "$(git hash-object orbittrace_sonotaco_balanced_recovery_oof_v1/train_evaluate.py)" = 'f2d443dbef2457c7432a7b3b21392f897e512ca0'
           test "$(git hash-object orbittrace_v23_worst_year_oof_ranker_v1/train_evaluate.py)" = '67ce5e68106e5ce34f3ea4ad2afc9f49824698c5'
-          test "$(git hash-object orbittrace_balanced_recovery_order_diagnostic_v1/PROTOCOL.md)" = 'b7ee49a49dae961749f3698e09f3f4d4f667e28b'
-          test "$(git hash-object orbittrace_balanced_recovery_order_diagnostic_v1/run_diagnostic.py)" = 'b876ebf8e1325545cbc6c472163fffd82083eb46'
+          test "$(git hash-object orbittrace_balanced_recovery_order_diagnostic_v1/PROTOCOL.md)" = '9fa57ecb45a214a12852b2ebae9a64a507af6d62'
+          test "$(git hash-object orbittrace_balanced_recovery_order_diagnostic_v1/run_diagnostic.py)" = 'b6b6d1fb198c15f569bde1c9af289f7e54dc8a59'
           python -m py_compile orbittrace_balanced_recovery_order_diagnostic_v1/run_diagnostic.py orbittrace_sonotaco_balanced_recovery_oof_v1/train_evaluate.py orbittrace_v23_worst_year_oof_ranker_v1/train_evaluate.py
       - uses: actions/download-artifact@v4
         with:
@@ -114,6 +114,9 @@ jobs:
           assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
           assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['target_information_access'] is False and r['target_region_events_accessed'] is False
           assert r['blind_exclusion']==[20.0,55.0]
+          for route in ('sugar','hdbscan'):
+              rr=r['routes'][route]['reference_replay']
+              assert rr['classifier_diversity_order_hash_match'] is True and rr['fused_order_hash_match'] is True
           PY
       - name: Preserve provenance
         if: always()
