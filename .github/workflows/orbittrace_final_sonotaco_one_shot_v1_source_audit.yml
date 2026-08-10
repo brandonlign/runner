@@ -80,12 +80,21 @@ jobs:
         run: |
           set -euo pipefail
           PYTHONPATH=. python orbittrace_final_sonotaco_truth_v1/test_truth_boundary.py
-      - name: Run exact frozen evaluator self-test
+      - name: Run exact frozen evaluator self-test and interface audit
         run: |
           set -euo pipefail
           base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/orbittrace_final_matched_evaluator_v1.py
           test "$(sha256sum /tmp/orbittrace_final_matched_evaluator_v1.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
           PYTHONPATH=/tmp python orbittrace_final_matched_evaluator_v1/self_test.py
+          python - <<'PY'
+          import importlib.util, inspect
+          p='/tmp/orbittrace_final_matched_evaluator_v1.py'
+          spec=importlib.util.spec_from_file_location('frozen_eval',p)
+          assert spec and spec.loader
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          print('EVALUATE_PAIR_SIGNATURE', inspect.signature(m.evaluate_pair))
+          print('FINAL_VERDICT_SIGNATURE', inspect.signature(m.final_verdict))
+          PY
       - name: Source guard against target, MAARSY, or alternate-dataset access surfaces
         run: |
           set -euo pipefail
