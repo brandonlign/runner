@@ -1,0 +1,1 @@
+Result pending. Do not interpret or modify v20 until the frozen workflow completes. Any technical failure before scientific evaluation may receive transport-only repair; any scientific result is preserved as-is.
