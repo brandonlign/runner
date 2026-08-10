@@ -1,0 +1,102 @@
+name: OrbitTrace v29 canonical post-result ceiling diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v29-purity-diversity-sonotaco-canonical-dev-v1
+    paths:
+      - 'orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v29-canonical-postresult-ceiling-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen diagnostic source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1/PROTOCOL.md)" = '9e871e342dbd21a3f62349d6828a9599333f7ad4'
+          test "$(git hash-object orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1/run_diagnostic.py)" = '48bc4c9538d33e603f17b31c98941c64cc69a62a'
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+          python -m py_compile orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1/run_diagnostic.py
+          mkdir -p input/v29 input/truth output
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v29-canonical-sonotaco-exposed-development-v1
+          path: input/v29
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31437739544
+      - name: Verify authoritative v29 no-go and pretruth catalogue
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v29/pretruth/V29_CANONICAL_PRETRUTH_CATALOGUE.json | cut -d' ' -f1)" = 'dd751abd4330f58b4056eb8da473ee4d19ae756211f0538c41b252ffc9fb352b'
+          python - <<'PY'
+          import json
+          c=json.load(open('input/v29/pretruth/V29_CANONICAL_PRETRUTH_CATALOGUE.json'))
+          r=json.load(open('input/v29/final/V29_CANONICAL_SONOTACO_EXPOSED_RESULT.json'))
+          assert c['family_count']==334 and c['candidate_counts']=={'hard':25,'p19':84,'p20':225,'union':334}
+          assert c['truth_accessed'] is False and c['matched_comparator_rows_accessed'] is False
+          assert r['verdict']=='FAIL_V29_CANONICAL_SONOTACO_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT' and r['panel_wins']==0
+          assert r['model_retrained_on_sonotaco'] is False and r['parameter_search'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['target_information_access'] is False
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Run truth-aware diagnostic only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1/run_diagnostic.py \
+            --v29-root input/v29 \
+            --truth-root input/truth \
+            --output output
+      - name: Enforce diagnostic-only boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/V29_CANONICAL_POSTRESULT_CEILING_DIAGNOSTIC_V1.json'))
+          assert r['stage']=='V29_CANONICAL_POSTRESULT_FIXED_CATALOGUE_CEILING_DIAGNOSTIC_V1'
+          assert r['deployable_order_defined'] is False and r['successor_defined'] is False
+          assert r['parameter_search'] is False and r['source_quota_selected'] is False and r['oracle_family_ids_published'] is False
+          assert r['sonotaco_role']=='EXPOSED_POSTRESULT_DIAGNOSTIC_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1/PROTOCOL.md orbittrace_v29_canonical_postresult_ceiling_diagnostic_v1/run_diagnostic.py input/v29/pretruth/V29_CANONICAL_PRETRUTH_CATALOGUE.json > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v29-canonical-postresult-ceiling-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
