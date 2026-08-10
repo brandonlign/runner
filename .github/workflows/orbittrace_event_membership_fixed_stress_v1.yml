@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: brandonlign/runner
-          ref: 99fdc0d21e91b68496adeddc21b2837093473ed9
+          ref: 729b1cc11d2ddfd6472b6064240664131dc3fa82
           path: event-source
       - uses: actions/checkout@v4
         with:
@@ -65,15 +65,17 @@ jobs:
           )
           python -m py_compile \
             orbittrace_event_membership_fixed_stress_v1/run_stress.py \
-            event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py
+            orbittrace_event_membership_fixed_stress_v1/run_corrected.py \
+            event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py \
+            event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-event-membership-calibration-lab-v1
           path: input/846
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: 31343806656
-      - name: Authorize only a scientific #846 PASS and pin selected policy
+          run-id: 31344761936
+      - name: Authorize only corrected scientific #846 PASS and pin selected policy
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -85,7 +87,7 @@ jobs:
           assert p['model'] in {'ET_d4_l10','ET_d6_l10','ET_d8_l10','ET_d6_l30','ET_d8_l30','HGB_l20','HGB_l50'}
           assert float(p['threshold']) in {0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90}
           assert str(p['cap_ratio']) in {'0.5','1.0','2.0','4.0','Infinity'} or float(p['cap_ratio']) in {0.5,1.0,2.0,4.0}
-          print('PASS_846_FIXED_POLICY_AUTHORIZATION',p)
+          print('PASS_846_CORRECTED_FIXED_POLICY_AUTHORIZATION',p)
           PY
       - uses: actions/download-artifact@v4
         with:
@@ -108,13 +110,13 @@ jobs:
           test "$(sha256sum input/p12/p12_expanded_families.json.gz | cut -d' ' -f1)" = '0377eaf640a7b3215d2d79f34394b84370e60519edb55f9fb57a8ff29844d6a7'
           test "$(sha256sum input/p12/p12_decisions_pretruth.json.gz | cut -d' ' -f1)" = '8b304db4f878c2ec8388348b72c22bfa5ff37317fba8c5ea1932b085bb1964d3'
           test "$(sha256sum input/p12/drift_conditioned_two_view_membership_p12_development.json | cut -d' ' -f1)" = '96698c1a7ba700716a79e7bc8b7bc9acb2f9aec653095a5d7e33b14000b87a38'
-      - name: Execute the one fixed #846 policy under five new grouped folds
+      - name: Execute the one corrected fixed #846 policy under five new grouped folds
         env:
-          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8:.
         run: |
           set -euo pipefail
-          python -u orbittrace_event_membership_fixed_stress_v1/run_stress.py \
-            --lab-source event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py \
+          python -u orbittrace_event_membership_fixed_stress_v1/run_corrected.py \
+            --lab-source event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py \
             --lab-result input/846/event_membership_calibration_lab_v1.json \
             --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
@@ -128,7 +130,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_event_membership_fixed_stress_v1/run_stress.py event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py input/846/event_membership_calibration_lab_v1.json > output/stress_provenance_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_event_membership_fixed_stress_v1/run_stress.py orbittrace_event_membership_fixed_stress_v1/run_corrected.py event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py input/846/event_membership_calibration_lab_v1.json > output/stress_provenance_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
