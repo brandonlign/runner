@@ -1,0 +1,47 @@
+name: OrbitTrace final literature evaluator freeze v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_governance/FINAL_LITERATURE_EVALUATOR_FREEZE_V1.md'
+      - 'orbittrace_governance/orbittrace_final_literature_evaluator_v1.py'
+      - '.github/workflows/orbittrace_final_literature_evaluator_freeze_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run evaluator self-test and no-data firewall audit
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          python orbittrace_governance/orbittrace_final_literature_evaluator_v1.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          src=Path('orbittrace_governance/orbittrace_final_literature_evaluator_v1.py').read_text()
+          protocol=Path('orbittrace_governance/FINAL_LITERATURE_EVALUATOR_FREEZE_V1.md').read_text()
+          tree=ast.parse(src)
+          assert '2026081001' in src and '10_000' in src
+          assert 'Fraction' in src and '_hungarian_min_exact' in src
+          assert 'point_assignment_held_fixed' in src
+          assert 'year_x_truth_size_bin' in src
+          forbidden=('013a.zip','014a.zip','sonotaco.com','requests.','urllib','curl','wget','OrbitTrace-April','target_coordinate','247.17','-14.34','37.62')
+          lower=(src+'\n'+protocol).lower()
+          for token in forbidden:
+              assert token.lower() not in lower, token
+          imports={n.names[0].name for n in ast.walk(tree) if isinstance(n,ast.Import)}
+          imports|={n.module for n in ast.walk(tree) if isinstance(n,ast.ImportFrom) and n.module}
+          assert not ({'requests','urllib','gmn_python_api'} & imports)
+          print('PASS_FINAL_LITERATURE_EVALUATOR_SOURCE_FIREWALL')
+          PY
+          sha256sum orbittrace_governance/FINAL_LITERATURE_EVALUATOR_FREEZE_V1.md orbittrace_governance/orbittrace_final_literature_evaluator_v1.py
