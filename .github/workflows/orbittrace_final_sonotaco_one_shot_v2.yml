@@ -236,6 +236,8 @@ jobs:
           repository: ${{ github.repository }}
           run-id: 31346168826
       - name: Freeze comparator primary output before truth
+        env:
+          PYTHONPATH: .
         run: |
           set -euo pipefail
           if [ '${{ matrix.comparator }}' = sugar ]; then source='input/comparator-source/sugar_uncertainty_core.py'; else source='input/comparator-source/hdbscan_2025_runner.py'; fi
@@ -357,6 +359,8 @@ jobs:
           base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > input/evaluator.py
           test "$(sha256sum input/evaluator.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
       - name: Open post-output truth and compute single frozen final literature verdict
+        env:
+          PYTHONPATH: .
         run: |
           set -euo pipefail
           python -u orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py \
