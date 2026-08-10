@@ -4,7 +4,13 @@
 This module performs no network access and accepts no truth mapping. It is frozen from already-
 spent SonotaCo schema knowledge before either reserved 2013/2014 scientific archive is opened.
 The 20°–55° target interval is rejected immediately after solar longitude is decoded and before
-RA/Dec/speed/camera values are interpreted. The shower field is never read.
+any other scientific field is interpreted. The shower field is never read.
+
+The shared manifest deliberately carries every raw observable needed by any frozen final method:
+OrbitTrace geometry, Sugar RA/Dec/Vg uncertainties, and native orbital elements that a promoted
+P12/M2 membership layer would require. Carrying a field does not authorize an algorithm to use it;
+each frozen method still consumes only its predeclared inputs. This prevents a weaker comparator
+from being created merely because the common parser discarded uncertainty fields.
 """
 from __future__ import annotations
 
@@ -23,8 +29,6 @@ MIN_NCAM = 2.0
 RAW_HEADER_WIDTH_WITH_TRAILING_EMPTY = 46
 EFFECTIVE_HEADER_WIDTH = 45
 
-# Historical validated SonotaCo annual U2 schema (2016 and 2023). The final reserved years must
-# match this exact effective schema or fail closed before scientific row retention.
 EXPECTED_EFFECTIVE_HEADER = (
     "dayut", "timeut", "mjdday", "soldeg", "radeg", "rasddeg", "dedeg", "desddeg",
     "vgkms", "vgsdkms", "aau", "asdau", "1a1au", "1asd1au", "qau", "qsdau", "e", "esd",
@@ -33,6 +37,10 @@ EXPECTED_EFFECTIVE_HEADER = (
     "erdeg", "ncamorg", "erorgdeg", "shower", "dr", "dv", "dd", "zf", "nighttimehour", "zhr",
 )
 REQUIRED_GEOMETRY_HEADERS = {"soldeg", "radeg", "dedeg", "vgkms", "ncam"}
+SHARED_NUMERIC_HEADERS = {
+    "radeg", "rasddeg", "dedeg", "desddeg", "vgkms", "vgsdkms",
+    "qau", "e", "perideg", "nodedeg", "incldeg", "ncam",
+}
 
 
 def require(ok: bool, msg: str) -> None:
@@ -62,6 +70,7 @@ def reconcile_header(raw_header: list[str]) -> list[str]:
             "SonotaCo effective header differs from pre-frozen historical U2 schema")
     require(len(normalized) == len(set(normalized)), "duplicate normalized SonotaCo header")
     require(REQUIRED_GEOMETRY_HEADERS.issubset(set(normalized)), "required label-free geometry field missing")
+    require(SHARED_NUMERIC_HEADERS.issubset(set(normalized)), "required shared observable field missing")
     return normalized
 
 
@@ -72,10 +81,11 @@ def normalize_annual_csv(
     base: Any,
     id_prefix: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Return target-excluded normalized events and a structural/quality audit.
+    """Return target-excluded shared rows and a structural/quality audit.
 
-    `base` is the already-frozen geometry helper exposing `equatorial_to_ecliptic` and `wrap180`.
-    No label/truth field is returned or inspected.
+    The common row keeps uncertainty/orbit values even when they are missing/nonfinite (as None).
+    Pairwise frozen adapters may later require positive uncertainties or complete orbital elements;
+    those pairwise eligibility rules are applied before any truth is opened.
     """
     require(year in {2013, 2014}, f"normalizer is reserved only for SonotaCo 2013/2014, got {year}")
     text = payload.decode("utf-8-sig")
@@ -100,21 +110,22 @@ def normalize_annual_csv(
             counts["malformed_width"] += 1
             continue
 
-        # Firewall order is intentional and audited: decode ONLY solar longitude first.
+        # CRITICAL FIREWALL ORDER: only solar longitude may be decoded before this branch.
         sol_raw = parse_float(row[index["soldeg"]])
         if sol_raw is None:
             counts["invalid_solar"] += 1
             continue
         sol = sol_raw % 360.0
         if BLIND_LOW <= sol <= BLIND_HIGH:
-            counts["blind_removed_before_geometry"] += 1
+            counts["blind_removed_before_any_other_scientific_field"] += 1
             continue
 
-        # Only after the target interval is removed may remaining candidate geometry be decoded.
-        ra = parse_float(row[index["radeg"]])
-        dec = parse_float(row[index["dedeg"]])
-        vg = parse_float(row[index["vgkms"]])
-        ncam = parse_float(row[index["ncam"]])
+        # Only now may shared scientific observables be decoded.
+        values = {name: parse_float(row[index[name]]) for name in SHARED_NUMERIC_HEADERS}
+        ra = values["radeg"]
+        dec = values["dedeg"]
+        vg = values["vgkms"]
+        ncam = values["ncam"]
         if not (
             ra is not None and 0.0 <= ra < 360.0
             and dec is not None and -90.0 <= dec <= 90.0
@@ -135,11 +146,37 @@ def normalize_annual_csv(
             "sun_lon": float(base.wrap180(float(ecl_lon) - float(sol))),
             "ecl_lat": float(ecl_lat),
             "vg": float(vg),
+            # Raw equatorial observables and uncertainty columns for faithful Sugar clones.
+            "ra": float(ra),
+            "ra_sd": values["rasddeg"],
+            "dec": float(dec),
+            "dec_sd": values["desddeg"],
+            "vg_sd": values["vgsdkms"],
+            # Native orbital elements for a possible already-frozen M2/P12 membership transport.
+            "q": values["qau"],
+            "e": values["e"],
+            "peri": values["perideg"],
+            "node": values["nodedeg"],
+            "inc": values["incldeg"],
+            "ncam": float(ncam),
             "iau": 0,
             "complex_key": "HIDDEN",
         })
         counts["retained"] += 1
+        counts["retained_with_positive_sugar_uncertainties"] += int(
+            values["rasddeg"] is not None and values["rasddeg"] > 0.0
+            and values["desddeg"] is not None and values["desddeg"] > 0.0
+            and values["vgsdkms"] is not None and values["vgsdkms"] > 0.0
+        )
+        counts["retained_with_complete_orbit"] += int(all(
+            values[name] is not None for name in ("qau", "e", "perideg", "nodedeg", "incldeg")
+        ))
 
+    output_fields = [
+        "id", "year", "sol", "sun_lon", "ecl_lat", "vg",
+        "ra", "ra_sd", "dec", "dec_sd", "vg_sd",
+        "q", "e", "peri", "node", "inc", "ncam", "iau", "complex_key",
+    ]
     audit = {
         "year": int(year),
         "raw_header_width": len(raw_header),
@@ -155,11 +192,28 @@ def normalize_annual_csv(
         },
         "shower_column_row_accessed": False,
         "truth_mapping_accessed": False,
-        "target_region_geometry_decoded": False,
-        "output_fields": ["id", "year", "sol", "sun_lon", "ecl_lat", "vg", "iau", "complex_key"],
+        "target_region_non_solar_fields_decoded": False,
+        "output_fields": output_fields,
+        "raw_fields_carried_for_same_information_parity": [
+            "ra", "ra_sd", "dec", "dec_sd", "vg", "vg_sd", "q", "e", "peri", "node", "inc", "ncam"
+        ],
     }
     require(len(events) == len(seen_ids), "normalized event ID collision")
     return events, audit
+
+
+def sugar_pairwise_eligible(event: dict[str, Any]) -> bool:
+    """Frozen structural eligibility for the uncertainty-aware Sugar comparator."""
+    return all(
+        event[name] is not None and math.isfinite(float(event[name])) and float(event[name]) > 0.0
+        for name in ("ra_sd", "dec_sd", "vg_sd")
+    )
+
+
+def orbit_pairwise_eligible(event: dict[str, Any]) -> bool:
+    """Structural orbit completeness for an already-frozen P12/M2 transport, if M2 is promoted."""
+    values = [event[name] for name in ("q", "e", "peri", "node", "inc")]
+    return all(value is not None and math.isfinite(float(value)) for value in values)
 
 
 def _synthetic_base() -> Any:
@@ -176,36 +230,53 @@ def _synthetic_base() -> Any:
 
 def self_test() -> None:
     header = list(EXPECTED_EFFECTIVE_HEADER) + [""]
-    def row(sol: str, ra: str = "100", dec: str = "20", vg: str = "30", ncam: str = "2", shower: str = "SECRET") -> list[str]:
+    idx = {x: i for i, x in enumerate(EXPECTED_EFFECTIVE_HEADER)}
+
+    def row(
+        sol: str,
+        ra: str = "100", dec: str = "20", vg: str = "30", ncam: str = "2",
+        ra_sd: str = "0.2", dec_sd: str = "0.3", vg_sd: str = "0.4",
+        q: str = "0.5", e: str = "0.8", peri: str = "120", node: str = "220", inc: str = "10",
+        shower: str = "SECRET",
+    ) -> list[str]:
         values = ["0"] * EFFECTIVE_HEADER_WIDTH
-        idx = {x: i for i, x in enumerate(EXPECTED_EFFECTIVE_HEADER)}
-        values[idx["soldeg"]] = sol
-        values[idx["radeg"]] = ra
-        values[idx["dedeg"]] = dec
-        values[idx["vgkms"]] = vg
-        values[idx["ncam"]] = ncam
-        values[idx["shower"]] = shower
+        for key, value in {
+            "soldeg": sol, "radeg": ra, "dedeg": dec, "vgkms": vg, "ncam": ncam,
+            "rasddeg": ra_sd, "desddeg": dec_sd, "vgsdkms": vg_sd,
+            "qau": q, "e": e, "perideg": peri, "nodedeg": node, "incldeg": inc,
+            "shower": shower,
+        }.items():
+            values[idx[key]] = value
         return values
+
     buf = io.StringIO(newline="")
     writer = csv.writer(buf)
     writer.writerow(header)
     writer.writerow(row("10", shower="SHOULD_NOT_BE_READ"))
-    # Target-region row deliberately carries invalid geometry. A correct firewall skips it before
-    # trying to parse that geometry.
-    writer.writerow(row("30", ra="NOT_A_NUMBER", dec="NOT_A_NUMBER", vg="NOT_A_NUMBER", ncam="X", shower="TARGET_SECRET"))
+    # Target row has invalid every-other-field content; correct firewall must never parse any of it.
+    writer.writerow(row(
+        "30", ra="NOT_A_NUMBER", dec="NOT_A_NUMBER", vg="NOT_A_NUMBER", ncam="X",
+        ra_sd="BAD", dec_sd="BAD", vg_sd="BAD", q="BAD", e="BAD", peri="BAD", node="BAD", inc="BAD",
+        shower="TARGET_SECRET",
+    ))
     writer.writerow(row("100", vg="4.9"))
     writer.writerow(row("110", ncam="1"))
-    writer.writerow(row("120", ra="200", dec="-10", vg="50", ncam="3"))
+    writer.writerow(row("120", ra="200", dec="-10", vg="50", ncam="3", ra_sd="0", q=""))
     events, audit = normalize_annual_csv(buf.getvalue().encode("utf-8"), year=2013, base=_synthetic_base(), id_prefix="X")
     assert [e["sol"] for e in events] == [10.0, 120.0]
-    assert audit["counts"]["blind_removed_before_geometry"] == 1
+    assert audit["counts"]["blind_removed_before_any_other_scientific_field"] == 1
     assert audit["counts"]["invalid_geometry_or_quality"] == 2
     assert audit["shower_column_row_accessed"] is False
-    assert audit["target_region_geometry_decoded"] is False
+    assert audit["target_region_non_solar_fields_decoded"] is False
+    assert sugar_pairwise_eligible(events[0]) is True
+    assert orbit_pairwise_eligible(events[0]) is True
+    assert sugar_pairwise_eligible(events[1]) is False
+    assert orbit_pairwise_eligible(events[1]) is False
+    assert events[0]["ra_sd"] == 0.2 and events[0]["q"] == 0.5
     assert all(e["complex_key"] == "HIDDEN" and e["iau"] == 0 for e in events)
     assert all(20.0 > e["sol"] or e["sol"] > 55.0 for e in events)
 
 
 if __name__ == "__main__":
     self_test()
-    print("PASS_FINAL_SONOTACO_NORMALIZER_V1_SELF_TEST")
+    print("PASS_FINAL_SONOTACO_SHARED_MANIFEST_V2_SELF_TEST")
