@@ -45,10 +45,10 @@ jobs:
           if sugar_sha != '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb':
               raise SystemExit(f'Sugar core SHA mismatch: {sugar_sha}')
 
-          encoded=''.join(Path('hdbscan-source/orbittrace_literature_comparison/run_sonotaco_2025_hdbscan_catalogue.py.gz.b64').read_text().split())
-          hdb_raw=gzip.decompress(base64.b64decode(encoded,validate=True))
-          Path('output/hdbscan_2025_runner.py').write_bytes(hdb_raw)
-          hdb_sha=hashlib.sha256(hdb_raw).hexdigest()
+          hdb_paths=[f'hdbscan-source/orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part{i:02d}.b64' for i in range(5)]
+          hdb_sha=decode_parts(hdb_paths,'output/hdbscan_2025_runner.py')
+          if hdb_sha != 'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2':
+              raise SystemExit(f'HDBSCAN runner SHA mismatch: {hdb_sha}')
           Path('output/hdbscan_decoded_sha256.txt').write_text(hdb_sha+'\n')
 
           print('SUGAR_SHA256',sugar_sha)
@@ -58,14 +58,12 @@ jobs:
       - name: Enforce no historical result payload access and source-only provenance
         run: |
           set -euo pipefail
-          # We deliberately do not read RESULT.md, result JSON, freeze files containing outcomes,
-          # or the sealed historical matched branch. Only source-code payloads above are touched.
           sha256sum output/*.py > output/decoded_source_sha256.txt
           printf '%s\n' \
             'sugar_source_commit=b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd' \
             'sugar_core_expected_sha256=5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb' \
             'hdbscan_source_commit=a15737166cc9e1917f2e3d1b63cc42096008ae2e' \
-            'final_required_hdbscan_science_sha256=a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2' \
+            'hdbscan_runner_expected_sha256=a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2' \
             'historical_result_payload_access=false' \
             'sonotaco_2013_2014_access=false' \
             'target_information_access=false' > output/PROVENANCE.txt
