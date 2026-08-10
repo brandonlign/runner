@@ -1,41 +1,66 @@
-# Final SonotaCo 2013/2014 label-free normalizer freeze v1
+# Final SonotaCo 2013/2014 shared label-free manifest — v2
 
 ## Purpose
 
-Freeze the candidate/comparator row-normalization contract before either reserved SonotaCo 2013 or 2014 scientific archive is opened. This source is based only on previously spent SonotaCo annual-U2 schema knowledge (validated 2016 and 2023 interfaces). It contains no archive URL/hash/row count for the reserved years and cannot access them.
+Freeze the candidate/comparator row-normalization contract before either reserved SonotaCo 2013 or 2014 scientific archive is opened. The exact annual-U2 schema is known only from already-spent historical SonotaCo interfaces. This source contains no reserved-year URL/hash/row count and cannot access either final-test archive.
 
-## Fixed schema rule
+V2 fixes one preaccess fairness omission in v1: the shared manifest now **carries**, without selecting on, the raw uncertainty fields required by frozen Sugar and the orbital elements that an already-frozen M2/P12 membership layer would require if M2 is ultimately promoted. OrbitTrace, Sugar, and HDBSCAN still consume only their frozen predeclared fields. No algorithm receives a field that is hidden from another algorithm on the same pairwise row universe.
 
-The annual science CSV must normalize to the exact historically validated 45-field U2 header. A single trailing empty header field is permitted because that exact transport artifact was already observed in historical SonotaCo annual files; no other missing/renamed/reordered field is accepted.
+## Fixed schema
 
-If 2013 or 2014 does not satisfy this schema, the scientific normalizer fails closed. Only a separately source-audited structural transport repair may then be considered, using header/row-structure information only and before retaining any scientific event value. The scientific cuts below cannot change.
+The annual science CSV must normalize to the exact historically validated 45-field U2 header. One trailing empty header field is permitted because that exact transport artifact was already observed historically. Any other schema change fails closed before scientific-row retention.
 
-## Firewall and row cuts
+## Firewall and base row cuts
 
 For each physical data row:
 
-1. decode only `soldeg`;
+1. decode **only** `soldeg`;
 2. normalize finite solar longitude modulo 360°;
 3. discard the closed interval **20°–55°** immediately;
-4. only after that exclusion, decode RA, Dec, geocentric speed and camera count;
-5. retain only finite geometry with `0 <= RA < 360`, `-90 <= Dec <= 90`, **5 <= Vg <= 75 km/s**, and **ncam >= 2**;
-6. convert RA/Dec to ecliptic longitude/latitude using the already-frozen geometry helper and set Sun-centered longitude to wrapped `(lambda_ecl - solar_longitude)`;
-7. emit only `id, year, sol, sun_lon, ecl_lat, vg, iau=0, complex_key=HIDDEN`.
+4. only after that exclusion may any other scientific column be decoded;
+5. retain the base shared row only when `0 <= RA < 360`, `-90 <= Dec <= 90`, **5 <= Vg <= 75 km/s**, and **ncam >= 2**;
+6. convert RA/Dec to ecliptic geometry with the already-frozen helper and form wrapped Sun-centered longitude.
 
-The `shower` field is never read from a data row. No truth mapping, IAU shower code, target identity, orbital element, uncertainty value, or target-region geometry enters this normalizer.
+The shower field is never read.
 
-The Vg 5–75 km/s bound is inherited from the active hard-v8/P19/P20 scanner rather than the broader historical SonotaCo fixed4 episode parser. It is therefore part of the final candidate/common-row scientific universe and cannot be widened after final-test access.
+## Shared fields carried after the firewall
 
-## Stable row identity
+Every retained base row carries:
 
-Event IDs are generated from an arbitrary caller-supplied prefix plus physical CSV row number. Year is carried as an explicit field; no downstream transport may infer year from the ID string.
+- stable `id`, explicit `year`, `sol`, `sun_lon`, `ecl_lat`, `vg`;
+- raw `ra`, `dec`;
+- raw Sugar uncertainty inputs `ra_sd`, `dec_sd`, `vg_sd`;
+- native orbit inputs `q`, `e`, `peri`, `node`, `inc`;
+- `ncam`;
+- hidden placeholders `iau=0`, `complex_key=HIDDEN`.
 
-## Downstream fairness
+Missing/nonfinite uncertainty or orbit values are represented as null and do **not** remove an otherwise valid base row. This prevents the shared parser from silently choosing one comparator's structural universe.
 
-The final candidate, Sugar, catalogue HDBSCAN, and post-output truth evaluator must all consume the same exact retained-row manifest for each pairwise final-test universe as already frozen by the final comparison policy. This normalizer does not itself expose or consume truth.
+## Pairwise structural eligibility
+
+Before truth is opened:
+
+- **Sugar pairwise universe** additionally requires positive finite `ra_sd`, `dec_sd`, and `vg_sd`, because the frozen uncertainty-clone algorithm cannot faithfully operate without them.
+- **HDBSCAN pairwise universe** uses the base geometry rows and ignores uncertainty/orbit fields.
+- **OrbitTrace M0** uses the base geometry rows and ignores uncertainty/orbit fields.
+- If **M2** is promoted, its separately frozen transport may additionally require complete finite `q,e,peri,node,inc`; that requirement must be applied symmetrically to the OrbitTrace-vs-comparator common-row universe before outputs and before truth.
+
+No pairwise structural filter may depend on shower truth, method score, target identity, or post-output performance.
+
+## Stable identity
+
+Event IDs are caller-supplied prefix plus physical CSV row number. Year is carried explicitly; downstream code may not infer year from the ID string.
+
+## Same-information fairness
+
+For each comparator/year, candidate and comparator receive the exact same pairwise retained event IDs and the same shared raw-field records. An algorithm may ignore fields it does not use, but no hidden truth/background designation or unavailable proxy may be supplied selectively.
 
 ## Activation boundary
 
-Passing the synthetic/source audit does **not** authorize opening SonotaCo 2013/2014. Final-test scientific access remains forbidden until GMN M0/M2 adjudication has completed, the exact integrated candidate executable is frozen, and that executable is explicitly declared `FINAL_FOR_LITERATURE_TEST`.
+Passing the synthetic/source audit does **not** authorize SonotaCo 2013/2014 access. Final-test scientific access remains forbidden until:
+
+1. GMN M0/M2 adjudication is complete;
+2. the exact integrated candidate executable is frozen;
+3. the candidate is explicitly declared `FINAL_FOR_LITERATURE_TEST`.
 
 MAARSY 2020/2021 and OrbitTrace/20°–55° remain sealed.
