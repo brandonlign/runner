@@ -1,0 +1,160 @@
+name: OrbitTrace fresh 2014/2016 history exposure audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_fresh_2014_2016_history_exposure_audit.yml
+      - orbittrace_post_p18_fresh_matched/HISTORY_AUDIT_RUN.md
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Require one-file audit activation and scan pre-reservation repository/PR history only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          marker=orbittrace_post_p18_fresh_matched/HISTORY_AUDIT_RUN.md
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = "$marker"
+          test "$(git show "$HEAD_SHA:$marker")" = 'AUDIT_PRE_RESERVATION_SONOTACO_2014_2016_EXPOSURE'
+          git checkout --detach "$BASE_SHA"
+          test ! -e "$marker"
+
+          # Reservation PR #792 was created at 2026-08-09T21:32:21Z.
+          # Search all branch/PR commit history strictly before that reservation.
+          # PR heads use a dedicated namespace so checkout's refs/remotes/pull/<n>/merge cannot conflict.
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pull-heads/*'
+          cutoff='2026-08-09T21:32:20Z'
+          regex='SonotaCo 2014|SonotaCo 2016|sonotaco[_-]2014|sonotaco[_-]2016|014a\.zip|016a\.zip|SNMv3/014|SNMv3/016'
+          git log --all --before="$cutoff" -G "$regex" --format='EXPOSURE_COMMIT %H %cI %s' --name-only -- . > /tmp/history_hits.txt || true
+          cat /tmp/history_hits.txt
+          if grep -q '^EXPOSURE_COMMIT ' /tmp/history_hits.txt; then
+            echo 'PRE_RESERVATION_REPOSITORY_EXPOSURE_FOUND' >&2
+            exit 1
+          fi
+
+          # Avoid GitHub Search API entirely. Enumerate repository issue/PR metadata,
+          # issue comments, inline review comments, and review-summary bodies, then scan locally.
+          mkdir -p /tmp/metadata/reviews
+          gh api --method GET --paginate --slurp "repos/$REPO/issues?state=all&per_page=100" > /tmp/metadata/issues_pages.json
+          gh api --method GET --paginate --slurp "repos/$REPO/issues/comments?per_page=100&sort=created&direction=asc" > /tmp/metadata/issue_comments_pages.json
+          gh api --method GET --paginate --slurp "repos/$REPO/pulls/comments?per_page=100&sort=created&direction=asc" > /tmp/metadata/review_comments_pages.json
+          gh api --method GET --paginate --slurp "repos/$REPO/pulls?state=all&per_page=100&sort=created&direction=asc" > /tmp/metadata/pulls_pages.json
+
+          python - <<'PY'
+          import json,re
+          from pathlib import Path
+          pulls=json.load(open('/tmp/metadata/pulls_pages.json'))
+          flat=[x for page in pulls for x in page]
+          nums=sorted({int(x['number']) for x in flat if int(x['number'])<792})
+          Path('/tmp/metadata/pre_reservation_pr_numbers.txt').write_text('\n'.join(map(str,nums))+('\n' if nums else ''))
+          print('PRE_RESERVATION_PR_COUNT',len(nums))
+          PY
+          while IFS= read -r n; do
+            [ -n "$n" ] || continue
+            gh api --method GET --paginate --slurp "repos/$REPO/pulls/$n/reviews?per_page=100" > "/tmp/metadata/reviews/$n.json"
+          done < /tmp/metadata/pre_reservation_pr_numbers.txt
+
+          python - <<'PY'
+          import hashlib,json,re
+          from pathlib import Path
+
+          terms=(
+            re.compile(r'SonotaCo 2014',re.I),
+            re.compile(r'SonotaCo 2016',re.I),
+            re.compile(r'sonotaco[_-]2014',re.I),
+            re.compile(r'sonotaco[_-]2016',re.I),
+            re.compile(r'014a\.zip',re.I),
+            re.compile(r'016a\.zip',re.I),
+            re.compile(r'SNMv3/014',re.I),
+            re.compile(r'SNMv3/016',re.I),
+          )
+          def hit(text):
+              text=text or ''
+              return [p.pattern for p in terms if p.search(text)]
+          def flatten(path):
+              pages=json.load(open(path)); return [x for page in pages for x in page]
+          bad=[]; scanned={'issues_or_pr_bodies':0,'issue_comments':0,'inline_review_comments':0,'review_summaries':0}
+
+          for x in flatten('/tmp/metadata/issues_pages.json'):
+              n=int(x['number'])
+              if n>=792: continue
+              scanned['issues_or_pr_bodies']+=1
+              found=hit((x.get('title') or '')+'\n'+(x.get('body') or ''))
+              if found: bad.append({'surface':'issue_or_pr','number':n,'url':x.get('html_url'),'terms':found})
+
+          for x in flatten('/tmp/metadata/issue_comments_pages.json'):
+              m=re.search(r'/issues/(\d+)$',x.get('issue_url',''))
+              if not m or int(m.group(1))>=792: continue
+              scanned['issue_comments']+=1
+              found=hit(x.get('body'))
+              if found: bad.append({'surface':'issue_comment','number':int(m.group(1)),'url':x.get('html_url'),'terms':found})
+
+          for x in flatten('/tmp/metadata/review_comments_pages.json'):
+              m=re.search(r'/pulls/(\d+)$',x.get('pull_request_url',''))
+              if not m or int(m.group(1))>=792: continue
+              scanned['inline_review_comments']+=1
+              found=hit(x.get('body'))
+              if found: bad.append({'surface':'inline_review_comment','number':int(m.group(1)),'url':x.get('html_url'),'terms':found})
+
+          for path in sorted(Path('/tmp/metadata/reviews').glob('*.json')):
+              n=int(path.stem)
+              pages=json.load(open(path))
+              for page in pages:
+                  for x in page:
+                      scanned['review_summaries']+=1
+                      found=hit(x.get('body'))
+                      if found: bad.append({'surface':'review_summary','number':n,'url':x.get('html_url'),'terms':found})
+
+          print('METADATA_SCAN_COUNTS',json.dumps(scanned,sort_keys=True))
+          print('METADATA_EXPOSURE_HITS',json.dumps(bad,sort_keys=True))
+          if bad:
+              raise SystemExit('PRE_RESERVATION_GITHUB_METADATA_EXPOSURE_FOUND')
+
+          history=Path('/tmp/history_hits.txt').read_text()
+          metadata_manifest=json.dumps(scanned,sort_keys=True,separators=(',',':'))
+          out={
+            'classification':'FRESH_MATCHED_PREACCESS_HISTORY_AUDIT',
+            'reserved_years':[2014,2016],
+            'reservation_pr':792,
+            'reservation_created_at':'2026-08-09T21:32:21Z',
+            'repository_history_prior_exposure':False,
+            'github_metadata_prior_exposure':False,
+            'metadata_surfaces_scanned':scanned,
+            'archive_accessed':False,
+            'event_values_accessed':False,
+            'known_shower_truth_accessed':False,
+            'comparator_cluster_values_accessed':False,
+            'target_information_access':False,
+            'history_search_sha256':hashlib.sha256(history.encode()).hexdigest(),
+            'metadata_scan_manifest_sha256':hashlib.sha256(metadata_manifest.encode()).hexdigest(),
+            'verdict':'PASS_FRESH_SONOTACO_2014_2016_PREACCESS_HISTORY_AUDIT',
+          }
+          Path('output').mkdir(exist_ok=True)
+          Path('output/fresh_2014_2016_history_audit.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+          echo PASS_FRESH_SONOTACO_2014_2016_PREACCESS_HISTORY_AUDIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fresh-2014-2016-history-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

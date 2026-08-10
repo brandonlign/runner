@@ -1,0 +1,97 @@
+name: OrbitTrace P15 support-safe halo development compatibility v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN_V2.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p15-support-safe-halo-development-v2
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+
+      - name: Require one-file child and exact audited executor sources
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN_V2.md'
+          marker="$(git show "$HEAD_SHA":orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN_V2.md)"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P15_DEVELOPMENT_V2_CANONICAL_IDENTITY'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = 'P15_SOURCE_22d34131_CANONICAL_P12_P13'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 2
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN_V2.md
+          test "$(git hash-object orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py)" = 'a30d3c6dc2b722ad40c90d0ba6f6b2703797b169'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/run_development_v2.sh)" = '52b5718c67c56680ebc872492587d5b994c39b15'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/adjudicate_development_v2.py)" = '76f79013200ce01c65254a91956d6c8af39ed468'
+          bash -n orbittrace_support_safe_halo_p15/run_development_v2.sh
+          python -m py_compile orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py orbittrace_support_safe_halo_p15/adjudicate_development_v2.py orbittrace_drift_conditioned_p12/run_header_compatible.py
+          echo PASS_P15_V2_ONE_FILE_CHILD_AND_EXECUTOR_SOURCE_FREEZE
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Execute exact P15 development v2 and canonical adjudication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          chmod +x orbittrace_support_safe_halo_p15/run_development_v2.sh
+          orbittrace_support_safe_halo_p15/run_development_v2.sh
+
+      - name: Record immutable environment
+        if: always()
+        run: |
+          set +e
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum /tmp/p12_parent.py /tmp/run_p12.py orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py orbittrace_support_safe_halo_p15/run_development_v2.sh orbittrace_support_safe_halo_p15/adjudicate_development_v2.py > output/p15_v2_source_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p15-support-safe-halo-development-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90

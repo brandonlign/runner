@@ -1,0 +1,145 @@
+name: OrbitTrace event membership fixed stress v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_event_membership_fixed_stress_v1/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-event-membership-fixed-stress-v1
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  stress:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Enforce one-file activation
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}')" = 'orbittrace_event_membership_fixed_stress_v1/RUN.md'
+          test "$(cat orbittrace_event_membership_fixed_stress_v1/RUN.md)" = 'EXECUTE_ONLY_AFTER_846_SCIENTIFIC_PASS'
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: e5733a57488b7b8dff26c15ff76f679810efac9c
+          path: event-source
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact dependencies and source guards
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/v3 output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          python -m py_compile \
+            orbittrace_event_membership_fixed_stress_v1/run_stress.py \
+            orbittrace_event_membership_fixed_stress_v1/run_corrected.py \
+            event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py \
+            event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-event-membership-calibration-lab-v1
+          path: input/846
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344902186
+      - name: Authorize only final corrected scientific #846 PASS and pin selected policy
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('input/846/event_membership_calibration_lab_v1.json'))
+          assert r['verdict']=='PASS_EVENT_LEVEL_P12_MEMBERSHIP_CALIBRATION_FEASIBILITY'
+          assert int(r['robustness']['passing_grid_variants']) >= 3
+          p=r['selected']['policy']
+          assert p['model'] in {'ET_d4_l10','ET_d6_l10','ET_d8_l10','ET_d6_l30','ET_d8_l30','HGB_l20','HGB_l50'}
+          assert float(p['threshold']) in {0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90}
+          assert str(p['cap_ratio']) in {'0.5','1.0','2.0','4.0','Infinity'} or float(p['cap_ratio']) in {0.5,1.0,2.0,4.0}
+          print('PASS_846_FINAL_CORRECTED_FIXED_POLICY_AUTHORIZATION',p)
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-drift-conditioned-two-view-membership-p12-development
+          path: input/p12
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31302353678
+      - name: Verify immutable development inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/p12/p12_expanded_families.json.gz | cut -d' ' -f1)" = '0377eaf640a7b3215d2d79f34394b84370e60519edb55f9fb57a8ff29844d6a7'
+          test "$(sha256sum input/p12/p12_decisions_pretruth.json.gz | cut -d' ' -f1)" = '8b304db4f878c2ec8388348b72c22bfa5ff37317fba8c5ea1932b085bb1964d3'
+          test "$(sha256sum input/p12/drift_conditioned_two_view_membership_p12_development.json | cut -d' ' -f1)" = '96698c1a7ba700716a79e7bc8b7bc9acb2f9aec653095a5d7e33b14000b87a38'
+      - name: Execute the one final corrected fixed #846 policy under five new grouped folds
+        env:
+          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_event_membership_fixed_stress_v1/run_corrected.py \
+            --lab-source event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py \
+            --lab-result input/846/event_membership_calibration_lab_v1.json \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --p12-dir input/p12 \
+            --output output
+          cat output/EVENT_MEMBERSHIP_FIXED_STRESS_V1.md
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_event_membership_fixed_stress_v1/run_stress.py orbittrace_event_membership_fixed_stress_v1/run_corrected.py event-source/orbittrace_event_membership_calibration_lab_v1/run_lab.py event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py input/846/event_membership_calibration_lab_v1.json > output/stress_provenance_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-event-membership-fixed-stress-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

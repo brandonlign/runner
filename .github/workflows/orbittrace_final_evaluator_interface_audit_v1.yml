@@ -1,0 +1,43 @@
+name: OrbitTrace final evaluator interface audit v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - '.github/workflows/orbittrace_final_evaluator_interface_audit_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode and print function signatures only
+        run: |
+          set -euo pipefail
+          base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/evaluator.py
+          test "$(sha256sum /tmp/evaluator.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          python - <<'PY'
+          import ast, json
+          from pathlib import Path
+          src=Path('/tmp/evaluator.py').read_text(); tree=ast.parse(src)
+          out=[]
+          for node in tree.body:
+              if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                  out.append({
+                      'name':node.name,
+                      'args':[a.arg for a in node.args.posonlyargs+node.args.args],
+                      'kwonly':[a.arg for a in node.args.kwonlyargs],
+                  })
+          print(json.dumps(out,indent=2))
+          for node in tree.body:
+              if isinstance(node,ast.FunctionDef) and node.name in {'evaluate_pair','bootstrap_two_year','final_verdict','evaluate_final','main'}:
+                  print(f'===== {node.name} =====')
+                  lines=src.splitlines()
+                  print('\n'.join(lines[node.lineno-1:node.end_lineno]))
+          print('PASS_FINAL_EVALUATOR_INTERFACE_AUDIT')
+          print('SCIENTIFIC_DATA_ACCESSED=false TARGET_ACCESSED=false')
+          PY

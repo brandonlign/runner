@@ -1,0 +1,196 @@
+name: OrbitTrace P20 recurrent isolated-quartet development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p20_recurrent_isolated_quartet/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p20-recurrent-isolated-quartet-development
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          path: execution
+      - name: Require one-file activation from exact frozen P20 base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          cd execution
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_p20_recurrent_isolated_quartet/RUN.md'
+          test "$(git show "$HEAD_SHA":orbittrace_p20_recurrent_isolated_quartet/RUN.md)" = 'RUN_FROZEN_P20_RECURRENT_ISOLATED_QUARTET'
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_p20_recurrent_isolated_quartet/RUN.md
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md)" = '94b732a303bd03d74317cf1101a0af5816bc06fd'
+          test -f orbittrace_p20_recurrent_isolated_quartet/P20_STRESS_PROTOCOL.md
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Restore exact promoted-v8 runtime module
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          python -m py_compile input/v3/multi_anchor_energy_v3.py frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
+      - name: Decode exact promoted-v8 catalogue runtime
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/audit_development_source.py)" = '7035daf3e670ab89c66c87035540419f549bab09'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test -f /tmp/run_wavelet_catalogue_v3_development.py
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - name: Require exact permanent P19 scientific failure before P20 data access
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/p19/p19_subthreshold_reciprocal_recurrence_development.json | cut -d' ' -f1)" = '6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/p19/p19_subthreshold_reciprocal_recurrence_development.json').read_text())
+          assert r['verdict']=='FAIL_P19_SUBTHRESHOLD_RECIPROCAL_RECURRENCE_DEVELOPMENT'
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['hard_family_count']==226
+          assert r['v8_predecessor']['result_sha256']=='fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          assert r['integrity_gates']['no_target_information_access'] is True
+          assert all(r['integrity_gates'].values())
+          assert r['scientific_gates']['recovery_at_100_at_least_58'] is False
+          assert r['scientific_gates']['sparse_4_9_mean_f1_gain_at_least_005_both_years'] is False
+          print('PASS_EXACT_P19_PERMANENT_SCIENTIFIC_NO_GO')
+          PY
+      - name: Verify exact P20 and v8 ancestry before development data access
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(git -C frozen-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C execution hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          test "$(git -C execution hash-object orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md)" = '94b732a303bd03d74317cf1101a0af5816bc06fd'
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          python -m py_compile execution/orbittrace_p20_recurrent_isolated_quartet/run_development.py /tmp/run_wavelet_catalogue_v3_development.py
+          echo PASS_P20_EXACT_ANCESTRY_AND_PREREGISTRATION
+      - name: Execute one-shot target-excluded P20 development
+        env:
+          PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u execution/orbittrace_p20_recurrent_isolated_quartet/run_development.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+          cat output/P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT.md
+      - name: Enforce frozen P20 result boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/p20_recurrent_isolated_quartet_development.json').read_text())
+          assert r['verdict'] in {
+            'PASS_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT',
+            'FAIL_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT',
+          }
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['hard_family_count']==226
+          assert r['v8_predecessor']['result_sha256']=='fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          assert r['integrity_gates']['no_target_information_access'] is True
+          assert all(r['integrity_gates'].values())
+          print(r['verdict'])
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          printf '%s\n' 'v8_run=31217916558' > output/p20_provenance.txt
+          printf '%s\n' 'v8_artifact_id=9009728299' >> output/p20_provenance.txt
+          printf '%s\n' 'v8_artifact_digest=sha256:88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e' >> output/p20_provenance.txt
+          printf '%s\n' 'p19_run=31340446086' >> output/p20_provenance.txt
+          printf '%s\n' 'p19_artifact_id=9045903630' >> output/p20_provenance.txt
+          printf '%s\n' 'p19_artifact_digest=sha256:def5250b23b91437fb586c7d07a82437afd6aab92dec6bc2a9d1d2ed300726e3' >> output/p20_provenance.txt
+          printf '%s\n' 'p19_result_sha256=6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319' >> output/p20_provenance.txt
+          printf '%s\n' 'catalogue_v3_source_sha256=ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' >> output/p20_provenance.txt
+          printf '%s\n' "p20_base_sha=${{ github.event.pull_request.base.sha }}" >> output/p20_provenance.txt
+          sha256sum execution/orbittrace_p20_recurrent_isolated_quartet/run_development.py \
+            execution/orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md \
+            execution/orbittrace_p20_recurrent_isolated_quartet/P20_STRESS_PROTOCOL.md \
+            input/v3/multi_anchor_energy_v3.py \
+            frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py \
+            frozen-v8/orbittrace_wavelet_catalogue_v3/audit_development_source.py \
+            /tmp/run_wavelet_catalogue_v3_development.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            input/p19/p19_subthreshold_reciprocal_recurrence_development.json \
+            >> output/p20_provenance.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p20-recurrent-isolated-quartet-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90

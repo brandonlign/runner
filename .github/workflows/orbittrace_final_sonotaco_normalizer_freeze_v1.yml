@@ -1,0 +1,55 @@
+name: OrbitTrace final SonotaCo shared manifest freeze v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_normalizer_v1/**'
+      - '.github/workflows/orbittrace_final_sonotaco_normalizer_freeze_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run synthetic firewall/schema/parity test and source audit
+        run: |
+          set -euo pipefail
+          python orbittrace_final_sonotaco_normalizer_v1/normalizer.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_final_sonotaco_normalizer_v1/normalizer.py')
+          src=p.read_text()
+          protocol=Path('orbittrace_final_sonotaco_normalizer_v1/PROTOCOL.md').read_text()
+          tree=ast.parse(src)
+          imported={n.names[0].name for n in ast.walk(tree) if isinstance(n,ast.Import)}
+          imported|={n.module for n in ast.walk(tree) if isinstance(n,ast.ImportFrom) and n.module}
+          assert not ({'requests','urllib','gmn_python_api'} & imported)
+          forbidden=('013a.zip','014a.zip','_U2_20130101_S.csv','_U2_20140101_S.csv','OrbitTrace-April','247.17','-14.34','37.62','target_coordinate')
+          lower=(src+'\n'+protocol).lower()
+          for token in forbidden:
+              assert token.lower() not in lower, token
+          for literal in ('BLIND_LOW = 20.0','BLIND_HIGH = 55.0','VG_LOW = 5.0','VG_HIGH = 75.0','MIN_NCAM = 2.0'):
+              assert literal in src
+          assert 'row[index["shower"]]' not in src
+          assert "row[index['shower']]" not in src
+          blind=src.index('if BLIND_LOW <= sol <= BLIND_HIGH:')
+          decode_other=src.index('values = {name: parse_float(row[index[name]]) for name in SHARED_NUMERIC_HEADERS}')
+          assert blind < decode_other
+          for field in ('ra_sd','dec_sd','vg_sd','q','e','peri','node','inc'):
+              assert f'"{field}"' in src
+          assert 'def sugar_pairwise_eligible' in src
+          assert 'def orbit_pairwise_eligible' in src
+          print('PASS_FINAL_SONOTACO_SHARED_MANIFEST_V2_SOURCE_FIREWALL')
+          PY
+          python -m py_compile orbittrace_final_sonotaco_normalizer_v1/normalizer.py
+          sha256sum orbittrace_final_sonotaco_normalizer_v1/normalizer.py orbittrace_final_sonotaco_normalizer_v1/PROTOCOL.md

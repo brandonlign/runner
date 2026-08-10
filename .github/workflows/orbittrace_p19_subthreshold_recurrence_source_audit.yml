@@ -1,0 +1,117 @@
+name: OrbitTrace P19 subthreshold recurrence source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p19_subthreshold_recurrence/P19_PROTOCOL.md
+      - orbittrace_p19_subthreshold_recurrence/run_development.py
+      - .github/workflows/orbittrace_p19_subthreshold_recurrence_source_audit.yml
+      - .github/workflows/orbittrace_p19_subthreshold_recurrence_development.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove exact P19 freeze and target firewall
+        run: |
+          set -euo pipefail
+          s=orbittrace_p19_subthreshold_recurrence/run_development.py
+          p=orbittrace_p19_subthreshold_recurrence/P19_PROTOCOL.md
+          w=.github/workflows/orbittrace_p19_subthreshold_recurrence_development.yml
+          test "$(git hash-object "$s")" = 'f230fc775b38df1e9d447bba33419abd5f6f6ef1'
+          test "$(git hash-object "$p")" = '3be02f4fb288d784cabd7901e928db14eed6593d'
+          python -m py_compile "$s"
+          test ! -e orbittrace_p19_subthreshold_recurrence/RUN.md
+          python - <<'PY'
+          import ast, pathlib
+          s=pathlib.Path('orbittrace_p19_subthreshold_recurrence/run_development.py').read_text()
+          tree=ast.parse(s)
+          defs={n.name:n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef)}
+          assert 'build_soft_recurrence' in defs
+          soft=ast.get_source_segment(s,defs['build_soft_recurrence'])
+          main=ast.get_source_segment(s,defs['main'])
+          for x in (
+              'YEARS = (2022, 2023)',
+              'BLIND = (20.0, 55.0)',
+              'SOFT_SUPPORT_K = 3',
+              'LINK_RADIUS = 1.5',
+              'EXPECTED_V8_FAMILIES = 226',
+              'EXPECTED_V8_QUALIFIED = 95',
+              'EXPECTED_V8_RECOVERY100 = 58',
+              'EXPECTED_V8_RESULT_SHA256 = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"',
+          ):
+              assert x in s, x
+          assert 'hidden_labels' not in soft
+          assert 'label_free_scan_year' in main
+          assert 'repair_year_centroids' in main
+          assert 'build_soft_recurrence' in main
+          assert 'prelabel_sha = sha256_json(prelabel_payload)' in main
+          assert 'p19_order[:len(hard_multiplicity)] == hard_multiplicity' in main
+          assert 'all_component_event_ids_by_year' in soft
+          assert 'pairwise_triplet_coherent' in soft
+          assert 'nearest_unmatched_component' in soft
+          assert 'd_trigger <= LINK_RADIUS' in soft
+          assert 'parameter_search": False' in main
+          assert 'threshold_search": False' in main
+          assert 'radius_search": False' in main
+          assert 'component_floor_search": False' in main
+          forbidden=(
+              'F0059','247.17','-14.34','37.62',
+              '9044538272','9044444246','9044259813','9044142249',
+              'P18_MATCHED_TRUTH','matched_2023','matched_2025',
+          )
+          for x in forbidden:
+              assert x not in s, x
+          hash_pos=main.index('prelabel_sha = sha256_json(prelabel_payload)')
+          eval_pos=main.index('baseline = evaluate_order(hidden_labels')
+          assert hash_pos < eval_pos
+          print('PASS_P19_AST_AND_PRELABEL_FIREWALL')
+          PY
+          for x in \
+            'three nearest unclaimed' \
+            'exact v8 multiplicity order as immutable prefix' \
+            'parameter_search": False' \
+            'no_target_information_access'; do
+            grep -F "$x" "$s"
+          done
+          grep -F 'A scientific failure is `FAIL_P19_SUBTHRESHOLD_RECIPROCAL_RECURRENCE_DEVELOPMENT`' "$p"
+          grep -F 'three' "$p" >/dev/null
+          grep -F 'orbittrace_p19_subthreshold_recurrence/RUN.md' "$w"
+          for x in \
+            'git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a' \
+            'git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py' \
+            '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2' \
+            '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8' \
+            '7035daf3e670ab89c66c87035540419f549bab09' \
+            'python orbittrace_wavelet_catalogue_v3/audit_development_source.py' \
+            'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' \
+            '/tmp/run_wavelet_catalogue_v3_development.py' \
+            'PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8'; do
+            grep -F "$x" "$w"
+          done
+          test "$(grep -Fc 'python orbittrace_wavelet_catalogue_v3/audit_development_source.py' "$w")" -eq 1
+          test "$(grep -Fc 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' "$w")" -ge 3
+          if grep -Fq 'PYTHONPATH: frozen-v8' "$w"; then
+            echo 'incomplete v8 runtime path survived P19 transport repair' >&2
+            exit 1
+          fi
+          if grep -Eq 'workflow_dispatch|schedule:' "$w"; then
+            echo 'P19 execution workflow must not be independently dispatchable' >&2
+            exit 1
+          fi
+          if grep -Eq 'SonotaCo|MAARSY|CAMS|OrbitTrace-April|target_coordinate|actions/artifacts' "$s"; then
+            echo 'external/matched/target data surface leaked into P19 scientific source' >&2
+            exit 1
+          fi
+          echo PASS_P19_SUBTHRESHOLD_RECURRENCE_SOURCE_FREEZE
+          echo TARGET_REGION_UNAVAILABLE

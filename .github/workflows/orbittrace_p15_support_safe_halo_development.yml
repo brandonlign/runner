@@ -1,0 +1,221 @@
+name: OrbitTrace P15 support-safe halo development compatibility
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p15-support-safe-halo-development
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+
+      - name: Require one-file child and frozen P15 source
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN.md'
+          marker="$(git show "$HEAD_SHA":orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN.md)"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P15_DEVELOPMENT_COMPATIBILITY_ON_FROZEN_2022_2023'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31327637103'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 2
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_support_safe_halo_p15/DEVELOPMENT_RUN.md
+          grep -F "DEV_P15_SHA256='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          grep -F "MATCHED_P15_SHA256='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          python -m py_compile orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py orbittrace_drift_conditioned_p12/run_header_compatible.py
+          echo PASS_P15_ONE_FILE_CHILD_AND_SOURCE_FREEZE
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact P12 parent and P15 development source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,v6,v8,dsh} output
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/p10.py
+          python orbittrace_density_contrast_p11/apply_p11_patch.py /tmp/p10.py /tmp/p11.py
+          echo '914913d0462ea6793af3836cef945f14a03cca205ac0755ed6cdadb63b8752f9  /tmp/p11.py' | sha256sum -c -
+          python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/p12_parent.py
+          echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12_parent.py' | sha256sum -c -
+          python orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py /tmp/p12_parent.py /tmp/run_p12.py
+          echo '22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b  /tmp/run_p12.py' | sha256sum -c -
+          python -m py_compile /tmp/run_p12.py
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          cp exact-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+          test "$(git hash-object input/v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+          echo 'f76b8448f299ccf078fc5978c0890b9a084f131080db8d2136b5e6dba77edc7b  input/v6/label_free_sparse_support_v6_families.json.gz' | sha256sum -c -
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo '88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip' | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+          echo 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b  input/v8/pooled_year_centroid_v8_development.json' | sha256sum -c -
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py' | sha256sum -c -
+          python -m py_compile input/dsh/literature_comparators.py
+          echo PASS_P15_EXACT_DEVELOPMENT_INPUT_IDENTITIES
+
+      - name: Execute frozen target-excluded P15 compatibility development
+        env:
+          PYTHONPATH: exact-v8:input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_drift_conditioned_p12/run_header_compatible.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --v6-structural-families-json-gz input/v6/label_free_sparse_support_v6_families.json.gz \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --dsh-comparator input/dsh/literature_comparators.py \
+            --output output
+
+      - name: Enforce vacuous fallback and exact established outputs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path('output/drift_conditioned_two_view_membership_p12_development.json')
+          r=json.loads(p.read_text())
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['p15_architecture']=='P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY'
+          assert r['p15_parent_source_sha256']=='78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32'
+          assert r['p15_min_direction_negatives_unchanged']==128
+          assert r['p15_no_padding_resampling_or_relaxation'] is True
+          assert r['p15_secondary_characterization_only'] is True
+          assert r['p15_unavailable_direction_count']==0 and r['p15_unavailable_directions']==[]
+          empty_sha=hashlib.sha256(b'[]').hexdigest()
+          assert r['p15_availability_sha256']==empty_sha
+          assert len(r['direction_audits'])==452
+          assert min(a['negative_count'] for a in r['direction_audits'])>=128
+          assert all(a['negative_count']>=128 for a in r['direction_audits'])
+
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert r['baseline_v8']['recovered_at_500']==95
+          assert abs(r['baseline_v8']['mrr']-0.045531138942766655)<1e-15
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-15
+          assert r['p12']['qualified_matches']==91
+          assert r['p12']['recovered_at_100']==58
+          assert r['p12']['recovered_at_500']==91
+          assert abs(r['p12']['macro_f1']-0.37661279333940806)<1e-15
+          assert abs(r['p12']['top100_dominant_precision']-0.6904890277588119)<1e-15
+          assert abs(r['p12']['mrr']-0.04796779301964192)<1e-15
+          assert abs(r['p12_large_shower']['mean_recall']-0.24179462579908398)<1e-15
+          assert abs(r['p12_large_shower']['mean_precision']-0.8778478363509471)<1e-15
+          assert r['diagnostics']['assigned_nonseed_events']==17238
+          assert r['diagnostics']['proposal_events']==17281
+          assert r['diagnostics']['conflicted_proposal_events']==189
+          assert r['diagnostics']['families_gaining_members']==216
+          expected={
+            'drift_pretruth_sha256':'de5bf862a8997a561a0d9c71b0ec69930168d7bbe08febcea8d63e2126a1682a',
+            'crossfit_pretruth_sha256':'72c2885adeda15ebefa3364f702ffff3ed65225ef584904f632c3f4831d719df',
+            'model_pretruth_sha256':'cf46c19182e63ab9f26c935ae1fc7bd42e21dc27277f615c9bd4fc40f6ddaee5',
+            'density_pretruth_sha256':'3fe9757b922c5764519ebc5f946c03a828da1bfbb4252d0613cf2455e130a272',
+            'membership_pretruth_sha256':'f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3',
+            'decisions_pretruth_sha256':'6e11671cfb176302a58dd329d9fb09fc380a19e4ff9669bc444d5ce9624f00f5',
+          }
+          for k,v in expected.items(): assert r[k]==v,(k,r[k])
+          assert r['membership_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert all(a['label_value_accessed'] is False for a in r['geometry_audits'])
+          assert all(a['label_value_accessed_only_after_blind_and_dedup'] is True for a in r['truth_audits'])
+          summary={
+            'verdict':'PASS_P15_SUPPORT_SAFE_HALO_DEVELOPMENT_COMPATIBILITY',
+            'p15_source_sha256':'22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b',
+            'directions':len(r['direction_audits']),
+            'minimum_negative_count':min(a['negative_count'] for a in r['direction_audits']),
+            'unavailable_directions':r['p15_unavailable_direction_count'],
+            'membership_pretruth_sha256':r['membership_pretruth_sha256'],
+            'p12':r['p12'],
+            'baseline_v8':r['baseline_v8'],
+            'target_information_access':False,
+            'matched_truth_access':False,
+          }
+          Path('output/P15_SUPPORT_SAFE_HALO_DEVELOPMENT_COMPATIBILITY.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          print('PASS_P15_SUPPORT_SAFE_HALO_DEVELOPMENT_COMPATIBILITY')
+          PY
+
+      - name: Record immutable environment
+        if: always()
+        run: |
+          set +e
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum /tmp/p12_parent.py /tmp/run_p12.py orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py orbittrace_support_safe_halo_p15/P15_SUPPORT_SAFE_HALO_PROTOCOL.md > output/p15_source_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p15-support-safe-halo-development-compatibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90

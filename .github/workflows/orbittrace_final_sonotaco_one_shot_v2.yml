@@ -1,0 +1,377 @@
+name: OrbitTrace final SonotaCo 2013/2014 one-shot v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_one_shot_v1/EXECUTE_V2.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require exact one-file execution child
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}')
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'orbittrace_final_sonotaco_one_shot_v1/EXECUTE_V2.md'
+          test "$(cat orbittrace_final_sonotaco_one_shot_v1/EXECUTE_V2.md)" = 'EXECUTE_FINAL_SONOTACO_2013_2014_V2'
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/v3 output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-authorization-v1
+          path: input/authorization
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31349998268
+      - name: Revalidate final-test authorization before data access
+        run: |
+          set -euo pipefail
+          mkdir -p output/auth
+          python orbittrace_final_sonotaco_execution_v1/authorize_final_test_v1.py \
+            --manifest orbittrace_final_sonotaco_execution_v1/final_test_authorization_manifest_v1.json \
+            --output output/auth/recomputed_authorization.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          frozen=json.loads(next(Path('input/authorization').glob('*.json')).read_text())
+          current=json.loads(Path('output/auth/recomputed_authorization.json').read_text())
+          for x in (frozen,current):
+              assert x['state']=='AUTHORIZED_FINAL_SONOTACO_2013_2014_EXECUTION',x
+              assert x['sonotaco_2013_2014_scientific_access_authorized'] is True
+              assert x['maarsy_scientific_access_authorized'] is False
+              assert x['target_access_authorized'] is False
+          print('AUTHORIZED_FINAL_SONOTACO_2013_2014_EXECUTION')
+          PY
+      - name: First frozen-source archive access; record byte identities
+        run: |
+          set -euo pipefail
+          mkdir -p input/archives input/csv output/prepare
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import csv,hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv',26855),2014:('input/archives/014a.zip','_U2_20140101_S.csv',22079)}
+          out={'authorization_state':'AUTHORIZED_FINAL_SONOTACO_2013_2014_EXECUTION','maarsy_access_authorized':False,'target_access_authorized':False,'years':{}}
+          for year,(zpath,basename,published_count) in specs.items():
+              raw=Path(zpath).read_bytes(); archive_sha=hashlib.sha256(raw).hexdigest()
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  matches=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==basename]
+                  assert len(matches)==1,(year,matches)
+                  member=matches[0]; data=z.read(member)
+              Path(f'input/csv/{year}.csv').write_bytes(data)
+              rows=list(csv.reader(io.StringIO(data.decode('utf-8-sig'),newline=''),delimiter=','))
+              physical=max(0,len(rows)-1)
+              out['years'][str(year)]={'archive_sha256':archive_sha,'member_path':member,'member_sha256':hashlib.sha256(data).hexdigest(),'member_bytes':len(data),'physical_data_rows':physical,'published_orbit_count':published_count,'published_count_match':physical==published_count}
+          Path('output/prepare/source_integrity.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - name: Freeze label-free base and pairwise row universes
+        env:
+          PYTHONPATH: .:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_final_sonotaco_one_shot_v1/prepare_label_free_rows.py \
+            --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv \
+            --p19-source orbittrace_p19_subthreshold_recurrence/run_development.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --source-integrity output/prepare/source_integrity.json --output output/prepare
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: output/prepare
+          if-no-files-found: error
+          retention-days: 90
+
+  candidate:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        comparator: [sugar, hdbscan]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install and restore exact #839 runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/v3 output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          git fetch --no-tags --depth=1 origin 7dd59b5d2be7c0040f42ee494c9bd8b71ccb0d8b
+          git diff --exit-code 7dd59b5d2be7c0040f42ee494c9bd8b71ccb0d8b HEAD -- orbittrace_urc_pair_portable_generators_v1/generators.py orbittrace_urc_pair_portable_generators_v1/verify_gmn_equivalence.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/prepare
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-urc-final-full-gmn-ranker-v1
+          path: input/model
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344776617
+      - name: Freeze final #839 output before truth
+        env:
+          PYTHONPATH: .:input/ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_final_sonotaco_one_shot_v1/run_candidate_pretruth.py \
+            --comparator '${{ matrix.comparator }}' \
+            --rows-2013 'input/prepare/${{ matrix.comparator }}_2013.json' --rows-2014 'input/prepare/${{ matrix.comparator }}_2014.json' \
+            --v8-source frozen-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --p19-source orbittrace_p19_subthreshold_recurrence/run_development.py --p20-source orbittrace_p20_recurrent_isolated_quartet/run_development.py \
+            --active-ranker-source input/ranker/run_urc_union_ranker.py --model-joblib input/model/urc_final_ranker.joblib \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-urc-pretruth-${{ matrix.comparator }}-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  comparator:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        comparator: [sugar, hdbscan]
+        year: [2013, 2014]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact comparator dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python - <<'PY'
+          import hdbscan,numpy,scipy,sklearn
+          assert numpy.__version__=='1.26.4',numpy.__version__
+          assert scipy.__version__=='1.11.4',scipy.__version__
+          assert sklearn.__version__=='1.4.2',sklearn.__version__
+          from importlib.metadata import version
+          assert version('hdbscan')=='0.8.44',version('hdbscan')
+          print('PASS_EXACT_FROZEN_COMPARATOR_RUNTIME')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/prepare
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-comparator-source-export-v1
+          path: input/comparator-source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31346168826
+      - name: Freeze comparator primary output before truth
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          if [ '${{ matrix.comparator }}' = sugar ]; then source='input/comparator-source/sugar_uncertainty_core.py'; else source='input/comparator-source/hdbscan_2025_runner.py'; fi
+          python -u orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py \
+            --comparator '${{ matrix.comparator }}' --year '${{ matrix.year }}' \
+            --rows 'input/prepare/${{ matrix.comparator }}_${{ matrix.year }}.json' --source "$source" --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-${{ matrix.comparator }}-pretruth-${{ matrix.year }}-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  freeze:
+    needs: [candidate, comparator]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-sonotaco-label-free-preparation-v2, path: input/prepare}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-urc-pretruth-sugar-v2, path: input/candidate-sugar}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-urc-pretruth-hdbscan-v2, path: input/candidate-hdbscan}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-sugar-pretruth-2013-v2, path: input/sugar-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-sugar-pretruth-2014-v2, path: input/sugar-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-hdbscan-pretruth-2013-v2, path: input/hdbscan-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-hdbscan-pretruth-2014-v2, path: input/hdbscan-2014}
+      - name: Freeze all output/source hashes before truth opens
+        run: |
+          set -euo pipefail
+          python -u orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py \
+            --prepare-dir input/prepare --candidate-sugar-dir input/candidate-sugar --candidate-hdbscan-dir input/candidate-hdbscan \
+            --comparator-sugar-2013-dir input/sugar-2013 --comparator-sugar-2014-dir input/sugar-2014 \
+            --comparator-hdbscan-2013-dir input/hdbscan-2013 --comparator-hdbscan-2014-dir input/hdbscan-2014 --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-pretruth-freeze-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  truth_and_evaluate:
+    needs: freeze
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact frozen #854 evaluator dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1'
+          python - <<'PY'
+          import numpy,scipy
+          assert numpy.__version__=='2.1.3',numpy.__version__
+          assert scipy.__version__=='1.14.1',scipy.__version__
+          print('PASS_EXACT_FROZEN_854_NUMERICAL_RUNTIME')
+          PY
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-sonotaco-label-free-preparation-v2, path: input/prepare}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-urc-pretruth-sugar-v2, path: input/candidate-sugar}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-urc-pretruth-hdbscan-v2, path: input/candidate-hdbscan}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-sugar-pretruth-2013-v2, path: input/sugar-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-sugar-pretruth-2014-v2, path: input/sugar-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-hdbscan-pretruth-2013-v2, path: input/hdbscan-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-hdbscan-pretruth-2014-v2, path: input/hdbscan-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-final-sonotaco-pretruth-freeze-v2, path: input/freeze}
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Re-download only frozen official archives and require identical first-access hashes
+        run: |
+          set -euo pipefail
+          mkdir -p input/archives input/csv
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          frozen=json.loads(Path('input/prepare/source_integrity.json').read_text())
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv'),2014:('input/archives/014a.zip','_U2_20140101_S.csv')}
+          for year,(zpath,basename) in specs.items():
+              raw=Path(zpath).read_bytes(); y=frozen['years'][str(year)]
+              assert hashlib.sha256(raw).hexdigest()==y['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  matches=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==basename]
+                  assert matches==[y['member_path']],(matches,y['member_path'])
+                  data=z.read(matches[0])
+              assert hashlib.sha256(data).hexdigest()==y['member_sha256']
+              Path(f'input/csv/{year}.csv').write_bytes(data)
+          print('PASS_IDENTICAL_FINAL_ARCHIVE_REDOWNLOAD')
+          PY
+      - name: Verify exact mapping/evaluator identities and decode evaluator
+        run: |
+          set -euo pipefail
+          mapfile -t audits < <(find input/mapping -type f -name audit.json)
+          test "${#audits[@]}" -eq 1
+          test "$(sha256sum "${audits[0]}" | cut -d' ' -f1)" = 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          cp "${audits[0]}" input/mapping_audit.json
+          base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > input/evaluator.py
+          test "$(sha256sum input/evaluator.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+      - name: Open post-output truth and compute single frozen final literature verdict
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python -u orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py \
+            --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv --mapping-audit input/mapping_audit.json --evaluator-source input/evaluator.py \
+            --prepare-dir input/prepare --freeze-dir input/freeze --candidate-sugar-dir input/candidate-sugar --candidate-hdbscan-dir input/candidate-hdbscan \
+            --comparator-sugar-2013-dir input/sugar-2013 --comparator-sugar-2014-dir input/sugar-2014 \
+            --comparator-hdbscan-2013-dir input/hdbscan-2013 --comparator-hdbscan-2014-dir input/hdbscan-2014 \
+            --source-integrity input/prepare/source_integrity.json --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-literature-result-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90

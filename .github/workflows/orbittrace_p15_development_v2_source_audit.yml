@@ -1,0 +1,68 @@
+name: OrbitTrace P15 development v2 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p14-matched-literature-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/run_development_v2.sh
+      - orbittrace_support_safe_halo_p15/adjudicate_development_v2.py
+      - .github/workflows/orbittrace_p15_support_safe_halo_development_v2.yml
+      - .github/workflows/orbittrace_p15_development_v2_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Audit exact inputs, blob identity semantics, canonical adjudication, and firewalls
+        run: |
+          set -euo pipefail
+          bash -n orbittrace_support_safe_halo_p15/run_development_v2.sh
+          python -m py_compile orbittrace_support_safe_halo_p15/adjudicate_development_v2.py
+          test "$(git hash-object orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py)" = 'a30d3c6dc2b722ad40c90d0ba6f6b2703797b169'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/run_development_v2.sh)" = '52b5718c67c56680ebc872492587d5b994c39b15'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/adjudicate_development_v2.py)" = '76f79013200ce01c65254a91956d6c8af39ed468'
+
+          run=orbittrace_support_safe_halo_p15/run_development_v2.sh
+          adj=orbittrace_support_safe_halo_p15/adjudicate_development_v2.py
+          wf=.github/workflows/orbittrace_p15_support_safe_halo_development_v2.yml
+
+          grep -F "test \"\$(git hash-object input/v3/multi_anchor_energy_v3.py)\" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'" "$run"
+          grep -F "test \"\$(git hash-object input/v3/wavelet_episode_comparator.py)\" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'" "$run"
+          if grep -E "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2.*sha256sum|493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8.*sha256sum" "$run"; then
+            echo 'Git blob ID is still being treated as SHA256' >&2
+            exit 1
+          fi
+          for x in \
+            "22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b" \
+            "9035003746" "4b13435ede6f95bf33c016642cc20f932bf45db58e10a5576f316234c29d8cd7" \
+            "9035081147" "efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a" \
+            "9005846925" "9009728299" \
+            "PASS_P15_V2_DEVELOPMENT_COMPATIBILITY_AND_CANONICAL_IDENTITY"; do
+            grep -F "$x" "$run"
+          done
+          grep -F "inherited==p12" "$adj"
+          grep -F "p15_unavailable_direction_count']==0" "$adj"
+          grep -F "len(new['direction_audits'])==452" "$adj"
+          grep -F "p13['core_pretruth_sha256']==P13_CORE_SHA" "$adj"
+          grep -F "halo['large_shower']==new['p12_large_shower']" "$adj"
+          grep -F "PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT" "$adj"
+          grep -F "EXECUTE_P15_DEVELOPMENT_V2_CANONICAL_IDENTITY" "$wf"
+          grep -F "P15_SOURCE_22d34131_CANONICAL_P12_P13" "$wf"
+          grep -F "orbittrace_support_safe_halo_p15/run_development_v2.sh" "$wf"
+
+          # Development may use only the established target-excluded development
+          # artifacts and canonical P12/P13 artifacts. Matched comparator artifacts,
+          # matched evaluator, external panel, and target-specific tokens are forbidden.
+          if grep -Eq '8955917326|9012424187|8957940764|8957263372|9041833656|evaluate_frozen_blindsafe|MAARSY|OrbitTrace-April|target_coordinate' "$run" "$adj" "$wf"; then
+            echo 'matched/external/target surface leaked into P15 development v2' >&2
+            exit 1
+          fi
+          echo PASS_P15_DEVELOPMENT_V2_SOURCE_AUDIT
+          echo NO_MATCHED_COMPARATOR_NO_EXTERNAL_NO_TARGET_ACCESS

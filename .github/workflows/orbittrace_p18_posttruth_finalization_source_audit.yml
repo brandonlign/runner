@@ -1,0 +1,90 @@
+name: OrbitTrace P18 posttruth finalization repair source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer_v2.py
+      - orbittrace_p17_rank_halo_membership_p18/run_posttruth_finalize_from_raw.sh
+      - .github/workflows/orbittrace_p18_posttruth_finalize_from_raw.yml
+      - .github/workflows/orbittrace_p18_posttruth_finalization_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove one missed checkpoint-role assertion is the only posttruth compatibility delta and no truth is reopened
+        run: |
+          set -euo pipefail
+          v1=orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py
+          v2=orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer_v2.py
+          runner=orbittrace_p17_rank_halo_membership_p18/run_posttruth_finalize_from_raw.sh
+          wf=.github/workflows/orbittrace_p18_posttruth_finalize_from_raw.yml
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py)" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
+          test "$(git hash-object "$v1")" = 'cb5a66e7481fa4542b28135dc4c8c89ef33b276f'
+          test "$(git hash-object "$v2")" = 'ae12ee38a73ee3f1b958b3ba61a4ef1eaa31f50d'
+          test "$(git hash-object "$runner")" = 'cf5faf8731daf1cde20d1171a792faec20966df9'
+          bash -n "$runner"
+          python -m py_compile "$v1" "$v2"
+          python "$v1" orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py /tmp/p18_v1.py
+          python "$v2" orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py /tmp/p18_v2.py
+          python - <<'PY'
+          from pathlib import Path
+          parent=Path('orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py').read_text()
+          v1=Path('/tmp/p18_v1.py').read_text(); v2=Path('/tmp/p18_v2.py').read_text()
+          old="    require(cp['p3_diagnostics']['primary_candidate_is_core_only'] is True and cp['p3_diagnostics']['halo_can_affect_primary_evaluation'] is False,f'generic evaluator compatibility role changed {panel}')\n"
+          new="    require(cp['p3_diagnostics']['primary_candidate_is_core_only'] is False and cp['p3_diagnostics']['halo_can_affect_primary_evaluation'] is True and cp['p3_diagnostics']['family_existence_and_rank_core_only'] is True and cp['p3_diagnostics']['reported_membership_is_exact_label_free_halo'] is True and cp['p3_diagnostics']['p18_no_new_member_proposal'] is True,f'P18 checkpoint output semantics changed {panel}')\n"
+          assert old in v1 and new not in v1
+          assert new in v2 and old not in v2
+          assert v2.replace(new,old,1)==v1
+          gates=('four_to_nine_gain_ge_0_10','four_to_twentyfour_gain_ge_0_10','macro_f1_not_more_than_0_10_lower','retain_at_least_80pct_f1_gt_0_5_count')
+          assert all(v2.count(x)==v1.count(x)==parent.count(x)>0 for x in gates)
+          print('PASS_P18_POSTTRUTH_REPAIR_IS_EXACTLY_ONE_ADDITIONAL_CHECKPOINT_ROLE_ASSERTION')
+          PY
+          for x in \
+            '31336331539' '9044444246' \
+            'sha256:27d2ad9ec26cc03dff28e9aad047f3a68fd8dd5599411d1e5bc0da7867a70688' \
+            'ebd7fca2380f544e4c641c9ec1575d4a0845ac23da9b80c32d9d362663125bf9' \
+            '31335741430' '9044259813' \
+            'c17c260af8a5ddd0548cef6a7d8b07b86167ed13ea3731a3adbd7248e570a97a' \
+            'd20bbed792d3491be8db01c2932ae4d9ad471fdfe9b3141fe6b4b0812a684e14' \
+            'EXECUTE_P18_POSTTRUTH_FINALIZATION_FROM_PINNED_RAW_ARTIFACT' \
+            "'scientific_gate_math_changed':False" \
+            "'detector_or_membership_recomputed':False" \
+            "'comparator_truth_reopened':False" \
+            "'external_data_access':False" \
+            "'target_information_access':False"; do
+            grep -F "$x" "$runner"
+          done
+          for forbidden in \
+            'evaluate_frozen_blindsafe.py' \
+            '9012424187' '8955917326' '8957940764' '8957263372' \
+            '023a.zip' '025a.zip' \
+            'generate_matched_pretruth' 'promote_p17_checkpoint_to_p18.py' \
+            'apply_support_safe_halo_p15.py' 'apply_reciprocal_support_closure_p17.py' \
+            'MAARSY' 'STAGE_A_RUN' 'STAGE_B_RUN'; do
+            if grep -Fq "$forbidden" "$runner" "$wf" "$v2"; then
+              echo "forbidden truth-reopen/detector/external surface in posttruth finalizer: $forbidden" >&2
+              exit 1
+            fi
+          done
+          # Target names are permitted only as fail-closed rejection sentinels in the compatibility generator.
+          test "$(grep -Fc "for token in ('OrbitTrace-April','target_coordinate'):" "$v2")" -eq 1
+          for token in OrbitTrace-April target_coordinate; do
+            if grep -Fq "$token" "$runner" "$wf"; then
+              echo "target token leaked into posttruth execution surface: $token" >&2
+              exit 1
+            fi
+          done
+          grep -F 'orbittrace_p17_rank_halo_membership_p18/POSTTRUTH_FINALIZE_RUN.md' "$wf"
+          grep -F 'orbittrace-p18-artifact-only-posttruth-final-result' "$wf"
+          test ! -e orbittrace_p17_rank_halo_membership_p18/POSTTRUTH_FINALIZE_RUN.md
+          echo PASS_P18_POSTTRUTH_FINALIZATION_SOURCE_AUDIT
+          echo PINNED_RAW_ARTIFACT_ONLY_NO_TRUTH_REOPEN_NO_EXTERNAL_NO_TARGET_ACCESS

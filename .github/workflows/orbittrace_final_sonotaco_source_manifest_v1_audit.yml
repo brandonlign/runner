@@ -1,0 +1,36 @@
+name: OrbitTrace final SonotaCo source manifest v1 audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_sources_v1/**'
+      - '.github/workflows/orbittrace_final_sonotaco_source_manifest_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit fixed official source identifiers without downloading data
+        run: |
+          set -euo pipefail
+          f=orbittrace_final_sonotaco_sources_v1/SOURCE_MANIFEST_V1.md
+          for x in \
+            '_U2_20130101_S.csv' \
+            'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip' \
+            '26,855' \
+            '_U2_20140101_S.csv' \
+            'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip' \
+            '22,079' \
+            'Archive byte hashes and exact member byte hashes are intentionally **not guessed**' \
+            'Solar longitude 20°–55° remains sealed'; do
+            grep -F "$x" "$f" >/dev/null
+          done
+          test ! -e orbittrace_final_sonotaco_sources_v1/RUN.md
+          echo PASS_FINAL_SONOTACO_SOURCE_METADATA_FREEZE
+          echo NO_ARCHIVE_DOWNLOADED_NO_SCIENTIFIC_VALUE_ACCESSED

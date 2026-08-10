@@ -1,0 +1,46 @@
+name: OrbitTrace active URC ranker source export v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - '.github/workflows/orbittrace_urc_final_ranker_source_export_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 63dc5b552d5217601003f738996477fb019ff7c8
+          path: active-ranker
+      - name: Decode and verify exact #839 source only
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          test "$(sha256sum active-ranker/orbittrace_urc_union_ranking_lab_v1/run_lab.py.gz.b64 | cut -d' ' -f1)" = '9704c91336c71a468c5e7da1aecf16919936eb159ab4c7bb594909e3751af51a'
+          base64 -d active-ranker/orbittrace_urc_union_ranking_lab_v1/run_lab.py.gz.b64 | gzip -dc > output/run_urc_union_ranker.py
+          test "$(sha256sum output/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          python -m py_compile output/run_urc_union_ranker.py
+          cp active-ranker/orbittrace_unified_recurrent_catalogue_lab_v1/run_lab.py output/urc_v1_support.py
+          cp active-ranker/orbittrace_unified_recurrent_catalogue_lab_v2/run_lab.py output/urc_v2_support.py
+          sha256sum output/*.py > output/source_sha256.txt
+          printf '%s\n' \
+            'source_commit=63dc5b552d5217601003f738996477fb019ff7c8' \
+            'encoded_sha256=9704c91336c71a468c5e7da1aecf16919936eb159ab4c7bb594909e3751af51a' \
+            'decoded_sha256=dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990' \
+            'scientific_data_access=false' \
+            'target_information_access=false' > output/PROVENANCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,52 @@
+name: OrbitTrace P18 final blind addendum source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/P18_FINAL_BLIND_AUTHORIZATION_ADDENDUM.md
+      - .github/workflows/orbittrace_p18_final_blind_addendum_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify P18 final authorization remains exact-ID, pre-result, and target-free
+        run: |
+          set -euo pipefail
+          p=orbittrace_p17_rank_halo_membership_p18/P18_FINAL_BLIND_AUTHORIZATION_ADDENDUM.md
+          for x in \
+            'complete GMN 2022 and 2023 corpus' \
+            'Primary family existence' \
+            'Primary rank' \
+            'Reported membership' \
+            'Halo membership cannot create, delete, qualify, rescue, merge, or rerank' \
+            'MIN_DIRECTION_NEGATIVES=128' \
+            'reciprocal closure remains fail-closed' \
+            'target_reference_accessed=false' \
+            'at least 4 exact withheld reference IDs in each of 2022 and 2023' \
+            'at least 8 exact withheld reference IDs total' \
+            'FULL_BLIND_RECOVERY' 'rank <=25' \
+            'PARTIAL_BLIND_RECOVERY' 'rank <=100' \
+            '31332157812' '9043232586' \
+            '31331471689' '9043046136' \
+            '3f53e1ffeabb1b32d2de124cbf903d193012b9af' \
+            'PASS_P18_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'PASS_P18_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            'P17 core-only is diagnostic ablation only' \
+            'This addendum authorizes no target access by itself'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'target_coordinate|OrbitTrace-April|prior.*rank 59|247\.|-14\.|37\.62|95 canonical' "$p"; then
+            echo 'target-specific information leaked into P18 final addendum' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_p17_rank_halo_membership_p18/STAGE_A_RUN.md
+          test ! -e orbittrace_p17_rank_halo_membership_p18/STAGE_B_RUN.md
+          echo PASS_P18_FINAL_BLIND_AUTHORIZATION_ADDENDUM_SOURCE_FREEZE
+          echo NO_TARGET_REFERENCE_NO_TARGET_REGION_EVENT_NO_STAGE_A_NO_STAGE_B

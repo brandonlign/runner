@@ -1,0 +1,109 @@
+name: OrbitTrace P15 matched pretruth checkpoints
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p15-matched-pretruth
+  cancel-in-progress: false
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Require one-file child, exact artifact-only P15 development PASS, and freeze both checkpoints only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md'
+          marker="$(git show "$HEAD_SHA":orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md)"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P15_MATCHED_PRETRUTH_AFTER_ARTIFACT_ONLY_DEVELOPMENT_PASS'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31329529635'
+          test "$(printf '%s\n' "$marker" | sed -n '3p')" = '9042508082'
+          test "$(printf '%s\n' "$marker" | sed -n '4p')" = '0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e'
+          test "$(printf '%s\n' "$marker" | sed -n '5p')" = '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 5
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_support_safe_halo_p15/MATCHED_PRETRUTH_RUN.md
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/31329529635" -o /tmp/p15-dev-run.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/artifacts/9042508082" -o /tmp/p15-dev-artifact.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/artifacts/9042508082/zip" -o /tmp/p15-dev.zip
+          echo 'f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96  /tmp/p15-dev.zip' | sha256sum -c -
+          rm -rf /tmp/p15-dev && mkdir -p /tmp/p15-dev
+          unzip -q /tmp/p15-dev.zip -d /tmp/p15-dev
+          python - <<'PY_DEV'
+          import hashlib,json
+          from pathlib import Path
+          run=json.load(open('/tmp/p15-dev-run.json')); art=json.load(open('/tmp/p15-dev-artifact.json'))
+          assert run['id']==31329529635 and run['status']=='completed' and run['conclusion']=='success'
+          assert run['head_sha']=='f87f106672a768c02ed444e787aed72c0c42f60b'
+          assert run['head_branch']=='agent/orbittrace-p15-development-artifact-adjudication-run-v2'
+          assert art['id']==9042508082 and art['name']=='orbittrace-p15-support-safe-halo-development-artifact-adjudication'
+          assert art['digest']=='sha256:f6bee69326e35d6b448382b535193e4f1de672eaa7d513f16e1876d865880b96' and not art['expired']
+          assert art['workflow_run']['id']==31329529635 and art['workflow_run']['head_sha']=='f87f106672a768c02ed444e787aed72c0c42f60b'
+          hits=list(Path('/tmp/p15-dev').rglob('support_safe_secondary_halo_p15_development_artifact_adjudication.json'))
+          assert len(hits)==1,hits
+          raw=hits[0].read_bytes(); assert hashlib.sha256(raw).hexdigest()=='0424308527eb5edb7ec21043f1b7721472ebe5aeaa2f5f7f604185b1e09d006e'
+          r=json.loads(raw)
+          assert r['verdict']=='PASS_SUPPORT_SAFE_SECONDARY_HALO_P15_DEVELOPMENT'
+          assert r['adjudication_mode']=='artifact_only_from_immutable_canonical_P12_P13'
+          assert r['architecture']=='P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY'
+          assert r['p15_development_source_sha256']=='22d34131e873825ca60aefbba0b92088f19f57f589fe629bfbd3b7041d160b4b'
+          assert r['fixed_min_direction_negatives']==128
+          assert r['canonical_direction_count']==452 and r['canonical_minimum_negative_count']==2197
+          assert r['p15_unavailable_direction_count']==0 and r['p15_unavailable_directions']==[]
+          assert r['p15_fallback_vacuous_on_development'] is True
+          assert r['p15_no_padding_resampling_or_relaxation'] is True and r['p15_secondary_characterization_only'] is True
+          assert r['p15_availability_sha256']=='4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'
+          assert r['canonical_p13_core_pretruth_sha256']=='12e6635085c77c8c705fe225e67811c659e98bf7cd1047649ec2b8d593261b3c'
+          assert r['canonical_p12_membership_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert r['canonical_p13_halo_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert r['new_truth_query'] is False and r['matched_truth_access'] is False and r['external_data_access'] is False and r['target_information_access'] is False
+          print('PASS_P15_MATCHED_ARTIFACT_ONLY_DEVELOPMENT_GATE')
+          PY_DEV
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v3.py)" = 'af257d4b4902f9783acecd6df52f111415e5188c'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py)" = '372f1a57d97e1b0f0ac8f1303ef84f242245bdde'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15_v2.py)" = 'fc4bc35019e08d4a9ed08fba9fcf1b0e5c490032'
+          test "$(git hash-object orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py)" = '42fac298751179e5e629431060a1c9d803b1f19d'
+          grep -F "MATCHED_P15_SHA256='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          python orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15_v2.py orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p15_matched_pretruth.sh
+          bash -n /tmp/p15_matched_pretruth.sh
+          for x in 'PASS_P15_OUTER_ONE_FILE_ACTIVATION_ALREADY_VERIFIED' 'PASS_P15_MATCHED_SUPPORT_SAFE_HALO_SOURCE_ACTIVE' 'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' 'p15_halo_availability_frozen_before_truth' 'exit 0'; do grep -F "$x" /tmp/p15_matched_pretruth.sh; done
+          if grep -Eq 'orbittrace_support_safe_rank_p14/LAUNCH_PRETRUTH.md|LAUNCH_P14_MATCHED_PRETRUTH_DIRECT_V1|OPEN TRUTH \+ COMPETITOR CLUSTER VALUES EXACTLY ONCE|evaluate_frozen_blindsafe.py|finalize_p3_evaluator_result.py|OrbitTrace-April|target_coordinate' /tmp/p15_matched_pretruth.sh; then exit 1; fi
+          chmod +x /tmp/p15_matched_pretruth.sh
+          /tmp/p15_matched_pretruth.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p15-matched-pretruth-checkpoints
+          path: pretruth
+          if-no-files-found: warn
+          retention-days: 90
