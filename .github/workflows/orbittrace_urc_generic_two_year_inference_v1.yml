@@ -33,6 +33,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: brandonlign/runner
+          ref: 8401a0db4fdd8255de9ef3b48388d0743009fc84
+          path: unseen-ranker
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
           ref: c9d6c44704013ba0c9430100e98a29a56b453304
           path: frozen-v8
       - uses: actions/setup-python@v5
@@ -58,7 +63,13 @@ jobs:
           test "$(sha256sum active-ranker/orbittrace_urc_union_ranking_lab_v1/run_lab.py.gz.b64 | cut -d' ' -f1)" = '9704c91336c71a468c5e7da1aecf16919936eb159ab4c7bb594909e3751af51a'
           base64 -d active-ranker/orbittrace_urc_union_ranking_lab_v1/run_lab.py.gz.b64 | gzip -dc > /tmp/run_urc_union.py
           test "$(sha256sum /tmp/run_urc_union.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
-          python -m py_compile orbittrace_urc_final_transport_v1/generic_two_year_inference.py orbittrace_urc_final_transport_v1/verify_gmn_equivalence.py /tmp/run_urc_union.py
+          test "$(git -C unseen-ranker hash-object orbittrace_urc_unseen_ranker_v1/application.py)" = '1949415fa1d40c0ad4ebedbf5f0fe916886c71d0'
+          python -m py_compile \
+            orbittrace_urc_final_transport_v1/generic_two_year_inference.py \
+            orbittrace_urc_final_transport_v1/generic_two_year_inference_explicit_year.py \
+            orbittrace_urc_final_transport_v1/verify_gmn_equivalence_explicit_year.py \
+            unseen-ranker/orbittrace_urc_unseen_ranker_v1/application.py \
+            /tmp/run_urc_union.py
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-pooled-year-centroid-v8-development
@@ -103,13 +114,14 @@ jobs:
           assert r['model_joblib_sha256']=='ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909'
           print('PASS_FROZEN_FULL_GMN_RANKER_IDENTITY')
           PY
-      - name: Replay generic adapter on GMN and require exact implementation equivalence
+      - name: Replay explicit-year generic adapter on GMN and require exact implementation equivalence
         env:
-          PYTHONPATH: .:active-ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+          PYTHONPATH: .:active-ranker:unseen-ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_urc_final_transport_v1/verify_gmn_equivalence.py \
+          python -u orbittrace_urc_final_transport_v1/verify_gmn_equivalence_explicit_year.py \
             --active-ranker-source /tmp/run_urc_union.py \
+            --unseen-application unseen-ranker/orbittrace_urc_unseen_ranker_v1/application.py \
             --model input/final-ranker/urc_final_ranker.joblib \
             --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
             --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
@@ -119,12 +131,17 @@ jobs:
             --p19-prelabel-json input/p19/p19_prelabel_payload.json \
             --p20-prelabel-json input/p20/p20_prelabel_payload.json \
             --output output
-          cat output/generic_two_year_urc_gmn_equivalence.json
+          cat output/generic_two_year_urc_explicit_year_gmn_equivalence.json
       - name: Preserve provenance
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_urc_final_transport_v1/generic_two_year_inference.py orbittrace_urc_final_transport_v1/verify_gmn_equivalence.py /tmp/run_urc_union.py > output/transport_source_sha256.txt 2>/dev/null || true
+          sha256sum \
+            orbittrace_urc_final_transport_v1/generic_two_year_inference.py \
+            orbittrace_urc_final_transport_v1/generic_two_year_inference_explicit_year.py \
+            orbittrace_urc_final_transport_v1/verify_gmn_equivalence_explicit_year.py \
+            unseen-ranker/orbittrace_urc_unseen_ranker_v1/application.py \
+            /tmp/run_urc_union.py > output/transport_source_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
