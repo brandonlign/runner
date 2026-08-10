@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Freeze the method-agnostic target firewall and success definition before any final literature result, external result, or target-containing ranking can influence them.
+Freeze the method-agnostic target firewall and success definition before any future winning method, final literature result, external result, or target-containing ranking can influence them.
 
-A top-100 partial recovery remains diagnostically meaningful, but the final all-or-nothing project goal requires the pre-existing **FULL** top-25 gate.
+This carries forward the repository's earlier exact-ID Stage-A/Stage-B firewall. It tightens the project-level success interpretation: a top-100 partial recovery remains diagnostically meaningful, but the final all-or-nothing project goal requires the pre-existing **FULL** top-25 gate.
 
 ## Authorization
 
@@ -12,7 +12,7 @@ No final target-containing execution is permitted until the exact frozen candida
 
 1. its target-excluded GMN 2022/2023 development/final-candidate requirements;
 2. `PASS_FINAL_BROAD_CATALOGUE_SUPERIORITY` or `PASS_FINAL_SPARSE_STREAM_SUPERIORITY` on the permanent SonotaCo 2013/2014 test;
-3. `PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION` under the candidate-specific external protocol frozen before final-test access, where MAARSY 2021 is permitted only as the predeclared unlabeled annual-recurrence support scan and 2022 is the sole scored validation year;
+3. `PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION` under the candidate-specific external protocol frozen before final-test access, where MAARSY 2021 is allowed only as the predeclared unlabeled annual-recurrence support scan and MAARSY 2022 is the sole scored validation year;
 4. a source/transport audit proving this blind-search firewall is implemented unchanged for the final candidate.
 
 Any missing prerequisite keeps the target inaccessible.
@@ -21,7 +21,7 @@ Any missing prerequisite keeps the target inaccessible.
 
 Stage A runs the exact frozen method on the full declared GMN 2022/2023 final-search corpus, including the previously withheld solar-longitude interval, **without access to any OrbitTrace reference information**.
 
-Before Stage A begins, target-reference material must be physically/logically isolated from the process that runs the detector.
+Before Stage A begins, the target-reference material must be physically/logically isolated from the process that runs the detector.
 
 Stage A must freeze and hash:
 
@@ -62,6 +62,8 @@ A Stage-A family is an eligible OrbitTrace recovery only if it contains:
 - at least **4 exact withheld IDs in 2023**;
 - at least **8 exact withheld IDs total**.
 
+These are inherited unchanged from the earlier exact-ID firewall.
+
 ## Rank interpretation
 
 - `PASS_FINAL_BLIND_ORBITTRACE_DISCOVERY`: the best eligible exact-ID recovery has primary rank **<=25**.
@@ -69,7 +71,7 @@ A Stage-A family is an eligible OrbitTrace recovery only if it contains:
 - `FAIL_FINAL_BLIND_ORBITTRACE_DISCOVERY`: no eligible recovery exists in the top 100.
 - `INVALID_FINAL_BLIND_SEARCH_INTEGRITY`: any firewall, source, rank-freeze, or reveal-integrity rule is violated.
 
-Only `PASS_FINAL_BLIND_ORBITTRACE_DISCOVERY` counts as successful independent discovery. A partial top-100 recovery may be reported transparently but does not satisfy the all-or-nothing discovery requirement and does not authorize post-reveal tuning.
+For the final project goal, only `PASS_FINAL_BLIND_ORBITTRACE_DISCOVERY` counts as successful independent discovery. A partial top-100 recovery may be reported transparently but does not satisfy the all-or-nothing discovery requirement and does not authorize post-reveal tuning.
 
 ## No second chance
 
