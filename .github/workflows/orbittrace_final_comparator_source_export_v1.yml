@@ -1,0 +1,75 @@
+name: OrbitTrace final comparator source export v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - '.github/workflows/orbittrace_final_comparator_source_export_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd
+          path: sugar-source
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: a15737166cc9e1917f2e3d1b63cc42096008ae2e
+          path: hdbscan-source
+      - name: Decode only frozen scientific source payloads
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import base64, gzip, hashlib
+          from pathlib import Path
+
+          def decode_parts(paths, out):
+              encoded=''.join(''.join(Path(p).read_text().split()) for p in paths)
+              raw=gzip.decompress(base64.b64decode(encoded,validate=True))
+              Path(out).write_bytes(raw)
+              return hashlib.sha256(raw).hexdigest()
+
+          sugar_paths=[f'sugar-source/orbittrace_literature_comparison/sugar_uncertainty_core_parts/part{i:02d}.b64' for i in range(3)]
+          sugar_sha=decode_parts(sugar_paths,'output/sugar_uncertainty_core.py')
+          if sugar_sha != '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb':
+              raise SystemExit(f'Sugar core SHA mismatch: {sugar_sha}')
+
+          hdb_paths=[f'hdbscan-source/orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part{i:02d}.b64' for i in range(5)]
+          hdb_sha=decode_parts(hdb_paths,'output/hdbscan_2025_runner.py')
+          if hdb_sha != 'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2':
+              raise SystemExit(f'HDBSCAN runner SHA mismatch: {hdb_sha}')
+          Path('output/hdbscan_decoded_sha256.txt').write_text(hdb_sha+'\n')
+
+          print('SUGAR_SHA256',sugar_sha)
+          print('HDBSCAN_DECODED_SHA256',hdb_sha)
+          PY
+          python -m py_compile output/sugar_uncertainty_core.py output/hdbscan_2025_runner.py
+      - name: Enforce no historical result payload access and source-only provenance
+        run: |
+          set -euo pipefail
+          sha256sum output/*.py > output/decoded_source_sha256.txt
+          printf '%s\n' \
+            'sugar_source_commit=b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd' \
+            'sugar_core_expected_sha256=5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb' \
+            'hdbscan_source_commit=a15737166cc9e1917f2e3d1b63cc42096008ae2e' \
+            'hdbscan_runner_expected_sha256=a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2' \
+            'historical_result_payload_access=false' \
+            'sonotaco_2013_2014_access=false' \
+            'target_information_access=false' > output/PROVENANCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-comparator-source-export-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
