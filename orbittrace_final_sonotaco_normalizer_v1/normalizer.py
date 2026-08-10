@@ -145,13 +145,11 @@ def normalize_annual_csv(
             "sun_lon": float(base.wrap180(float(ecl_lon) - float(sol))),
             "ecl_lat": float(ecl_lat),
             "vg": float(vg),
-            # Raw equatorial observables and uncertainty columns for faithful Sugar clones.
             "ra": float(ra),
             "ra_sd": values["rasddeg"],
             "dec": float(dec),
             "dec_sd": values["desddeg"],
             "vg_sd": values["vgsdkms"],
-            # Native orbit/quality fields carried for exact label-free comparator eligibility.
             "q": values["qau"],
             "e": values["e"],
             "peri": values["perideg"],
@@ -237,8 +235,8 @@ def hdbscan_pairwise_eligible(event: dict[str, Any]) -> bool:
         qc_f >= 15.0
         and vg_f > 0.0
         and vg_sd_f / vg_f <= 0.10
-        and e_f <= 1.0
-        and q_f <= 1.0
+        and 0.0 <= e_f <= 1.0
+        and 0.0 < q_f <= 1.0
     )
 
 
@@ -285,7 +283,6 @@ def self_test() -> None:
     writer = csv.writer(buf)
     writer.writerow(header)
     writer.writerow(row("10", shower="SHOULD_NOT_BE_READ"))
-    # Target row has invalid every-other-field content; correct firewall must never parse any of it.
     writer.writerow(row(
         "30", ra="NOT_A_NUMBER", dec="NOT_A_NUMBER", vg="NOT_A_NUMBER", ncam="X",
         ra_sd="BAD", dec_sd="BAD", vg_sd="BAD", q="BAD", e="BAD", peri="BAD", node="BAD", inc="BAD",
@@ -293,10 +290,12 @@ def self_test() -> None:
     ))
     writer.writerow(row("100", vg="4.9"))
     writer.writerow(row("110", ncam="1"))
-    # Base-valid row that is intentionally ineligible for both Sugar and HDBSCAN pairwise universes.
     writer.writerow(row("120", ra="200", dec="-10", vg="50", ncam="3", ra_sd="0", vg_sd="6", q="", qc="10"))
+    # Base-valid rows that exercise the exact frozen HDBSCAN lower bounds without changing the base manifest.
+    writer.writerow(row("130", q="0", e="0.5"))
+    writer.writerow(row("140", q="0.5", e="-0.01"))
     events, audit = normalize_annual_csv(buf.getvalue().encode("utf-8"), year=2013, base=_synthetic_base(), id_prefix="X")
-    assert [e["sol"] for e in events] == [10.0, 120.0]
+    assert [e["sol"] for e in events] == [10.0, 120.0, 130.0, 140.0]
     assert audit["counts"]["blind_removed_before_any_other_scientific_field"] == 1
     assert audit["counts"]["invalid_geometry_or_quality"] == 2
     assert audit["shower_column_row_accessed"] is False
@@ -307,6 +306,8 @@ def self_test() -> None:
     assert sugar_pairwise_eligible(events[1]) is False
     assert hdbscan_pairwise_eligible(events[1]) is False
     assert orbit_pairwise_eligible(events[1]) is False
+    assert hdbscan_pairwise_eligible(events[2]) is False
+    assert hdbscan_pairwise_eligible(events[3]) is False
     assert events[0]["ra_sd"] == 0.2 and events[0]["q"] == 0.5 and events[0]["qc"] == 20.0
     assert all(e["complex_key"] == "HIDDEN" and e["iau"] == 0 for e in events)
     assert all(20.0 > e["sol"] or e["sol"] > 55.0 for e in events)
