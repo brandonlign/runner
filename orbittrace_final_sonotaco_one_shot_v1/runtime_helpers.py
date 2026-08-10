@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -25,7 +26,16 @@ def load_module(path: Path, name: str) -> Any:
     spec = importlib.util.spec_from_file_location(name, path)
     require(spec is not None and spec.loader is not None, f"cannot load module: {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    previous = sys.modules.get(name)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+        raise
     return module
 
 
