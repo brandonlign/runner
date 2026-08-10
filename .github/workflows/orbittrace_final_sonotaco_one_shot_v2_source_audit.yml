@@ -1,0 +1,96 @@
+name: OrbitTrace final SonotaCo one-shot v2 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_one_shot_v1/**'
+      - '.github/workflows/orbittrace_final_sonotaco_one_shot_v2.yml'
+      - '.github/workflows/orbittrace_final_sonotaco_one_shot_v2_source_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install source-test dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+      - name: Require both execution triggers absent and all frozen identities present
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_final_sonotaco_one_shot_v1/RUN.md
+          test ! -e orbittrace_final_sonotaco_one_shot_v1/EXECUTE_V2.md
+          w=.github/workflows/orbittrace_final_sonotaco_one_shot_v2.yml
+          src=("$w" orbittrace_final_sonotaco_one_shot_v1/*.py)
+          for x in \
+            'orbittrace_final_sonotaco_one_shot_v1/EXECUTE_V2.md' \
+            'EXECUTE_FINAL_SONOTACO_2013_2014_V2' \
+            '31349998268' \
+            '31348847806' \
+            '9048521513' \
+            '31346168826' \
+            '30855193522' \
+            'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778' \
+            'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c' \
+            'orbittrace-final-comparator-source-export-v1' \
+            'hdbscan_2025_runner.py' \
+            'sugar_uncertainty_core.py' \
+            'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip' \
+            'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'; do
+            grep -F "$x" "${src[@]}" >/dev/null
+          done
+          if grep -F 'orbittrace-final-comparator-source-bundle-v1' "$w" >/dev/null; then
+            echo 'stale comparator artifact name present in v2' >&2
+            exit 1
+          fi
+          if grep -F 'hdbscan_catalogue_runner.py' "$w" >/dev/null; then
+            echo 'stale HDBSCAN export filename present in v2' >&2
+            exit 1
+          fi
+      - name: Compile final orchestration
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_final_sonotaco_one_shot_v1/runtime_helpers.py \
+            orbittrace_final_sonotaco_one_shot_v1/prepare_label_free_rows.py \
+            orbittrace_final_sonotaco_one_shot_v1/run_candidate_pretruth.py \
+            orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py \
+            orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py \
+            orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py
+      - name: Run final SonotaCo normalizer self-test
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_final_sonotaco_normalizer_v1/normalizer.py
+      - name: Run truth-free comparator adapter tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_final_sonotaco_comparators_v1/test_pretruth_comparators.py
+      - name: Run post-output truth-boundary tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_final_sonotaco_truth_v1/test_truth_boundary.py
+      - name: Run exact frozen evaluator self-test
+        run: |
+          set -euo pipefail
+          base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/orbittrace_final_matched_evaluator_v1.py
+          test "$(sha256sum /tmp/orbittrace_final_matched_evaluator_v1.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          PYTHONPATH=/tmp python orbittrace_final_matched_evaluator_v1/self_test.py
+      - name: Source guard against target and stale datasets
+        run: |
+          set -euo pipefail
+          if grep -REiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|SonotaCo 2023|SonotaCo 2025|MAARSY 2020|MAARSY 2023' orbittrace_final_sonotaco_one_shot_v1 .github/workflows/orbittrace_final_sonotaco_one_shot_v2.yml; then
+            echo 'forbidden target/stale-dataset surface in final one-shot v2 source' >&2
+            exit 1
+          fi
+          echo PASS_FINAL_SONOTACO_ONE_SHOT_V2_SOURCE_FREEZE
+          echo EXECUTION_DORMANT_NO_FINAL_DATA_ACCESSED
