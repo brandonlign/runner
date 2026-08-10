@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Coverage-only DMS1991-1998 eligibility audit.
 
-Allowed scientific row values: Yr, Mn, Day, LS only.  Every other column is
-structurally ignored.  Output is aggregate coverage metadata only.
+Allowed scientific row values: Yr, Mn, Day, LS only. Every other column is
+structurally ignored. Output is aggregate coverage metadata only.
 """
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ import math
 import re
 import urllib.request
 import zipfile
-from collections import defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -30,6 +29,8 @@ MIN_ROWS = 80
 MIN_BINS_10 = 12
 MIN_QUADRANTS = 3
 USER_AGENT = "OrbitTrace-DMS-coverage-audit/1.0"
+HEADER_SCAN_LIMIT = 128
+DELIMITERS = (",", ";", "\t")
 
 
 class AnchorCollector(HTMLParser):
@@ -93,12 +94,8 @@ def normalized_header(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.strip().lower())
 
 
-def parse_header(line: str) -> tuple[str, list[str]]:
-    candidates = (",", ";", "\t")
-    parsed = [(delimiter, next(csv.reader([line], delimiter=delimiter))) for delimiter in candidates]
-    delimiter, header = max(parsed, key=lambda pair: len(pair[1]))
-    require(len(header) >= 4, "DMS text member header is not a supported delimited table")
-    return delimiter, header
+def parse_header_with_delimiter(line: str, delimiter: str) -> list[str]:
+    return next(csv.reader([line], delimiter=delimiter))
 
 
 def resolve_allowed_indices(header: list[str]) -> dict[str, int]:
@@ -118,8 +115,42 @@ def resolve_allowed_indices(header: list[str]) -> dict[str, int]:
     return resolved
 
 
-def choose_data_member(archive: bytes) -> tuple[str, bytes, str, list[str], dict[str, int]]:
-    candidates: list[tuple[str, bytes, str, list[str], dict[str, int]]] = []
+def find_allowed_header(text: str) -> tuple[int, str, list[str], dict[str, int]]:
+    """Find one allowed-field header in an initial metadata/preamble region.
+
+    The scan interprets only column-name strings. It never parses any event-row value.
+    """
+    lines = text.splitlines()
+    matches: list[tuple[int, str, list[str], dict[str, int]]] = []
+    for line_index, line in enumerate(lines[:HEADER_SCAN_LIMIT]):
+        if not line.strip():
+            continue
+        for delimiter in DELIMITERS:
+            header = parse_header_with_delimiter(line, delimiter)
+            if len(header) < 4:
+                continue
+            try:
+                resolved = resolve_allowed_indices(header)
+            except RuntimeError:
+                continue
+            matches.append((line_index, delimiter, header, resolved))
+    # The same physical header can occasionally parse under more than one delimiter only
+    # if an unused delimiter appears in a field name. Keep only distinct physical lines and
+    # require a unique delimiter that resolves the four allowed concepts on that line.
+    by_line: dict[int, list[tuple[int, str, list[str], dict[str, int]]]] = {}
+    for match in matches:
+        by_line.setdefault(match[0], []).append(match)
+    require(len(by_line) == 1, f"expected exactly one DMS header line with allowed schema, got {len(by_line)}")
+    line_matches = next(iter(by_line.values()))
+    # Prefer the parse with the largest number of columns; exact ties fail closed.
+    max_width = max(len(match[2]) for match in line_matches)
+    widest = [match for match in line_matches if len(match[2]) == max_width]
+    require(len(widest) == 1, "DMS allowed header delimiter is ambiguous")
+    return widest[0]
+
+
+def choose_data_member(archive: bytes) -> tuple[str, bytes, str, int, str, list[str], dict[str, int]]:
+    candidates: list[tuple[str, bytes, str, int, str, list[str], dict[str, int]]] = []
     with zipfile.ZipFile(io.BytesIO(archive)) as zf:
         for info in zf.infolist():
             if info.is_dir() or info.file_size <= 0:
@@ -129,15 +160,11 @@ def choose_data_member(archive: bytes) -> tuple[str, bytes, str, list[str], dict
                 continue
             raw = zf.read(info.filename)
             text, encoding = decode_text(raw)
-            first_line = text.splitlines()[0] if text.splitlines() else ""
-            if not first_line:
-                continue
             try:
-                _delimiter, header = parse_header(first_line)
-                resolved = resolve_allowed_indices(header)
+                line_index, delimiter, header, resolved = find_allowed_header(text)
             except RuntimeError:
                 continue
-            candidates.append((info.filename, raw, encoding, header, resolved))
+            candidates.append((info.filename, raw, encoding, line_index, delimiter, header, resolved))
     require(len(candidates) == 1, f"expected exactly one DMS tabular member with allowed schema, got {len(candidates)}")
     return candidates[0]
 
@@ -151,18 +178,26 @@ def finite_float(value: str, concept: str) -> float:
     return number
 
 
-def parse_coverage(raw: bytes, encoding: str, header: list[str], indices: dict[str, int]) -> dict[int, dict[str, Any]]:
+def parse_coverage(
+    raw: bytes,
+    encoding: str,
+    header_line_index: int,
+    delimiter: str,
+    header: list[str],
+    indices: dict[str, int],
+) -> dict[int, dict[str, Any]]:
     text = raw.decode(encoding)
-    first_line = text.splitlines()[0]
-    delimiter, parsed_header = parse_header(first_line)
+    lines = text.splitlines()
+    require(0 <= header_line_index < len(lines), "DMS header-line index out of range")
+    parsed_header = parse_header_with_delimiter(lines[header_line_index], delimiter)
     require(parsed_header == header, "DMS header changed between member selection and parse")
     max_index = max(indices.values())
     counts = {year: 0 for year in YEARS}
     bins = {year: set() for year in YEARS}
     quadrants = {year: set() for year in YEARS}
 
-    reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
-    next(reader)
+    data_text = "\n".join(lines[header_line_index + 1 :])
+    reader = csv.reader(io.StringIO(data_text, newline=""), delimiter=delimiter)
     for row in reader:
         if not row or all(not cell.strip() for cell in row):
             continue
@@ -180,7 +215,6 @@ def parse_coverage(raw: bytes, encoding: str, header: list[str], indices: dict[s
         if year not in counts:
             continue
         if SEALED_LOWER <= ls <= SEALED_UPPER:
-            # Intentionally no counter/statistic is updated or emitted for sealed rows.
             continue
         counts[year] += 1
         bins[year].add(int(math.floor(ls / 10.0)) % 36)
@@ -214,7 +248,6 @@ def choose_pair(years: dict[int, dict[str, Any]]) -> tuple[int, int] | None:
             continue
         bins1, bins2 = int(years[first]["occupied_10deg_bin_count"]), int(years[second]["occupied_10deg_bin_count"])
         rows1, rows2 = int(years[first]["usable_target_excluded_rows"]), int(years[second]["usable_target_excluded_rows"])
-        # Maximize the first four quantities; final -first makes earlier pair win exact ties.
         score = (min(bins1, bins2), min(rows1, rows2), bins1 + bins2, rows1 + rows2, -first)
         candidates.append((score, (first, second)))
     if not candidates:
@@ -233,8 +266,8 @@ def main() -> int:
     archive_url, page_sha = discover_archive_url()
     archive = fetch(archive_url)
     require(archive[:4] == b"PK\x03\x04", "official DMS payload is not a ZIP archive")
-    member_name, member_raw, encoding, header, indices = choose_data_member(archive)
-    coverage = parse_coverage(member_raw, encoding, header, indices)
+    member_name, member_raw, encoding, header_line_index, delimiter, header, indices = choose_data_member(archive)
+    coverage = parse_coverage(member_raw, encoding, header_line_index, delimiter, header, indices)
     pair = choose_pair(coverage)
     verdict = "ELIGIBLE_DMS_PAIR_RESERVED_PRE_SCIENCE" if pair is not None else "INELIGIBLE_DMS_NO_ADEQUATE_CONSECUTIVE_PAIR"
 
@@ -249,9 +282,8 @@ def main() -> int:
         "member_sha256": sha256(member_raw),
         "member_bytes": len(member_raw),
         "text_encoding": encoding,
-        "allowed_fields_resolved": {
-            concept: header[index] for concept, index in sorted(indices.items())
-        },
+        "header_physical_line": header_line_index + 1,
+        "allowed_fields_resolved": {concept: header[index] for concept, index in sorted(indices.items())},
         "year_gates": {
             "minimum_target_excluded_rows": MIN_ROWS,
             "minimum_occupied_10deg_bins": MIN_BINS_10,
