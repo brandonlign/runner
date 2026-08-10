@@ -52,7 +52,7 @@ jobs:
           test "$(git hash-object orbittrace_p19_subthreshold_recurrence/run_development.py)" = 'f230fc775b38df1e9d447bba33419abd5f6f6ef1'
           test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
           test "$(git hash-object orbittrace_v19_quality_consensus_fusion_v1/run_variants_pretruth.py)" = '7602a08cb2c01df4d64534e309aa160959cc490b'
-          python -m py_compile orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py
+          python -m py_compile orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs/orbittrace_unified_recurrent_catalogue_lab_v1/run_lab.py
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-active-urc-ranker-source-export-v1
@@ -144,7 +144,7 @@ jobs:
           PY
       - name: Train and evaluate one strict-group v22 OOF model
         env:
-          PYTHONPATH: .:input/ranker
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
         run: |
           set -euo pipefail
           python -u orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py \
@@ -155,7 +155,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_v22_sonotaco_grouped_oof_ranker_v1/PROTOCOL.md orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py > output/V22_SOURCE_SHA256.txt 2>/dev/null || true
+          sha256sum orbittrace_v22_sonotaco_grouped_oof_ranker_v1/PROTOCOL.md orbittrace_v22_sonotaco_grouped_oof_ranker_v1/prepare_pretruth.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs/orbittrace_unified_recurrent_catalogue_lab_v1/run_lab.py input/ranker/run_urc_union_ranker.py > output/V22_SOURCE_SHA256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
