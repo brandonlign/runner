@@ -2,107 +2,134 @@
 
 ## Authoritative scientific status
 
-### Proven baseline
+### Final GMN-developed catalogue method: M0 / #839
 
-The promoted **v8 pooled-year-centroid label-free sparse-support multiplicity** architecture remains the established development baseline for family construction/ranking ancestry.
+GMN 2022/2023 methodology selection is closed under the preregistered #848/#861 decision chain.
 
-### Permanent scientific no-go results
+The final GMN-developed method is **M0 / PR #839 URC union ranking**:
 
-**P18:** permanent matched-literature no-go. Its one-time matched benchmark on exposed SonotaCo 2023/2025 did not establish sparse superiority against either catalogue HDBSCAN or Sugar. Those matched panels are diagnostic/history only and may not be used to promote a future successor.
+- candidate universe: 4,504 families = 226 hard-v8 + 1,075 P19-soft + 3,203 P20-soft;
+- ranking: strict same-shower grouped ExtraTrees quality regression plus diversity;
+- fixed ranker parameters: depth 4, min leaf 5, diversity lambda 0.8, scale 1.0;
+- selected order SHA-256: `ffc97f7bc4fbc8f13170ffe8a71260e1596190e39e9324c24e8ba7719f427449`;
+- recovery@25/50/100/500 = 22/40/75/159;
+- qualified known streams = 256;
+- top-100 dominant precision = 0.7645689180574315;
+- best-membership macro F1 = 0.17953659309876194.
 
-**B1 background-odds membership:** permanent development no-go. B1 improved aggregate membership F1 but failed required non-regression/material-gain gates, including no improvement in the 4–9 sparse bin. No B1 threshold, feature, covariance model, prior, or cutoff may be tuned from that result.
+The immutable catalogue proposal/rank architecture is therefore #839 with the original frozen M0 memberships. No new GMN candidate generator, ranker, membership rule, threshold family, or score combination may be introduced from these final development outcomes.
 
-## Active successor: P19
+## Final membership adjudication
 
-**P19 subthreshold reciprocal recurrence** is the current frozen successor.
+### M1
 
-P19 tests a genuinely different structural hypothesis: preserve the exact hard v8 detector/family/rank path and add a non-recursive family-existence path when an otherwise unmatched fixed4 component has coherent reciprocal **three-event** support in the other year, exactly one event below the inherited four-event component floor.
+M1/#845 is a permanent scientific no-go.
 
-Frozen P19 development uses only target-excluded **GMN 2022/2023**. Its scientific source, protocol, triplet size, inherited 1.5 link radius, family semantics, immutable hard-v8 ranking prefix, and pass/fail gates are frozen and may not change from execution outcomes.
+### M2
 
-### P19 execution record
+Corrected admissible #846 (source `e5733a57488b7b8dff26c15ff76f679810efac9c`, run `31344902186`) produced a genuine membership improvement and passed its initial strict-group feasibility gate:
 
-1. Run `31340086817` / PR #805 — **technical no-result** before scientific catalogue execution: the exact promoted-v8 `multi_anchor_energy_v3` runtime module was not on the import path.
-2. PR #806 — source-audited transport repair merged; restored exact promoted-v8 module/blob/path without scientific changes.
-3. Run `31340255427` / PR #808 — **technical no-result** before scientific catalogue execution: the exact frozen catalogue-v3 runtime had not been decoded to `/tmp/run_wavelet_catalogue_v3_development.py`.
-4. PR #811 — source-audited transport repair merged; restored the exact original promoted-v8 source-audit/decoder, pinned audit blob `7035daf3e670ab89c66c87035540419f549bab09` and decoded source SHA256 `ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51`, without scientific changes.
-5. Run `31340446086` / PR #812 — current authoritative third execution. All pre-science ancestry/runtime stages, including both prior failure points, have passed. The run is presently inside the one-shot target-excluded P19 scientific development computation. **No P19 scientific PASS/FAIL exists yet.**
+- selected frozen policy: `ET_d4_l10`, threshold 0.4, cap Infinity;
+- OOF membership macro F1 = 0.352413;
+- qualified streams = 95;
+- recovery@100 = 60;
+- 36/280 preregistered variants passed.
 
-The two technical no-results are cleanup/provenance only and are not scientific progress.
+However the required already-frozen #850 five-salt repeated same-shower-group stress, run `31346362800`, returned **`FAIL_EVENT_LEVEL_P12_FIXED_GROUP_STRESS`**. Panels A-D passed, but panel E retained only **94 qualified streams**, below the immutable floor of 95. Its macro F1 remained 0.349308 and annual all-shower gains stayed positive, but the qualification failure is decisive.
 
-## Pre-result robustness battery
+Under the preregistered #848/#850/#861 stop rule:
 
-PR #814 froze a dormant P19 thinning-stress battery **before the primary P19 result is known**. It cannot rescue a primary P19 failure.
+- M2 is a permanent no-go for promotion;
+- no threshold/model/cap rescue or reselection is allowed;
+- #852 full-URC integration is not authorized;
+- M0/#839 is the final GMN-developed method.
 
-If and only if the exact primary P19 development gate passes, the frozen battery evaluates four deterministic target-excluded GMN stress panels (10% and 20% SHA256 event thinning under two fixed salts) with exact v8 and exact P19 recomputed on identical retained rows. No salt, fraction, threshold, radius, membership rule, rank rule, or P19 parameter may change.
+This is a scientific no-go, not a technical failure.
 
-A primary P19 failure permanently kills the exact P19 architecture without running the stress battery for promotion.
+## Deployment / transport state
+
+### Ranker transport
+
+PR #860 passed exact GMN equivalence for the year-portable #839 ranker adapter:
+
+- exact 4,504 x 34 feature matrix reproduced;
+- feature SHA-256 `5d215c5562c0ccce967d81ff0a087ca83b1afda95a269888d2219ef669d198d1`;
+- portable features match the original frozen #839 feature construction cell-for-cell on identical GMN input;
+- serialized model and final diversity ordering are preserved;
+- no truth labels are required at application time.
+
+This is implementation equivalence, not additional scientific evidence.
+
+### Proposal-generator transport
+
+PR #862 is the active transport-only proof for exact pair-portable hard-v8/P19/P20 generation. Its first equivalence execution reproduced hard-v8 exactly but failed at P19-soft structural equality. The failure was diagnosed as an execution-context mismatch: the verifier replaced the frozen layer-specific `support.CORPUS`, while original P19/P20 executions set their own corpus contexts before catalogue parsing/generation.
+
+The adapter has been corrected to preserve P19/P20 frozen support contexts and explicitly rebind the shared v6 year globals. A new exact-GMN structural-equivalence run is in progress. No scientific proposal rule, radius, membership, ranking, or threshold changed.
+
+Until this exact generator-equivalence proof passes, #839 is not yet declared deployable on SonotaCo 2013/2014.
 
 ## Permanent data roles
 
-The dataset-rotation pattern is retired.
+Dataset roles are fixed and may not be swapped after outcomes are observed:
 
-- **Development/train:** GMN 2022 + 2023, with 20°–55° removed before method-selection/evaluation access.
-- **Final matched literature test:** SonotaCo 2013 + 2014, sealed until an explicit `FINAL_FOR_LITERATURE_TEST` candidate declaration.
-- **External no-retuning validation:** MAARSY 2020 + 2021.
-- **Diagnostic/history only:** SonotaCo 2023/2025 and all other scientifically consumed historical panels.
+- **Development/train:** GMN 2022 + 2023, with solar longitude 20°–55° excluded during development/evaluation.
+- **Single final matched literature test:** SonotaCo 2013 + 2014.
+- **No-retuning external validation:** MAARSY 2022.
+- **Diagnostic/history only:** scientifically consumed historical panels such as SonotaCo 2023/2025.
 
-A failed development architecture returns to the same GMN 2022/2023 corpus. It does **not** consume a new test year.
-
-Authoritative policy: `FIXED_DATA_SPLIT_V1.md` and `DEVELOPMENT_AND_SELECTION_POLICY_V1.md`.
+No SonotaCo 2013/2014 or MAARSY event-level scientific value has been opened for the final method.
 
 ## Final literature gate
 
-`FINAL_LITERATURE_TEST_POLICY_V1.md` governs the one-shot SonotaCo 2013/2014 comparison.
+`FINAL_LITERATURE_TEST_POLICY_V1.md` and the frozen #820/#854 comparator/evaluator machinery govern the one-shot SonotaCo 2013/2014 test.
 
-A final candidate must be compared independently with **Sugar** and **catalogue HDBSCAN** on pairwise exact-row universes with strict detector-input information parity. Known-shower/native-background truth cannot be supplied to OrbitTrace as privileged detector input.
+The frozen candidate must be compared independently against **Sugar** and **catalogue HDBSCAN** on pairwise exact-row universes with detector-input information parity, candidate-budget parity, one-to-one maximum-total-F1 assignment, fixed size strata, and the preregistered 10,000-replicate stratified bootstrap.
 
-The final candidate must achieve either:
+The final literature stage must produce either:
 
 - `PASS_FINAL_BROAD_CATALOGUE_SUPERIORITY`, or
-- `PASS_FINAL_SPARSE_STREAM_SUPERIORITY`.
+- `PASS_FINAL_SPARSE_STREAM_SUPERIORITY`
 
-Sparse superiority retains the preregistered +0.10 4–9 and combined 4–24 F1 advantage bars while tightening overall non-regression so the sparse gain cannot be purchased by meaningful catalogue-wide loss. The claimed route must hold against **both comparators in both years** and pass a deterministic stratified-bootstrap uncertainty check.
+against both comparators across both 2013 and 2014 under the same route. No failure authorizes retuning or a replacement SonotaCo year.
 
-No failure authorizes retuning or a replacement SonotaCo year.
+**#839 has not yet been scientifically tested against Sugar or catalogue HDBSCAN.**
 
-## Final external gate
+## External-validation compatibility finding
 
-`FINAL_EXTERNAL_VALIDATION_POLICY_V1.md` fixes **MAARSY 2020/2021** as the only final external panel.
+The schema/source-only MAARSY preflight in `MAARSY_2022_SCHEMA_PREFLIGHT_V1.md` found that MAARSY exposes the relevant trajectory/geocentric-velocity/orbit observable class, but the frozen #839 proposal architecture is intrinsically a **two-distinct-annual-scan recurrence method**:
 
-At `FINAL_FOR_LITERATURE_TEST` declaration—before either SonotaCo final-test scientific access or MAARSY scientific access—the exact candidate-specific MAARSY transport, power floor, metrics, and PASS/FAIL gates must be frozen using only GMN development evidence and schema-only MAARSY preflight information.
+- hard/P19/P20 application expects two distinct annual scans;
+- P19 and P20 encode cross-year recurrence;
+- P20 families are exact reciprocal 4+4 constructions across the two years.
 
-Only `PASS_FINAL_MAARSY_2020_2021_NO_RETUNING_GENERALIZATION` satisfies external generalization. Architecture incompatibility or power-inconclusive does not unlock the target, and an unfavorable result cannot trigger panel switching.
+The currently fixed external panel, **MAARSY 2022 alone**, contains only one calendar-year scan for this purpose. Splitting 2022 into pseudo-years would replace independent annual recurrence with within-year subsampling and therefore change the scientific family-existence mechanism rather than merely transport it.
+
+Preaccess result:
+
+`MAARSY_2022_SINGLE_YEAR_FULL_URC_PREFLIGHT = INCOMPATIBLE`
+
+This is not a scientific-performance failure and does not consume MAARSY 2022. It does mean that #839, although final under the GMN development stop rule, is **not yet a project-final deployable method capable of satisfying the required no-retuning MAARSY 2022 generalization gate**. This incompatibility must be resolved defensibly before SonotaCo 2013/2014 scientific access; it may not be hidden by a post hoc proxy or silent dataset switch.
 
 ## Final blind OrbitTrace gate
 
-`FINAL_BLIND_SEARCH_POLICY_V1.md` carries forward the method-agnostic exact-ID Stage-A/Stage-B firewall.
+OrbitTrace remains inaccessible. `FINAL_BLIND_SEARCH_POLICY_V1.md` permits target-containing execution only after both final literature superiority and external generalization pass.
 
-Only after final literature superiority **and** external generalization:
+Stage A must freeze the complete ranking without target-reference access. Stage B may receive only withheld stable event-ID sets and perform exact set intersection. An eligible recovery requires >=4 exact withheld IDs in each year and >=8 total.
 
-- Stage A runs the exact frozen method and freezes the complete primary ranking without target-reference access.
-- Stage B receives only exact withheld stable event IDs/year and performs exact set intersection; no target coordinates/orbit/radiant/activity geometry, nearest-neighbor search, member expansion, family merging, or reranking is allowed.
-
-An eligible recovery requires >=4 exact withheld IDs in each year and >=8 total. The inherited rank interpretations are:
-
-- <=25: `PASS_FINAL_BLIND_ORBITTRACE_DISCOVERY`;
-- 26–100: `PARTIAL_FINAL_BLIND_ORBITTRACE_RECOVERY`;
-- no eligible top-100 recovery: `FAIL_FINAL_BLIND_ORBITTRACE_DISCOVERY`.
-
-For the final all-or-nothing project objective, **only the <=25 FULL result counts as successful independent discovery**. A partial recovery is diagnostic and cannot authorize target-informed retuning.
+Only primary rank <=25 counts as `PASS_FINAL_BLIND_ORBITTRACE_DISCOVERY`. Rank 26-100 is partial only and cannot authorize target-informed retuning.
 
 ## Current authorization state
 
+- GMN methodology selection: **closed; M0/#839 selected**.
 - Literature superiority: **not established**.
 - SonotaCo 2013/2014 scientific access: **not authorized**.
 - MAARSY scientific validation: **not authorized**.
 - OrbitTrace target access: **not authorized**.
 - Solar longitude 20°–55° and all OrbitTrace target information remain sealed.
 
-## Next result that counts
+## Next required work
 
-The next scientific result is the exact frozen P19 GMN 2022/2023 development verdict from run `31340446086`.
-
-If P19 fails, preserve it as a permanent no-go and develop the next genuinely different architecture on the same GMN corpus.
-
-If P19 passes, run only its already-frozen pre-result robustness battery. A robust pass makes P19 eligible for `FINAL_FOR_LITERATURE_TEST` declaration; it does not automatically open SonotaCo 2013/2014.
+1. Complete exact #862 GMN generator-transport equivalence.
+2. Freeze one deployable #839 application package only if all transport identities pass.
+3. Resolve the pre-result MAARSY-2022 structural incompatibility without using SonotaCo/MAARSY performance values, post hoc proxies, or a silent dataset switch.
+4. Only after those prerequisites are defensibly resolved may the one-shot SonotaCo 2013/2014 Sugar/HDBSCAN literature test be opened.
