@@ -1,0 +1,197 @@
+name: OrbitTrace M2 full URC integration execution v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_urc_m2_full_integration_execution_v1/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-urc-m2-full-integration-execution-v1
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  integrate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Enforce one-file post-stress activation
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}')" = 'orbittrace_urc_m2_full_integration_execution_v1/RUN.md'
+          test "$(cat orbittrace_urc_m2_full_integration_execution_v1/RUN.md)" = 'EXECUTE_ONLY_AFTER_M2_STRESS_PASS'
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: e5733a57488b7b8dff26c15ff76f679810efac9c
+          path: event-source
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 63dc5b552d5217601003f738996477fb019ff7c8
+          path: union-source
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact dependencies and restore frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/v3 output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py /tmp/run_urc_union.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          base64 -d union-source/orbittrace_urc_union_ranking_lab_v1/run_lab.py.gz.b64 | gzip -dc > /tmp/run_urc_union.py
+          test "$(sha256sum /tmp/run_urc_union.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(git hash-object orbittrace_urc_m2_full_integration_v1/run_corrected.py)" = '7059aaed29257c8839d66c642a44c5db5b386953'
+          test "$(git hash-object orbittrace_urc_m2_full_integration_v1/run_integration.py)" = '48037eecf9ec07b2c67e54357681d373ebfe0ee3'
+          test "$(git -C event-source hash-object orbittrace_event_membership_calibration_lab_v1/run_strict_group.py)" = 'c3e9151c7152ec116a8d965bca1807cd57a0e586'
+          python -m py_compile \
+            orbittrace_urc_m2_full_integration_v1/run_corrected.py \
+            orbittrace_urc_m2_full_integration_v1/run_integration.py \
+            event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py \
+            /tmp/run_urc_union.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-event-membership-calibration-lab-v1
+          path: input/846
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344902186
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-event-membership-fixed-stress-v1
+          path: input/stress
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31346362800
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-drift-conditioned-two-view-membership-p12-development
+          path: input/p12
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31302353678
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p20-recurrent-isolated-quartet-development
+          path: input/p20
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31341591263
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-urc-union-ranking-lab-v1
+          path: input/839
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31342891394
+      - name: Verify immutable candidate and membership inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/p12/p12_expanded_families.json.gz | cut -d' ' -f1)" = '0377eaf640a7b3215d2d79f34394b84370e60519edb55f9fb57a8ff29844d6a7'
+          test "$(sha256sum input/p12/p12_decisions_pretruth.json.gz | cut -d' ' -f1)" = '8b304db4f878c2ec8388348b72c22bfa5ff37317fba8c5ea1932b085bb1964d3'
+          test "$(sha256sum input/p19/p19_subthreshold_reciprocal_recurrence_development.json | cut -d' ' -f1)" = '6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319'
+          test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
+          test "$(sha256sum input/p20/p20_recurrent_isolated_quartet_development.json | cut -d' ' -f1)" = '9ec53f29281b11002a9e22b1086d12e054392e466ea74fe82ead0187289ba303'
+          test "$(sha256sum input/p20/p20_prelabel_payload.json | cut -d' ' -f1)" = '8ca358ae0f3ac96b188de9eac7bcfd6f870470873a2b7ee73b7ae76497c12734'
+          test "$(sha256sum input/839/urc_union_ranking_lab_v1.json | cut -d' ' -f1)" = 'e932ad2507f6305a96c9d442a556593e470c966f1adfc2f4f2098adbc8f9dbcd'
+          python - <<'PY'
+          import json
+          e=json.load(open('input/846/event_membership_calibration_lab_v1.json'))
+          assert e['verdict']=='PASS_EVENT_LEVEL_P12_MEMBERSHIP_CALIBRATION_FEASIBILITY'
+          p=e['selected']['policy']
+          assert p['model']=='ET_d4_l10' and float(p['threshold'])==0.4 and str(p['cap_ratio'])=='Infinity'
+          s=json.load(open('input/stress/event_membership_fixed_stress_v1.json'))
+          assert s['verdict']=='PASS_EVENT_LEVEL_P12_FIXED_GROUP_STRESS'
+          assert s['aggregate_gates']['all_five_fixed_policy_panels_pass'] is True
+          assert s['selected_policy']['model']=='ET_d4_l10' and float(s['selected_policy']['threshold'])==0.4 and str(s['selected_policy']['cap_ratio'])=='Infinity'
+          print('PASS_FIXED_M2_INTEGRATION_AUTHORIZATION')
+          PY
+      - name: Execute frozen one-shot full-URC M2 integration
+        env:
+          PYTHONPATH: event-source:union-source:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_urc_m2_full_integration_v1/run_corrected.py \
+            --event-lab-source event-source/orbittrace_event_membership_calibration_lab_v1/run_strict_group.py \
+            --event-result input/846/event_membership_calibration_lab_v1.json \
+            --event-stress-result input/stress/event_membership_fixed_stress_v1.json \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --p12-dir input/p12 \
+            --p19-result-json input/p19/p19_subthreshold_reciprocal_recurrence_development.json \
+            --p19-prelabel-json input/p19/p19_prelabel_payload.json \
+            --p20-result-json input/p20/p20_recurrent_isolated_quartet_development.json \
+            --p20-prelabel-json input/p20/p20_prelabel_payload.json \
+            --union-ranker /tmp/run_urc_union.py \
+            --union-reference-json input/839/urc_union_ranking_lab_v1.json \
+            --output output
+          cat output/URC_M2_FULL_INTEGRATION_V1.md
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_urc_m2_full_integration_v1/run_corrected.py \
+            orbittrace_urc_m2_full_integration_v1/run_integration.py \
+            /tmp/run_urc_union.py \
+            input/846/event_membership_calibration_lab_v1.json \
+            input/stress/event_membership_fixed_stress_v1.json > output/m2_full_integration_provenance_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-urc-m2-full-integration-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
