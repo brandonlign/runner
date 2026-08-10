@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -124,17 +125,27 @@ def main()->int:
         raw_order=[ids[i] for i in sorted(range(len(ids)),key=lambda i:(-float(scores[i]),tie[i][0],ids[i]))]
         didx=ranker.diversity_order(scores,rd['C'],0.8,1.0,tie); div_order=[ids[i] for i in didx]
         v19_order=list(map(str,rd['meta']['v19_order'])); fused=list(br.v23.v19.fusion_orders(div_order,v19_order)['rank_sum'])
-        score_sha=br.v23.array_sha(scores); fused_sha=__import__('hashlib').sha256('\n'.join(fused).encode()).hexdigest(); div_sha=__import__('hashlib').sha256('\n'.join(div_order).encode()).hexdigest()
+        score_sha=br.v23.array_sha(scores); fused_sha=hashlib.sha256('\n'.join(fused).encode()).hexdigest(); div_sha=hashlib.sha256('\n'.join(div_order).encode()).hexdigest()
+        reference_diag=None
         if reference is not None:
-            ref=reference['order_diagnostics'][route]
-            req(score_sha==ref['oof_positive_probability_sha256'],f'{route} #997 OOF probability hash mismatch')
+            ref=reference['order_diagnostics'][route]; t_ref=reference['target_diagnostics'][route]
+            req(int(np.sum(y==1))==int(t_ref['balanced_recovery_positive_families']),f'{route} #997 target-positive count mismatch')
+            req(div_sha==ref['classifier_diversity_order_sha256'],f'{route} #997 classifier-diversity order hash mismatch')
             req(fused_sha==ref['fused_order_sha256'],f'{route} #997 fused order hash mismatch')
+            reference_diag={
+                'reference_oof_probability_sha256':ref['oof_positive_probability_sha256'],
+                'replay_oof_probability_sha256':score_sha,
+                'byte_exact_probability_hash_match':bool(score_sha==ref['oof_positive_probability_sha256']),
+                'classifier_diversity_order_hash_match':True,
+                'fused_order_hash_match':True,
+            }
         routes[route]={
             'family_score_metrics':{'families':len(ids),'positive_families':int(np.sum(y==1)),'roc_auc':float(roc_auc_score(y,scores)),'average_precision':float(average_precision_score(y,scores))},
             'strict_group_score_metrics':group_score_metrics(scores,y,groups),
             'oof_probability_sha256':score_sha,
             'diversity_order_sha256':div_sha,
             'fused_order_sha256':fused_sha,
+            'reference_replay':reference_diag,
             'orders':{
                 'raw_probability':order_target_summary(raw_order,ids,y,groups,budgets[route]),
                 'probability_plus_diversity':order_target_summary(div_order,ids,y,groups,budgets[route]),
@@ -147,6 +158,7 @@ def main()->int:
         'stage':'POST_RESULT_BALANCED_RECOVERY_ORDER_STAGE_DIAGNOSTIC_V1',
         'verdict':'PASS_BALANCED_RECOVERY_ORDER_DIAGNOSTIC_COMPLETE',
         'replayed_scientific_source':'exact PR #997 balanced-recovery classifier; no new ranker',
+        'replay_guard':'exact target-positive count + exact classifier-diversity order hash + exact fused-order hash; raw floating probability hash recorded but nonbinding after cross-host byte-fingerprint no-result',
         'feature_dimension':br.FEATURE_DIM,'target':'F1_2013>0.5 AND F1_2014>0.5 for unchanged best recurrent label',
         'routes':routes,
         'new_literature_promotion_evaluation_performed':False,'successor_defined':False,'alternate_order_selected':False,'class_weight_selected':False,'probability_calibration_selected':False,'feature_subset_selected':False,'model_capacity_selected':False,'fusion_weight_selected':False,'diversity_selected':False,'parameter_search':False,
