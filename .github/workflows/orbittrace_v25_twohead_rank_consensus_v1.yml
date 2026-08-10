@@ -1,0 +1,139 @@
+name: OrbitTrace v25 two-head rank-consensus development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v24-twohead-contingency-freeze-v1
+    paths:
+      - 'orbittrace_v25_twohead_rank_consensus_v1/**'
+      - '.github/workflows/orbittrace_v25_twohead_rank_consensus_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v25-twohead-rank-consensus-sonotaco-dev-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact frozen ranking runtime
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          python -m py_compile orbittrace_v25_twohead_rank_consensus_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v24-twohead-oof-ranking-development-v1
+          path: input/v24
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31419316002
+      - name: Verify exact frozen v24 science and route payloads
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v24/result/V24_EXPOSED_TWOHEAD_OOF_RESULT.json | cut -d' ' -f1)" = 'c8d95bc02ad1436c9924ec14a25bcd36e0eacd960fda1fb33db3a91738fe30cf'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/v24/result/V24_EXPOSED_TWOHEAD_OOF_RESULT.json'))
+          assert r['verdict']=='FAIL_V24_TWOHEAD_OOF_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT'
+          assert r['post_result_second_search'] is False
+          assert r['full_model_freeze']['verdict']=='NOT_FROZEN_V24_OOF_FAIL'
+          for c in ['sugar','hdbscan']:
+              m=json.load(open(f'input/v24/{c}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/v24/{c}/family_memberships.json'))
+              assert m['feature_dimension']==71 and m['truth_accessed'] is False
+              assert f['truth_accessed'] is False
+              assert m['target_information_access'] is False and m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_V25_FROZEN_V24_INPUTS')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v24-postresult-ranking-diagnostic-v1
+          path: input/diagnostic
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31419852987
+      - name: Verify exact diagnostic authorization and no-method role
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/diagnostic/V24_POSTRESULT_DIAGNOSTIC.json | cut -d' ' -f1)" = '93a79f49dbb907c93c5dbb0c1b91fac4633f07fb0d0ffe21d2edfb1cec167871'
+          python - <<'PY'
+          import json
+          d=json.load(open('input/diagnostic/V24_POSTRESULT_DIAGNOSTIC.json'))
+          assert d['conclusion']['diagnosis']=='RANK_PLACEMENT_HEADROOM_REMAINS'
+          assert d['new_method_evaluated'] is False and d['parameter_search'] is False
+          assert d['candidate_change'] is False and d['membership_change'] is False
+          assert d['maarsy_scientific_access'] is False and d['dms_scientific_access'] is False and d['target_information_access'] is False
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify exact frozen #839 ranker
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Verify immutable exposed truth/comparator package
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('input/truth/V15_FINAL_LITERATURE_RESULT.json'))
+          assert r['verdict']=='FAIL_FINAL_LITERATURE_SUPERIORITY'
+          PY
+      - name: Reproduce v24 and evaluate the single frozen v25 successor
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_v25_twohead_rank_consensus_v1/train_evaluate.py \
+            --v24-root input/v24 --truth-root input/truth \
+            --ranker-source input/ranker/run_urc_union_ranker.py \
+            --diagnostic-json input/diagnostic/V24_POSTRESULT_DIAGNOSTIC.json \
+            --output output
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v25_twohead_rank_consensus_v1/PROTOCOL.md \
+            orbittrace_v25_twohead_rank_consensus_v1/train_evaluate.py \
+            input/v24/result/V24_EXPOSED_TWOHEAD_OOF_RESULT.json \
+            input/diagnostic/V24_POSTRESULT_DIAGNOSTIC.json \
+            input/ranker/run_urc_union_ranker.py \
+            > output/V25_SOURCE_INPUT_SHA256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v25-twohead-rank-consensus-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
