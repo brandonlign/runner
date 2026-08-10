@@ -26,7 +26,7 @@ Before scientific access, replacement is permitted only for an objective structu
 
 ## 3. Permanent external validation panel
 
-**MAARSY 2020 + 2021** is the single no-retuning external-generalization panel.
+**MAARSY 2022** is the single no-retuning external-generalization panel.
 
 A metadata/schema-only preflight is allowed before final method freezing to determine which observables MAARSY can reproduce exactly and to prevent knowingly designing an architecture that cannot be transported. That preflight may not inspect event values, labels, detector scores, target-region contents, or any method-performance result.
 
@@ -46,7 +46,7 @@ The P18 SonotaCo 2023/2025 loss remains a permanent scientific no-go. The invali
 2. Select and freeze one final candidate using development evidence only.
 3. Freeze all Sugar/HDBSCAN comparison gates and transport before SonotaCo 2013/2014 scientific access.
 4. Execute the SonotaCo 2013/2014 matched literature test once.
-5. If and only if the required literature-superiority criterion passes, execute MAARSY 2020/2021 once with no retuning.
+5. If and only if the required literature-superiority criterion passes, execute MAARSY 2022 once with no retuning.
 6. If and only if the external-generalization requirement is satisfied, proceed to the separately frozen blind OrbitTrace search.
 
 A development failure returns to step 1 on the same GMN corpus. It does not consume a new test dataset.

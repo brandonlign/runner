@@ -2,9 +2,9 @@
 
 ## Permanent panel
 
-The only final external-generalization panel is **MAARSY 2020 + 2021**.
+The only final external-generalization panel is **MAARSY 2022**.
 
-No unfavorable scientific result may trigger a switch to another external survey or year pair. The panel is validation data, never development data.
+No unfavorable scientific result may trigger a switch to another external survey or year. The panel is validation data, never development data.
 
 ## Preflight allowed before final-candidate declaration
 
@@ -60,7 +60,7 @@ Neither `EXTERNAL_ARCHITECTURE_INCOMPATIBLE` nor `EXTERNAL_POWER_INCONCLUSIVE` s
 
 ## Required final external verdict
 
-Only an exact preregistered `PASS_FINAL_MAARSY_2020_2021_NO_RETUNING_GENERALIZATION` satisfies the external-generalization requirement.
+Only an exact preregistered `PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION` satisfies the external-generalization requirement.
 
 A scientific FAIL is final for that frozen candidate. No MAARSY-based retuning and no replacement validation dataset are allowed.
 
