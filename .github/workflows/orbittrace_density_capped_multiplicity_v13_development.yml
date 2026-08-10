@@ -1,0 +1,231 @@
+name: OrbitTrace density-capped multiplicity v13 target-excluded development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-density-capped-multiplicity-v13-development
+    paths:
+      - 'orbittrace_density_capped_multiplicity_v13/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  PYTHONPATH: .:orbittrace_wavelet_catalogue_v3:orbittrace_sparse_support_multiplicity_v5:input/v3
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require exact one-file execution child
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}')
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'orbittrace_density_capped_multiplicity_v13/RUN.md'
+          test "$(cat orbittrace_density_capped_multiplicity_v13/RUN.md)" = 'EXECUTE_DENSITY_CAPPED_MULTIPLICITY_V13_TARGET_EXCLUDED_DEVELOPMENT'
+      - name: Verify frozen v13 and inherited v5 source identities before data access
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_density_capped_multiplicity_v13/PROTOCOL.md)" = 'b761cf8f3e6dd500d2347f471e7b8c3909361556'
+          test "$(git hash-object orbittrace_density_capped_multiplicity_v13/run_cap_stress.py)" = '5ed2346b97a2eecf7d811bc260f87ccc8847b84a'
+          test "$(git hash-object orbittrace_density_capped_multiplicity_v13/evaluate_stress.py)" = 'bcfe5f5fc6e8b2e621dfbc55d0f98693262ba9be'
+          test "$(git hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
+          test "$(git hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout_loader_corrected.py)" = 'c6dadb21009a8859b9376b490590f26ff8df46a6'
+          test "$(git hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          python -m py_compile \
+            orbittrace_density_capped_multiplicity_v13/run_cap_stress.py \
+            orbittrace_density_capped_multiplicity_v13/evaluate_stress.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout.py \
+            orbittrace_sparse_support_multiplicity_v5/run_holdout_loader_corrected.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore exact multi-anchor source and catalogue-v3 runtime source-only
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/support_audit input/factorization output/prepare
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-multiplicity-v5-source-audit
+          path: input/support_audit
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31195349735
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v3-factorization-diagnostic
+          path: input/factorization
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31193870638
+      - name: Verify source-only inherited inputs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('input/support_audit/support_source_audit.json').read_text())
+          assert s['verdict']=='PASS_MULTIPLICITY_V5_SUPPORT_SOURCE_AUDIT'
+          assert s['catalogue_access'] is False and s['target_information_access'] is False
+          assert s['support_sha256']=='fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62'
+          f=json.loads(Path('input/factorization/v3_factorization_diagnostic.json').read_text())
+          assert f['verdict']=='V3_NON_BROWN_TERM_RETAINS_EXPLORATORY_RANKING_SIGNAL'
+          assert f['blindness']['catalogue_access'] is False
+          assert f['blindness']['orbittrace_target_access'] is False
+          print('PASS_V13_SOURCE_ONLY_PREACCESS_GUARDS')
+          PY
+          cp input/support_audit/support_source_audit.json output/prepare/
+          cp input/factorization/v3_factorization_diagnostic.json output/prepare/
+          cp input/v3/multi_anchor_energy_v3.py output/prepare/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v13-frozen-preaccess-inputs
+          path: output/prepare
+          if-no-files-found: error
+          retention-days: 90
+
+  direct_v5_reference:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install exact inherited runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-frozen-preaccess-inputs
+          path: input/prepared
+      - name: Restore exact runtime without external benchmark access
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 output/reference output/runtime
+          cp input/prepared/multi_anchor_energy_v3.py input/v3/multi_anchor_energy_v3.py
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          rm -rf output/runtime
+      - name: Run direct frozen v5 target-excluded reference
+        run: |
+          set -euo pipefail
+          python -u orbittrace_sparse_support_multiplicity_v5/run_holdout_loader_corrected.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json input/prepared/support_source_audit.json \
+            --factorization-json input/prepared/v3_factorization_diagnostic.json \
+            --output output/reference
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v13-direct-v5-reference
+          path: output/reference
+          if-no-files-found: error
+          retention-days: 90
+
+  stress:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        cap: [32, 64, 96, 128]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install exact inherited runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-frozen-preaccess-inputs
+          path: input/prepared
+      - name: Restore exact runtime
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 output/v5
+          cp input/prepared/multi_anchor_energy_v3.py input/v3/multi_anchor_energy_v3.py
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+      - name: Run preregistered density-cap stress
+        run: |
+          set -euo pipefail
+          python -u orbittrace_density_capped_multiplicity_v13/run_cap_stress.py \
+            --cap '${{ matrix.cap }}' \
+            --v13-summary output/v13_summary.json \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json input/prepared/support_source_audit.json \
+            --factorization-json input/prepared/v3_factorization_diagnostic.json \
+            --output output/v5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v13-cap-${{ matrix.cap }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  aggregate:
+    needs: [direct_v5_reference, stress]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v13-direct-v5-reference, path: input/reference}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v13-cap-32, path: input/cap32}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v13-cap-64, path: input/cap64}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v13-cap-96, path: input/cap96}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v13-cap-128, path: input/cap128}
+      - name: Apply frozen all-cap decision rule
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_density_capped_multiplicity_v13/evaluate_stress.py \
+            --cap-32 input/cap32/v13_summary.json \
+            --cap-64 input/cap64/v13_summary.json \
+            --cap-96 input/cap96/v13_summary.json \
+            --cap-128 input/cap128/v13_summary.json \
+            --v5-reference-dir input/reference \
+            --output output/v13_development_result.json
+          cat output/v13_development_result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-density-capped-multiplicity-v13-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
