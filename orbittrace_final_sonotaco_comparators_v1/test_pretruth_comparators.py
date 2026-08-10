@@ -32,6 +32,7 @@ class FakeMerger:
 
 
 class FakeSugar:
+    __source_sha256__=adapter.SUGAR_CORE_SHA256
     MIN_SAMPLES=5; EPS_PERCENTILE=23.0; CLONE_ITERATIONS=1000
     MERGE_OVERLAP_FRACTION=0.5; MIN_RECURRENCE=100; STRONG_RECURRENCE=500; SEED_ROOT=20170209
     OverlapGraphMerger=FakeMerger
@@ -55,6 +56,7 @@ class FakeSugar:
 
 
 class FakeHDB:
+    __source_sha256__=adapter.HDBSCAN_SOURCE_SHA256
     MIN_CLUSTER_SIZE=100; HDBSCAN_VERSION="0.8.44"
     @staticmethod
     def feature_matrix(rs): return np.zeros((len(rs),6))
@@ -96,6 +98,15 @@ def test_year_mismatch_fails_closed():
     else: raise AssertionError("mixed year was accepted")
 
 
+def test_source_identity_fails_closed():
+    old=FakeHDB.__source_sha256__; FakeHDB.__source_sha256__="0"*64
+    try:
+        try: adapter.run_hdbscan(records(),year=2013,hdbscan_runner=FakeHDB)
+        except RuntimeError as exc: assert "decoded-source SHA drift" in str(exc)
+        else: raise AssertionError("wrong HDBSCAN source identity was accepted")
+    finally: FakeHDB.__source_sha256__=old
+
+
 if __name__=="__main__":
-    test_sugar_truth_free(); test_hdbscan_truth_free(); test_truth_key_fails_closed(); test_year_mismatch_fails_closed()
+    test_sugar_truth_free(); test_hdbscan_truth_free(); test_truth_key_fails_closed(); test_year_mismatch_fails_closed(); test_source_identity_fails_closed()
     print("PASS_FINAL_PRETRUTH_COMPARATOR_ADAPTER_SYNTHETIC_TESTS")
