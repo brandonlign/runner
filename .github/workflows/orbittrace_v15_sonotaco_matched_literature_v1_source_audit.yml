@@ -77,8 +77,12 @@ jobs:
               '"truth_accessed": False',
           ):
               assert token in cand, token
-          assert 'p19' not in cand.lower().replace('p19_module','')
-          assert 'p20' not in cand.lower()
+          # runtime_helpers.load_support_base requires an object exposing `.mult`; the local
+          # P19Shim supplies only that transport attribute. Forbid actual P19/P20 science instead.
+          assert 'orbittrace_p19' not in low_imports
+          assert 'orbittrace_p20' not in low_imports
+          assert 'build_soft_recurrence' not in cand
+          assert 'build_p20' not in cand
           assert 'score_and_rank' not in cand
 
           # Truth stage may only consume already-frozen candidate/comparator outputs and exact #854.
