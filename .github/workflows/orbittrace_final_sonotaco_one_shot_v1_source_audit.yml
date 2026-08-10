@@ -25,17 +25,17 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
-      - name: Require dormant execution trigger and exact frozen identities
+      - name: Require dormant trigger and exact frozen execution provenance
         run: |
           set -euo pipefail
           test ! -e orbittrace_final_sonotaco_one_shot_v1/RUN.md
           w=.github/workflows/orbittrace_final_sonotaco_one_shot_v1.yml
+          c=orbittrace_final_sonotaco_one_shot_v1/run_candidate_pretruth.py
+          p=orbittrace_final_sonotaco_comparators_v1/pretruth_comparators.py
           for x in \
             "orbittrace_final_sonotaco_one_shot_v1/RUN.md" \
             'EXECUTE_FINAL_SONOTACO_2013_2014_V1' \
             '31349998268' \
-            '31348847806' \
-            '9048521513' \
             '31346168826' \
             '30855193522' \
             'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778' \
@@ -43,6 +43,20 @@ jobs:
             'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip' \
             'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'; do
             grep -F "$x" "$w" >/dev/null
+          done
+          for x in \
+            'ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909' \
+            'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990' \
+            '7dd59b5d2be7c0040f42ee494c9bd8b71ccb0d8b' \
+            '31348847806' \
+            '9048521513' \
+            'sha256:4bfb87af3b6c09afdcc62226022d68a995139eda64031fb57169f9a99c510751'; do
+            grep -F "$x" "$c" >/dev/null
+          done
+          for x in \
+            '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb' \
+            'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'; do
+            grep -F "$x" "$p" >/dev/null
           done
       - name: Compile final orchestration
         run: |
@@ -72,11 +86,11 @@ jobs:
           base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/orbittrace_final_matched_evaluator_v1.py
           test "$(sha256sum /tmp/orbittrace_final_matched_evaluator_v1.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
           PYTHONPATH=/tmp python orbittrace_final_matched_evaluator_v1/self_test.py
-      - name: Source guard against hidden target or alternate-dataset surfaces
+      - name: Source guard against target, MAARSY, or alternate-dataset access surfaces
         run: |
           set -euo pipefail
-          if grep -REiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|SonotaCo 2023|SonotaCo 2025|MAARSY 2020|MAARSY 2023' orbittrace_final_sonotaco_one_shot_v1 .github/workflows/orbittrace_final_sonotaco_one_shot_v1.yml; then
-            echo 'forbidden target/stale-dataset surface in final one-shot source' >&2
+          if grep -REiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|SonotaCo 2023|SonotaCo 2025|MAARSY 2020|MAARSY 2021|MAARSY 2022|MAARSY 2023' orbittrace_final_sonotaco_one_shot_v1 .github/workflows/orbittrace_final_sonotaco_one_shot_v1.yml; then
+            echo 'forbidden target/MAARSY/stale-dataset surface in final one-shot source' >&2
             exit 1
           fi
           echo PASS_FINAL_SONOTACO_ONE_SHOT_SOURCE_FREEZE
