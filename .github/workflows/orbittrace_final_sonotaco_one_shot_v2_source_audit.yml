@@ -76,6 +76,32 @@ jobs:
             orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py \
             orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py \
             orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py
+      - name: Prove authorization and pretruth freeze dominate truth opening
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_final_sonotaco_one_shot_v2.yml').read_text()
+          s=Path('orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py').read_text()
+          assert w.index('Revalidate final-test authorization before data access') < w.index('First frozen-source archive access; record byte identities')
+          assert 'truth_and_evaluate:\n    needs: freeze' in w
+          assert w.index('Freeze all output/source hashes before truth opens') < w.index('truth_and_evaluate:')
+          truth_pos=s.index('truth,audit=truth_reader.parse_truth_after_freeze')
+          required_before_truth=[
+              'freeze=load(freeze_path)',
+              'freeze.get("pretruth_outputs_frozen") is True',
+              'freeze["pairwise_rows_json_sha256"]==sha(rows_path)',
+              'freeze["orbittrace_primary_output_sha256"]==sha(candidate_path)',
+              'freeze["comparator_primary_output_sha256"]==sha(comp_path)',
+              'freeze["orbittrace_source_manifest_sha256"]==sha(cand_dirs[key]/"candidate_source_manifest.json")',
+              'freeze["comparator_source_manifest_sha256"]==sha(comp_dirs[(key,year)]/"comparator_source_manifest.json")',
+          ]
+          for needle in required_before_truth:
+              assert s.index(needle) < truth_pos,needle
+          assert s.index('evaluation=evaluator.evaluate_pair(eval_payload)') > truth_pos
+          assert s.index('final=evaluator.final_verdict(pair_results)') > s.index('evaluation=evaluator.evaluate_pair(eval_payload)')
+          print('PASS_PRETRUTH_HASH_DOMINATES_TRUTH_OPENING')
+          PY
       - name: Run final SonotaCo normalizer self-test
         run: |
           set -euo pipefail
