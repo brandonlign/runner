@@ -6,7 +6,8 @@ import copy
 import hashlib
 import importlib.util
 import json
-from collections import defaultdict
+import math
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,71 @@ def dump(path:Path,obj:Any)->str:
 def load_module(path:Path,name:str)->Any:
     spec=importlib.util.spec_from_file_location(name,path); require(spec is not None and spec.loader is not None,f'cannot load {path}')
     m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+def circular_diff_deg(a:float,b:float)->float:
+    return abs((float(a)-float(b)+180.0)%360.0-180.0)
+
+def portable_member_year_balance(family:dict[str,Any],lookup:dict[str,dict[str,Any]])->float:
+    counts=Counter(int(lookup[str(eid)]['year']) for eid in family['event_ids'])
+    a=int(counts.get(YEARS[0],0)); b=int(counts.get(YEARS[1],0))
+    return float(min(a,b)/max(a,b,1))
+
+def portable_family_centroid_distance(family:dict[str,Any])->float:
+    c=family.get('centroids',{}); a=c.get(str(YEARS[0])); b=c.get(str(YEARS[1]))
+    if not a or not b: return 10.0
+    d_sol=circular_diff_deg(a['sol'],b['sol'])/10.0
+    d_sun=circular_diff_deg(a['sun_lon'],b['sun_lon'])/4.0
+    d_lat=abs(float(a['ecl_lat'])-float(b['ecl_lat']))/4.0
+    va=max(abs(float(a['vg'])),1e-6); vb=max(abs(float(b['vg'])),1e-6)
+    d_v=abs(math.log(va/vb))/math.log(1.10)
+    return float(math.sqrt(d_sol*d_sol+d_sun*d_sun+d_lat*d_lat+d_v*d_v))
+
+def portable_structural_features(family:dict[str,Any],hard_rank:dict[str,int],lookup:dict[str,dict[str,Any]],expected_hard:int)->list[float]:
+    fid=str(family['family_id']); is_soft=1.0 if family.get('family_type') else 0.0
+    strengths=[float(family.get('year_strengths',{}).get(str(y),0.0)) for y in YEARS]
+    smin,smax=min(strengths),max(strengths)
+    sbalance=float((smin+1e-6)/(smax+1e-6)) if smax>=0.0 else 0.0
+    event_count=max(int(family.get('event_count',len(family.get('event_ids',[])))),1)
+    support_count=int(family.get('soft_support_count',0)); trigger=float(family.get('soft_trigger_max_seed_distance',1.5))
+    h_rank=int(hard_rank.get(fid,expected_hard+1)); h_pct=float((h_rank-1)/max(expected_hard-1,1)) if not is_soft else 1.0
+    return [
+        is_soft,
+        math.log1p(event_count),
+        math.log1p(max(int(family.get('anchor_count',0)),0)),
+        math.log1p(max(int(family.get('quartet_count',0)),0)),
+        math.log1p(max(int(family.get('component_count',0)),0)),
+        float(family.get('best_score',0.0)),
+        smin,
+        smax,
+        sbalance,
+        portable_member_year_balance(family,lookup),
+        portable_family_centroid_distance(family),
+        h_pct,
+        float(support_count/event_count),
+        trigger,
+    ]
+
+def portable_cohesion_features(family:dict[str,Any],lookup:dict[str,dict[str,Any]],support:Any,base:Any)->list[float]:
+    all_distances:list[float]=[]; per_year_q90:list[float]=[]; counts:list[int]=[]; centroids=family.get('centroids',{})
+    for year in YEARS:
+        ids=[str(eid) for eid in family['event_ids'] if int(lookup[str(eid)]['year'])==year]
+        counts.append(len(ids)); c=centroids.get(str(year)); distances:list[float]=[]
+        if c is not None:
+            for eid in ids:
+                row=lookup.get(eid); require(row is not None,f'member event absent from application scan: {eid}')
+                d=float(support.centroid_distance(row,c,base)); require(math.isfinite(d),f'nonfinite member distance for {eid}')
+                distances.append(d); all_distances.append(d)
+        per_year_q90.append(float(np.quantile(distances,0.90)) if distances else 10.0)
+    cmin,cmax=min(counts),max(counts); balance=float(cmin/max(cmax,1))
+    return [
+        float(cmin),
+        float(cmax),
+        balance,
+        float(np.median(all_distances)) if all_distances else 10.0,
+        float(np.quantile(all_distances,0.90)) if all_distances else 10.0,
+        float(max(all_distances)) if all_distances else 10.0,
+        float(max(per_year_q90)),
+    ]
 
 
 def build_hard_with_v15_order(*,scan_by_year,support,base,runtime):
@@ -131,9 +197,11 @@ def main()->int:
     source={str(f['family_id']):'hard' for f in hard['hard_families']}; source.update({str(f['family_id']):'p19' for f in p19_soft}); source.update({str(f['family_id']):'p20' for f in p20_soft}); require(len(source)==len(union),'source map incomplete')
     hard_rank={fid:i+1 for i,fid in enumerate(hard['hard_order'])}
     pmod=load_module(a.purity_source,'frozen_840_v29_sonotaco'); qmod=load_module(a.quality_source,'frozen_839_v29_diversity')
-    pmod.v1.mult.YEARS=YEARS; pmod.v1.mult.MONTH_KEYS=MONTH_KEYS; pmod.v1.mult.TOP_K=100; pmod.v2.YEARS=YEARS; qmod.YEARS=YEARS; qmod.MONTH_KEYS=MONTH_KEYS
-    lookup=pmod.v2.event_lookup(canonical)
-    x=np.asarray([pmod.v1.structural_features(f,hard_rank)+pmod.v2.cohesion_features(f,lookup,support,base)+pmod.source_features(f,source[str(f['family_id'])]) for f in union],dtype=float)
+    pmod.v1.mult.YEARS=YEARS; pmod.v1.mult.MONTH_KEYS=MONTH_KEYS; pmod.v1.mult.TOP_K=100; pmod.v1.YEARS=YEARS; pmod.v1.MONTH_KEYS=MONTH_KEYS; pmod.v2.YEARS=YEARS; qmod.YEARS=YEARS; qmod.MONTH_KEYS=MONTH_KEYS
+    lookup={str(row['id']):row for year in YEARS for row in canonical[year]}
+    require(len(lookup)==sum(len(canonical[y]) for y in YEARS),'canonical event IDs are not unique')
+    expected_hard=int(pmod.v1.EXPECTED_HARD); require(expected_hard==226,'#840 hard-rank feature scale changed')
+    x=np.asarray([portable_structural_features(f,hard_rank,lookup,expected_hard)+portable_cohesion_features(f,lookup,support,base)+pmod.source_features(f,source[str(f['family_id'])]) for f in union],dtype=float)
     require(x.shape==(len(union),28) and np.isfinite(x).all(),'v29 application features invalid')
     model=joblib.load(a.model_joblib); scores=np.asarray(pmod.probability(model,x),dtype=float); require(scores.shape==(len(union),) and np.isfinite(scores).all(),'v29 purity probabilities invalid')
     cm=qmod.centroid_matrix(union); tie=[(hard_rank.get(fid,999999),fid) for fid in ids]; idx=qmod.diversity_order(scores,cm,0.8,1.0,tie); order=[ids[i] for i in idx]; require(set(order)==set(ids) and len(order)==len(ids),'v29 diversity order incomplete')
@@ -146,10 +214,11 @@ def main()->int:
       'candidate_counts':{'hard':len(hard['hard_families']),'p19':len(p19_soft),'p20':len(p20_soft),'union':len(union)},
       'hard_order_sha256':canonical_sha(hard['hard_order']),'seed_family_order_sha256':hashlib.sha256('\n'.join(ids).encode()).hexdigest(),'purity_feature_sha256':array_sha(x),'purity_probability_sha256':array_sha(scores),'v29_order_sha256':hashlib.sha256('\n'.join(order).encode()).hexdigest(),
       'v29_model_sha256':MODEL_SHA,'purity_source_sha256':PURITY_SOURCE_SHA,'diversity_source_sha256':QUALITY_SOURCE_SHA,'membership_diagnostics':membership_diag,'p19_diagnostics':p19_diag,'p20_diagnostics':p20_result['soft_diagnostics'],
+      'feature_schema_adapter':'exact #839/#840 formulas with canonical row year and application-pair centroid keys; no feature/order/scale change',
       'matched_comparator_rows_accessed':False,'truth_accessed':False,'target_information_access':False,'maarsy_scientific_access':False,'dms_scientific_access':False,
     }
     primary_sha=dump(a.output/'V29_CANONICAL_PRETRUTH_CATALOGUE.json',primary)
-    summary={'verdict':'PASS_V29_CANONICAL_SONOTACO_PRETRUTH_CATALOGUE_FREEZE','primary_output_sha256':primary_sha,'family_count':len(expanded),'candidate_counts':primary['candidate_counts'],'membership_total_new':membership_diag['total_new_members'],'v29_order_sha256':primary['v29_order_sha256'],'matched_comparator_rows_accessed':False,'truth_accessed':False,'target_information_access':False,'maarsy_scientific_access':False,'dms_scientific_access':False}
+    summary={'verdict':'PASS_V29_CANONICAL_SONOTACO_PRETRUTH_CATALOGUE_FREEZE','primary_output_sha256':primary_sha,'family_count':len(expanded),'candidate_counts':primary['candidate_counts'],'membership_total_new':membership_diag['total_new_members'],'v29_order_sha256':primary['v29_order_sha256'],'feature_schema_adapter':primary['feature_schema_adapter'],'matched_comparator_rows_accessed':False,'truth_accessed':False,'target_information_access':False,'maarsy_scientific_access':False,'dms_scientific_access':False}
     dump(a.output/'V29_CANONICAL_PRETRUTH_SUMMARY.json',summary); print(json.dumps(summary,indent=2,sort_keys=True)); return 0
 
 if __name__=='__main__': raise SystemExit(main())
