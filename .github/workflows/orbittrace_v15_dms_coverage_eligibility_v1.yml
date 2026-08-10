@@ -39,13 +39,11 @@ jobs:
           from orbittrace_v15_dms_coverage_eligibility_v1 import audit_coverage as a
           header=['Yr','Mn','Day','LS','RA','DEC','Vg','q','e','i','Sh']
           b=io.StringIO(newline=''); w=csv.writer(b); w.writerow(header)
-          # Forbidden scientific fields contain deliberately unparsable sentinels.
           for year in (1991,1992):
               for bin_id in range(12,24):
                   for repeat in range(7):
                       ls=bin_id*10+1
                       w.writerow([year,6,10.5,ls,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
-          # Sealed interval row must make no contribution.
           w.writerow([1991,4,15.5,30,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
           raw=b.getvalue().encode(); indices=a.resolve_allowed_indices(header)
           cov=a.parse_coverage(raw,'utf-8',header,indices)
@@ -53,21 +51,40 @@ jobs:
           assert cov[1992]['usable_target_excluded_rows']==84
           assert cov[1991]['occupied_10deg_bin_count']==12
           assert cov[1991]['occupied_quadrant_count']>=2
-          # Synthetic data intentionally has only two quadrants, so eligibility fails.
           assert cov[1991]['eligible'] is False and cov[1992]['eligible'] is False
           assert a.choose_pair(cov) is None
-          # Deterministic pair tie-break test with fabricated aggregate metadata only.
           fake={year:{'eligible':False,'occupied_10deg_bin_count':0,'usable_target_excluded_rows':0} for year in a.YEARS}
           for year in (1993,1994,1995):
               fake[year]={'eligible':True,'occupied_10deg_bin_count':15,'usable_target_excluded_rows':100}
           assert a.choose_pair(fake)==(1993,1994)
           print('PASS_DMS_COVERAGE_ONLY_SYNTHETIC_FIREWALL')
           PY
-      - name: Run single official DMS coverage-only eligibility audit
+      - name: Run single official DMS coverage-only eligibility audit with persisted diagnostics
+        run: |
+          set -u
+          mkdir -p output
+          set +e
+          python -u orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py --output output/dms_coverage_eligibility.json >output/dms_audit_diagnostic.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > output/dms_audit_exit_status.txt
+          cat output/dms_audit_diagnostic.log
+          exit 0
+      - name: Upload transport/schema diagnostic before fail-closed status check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-dms-coverage-diagnostic-v1
+          path: |
+            output/dms_audit_diagnostic.log
+            output/dms_audit_exit_status.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Require coverage audit process success
         run: |
           set -euo pipefail
-          mkdir -p output
-          python -u orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py --output output/dms_coverage_eligibility.json
+          test "$(cat output/dms_audit_exit_status.txt)" = '0'
+          test -f output/dms_coverage_eligibility.json
       - name: Require coverage-only output firewall
         run: |
           set -euo pipefail
