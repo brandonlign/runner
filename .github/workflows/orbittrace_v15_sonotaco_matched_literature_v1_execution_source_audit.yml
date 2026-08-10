@@ -63,7 +63,8 @@ jobs:
           freeze_pos=p.index('\n  freeze:')
           raw_pos=p.index("https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip")
           raw2_pos=p.index("https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip")
-          assert freeze_pos < truth_pos < raw_pos < raw2_pos
+          truth_exec_pos=p.index('python -u orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py')
+          assert freeze_pos < truth_pos < raw_pos < raw2_pos < truth_exec_pos
           assert p[p.index('\n  candidate:'):p.index('\n  comparator:')].count('iaumdcDB/PDA/SNMv3')==0
           assert p[p.index('\n  comparator:'):freeze_pos].count('iaumdcDB/PDA/SNMv3')==0
           assert p[freeze_pos:truth_pos].count('iaumdcDB/PDA/SNMv3')==0
@@ -75,7 +76,6 @@ jobs:
 
           assert p.index('orbittrace-v15-matched-pretruth-freeze-v1') < raw_pos
           assert p.index('freeze_pretruth_outputs.py') < raw_pos
-          assert p.index('open_truth_and_evaluate.py') > raw_pos
 
           low=p.lower()
           for token in ('maarsy.h5', 'dms1991', 'orbittrace-april', 'target_ra', 'target_dec'):
