@@ -16,7 +16,7 @@ YEARS=(2022,2023)
 MONTH_KEYS=tuple(f"{y}-{m:02d}" for y in YEARS for m in range(1,13))
 BLIND=(20.0,55.0)
 EXPECTED=(226,1075,3203,4504)
-PURITY_BLOB='976ae788ec76a2da7035735ea62118c7289adc5e'
+PURITY_SHA256='7bbaa13b90ba10eb41f708b5aec6ebebd83e9c7c34018aa3f973b4aec086b96a'
 P19_RESULT_SHA='6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319'
 P19_PRELABEL_SHA='276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
 P20_RESULT_SHA='9ec53f29281b11002a9e22b1086d12e054392e466ea74fe82ead0187289ba303'
@@ -60,7 +60,7 @@ def main()->int:
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args(); a.output.mkdir(parents=True,exist_ok=True)
 
-    req(sha(a.purity_source)==PURITY_BLOB,'#840 purity source changed')
+    req(sha(a.purity_source)==PURITY_SHA256,'#840 purity source changed')
     req(sha(a.p19_result_json)==P19_RESULT_SHA and sha(a.p19_prelabel_json)==P19_PRELABEL_SHA,'P19 input changed')
     req(sha(a.p20_result_json)==P20_RESULT_SHA and sha(a.p20_prelabel_json)==P20_PRELABEL_SHA,'P20 input changed')
 
