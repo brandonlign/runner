@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -24,6 +25,7 @@ v5 = v5_loader.core
 ALLOWED_CAPS = (32, 64, 96, 128)
 SYNTHETIC_SIZES = (4, 8, 16, 32, 64, 96, 128)
 ACTIVE_CAP = 128
+TRANSPORT_RETRY_ATTEMPTS = 4
 
 
 def require(ok: bool, message: str) -> None:
@@ -34,6 +36,25 @@ def require(ok: bool, message: str) -> None:
 def canonical_sha(value: Any) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     return hashlib.sha256(raw).hexdigest()
+
+
+def install_transport_retries() -> None:
+    """Retry only transient HTTP exceptions from the unchanged GMN URLs/requests."""
+    import requests
+
+    original_get = requests.get
+
+    def retrying_get(*args: Any, **kwargs: Any) -> Any:
+        for attempt in range(TRANSPORT_RETRY_ATTEMPTS):
+            try:
+                return original_get(*args, **kwargs)
+            except requests.exceptions.RequestException:
+                if attempt + 1 == TRANSPORT_RETRY_ATTEMPTS:
+                    raise
+                time.sleep(float(2**attempt))
+        raise AssertionError("unreachable retry loop")
+
+    requests.get = retrying_get
 
 
 def adaptive_local_episode(
@@ -60,8 +81,9 @@ def adaptive_local_episode(
     }
     distances = runtime.exact_wavelet_r2(anchor, window_events)
     selected = runtime.stable_smallest_indices(distances, k)
-    chosen = [window_events[int(index)] for index in selected]
-    require(len(chosen) == k and len({str(event["event_id"]) for event in chosen}) == k, "episode event duplication")
+    selected_indices = [int(index) for index in selected]
+    require(len(selected_indices) == k and len(set(selected_indices)) == k, "episode index duplication")
+    chosen = [window_events[index] for index in selected_indices]
     episode = SimpleNamespace(
         sun_lon=np.asarray([float(event["sun_lon"]) for event in chosen], dtype=np.float64),
         ecl_lat=np.asarray([float(event["ecl_lat"]) for event in chosen], dtype=np.float64),
@@ -125,6 +147,7 @@ def main() -> int:
     require(int(v5.EPISODE_SIZE) == 128, "frozen v5 episode-size identity changed")
     ACTIVE_CAP = int(wrapper.cap)
     v5.build_local_episode = adaptive_local_episode
+    install_transport_retries()
 
     sys.argv = [sys.argv[0], *remaining]
     rc = int(v5.main())
@@ -152,6 +175,7 @@ def main() -> int:
         "max_brown_equivalence_difference": float(scoring["max_brown_equivalence_difference"]),
         "multiplicity_metrics": result["metrics"]["multiplicity"],
         "fixed4_metrics": result["metrics"]["fixed4_persistence"],
+        "transport_retry_attempts": TRANSPORT_RETRY_ATTEMPTS,
         "truth_labels_used_only_after_ranking": True,
         "sonotaco_2013_2014_access": False,
         "maarsy_access": False,
