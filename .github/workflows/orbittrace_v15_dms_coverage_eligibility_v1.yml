@@ -1,0 +1,97 @@
+name: OrbitTrace v15 DMS coverage-only eligibility audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v15-dms-coverage-eligibility-v1
+    paths:
+      - 'orbittrace_v15_dms_coverage_eligibility_v1/RUN.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require exact one-file execution child and frozen audit source
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}')
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'orbittrace_v15_dms_coverage_eligibility_v1/RUN.md'
+          test "$(cat orbittrace_v15_dms_coverage_eligibility_v1/RUN.md)" = 'EXECUTE_DMS_COVERAGE_ONLY_ELIGIBILITY_V1'
+          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/PROTOCOL.md)" = '5b810e7fe0b418b70ebb6e67fbc3ca707ebdabd5'
+          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py)" = '25b087969ceb10a2b57ecc17a7b09c332a9cfc39'
+          python -m py_compile orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py
+      - name: Prove parser ignores forbidden scientific values and pair selection is deterministic
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,io
+          from orbittrace_v15_dms_coverage_eligibility_v1 import audit_coverage as a
+          header=['Yr','Mn','Day','LS','RA','DEC','Vg','q','e','i','Sh']
+          b=io.StringIO(newline=''); w=csv.writer(b); w.writerow(header)
+          # Forbidden scientific fields contain deliberately unparsable sentinels.
+          for year in (1991,1992):
+              for bin_id in range(12,24):
+                  for repeat in range(7):
+                      ls=bin_id*10+1
+                      w.writerow([year,6,10.5,ls,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
+          # Sealed interval row must make no contribution.
+          w.writerow([1991,4,15.5,30,'DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE','DO_NOT_PARSE'])
+          raw=b.getvalue().encode(); indices=a.resolve_allowed_indices(header)
+          cov=a.parse_coverage(raw,'utf-8',header,indices)
+          assert cov[1991]['usable_target_excluded_rows']==84
+          assert cov[1992]['usable_target_excluded_rows']==84
+          assert cov[1991]['occupied_10deg_bin_count']==12
+          assert cov[1991]['occupied_quadrant_count']>=2
+          # Synthetic data intentionally has only two quadrants, so eligibility fails.
+          assert cov[1991]['eligible'] is False and cov[1992]['eligible'] is False
+          assert a.choose_pair(cov) is None
+          # Deterministic pair tie-break test with fabricated aggregate metadata only.
+          fake={year:{'eligible':False,'occupied_10deg_bin_count':0,'usable_target_excluded_rows':0} for year in a.YEARS}
+          for year in (1993,1994,1995):
+              fake[year]={'eligible':True,'occupied_10deg_bin_count':15,'usable_target_excluded_rows':100}
+          assert a.choose_pair(fake)==(1993,1994)
+          print('PASS_DMS_COVERAGE_ONLY_SYNTHETIC_FIREWALL')
+          PY
+      - name: Run single official DMS coverage-only eligibility audit
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py --output output/dms_coverage_eligibility.json
+      - name: Require coverage-only output firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/dms_coverage_eligibility.json').read_text())
+          assert r['catalogue']=='DMS1991-1998'
+          assert r['scientific_fields_accessed'] is False
+          assert r['radiant_accessed'] is False
+          assert r['velocity_accessed'] is False
+          assert r['orbital_elements_accessed'] is False
+          assert r['shower_labels_accessed'] is False
+          assert r['v15_executed'] is False
+          assert r['comparators_executed'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['maarsy_access'] is False
+          assert r['orbittrace_target_information_access'] is False
+          assert r['verdict'] in {'ELIGIBLE_DMS_PAIR_RESERVED_PRE_SCIENCE','INELIGIBLE_DMS_NO_ADEQUATE_CONSECUTIVE_PAIR'}
+          print(r['verdict'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-dms-coverage-eligibility-v1
+          path: output/dms_coverage_eligibility.json
+          if-no-files-found: error
+          retention-days: 90
