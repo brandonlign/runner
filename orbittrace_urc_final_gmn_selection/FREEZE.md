@@ -106,10 +106,12 @@ The chosen method is then source-frozen as one executable transport before any S
 
 ## Fixed downstream pipeline
 
+The dataset roles are immutable and may not be swapped or repurposed after results are seen: **GMN 2022/2023 is development/training, SonotaCo 2013/2014 is the single literature-comparison test, and MAARSY 2022 is the no-retuning external validation.**
+
 After the final GMN method is frozen:
 
 1. exactly one SonotaCo 2013/2014 matched-data literature test against the already-frozen Sugar and catalogue-HDBSCAN implementations, under candidate-budget parity and one-to-one candidate↔known-shower matching;
-2. only a passing literature-superiority result may authorize the frozen MAARSY 2020/2021 no-retuning external validation;
+2. only a passing literature-superiority result may authorize the frozen MAARSY 2022 no-retuning external validation;
 3. only passing external/generalization gates may authorize restoration of solar longitude 20°–55° for the final frozen blind target-free OrbitTrace search.
 
-Until then, SonotaCo 2013/2014 scientific values, MAARSY scientific values, the 20°–55° target region, OrbitTrace coordinates/members/identity, and prior OrbitTrace recovery information remain inaccessible.
+Until then, SonotaCo 2013/2014 scientific values, MAARSY 2022 scientific values, the 20°–55° target region, OrbitTrace coordinates/members/identity, and prior OrbitTrace recovery information remain inaccessible.
