@@ -1,10 +1,19 @@
 # Fixed-policy repeat-fold stress for #846
 
-This protocol is frozen before the scientific result of #846 is known.
+This protocol is frozen before the scientific result of the **final admissible** #846 execution is known.
 
-If and only if #846 returns `PASS_EVENT_LEVEL_P12_MEMBERSHIP_CALIBRATION_FEASIBILITY`, the exact one policy selected by #846's preregistered selector (model, probability threshold, and additions/core cap) is eligible for this stress. No alternative policy from the #846 grid may be substituted.
+The two earlier #846 runs `31343806656` and `31344761936` were invalidated pre-result by source-level same-shower fold-grouping issues and are permanently inadmissible regardless of outcome. The only admissible #846 scientific source is final corrected commit `e5733a57488b7b8dff26c15ff76f679810efac9c`, executed as run `31344902186`.
 
-The exact #846 scientific source is commit `99fdc0d21e91b68496adeddc21b2837093473ed9`.
+If and only if that final corrected #846 run returns `PASS_EVENT_LEVEL_P12_MEMBERSHIP_CALIBRATION_FEASIBILITY`, the exact one policy selected by #846's preregistered selector (model, probability threshold, and additions/core cap) is eligible for this stress. No alternative policy from the #846 grid may be substituted.
+
+The final corrected grouping changes **only fold-group identity** while preserving #846's original event-correctness target:
+
+- every qualified hard core is grouped by its unchanged #846 target shower identity;
+- every nonqualified near-miss is grouped by its best eligible known-shower association solely for fold separation;
+- fragments with no eligible association remain family-specific background groups;
+- the wrapper fails closed if a qualified target does not equal its fold-group identity or if fragments sharing one shower association do not share one group.
+
+No event target, feature, model, weight, threshold, cap, membership rule, feasibility gate, P12 assignment, hard core, data row, or target-firewall rule is changed by this correction.
 
 ## Stress design
 
@@ -16,7 +25,7 @@ The selected policy is retrained/evaluated under five new deterministic whole-sh
 - `URC-EVENT-STRESS-D`
 - `URC-EVENT-STRESS-E`
 
-For each salt, all P12 additions attached to cores with the same dominant known shower remain in one fold. Ambiguous/background groups retain their family grouping. The fold algorithm remains count-balanced; only the deterministic within-count hash ordering changes by salt.
+For each salt, all P12 additions attached to cores with the same final corrected shower group remain in one fold. The fold algorithm remains count-balanced; only the deterministic within-count hash ordering changes by salt.
 
 The exact selected model class/hyperparameters, probability threshold, cap, feature set, group-balanced weighting, P12 assignments, v8 core, target exclusion, and evaluation metrics are unchanged. There is no model, threshold, cap, salt, or gate search.
 
@@ -35,6 +44,8 @@ The aggregate verdict is `PASS_EVENT_LEVEL_P12_FIXED_GROUP_STRESS` only if all f
 
 ## Activation
 
-This source branch contains no execution marker. A one-file `RUN.md` child may be created only after #846 has scientifically passed. If #846 fails, this stress remains dormant permanently.
+This source contains no execution marker. A one-file `RUN.md` child may be created only after final corrected run `31344902186` has scientifically passed. If that run fails, this stress remains dormant permanently.
+
+The authoritative workflow is independently pinned to corrected source commit `e5733a57488b7b8dff26c15ff76f679810efac9c` and run `31344902186`; this protocol correction changes provenance text only and does not alter the already-frozen executable stress semantics.
 
 No SonotaCo 2013/2014, MAARSY scientific values, target-region events, OrbitTrace coordinates/members/identity, or prior target recovery information are accessed by this protocol or stress.
