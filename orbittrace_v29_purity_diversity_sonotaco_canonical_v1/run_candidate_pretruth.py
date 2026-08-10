@@ -131,7 +131,7 @@ def main()->int:
     source={str(f['family_id']):'hard' for f in hard['hard_families']}; source.update({str(f['family_id']):'p19' for f in p19_soft}); source.update({str(f['family_id']):'p20' for f in p20_soft}); require(len(source)==len(union),'source map incomplete')
     hard_rank={fid:i+1 for i,fid in enumerate(hard['hard_order'])}
     pmod=load_module(a.purity_source,'frozen_840_v29_sonotaco'); qmod=load_module(a.quality_source,'frozen_839_v29_diversity')
-    pmod.v1.mult.YEARS=YEARS; pmod.v1.mult.MONTH_KEYS=MONTH_KEYS; pmod.v1.mult.TOP_K=100; qmod.YEARS=YEARS; qmod.MONTH_KEYS=MONTH_KEYS
+    pmod.v1.mult.YEARS=YEARS; pmod.v1.mult.MONTH_KEYS=MONTH_KEYS; pmod.v1.mult.TOP_K=100; pmod.v2.YEARS=YEARS; qmod.YEARS=YEARS; qmod.MONTH_KEYS=MONTH_KEYS
     lookup=pmod.v2.event_lookup(canonical)
     x=np.asarray([pmod.v1.structural_features(f,hard_rank)+pmod.v2.cohesion_features(f,lookup,support,base)+pmod.source_features(f,source[str(f['family_id'])]) for f in union],dtype=float)
     require(x.shape==(len(union),28) and np.isfinite(x).all(),'v29 application features invalid')
