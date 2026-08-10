@@ -70,7 +70,8 @@ jobs:
           ):
               assert phrase.lower() in protocol.lower(), phrase
           assert not Path('orbittrace_v15_label_free_v8_qualification_v1/RUN.md').exists()
-          assert 'open(' not in runner.lower().replace('args.output', '') or True
+          for forbidden_surface in ('https://', 'http://', 'h5py.', 'requests.', 'urlopen(', 'download'):
+              assert forbidden_surface not in runner.lower(), forbidden_surface
           print('PASS_V15_LABEL_FREE_V8_QUALIFICATION_SOURCE_AUDIT')
           print('NO_SCIENTIFIC_EXECUTION_NO_EXTERNAL_ACCESS_NO_TARGET_ACCESS')
           PY
