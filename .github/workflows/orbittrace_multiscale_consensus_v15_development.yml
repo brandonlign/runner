@@ -1,0 +1,298 @@
+name: OrbitTrace multiscale-consensus v15 target-excluded development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-multiscale-consensus-v15-development
+    paths:
+      - 'orbittrace_multiscale_consensus_v15/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  V13_RUN_ID: '31356056453'
+  PYTHONPATH: .:orbittrace_wavelet_catalogue_v3:orbittrace_sparse_support_multiplicity_v5:input/v3
+
+jobs:
+  guard:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require exact one-file execution child and frozen source identities
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}')
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'orbittrace_multiscale_consensus_v15/RUN.md'
+          test "$(cat orbittrace_multiscale_consensus_v15/RUN.md)" = 'EXECUTE_MULTISCALE_CONSENSUS_V15_TARGET_EXCLUDED_DEVELOPMENT'
+          test "$(git hash-object orbittrace_multiscale_consensus_v15/PROTOCOL.md)" = 'b7218d64d720d03f7a8bfdc109b34d7fad9b2d26'
+          test "$(git hash-object orbittrace_multiscale_consensus_v15/generate_pretruth_cap.py)" = 'e0b37b0c19aaf827be9bfcaea7cb380e7a3deca6'
+          test "$(git hash-object orbittrace_multiscale_consensus_v15/rank_pretruth.py)" = '47e47f48efe149811f836a825d460081246fcbf2'
+          test "$(git hash-object orbittrace_multiscale_consensus_v15/evaluate_frozen.py)" = '52640ac6e08640dbddcf3468676353421643a832'
+          python -m py_compile orbittrace_multiscale_consensus_v15/*.py
+          if git grep -Eiq '013a\.zip|014a\.zip|astro\.sk|OrbitTrace-April|target_ra|target_dec|target_member' -- orbittrace_multiscale_consensus_v15/*.py; then
+            echo 'forbidden external/target source surface in v15 runtime' >&2
+            exit 1
+          fi
+
+  generate_missing_caps:
+    needs: guard
+    strategy:
+      fail-fast: false
+      matrix:
+        cap: [16, 24, 48, 72]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+      - name: Install exact inherited runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-frozen-preaccess-inputs
+          path: input/prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - name: Restore exact frozen scoring runtime
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3
+          cp input/prepared/multi_anchor_energy_v3.py input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          rm -rf output
+      - name: Generate nested-cap ranking with hidden-label evaluation disabled
+        run: |
+          set -euo pipefail
+          python -u orbittrace_multiscale_consensus_v15/generate_pretruth_cap.py \
+            --cap '${{ matrix.cap }}' \
+            --v15-summary output/cap_summary.json \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --source-audit-json input/prepared/support_source_audit.json \
+            --factorization-json input/prepared/v3_factorization_diagnostic.json \
+            --output output/v5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-pretruth-cap-${{ matrix.cap }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  sanitize_rank_inputs:
+    needs: generate_missing_caps
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-16, path: input/raw/cap16}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-24, path: input/raw/cap24}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-48, path: input/raw/cap48}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-72, path: input/raw/cap72}
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-32
+          path: input/raw/cap32
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-64
+          path: input/raw/cap64
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-96
+          path: input/raw/cap96
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-128
+          path: input/raw/cap128
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - name: Create strict rank-only whitelist and strip prior metric fields
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import json,shutil
+          from pathlib import Path
+          existing={32,64,96,128}
+          for cap in (16,24,32,48,64,72,96,128):
+              src=Path(f'input/raw/cap{cap}')
+              dst=Path(f'output/cap{cap}'); dst.mkdir(parents=True)
+              shutil.copyfile(src/'v5/multiplicity_v5_rankings.json',dst/'multiplicity_v5_rankings.json')
+              shutil.copyfile(src/'v5/multiplicity_v5_family_scores.json.gz',dst/'multiplicity_v5_family_scores.json.gz')
+              summary=json.loads((src/('v13_summary.json' if cap in existing else 'cap_summary.json')).read_text())
+              safe={
+                  'stress_cap':int(summary['stress_cap']),
+                  'family_count':int(summary['family_count']),
+                  'family_universe_sha256':summary['family_universe_sha256'],
+                  'multiplicity_order_sha256':summary['multiplicity_order_sha256'],
+                  'episode_sizes_observed':summary['episode_sizes_observed'],
+                  'max_brown_equivalence_difference':summary['max_brown_equivalence_difference'],
+                  'sonotaco_2013_2014_access':False,
+                  'maarsy_access':False,
+                  'target_information_access':False,
+              }
+              if cap in existing:
+                  assert summary['truth_labels_used_only_after_ranking'] is True
+                  safe['truth_labels_used_only_after_ranking']=True
+              else:
+                  assert summary['hidden_label_values_consulted'] is False
+                  assert summary['postranking_label_evaluator_stubbed_before_catalogue_access'] is True
+                  safe['hidden_label_values_consulted']=False
+                  safe['postranking_label_evaluator_stubbed_before_catalogue_access']=True
+              (dst/'cap_summary.json').write_text(json.dumps(safe,indent=2,sort_keys=True)+'\n')
+          PY
+          test "$(find output -type f | wc -l)" -eq 24
+          if find output -type f | grep -Eiq 'evaluation|families|holdout|truth'; then
+            echo 'non-whitelisted scientific payload escaped v15 sanitization' >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-label-free-rank-inputs
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  rank_pretruth:
+    needs: sanitize_rank_inputs
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-label-free-rank-inputs, path: input/rank}
+      - name: Freeze all four v15 consensus orders with no evaluation payload available
+        run: |
+          set -euo pipefail
+          if find input/rank -type f | grep -Eiq 'evaluation|families|holdout|truth'; then
+            echo 'evaluation-bearing payload present in v15 rank job' >&2
+            exit 1
+          fi
+          python -u orbittrace_multiscale_consensus_v15/rank_pretruth.py --input-root input/rank --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-frozen-pretruth-orders
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: rank_pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-frozen-pretruth-orders, path: input/orders}
+      - name: Require frozen consensus before any evaluation artifact download
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('input/orders/v15_pretruth_audit.json').read_text())
+          assert a['verdict']=='PASS_V15_PRETRUTH_CONSENSUS_FREEZE'
+          assert a['all_v15_orders_frozen_before_labels'] is True
+          assert a['sonotaco_2013_2014_access'] is False
+          assert a['maarsy_access'] is False
+          assert a['target_information_access'] is False
+          print('PASS_V15_CONSENSUS_FROZEN_BEFORE_LABEL_DOWNLOAD')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-direct-v5-reference
+          path: input/reference
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-16, path: input/cap16}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-24, path: input/cap24}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-48, path: input/cap48}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-pretruth-cap-72, path: input/cap72}
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-32
+          path: input/cap32
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-64
+          path: input/cap64
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-96
+          path: input/cap96
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v13-cap-128
+          path: input/cap128
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31356056453
+      - name: Evaluate frozen v15 orders and apply preregistered gates
+        run: |
+          set -euo pipefail
+          python -u orbittrace_multiscale_consensus_v15/evaluate_frozen.py \
+            --orders-dir input/orders --reference-dir input/reference \
+            --cap-16-dir input/cap16 --cap-24-dir input/cap24 --cap-32-dir input/cap32 --cap-48-dir input/cap48 \
+            --cap-64-dir input/cap64 --cap-72-dir input/cap72 --cap-96-dir input/cap96 --cap-128-dir input/cap128 \
+            --output output
+          cat output/v15_development_result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiscale-consensus-v15-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
