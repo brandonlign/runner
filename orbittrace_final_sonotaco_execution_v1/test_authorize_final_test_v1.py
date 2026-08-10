@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from copy import deepcopy
-
 from authorize_final_test_v1 import (
     AUTHORIZED,
     INVALID_FIREWALL,
@@ -22,7 +20,7 @@ def valid_manifest():
             "maarsy_scientific_access_already_occurred": False,
         },
         "generator_equivalence": {
-            "verdict": "PASS_URC_PAIR_PORTABLE_GENERATOR_GMN_EQUIVALENCE",
+            "verdict": "PASS_URC_PAIR_PORTABLE_GENERATOR_GMN_OPERATIONAL_EQUIVALENCE",
             "pr_number": 862,
             "source_commit": "1" * 40,
             "run_id": 1,
@@ -34,11 +32,19 @@ def valid_manifest():
             "union_count": 4504,
             "exact_hard_order_match": True,
             "exact_hard_family_match": True,
-            "exact_p19_family_match": True,
+            "exact_p19_discrete_match": True,
+            "p19_numeric_equivalent": True,
+            "p19_numeric_atol": 1e-12,
+            "p19_numeric_rtol": 1e-12,
+            "p19_numeric_max_abs_difference": 5e-15,
             "exact_p20_family_match": True,
             "exact_p20_isolated_quartet_match": True,
+            "feature_matrix_numeric_equivalent": True,
+            "prediction_max_abs_difference": 0.0,
+            "exact_final_application_order_match": True,
+            "final_application_order_sha256": "9063270f131b81bb0032026b2742b985ab0f8d5655abb46a1d405d30501b6d7d",
             "performance_metric_computed": False,
-            "truth_labels_used_by_generator": False,
+            "truth_labels_used_by_generator_or_ranker": False,
             "sonotaco_2013_2014_access": False,
             "maarsy_scientific_access": False,
             "target_information_access": False,
@@ -91,6 +97,21 @@ def test_generator_fail_closed():
     assert adjudicate(p)["state"] == NOT_READY_GENERATOR
 
 
+def test_generator_numeric_ceiling_fail_closed():
+    p = valid_manifest(); p["generator_equivalence"]["p19_numeric_max_abs_difference"] = 1.0001e-12
+    assert adjudicate(p)["state"] == NOT_READY_GENERATOR
+
+
+def test_generator_tolerance_drift_fail_closed():
+    p = valid_manifest(); p["generator_equivalence"]["p19_numeric_atol"] = 1e-9
+    assert adjudicate(p)["state"] == NOT_READY_GENERATOR
+
+
+def test_generator_order_drift_fail_closed():
+    p = valid_manifest(); p["generator_equivalence"]["final_application_order_sha256"] = "0" * 64
+    assert adjudicate(p)["state"] == NOT_READY_GENERATOR
+
+
 def test_ranker_fail_closed():
     p = valid_manifest(); p["ranker_equivalence"]["feature_count"] = 33
     assert adjudicate(p)["state"] == NOT_READY_RANKER
@@ -122,6 +143,9 @@ def test_firewall_precedes_everything():
 if __name__ == "__main__":
     test_authorized_shape_only()
     test_generator_fail_closed()
+    test_generator_numeric_ceiling_fail_closed()
+    test_generator_tolerance_drift_fail_closed()
+    test_generator_order_drift_fail_closed()
     test_ranker_fail_closed()
     test_comparator_fail_closed()
     test_evaluator_fail_closed()
