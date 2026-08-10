@@ -23,6 +23,7 @@ from urllib.parse import urljoin
 OFFICIAL_VIDEO_PAGE = "https://ceres.ta3.sk/iaumdcdb/home/catalog/video"
 ANCHOR_TEXT = "DMS1991-1998 - ZIP archive"
 YEARS = tuple(range(1991, 1999))
+OFFICIAL_ORBIT_COUNT = 908
 SEALED_LOWER = 20.0
 SEALED_UPPER = 55.0
 MIN_ROWS = 80
@@ -31,6 +32,8 @@ MIN_QUADRANTS = 3
 USER_AGENT = "OrbitTrace-DMS-coverage-audit/1.0"
 HEADER_SCAN_LIMIT = 128
 DELIMITERS = (",", ";", "\t")
+# Current official MDC parameter ordering begins DB, IC, Ano, Yr, Mn, Day, delta_Day, LS, ...
+OFFICIAL_ORDER_INDICES = {"year": 3, "month": 4, "day": 5, "solar_longitude": 7}
 
 
 class AnchorCollector(HTMLParser):
@@ -115,10 +118,10 @@ def resolve_allowed_indices(header: list[str]) -> dict[str, int]:
     return resolved
 
 
-def find_allowed_header(text: str) -> tuple[int, str, list[str], dict[str, int]]:
+def find_allowed_header_or_none(text: str) -> tuple[int, str, list[str], dict[str, int]] | None:
     """Find one allowed-field header in an initial metadata/preamble region.
 
-    The scan interprets only column-name strings. It never parses any event-row value.
+    The scan interprets only column-name strings. It never parses an event-row value.
     """
     lines = text.splitlines()
     matches: list[tuple[int, str, list[str], dict[str, int]]] = []
@@ -134,39 +137,24 @@ def find_allowed_header(text: str) -> tuple[int, str, list[str], dict[str, int]]
             except RuntimeError:
                 continue
             matches.append((line_index, delimiter, header, resolved))
-    # The same physical header can occasionally parse under more than one delimiter only
-    # if an unused delimiter appears in a field name. Keep only distinct physical lines and
-    # require a unique delimiter that resolves the four allowed concepts on that line.
     by_line: dict[int, list[tuple[int, str, list[str], dict[str, int]]]] = {}
     for match in matches:
         by_line.setdefault(match[0], []).append(match)
-    require(len(by_line) == 1, f"expected exactly one DMS header line with allowed schema, got {len(by_line)}")
+    if not by_line:
+        return None
+    require(len(by_line) == 1, f"expected at most one DMS header line with allowed schema, got {len(by_line)}")
     line_matches = next(iter(by_line.values()))
-    # Prefer the parse with the largest number of columns; exact ties fail closed.
     max_width = max(len(match[2]) for match in line_matches)
     widest = [match for match in line_matches if len(match[2]) == max_width]
     require(len(widest) == 1, "DMS allowed header delimiter is ambiguous")
     return widest[0]
 
 
-def choose_data_member(archive: bytes) -> tuple[str, bytes, str, int, str, list[str], dict[str, int]]:
-    candidates: list[tuple[str, bytes, str, int, str, list[str], dict[str, int]]] = []
-    with zipfile.ZipFile(io.BytesIO(archive)) as zf:
-        for info in zf.infolist():
-            if info.is_dir() or info.file_size <= 0:
-                continue
-            suffix = Path(info.filename).suffix.lower()
-            if suffix not in {".csv", ".txt", ".dat"}:
-                continue
-            raw = zf.read(info.filename)
-            text, encoding = decode_text(raw)
-            try:
-                line_index, delimiter, header, resolved = find_allowed_header(text)
-            except RuntimeError:
-                continue
-            candidates.append((info.filename, raw, encoding, line_index, delimiter, header, resolved))
-    require(len(candidates) == 1, f"expected exactly one DMS tabular member with allowed schema, got {len(candidates)}")
-    return candidates[0]
+def find_allowed_header(text: str) -> tuple[int, str, list[str], dict[str, int]]:
+    """Public helper retained for synthetic named-header tests."""
+    found = find_allowed_header_or_none(text)
+    require(found is not None, "no DMS named header with allowed schema")
+    return found
 
 
 def finite_float(value: str, concept: str) -> float:
@@ -178,43 +166,139 @@ def finite_float(value: str, concept: str) -> float:
     return number
 
 
-def parse_coverage(
-    raw: bytes,
-    encoding: str,
-    header_line_index: int,
-    delimiter: str,
-    header: list[str],
-    indices: dict[str, int],
-) -> dict[int, dict[str, Any]]:
-    text = raw.decode(encoding)
-    lines = text.splitlines()
-    require(0 <= header_line_index < len(lines), "DMS header-line index out of range")
-    parsed_header = parse_header_with_delimiter(lines[header_line_index], delimiter)
-    require(parsed_header == header, "DMS header changed between member selection and parse")
+def parse_allowed_values(row: list[str], indices: dict[str, int], *, require_dms_year: bool) -> tuple[int, int, float, float]:
+    """Interpret only Yr/Mn/Day/LS. No other cell is converted or compared."""
     max_index = max(indices.values())
+    require(len(row) > max_index, "short DMS row in allowed-field parser")
+    year_f = finite_float(row[indices["year"]], "year")
+    month_f = finite_float(row[indices["month"]], "month")
+    day_f = finite_float(row[indices["day"]], "day")
+    ls = finite_float(row[indices["solar_longitude"]], "solar longitude") % 360.0
+    year = int(round(year_f))
+    require(abs(year_f - year) <= 1e-9, "non-integral DMS year")
+    month = int(round(month_f))
+    require(abs(month_f - month) <= 1e-9 and 1 <= month <= 12, "invalid DMS month")
+    require(0.0 < day_f < 32.0, "invalid DMS day")
+    if require_dms_year:
+        require(year in YEARS, "headerless official-order row year outside public DMS 1991-1998 span")
+    return year, month, day_f, ls
+
+
+def parse_rows_from_line(text: str, start_line_index: int, delimiter: str) -> list[list[str]]:
+    lines = text.splitlines()
+    require(0 <= start_line_index <= len(lines), "DMS data-start line out of range")
+    data_text = "\n".join(lines[start_line_index:])
+    return [row for row in csv.reader(io.StringIO(data_text, newline=""), delimiter=delimiter) if row and any(cell.strip() for cell in row)]
+
+
+def find_headerless_official_order(text: str) -> tuple[int, str, int, dict[str, int]] | None:
+    """Find one headerless official-order table using only row width and allowed fields.
+
+    No non-allowed cell value is interpreted. Exact 908-row cardinality is already-public
+    catalogue metadata and is used only as a structural identity check.
+    """
+    lines = text.splitlines()
+    candidates: list[tuple[int, str, int, dict[str, int]]] = []
+    max_start = min(HEADER_SCAN_LIMIT, len(lines))
+    for start_line_index in range(max_start):
+        for delimiter in DELIMITERS:
+            rows = parse_rows_from_line(text, start_line_index, delimiter)
+            if len(rows) != OFFICIAL_ORBIT_COUNT:
+                continue
+            widths = {len(row) for row in rows}
+            if len(widths) != 1:
+                continue
+            width = next(iter(widths))
+            if width <= max(OFFICIAL_ORDER_INDICES.values()):
+                continue
+            try:
+                for row in rows:
+                    parse_allowed_values(row, OFFICIAL_ORDER_INDICES, require_dms_year=True)
+            except RuntimeError:
+                continue
+            candidates.append((start_line_index, delimiter, width, dict(OFFICIAL_ORDER_INDICES)))
+    if not candidates:
+        return None
+    require(len(candidates) == 1, f"headerless official-order DMS schema is ambiguous across {len(candidates)} candidates")
+    return candidates[0]
+
+
+def choose_data_member(archive: bytes) -> dict[str, Any]:
+    named_candidates: list[dict[str, Any]] = []
+    headerless_candidates: list[dict[str, Any]] = []
+    with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+        for info in zf.infolist():
+            if info.is_dir() or info.file_size <= 0:
+                continue
+            suffix = Path(info.filename).suffix.lower()
+            if suffix not in {".csv", ".txt", ".dat"}:
+                continue
+            raw = zf.read(info.filename)
+            text, encoding = decode_text(raw)
+            named = find_allowed_header_or_none(text)
+            if named is not None:
+                line_index, delimiter, header, resolved = named
+                named_candidates.append({
+                    "mode": "named_header",
+                    "member_name": info.filename,
+                    "raw": raw,
+                    "encoding": encoding,
+                    "data_start_line_index": line_index + 1,
+                    "header_line_index": line_index,
+                    "delimiter": delimiter,
+                    "header": header,
+                    "indices": resolved,
+                    "row_width": len(header),
+                })
+                continue
+            headerless = find_headerless_official_order(text)
+            if headerless is not None:
+                start_line_index, delimiter, width, resolved = headerless
+                headerless_candidates.append({
+                    "mode": "headerless_official_order",
+                    "member_name": info.filename,
+                    "raw": raw,
+                    "encoding": encoding,
+                    "data_start_line_index": start_line_index,
+                    "header_line_index": None,
+                    "delimiter": delimiter,
+                    "header": None,
+                    "indices": resolved,
+                    "row_width": width,
+                })
+    if named_candidates:
+        require(len(named_candidates) == 1, f"expected exactly one DMS named-header data member, got {len(named_candidates)}")
+        require(not headerless_candidates, "named-header and headerless DMS candidates coexist ambiguously")
+        return named_candidates[0]
+    require(len(headerless_candidates) == 1, f"expected exactly one headerless official-order DMS data member, got {len(headerless_candidates)}")
+    return headerless_candidates[0]
+
+
+def parse_coverage(schema: dict[str, Any]) -> tuple[dict[int, dict[str, Any]], int]:
+    raw = schema["raw"]
+    encoding = schema["encoding"]
+    start_line_index = int(schema["data_start_line_index"])
+    delimiter = str(schema["delimiter"])
+    indices = dict(schema["indices"])
+    text = raw.decode(encoding)
+    rows = parse_rows_from_line(text, start_line_index, delimiter)
+    if schema["mode"] == "headerless_official_order":
+        require(len(rows) == OFFICIAL_ORBIT_COUNT, "headerless DMS parsed-row count changed after schema selection")
+        require({len(row) for row in rows} == {int(schema["row_width"])}, "headerless DMS row width changed after schema selection")
     counts = {year: 0 for year in YEARS}
     bins = {year: set() for year in YEARS}
     quadrants = {year: set() for year in YEARS}
 
-    data_text = "\n".join(lines[header_line_index + 1 :])
-    reader = csv.reader(io.StringIO(data_text, newline=""), delimiter=delimiter)
-    for row in reader:
-        if not row or all(not cell.strip() for cell in row):
-            continue
-        require(len(row) > max_index, "short DMS row in allowed-field parser")
-        # Only the four preregistered coverage fields are interpreted.
-        year_f = finite_float(row[indices["year"]], "year")
-        month_f = finite_float(row[indices["month"]], "month")
-        day_f = finite_float(row[indices["day"]], "day")
-        ls = finite_float(row[indices["solar_longitude"]], "solar longitude") % 360.0
-        year = int(round(year_f))
-        require(abs(year_f - year) <= 1e-9, "non-integral DMS year")
-        month = int(round(month_f))
-        require(abs(month_f - month) <= 1e-9 and 1 <= month <= 12, "invalid DMS month")
-        require(0.0 < day_f < 32.0, "invalid DMS day")
+    for row in rows:
+        year, _month, _day, ls = parse_allowed_values(
+            row,
+            indices,
+            require_dms_year=(schema["mode"] == "headerless_official_order"),
+        )
         if year not in counts:
             continue
         if SEALED_LOWER <= ls <= SEALED_UPPER:
+            # Intentionally no counter/statistic is updated or emitted for sealed rows.
             continue
         counts[year] += 1
         bins[year].add(int(math.floor(ls / 10.0)) % 36)
@@ -237,7 +321,7 @@ def parse_coverage(
             "gates": gates,
             "eligible": all(gates.values()),
         }
-    return result
+    return result, len(rows)
 
 
 def choose_pair(years: dict[int, dict[str, Any]]) -> tuple[int, int] | None:
@@ -266,10 +350,23 @@ def main() -> int:
     archive_url, page_sha = discover_archive_url()
     archive = fetch(archive_url)
     require(archive[:4] == b"PK\x03\x04", "official DMS payload is not a ZIP archive")
-    member_name, member_raw, encoding, header_line_index, delimiter, header, indices = choose_data_member(archive)
-    coverage = parse_coverage(member_raw, encoding, header_line_index, delimiter, header, indices)
+    schema = choose_data_member(archive)
+    coverage, parsed_row_count = parse_coverage(schema)
     pair = choose_pair(coverage)
     verdict = "ELIGIBLE_DMS_PAIR_RESERVED_PRE_SCIENCE" if pair is not None else "INELIGIBLE_DMS_NO_ADEQUATE_CONSECUTIVE_PAIR"
+
+    if schema["mode"] == "named_header":
+        header = schema["header"]
+        allowed_fields_resolved = {concept: header[index] for concept, index in sorted(schema["indices"].items())}
+        header_physical_line: int | None = int(schema["header_line_index"]) + 1
+    else:
+        allowed_fields_resolved = {
+            "year": "official_parameter_position_4_Yr",
+            "month": "official_parameter_position_5_Mn",
+            "day": "official_parameter_position_6_Day",
+            "solar_longitude": "official_parameter_position_8_LS",
+        }
+        header_physical_line = None
 
     output = {
         "verdict": verdict,
@@ -278,12 +375,15 @@ def main() -> int:
         "official_video_page_sha256": page_sha,
         "archive_sha256": sha256(archive),
         "archive_bytes": len(archive),
-        "member_basename": Path(member_name).name,
-        "member_sha256": sha256(member_raw),
-        "member_bytes": len(member_raw),
-        "text_encoding": encoding,
-        "header_physical_line": header_line_index + 1,
-        "allowed_fields_resolved": {concept: header[index] for concept, index in sorted(indices.items())},
+        "member_basename": Path(schema["member_name"]).name,
+        "member_sha256": sha256(schema["raw"]),
+        "member_bytes": len(schema["raw"]),
+        "text_encoding": schema["encoding"],
+        "schema_mode": schema["mode"],
+        "header_physical_line": header_physical_line,
+        "row_width": int(schema["row_width"]),
+        "parsed_row_count": parsed_row_count,
+        "allowed_fields_resolved": allowed_fields_resolved,
         "year_gates": {
             "minimum_target_excluded_rows": MIN_ROWS,
             "minimum_occupied_10deg_bins": MIN_BINS_10,
