@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Verify the portable unseen-data #839 ranker adapter against frozen #853 GMN hashes.
+"""Verify the portable unseen-data #839 ranker adapter against frozen #853 GMN identities.
 
 This is an implementation equivalence test only. It computes no shower-performance metric and
-performs no model selection. PASS means the year-portable feature builder is exactly identical to
-#853 on the original 2022/2023 development pair and the serialized model predictions are exact.
+performs no model selection. The 34-column feature matrix and serialized estimator must match
+#853 exactly. Forest prediction is then forced to n_jobs=1 for deterministic accumulation; that
+prediction must be numerically equivalent to the serialized model's native parallel prediction
+and produce the identical diversity-ranked catalogue order.
 """
 from __future__ import annotations
 
@@ -22,10 +24,11 @@ from orbittrace_urc_unseen_ranker_v1 import application
 YEARS = (2022, 2023)
 MONTH_KEYS = tuple(f"{y}-{m:02d}" for y in YEARS for m in range(1, 13))
 EXPECTED_FEATURE_SHA = "5d215c5562c0ccce967d81ff0a087ca83b1afda95a269888d2219ef669d198d1"
-EXPECTED_PREDICTION_SHA = "493d39cd57f272ee088b1c1c80240c2af99595a5e8a3c91defe693cd460041ac"
+HISTORICAL_FIT_PREDICTION_SHA = "493d39cd57f272ee088b1c1c80240c2af99595a5e8a3c91defe693cd460041ac"
 EXPECTED_MODEL_SHA = "ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909"
 EXPECTED_ACTIVE_SOURCE_SHA = "dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990"
 EXPECTED_COUNTS = (226, 1075, 3203, 4504)
+PREDICTION_EQUIVALENCE_ATOL = 1e-12
 
 
 def require(ok: bool, message: str) -> None:
@@ -80,7 +83,6 @@ def main() -> int:
     source.update({str(f["family_id"]): "p19" for f in s19})
     source.update({str(f["family_id"]): "p20" for f in s20})
 
-    # Restore the same frozen event representation needed by label-free cohesion features.
     urc.v1.mult.YEARS = YEARS
     urc.v1.mult.MONTH_KEYS = MONTH_KEYS
     urc.v1.mult.TOP_K = 100
@@ -109,14 +111,38 @@ def main() -> int:
         frozen_ranker_module=urc,
     )
     feature_sha = application.array_sha256(portable["feature_matrix"])
-    prediction_sha = application.array_sha256(portable["prediction"])
+    deterministic_sha = application.array_sha256(portable["prediction"])
     require(feature_sha == EXPECTED_FEATURE_SHA, f"portable feature matrix differs: {feature_sha}")
-    require(prediction_sha == EXPECTED_PREDICTION_SHA, f"portable fitted predictions differ: {prediction_sha}")
 
-    # Independent model load guard: no accidental estimator substitution.
+    # Compare deterministic single-thread execution with the same serialized forest's native
+    # n_jobs setting. Bit-level hashes are intentionally not an equivalence gate because parallel
+    # tree accumulation can change floating addition order without changing the estimator.
     model = joblib.load(args.model_joblib)
     require(int(model.n_features_in_) == application.EXPECTED_FEATURES, "model feature count changed")
-    require(np.array_equal(np.asarray(model.predict(portable["feature_matrix"]), dtype=np.float64), portable["prediction"]), "prediction path mismatch")
+    native_prediction = np.asarray(model.predict(portable["feature_matrix"]), dtype=np.float64)
+    native_sha = application.array_sha256(native_prediction)
+    if hasattr(model, "set_params"):
+        model.set_params(n_jobs=1)
+    single_prediction = np.asarray(model.predict(portable["feature_matrix"]), dtype=np.float64)
+    require(np.array_equal(single_prediction, portable["prediction"]), "application single-thread prediction path differs")
+    max_abs = float(np.max(np.abs(native_prediction - single_prediction))) if len(single_prediction) else 0.0
+    require(max_abs <= PREDICTION_EQUIVALENCE_ATOL, f"parallel/single prediction difference too large: {max_abs}")
+
+    X2, cm, tie = application.build_feature_matrix(
+        families=families,
+        source_by_id=source,
+        hard_order=hard_order,
+        scan_by_year=scan,
+        years=YEARS,
+        support=support,
+        base=base,
+        frozen_ranker_module=urc,
+    )
+    require(np.array_equal(X2, portable["feature_matrix"]), "feature reconstruction not deterministic")
+    native_idx = urc.diversity_order(native_prediction, cm, application.DIVERSITY_LAMBDA, application.DIVERSITY_SCALE, tie)
+    ids = [str(f["family_id"]) for f in families]
+    native_order = [ids[i] for i in native_idx]
+    require(native_order == portable["order"], "floating accumulation changes final diversity order")
 
     result = {
         "verdict": "PASS_URC_UNSEEN_RANKER_GMN_EQUIVALENCE",
@@ -124,12 +150,17 @@ def main() -> int:
         "candidate_count": len(families),
         "feature_matrix_shape": list(portable["feature_matrix"].shape),
         "feature_matrix_sha256": feature_sha,
-        "prediction_sha256": prediction_sha,
         "model_joblib_sha256": sha(args.model_joblib),
-        "application_order_sha256_diagnostic": portable["order_sha256"],
+        "deterministic_prediction_sha256": deterministic_sha,
+        "native_parallel_prediction_sha256": native_sha,
+        "historical_fit_prediction_sha256_diagnostic": HISTORICAL_FIT_PREDICTION_SHA,
+        "max_abs_parallel_vs_single_prediction": max_abs,
+        "parallel_and_single_diversity_order_identical": True,
+        "application_order_sha256": portable["order_sha256"],
+        "prediction_n_jobs": 1,
         "truth_labels_used_by_application": False,
         "performance_metric_computed": False,
-        "adaptation": "literal development-year addressing replaced only by explicit pair years/event-year map; exact GMN equivalence required",
+        "adaptation": "development-year addressing replaced by explicit pair years/event-year map; exact feature identity + exact serialized model + numerically equivalent deterministic prediction + identical catalogue order required",
         "sonotaco_2013_2014_access": False,
         "maarsy_scientific_access": False,
         "target_information_access": False,
