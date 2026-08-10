@@ -35,6 +35,21 @@ def canonical_sha(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
+def first_list_difference(left: list[Any], right: list[Any]) -> dict[str, Any]:
+    for i, (a, b) in enumerate(zip(left, right)):
+        if a != b:
+            return {
+                "index": i,
+                "left_sha256": canonical_sha(a),
+                "right_sha256": canonical_sha(b),
+                "left_family_id": a.get("family_id") if isinstance(a, dict) else None,
+                "right_family_id": b.get("family_id") if isinstance(b, dict) else None,
+            }
+    if len(left) != len(right):
+        return {"index": min(len(left), len(right)), "left_length": len(left), "right_length": len(right)}
+    return {"equal": True}
+
+
 def load_module(path: Path, name: str) -> Any:
     spec = importlib.util.spec_from_file_location(name, path)
     require(spec is not None and spec.loader is not None, f"cannot load {path}")
@@ -78,8 +93,10 @@ def main() -> int:
     require(all(mult.brown.self_test().values()), "Brown self-test failed")
     runtime = mult.load_frozen_runtime()
     support = runtime.load_support_module(args.support_source_parts)
-    generators.configure_pair(YEARS, support=support, mult=mult, v8=v8, p19=p19, p20=p20)
-    support.CORPUS = "orbittrace-urc-pair-portable-generator-equivalence-v1"
+    generators.configure_pair(YEARS, support=support, mult=mult, v6=v6, v8=v8, p19=p19, p20=p20)
+    # Reproduce the context under which the P19 hard+soft artifact was originally built.
+    # Individual generator helpers later switch to their own frozen context as required.
+    support.CORPUS = p19.CORPUS
     require(float(support.BLIND_LOW) == 20.0 and float(support.BLIND_HIGH) == 55.0, "target firewall changed")
     require(int(support.MIN_COMPONENT_EVENTS) == 4 and int(support.MIN_COMPONENT_QUARTETS) == 2, "component gates changed")
     require(int(support.MIN_FAMILY_YEARS) == 2, "family recurrence gate changed")
@@ -110,6 +127,55 @@ def main() -> int:
     hard20 = [p20.structural_family_payload(f) for f in built["hard"]["hard_families"]]
     soft20 = [p20.structural_family_payload(f) for f in built["p20"]["soft_families"]]
     quartets20 = {str(year): built["p20"]["quartets_by_year"][year] for year in YEARS}
+
+    diagnostics = {
+        "hard_order": {
+            "generated_sha256": canonical_sha(built["hard_order"]),
+            "p19_reference_sha256": canonical_sha(ref19["hard_order"]),
+            "p20_reference_sha256": canonical_sha(ref20["hard_order"]),
+            "equal": built["hard_order"] == ref19["hard_order"] == ref20["hard_order"],
+        },
+        "hard_p19": {
+            "generated_sha256": canonical_sha(hard19),
+            "reference_sha256": canonical_sha(ref19["hard_families"]),
+            "equal": hard19 == ref19["hard_families"],
+            "first_difference": first_list_difference(hard19, ref19["hard_families"]),
+        },
+        "p19_soft": {
+            "generated_count": len(soft19),
+            "reference_count": len(ref19["soft_families"]),
+            "generated_sha256": canonical_sha(soft19),
+            "reference_sha256": canonical_sha(ref19["soft_families"]),
+            "equal": soft19 == ref19["soft_families"],
+            "first_difference": first_list_difference(soft19, ref19["soft_families"]),
+            "generated_diagnostics": built["p19_diagnostics"],
+            "reference_diagnostics": ref19["soft_diagnostics"],
+        },
+        "p20_soft": {
+            "generated_count": len(soft20),
+            "reference_count": len(ref20["soft_families"]),
+            "generated_sha256": canonical_sha(soft20),
+            "reference_sha256": canonical_sha(ref20["soft_families"]),
+            "equal": soft20 == ref20["soft_families"],
+            "first_difference": first_list_difference(soft20, ref20["soft_families"]),
+        },
+        "p20_quartets": {
+            "generated_sha256": canonical_sha(quartets20),
+            "reference_sha256": canonical_sha(ref20["isolated_quartets"]),
+            "equal": quartets20 == ref20["isolated_quartets"],
+        },
+        "p19_support_context": p19.CORPUS,
+        "p20_support_context": p20.CORPUS,
+        "performance_metric_computed": False,
+        "truth_labels_used_by_generator": False,
+        "sonotaco_2013_2014_access": False,
+        "maarsy_scientific_access": False,
+        "target_information_access": False,
+    }
+    (args.output / "urc_pair_portable_generator_equivalence_diagnostics_v1.json").write_text(
+        json.dumps(diagnostics, indent=2, sort_keys=True) + "\n"
+    )
+    print(json.dumps(diagnostics, indent=2, sort_keys=True))
 
     require(built["hard_order"] == ref19["hard_order"] == ref20["hard_order"], "hard multiplicity order differs")
     require(hard19 == ref19["hard_families"], "portable hard families differ from P19 prelabel")
