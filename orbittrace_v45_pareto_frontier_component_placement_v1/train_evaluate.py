@@ -9,6 +9,9 @@ from typing import Any
 
 from orbittrace_v44_joint_component_best_placement_v1 import train_evaluate as v44
 
+v42 = v44.v42
+v40 = v42.v40
+
 VARIANT = 'pareto_frontier_gated_component_best_placement_v1'
 FRONTIER_RUN = 31459760333
 FRONTIER_ARTIFACT = 9089357860
@@ -20,6 +23,7 @@ HDB_N = 229
 SUGAR_N = 267
 
 _FRONTIER_ROWS: dict[str, dict[str, Any]] = {}
+_QUALITY_RANK: dict[str, int] = {}
 
 
 def require(ok: bool, msg: str) -> None:
@@ -28,8 +32,8 @@ def require(ok: bool, msg: str) -> None:
 
 
 def validate_frontier(vector_path: Path, result_path: Path) -> dict[str, dict[str, Any]]:
-    require(v44.v42.v40.v22.sha(vector_path) == FRONTIER_VECTOR_SHA, '#1126 vector file identity changed')
-    require(v44.v42.v40.v22.sha(result_path) == FRONTIER_RESULT_SHA, '#1126 result file identity changed')
+    require(v40.v22.sha(vector_path) == FRONTIER_VECTOR_SHA, '#1126 vector file identity changed')
+    require(v40.v22.sha(result_path) == FRONTIER_RESULT_SHA, '#1126 result file identity changed')
     v = json.loads(vector_path.read_text())
     r = json.loads(result_path.read_text())
     require(v['verdict'] == 'PASS_V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR_FREEZE', '#1126 vector verdict changed')
@@ -76,6 +80,7 @@ def build_v45_order(
         return list(map(str,base_order)), rows
 
     require(len(base_order) == HDB_N and len(_FRONTIER_ROWS) == 60, 'frontier map not initialized')
+    require(set(_QUALITY_RANK) == set(map(str,base_order)), 'quality rank map not initialized')
     vrank = rank_maps['hdbscan']
     component_best = v44.component_best_percentiles(components, rank_maps)
     hdb_component: dict[str,str] = {}
@@ -86,17 +91,15 @@ def build_v45_order(
             hdb_component[fid] = cid
     require(set(hdb_component) == set(map(str,base_order)), 'HDB component assignment incomplete')
 
-    qrank = v44._QUALITY_RANK
-    require(set(qrank) == set(map(str,base_order)), 'quality rank map not initialized')
     rows: list[dict[str,Any]] = []
     reconstructed_joint: set[str] = set()
     reconstructed_frontier: set[str] = set()
     for fid0 in base_order:
         fid = str(fid0)
-        rv = int(vrank[fid]); rq = int(qrank[fid])
+        rv = int(vrank[fid]); rq = int(_QUALITY_RANK[fid])
         ph = float((rv-1)/(HDB_N-1)); pq = float((rq-1)/(HDB_N-1))
         cid = hdb_component[fid]; pc = float(component_best[cid])
-        quality_suppressed = bool(pq < ph)
+        quality_suppressed = bool(rq < rv)
         component_opportunity = bool(pc < ph)
         joint = bool(quality_suppressed and component_opportunity)
         if joint:
@@ -145,7 +148,7 @@ def build_v45_order(
 
 
 def pretruth_mode(sugar_root: Path, hdbscan_root: Path, output: Path) -> int:
-    return v44.pretruth_mode(sugar_root,hdbscan_root,output)
+    return v40.pretruth_mode(sugar_root,hdbscan_root,output)
 
 
 def evaluate_mode(
@@ -157,51 +160,56 @@ def evaluate_mode(
     component_file: Path,
     authorizing_diagnostic: Path,
     placement_diagnostic: Path,
-    signal_file: Path,
     frontier_vector: Path,
     frontier_result: Path,
     output: Path,
 ) -> int:
     output.mkdir(parents=True,exist_ok=True)
-    global _FRONTIER_ROWS
+    require(v40.v22.sha(graph_file) == v40.GRAPH_SHA256, 'pretruth graph identity changed')
+    require(v40.v22.sha(component_file) == v40.COMPONENT_SHA256, 'pretruth component identity changed')
+    v42.validate_authorizing_diagnostic(authorizing_diagnostic)
+    v44.validate_placement_authorizer(placement_diagnostic)
+
+    global _FRONTIER_ROWS, _QUALITY_RANK
     _FRONTIER_ROWS = validate_frontier(frontier_vector,frontier_result)
+    _quality_order, qrank, quality_sha = v42.load_quality_rank(hdbscan_root)
+    _QUALITY_RANK = dict(qrank)
 
-    engine = output / '_frozen_v44_engine'
-    original_builder = v44.build_v44_order
-    original_variant = v44.VARIANT
-    v44.build_v44_order = build_v45_order
-    v44.VARIANT = VARIANT
+    engine = output / '_frozen_v40_engine'
+    original_builder = v40.build_v40_order
+    original_variant = v40.VARIANT
+    v40.build_v40_order = build_v45_order
+    v40.VARIANT = VARIANT
     try:
-        rc = v44.evaluate_mode(
-            sugar_root,hdbscan_root,truth_root,ranker_source,graph_file,component_file,
-            authorizing_diagnostic,placement_diagnostic,signal_file,engine,
-        )
+        rc = v40.evaluate_mode(sugar_root,hdbscan_root,truth_root,ranker_source,graph_file,component_file,engine)
     finally:
-        v44.build_v44_order = original_builder
-        v44.VARIANT = original_variant
-    require(rc == 0, 'frozen v44 evaluation engine failed')
+        v40.build_v40_order = original_builder
+        v40.VARIANT = original_variant
+    require(rc == 0, 'frozen v40 evaluation engine failed')
 
-    raw_path = engine / 'V44_JOINT_COMPONENT_BEST_PLACEMENT_RESULT.json'
-    require(raw_path.is_file(), 'frozen v44 engine result missing')
+    raw_path = engine / 'V40_COMPONENT_BEST_EVIDENCE_REPRESENTATIVE_RESULT.json'
+    require(raw_path.is_file(), 'frozen v40 result missing')
     raw = json.loads(raw_path.read_text())
     require(raw['parent_v31_reproduction_pass'] is True and len(raw['parent_v31_controls']) == 4, 'exact v31 parent reproduction failed')
-    require(raw['pretruth_graph_sha256'] == v44.v42.v40.GRAPH_SHA256 and raw['pretruth_component_sha256'] == v44.v42.v40.COMPONENT_SHA256, 'frozen geometry changed')
+    require(raw['pretruth_graph_sha256'] == v40.GRAPH_SHA256 and raw['pretruth_component_sha256'] == v40.COMPONENT_SHA256, 'frozen geometry changed')
+    require(int(raw['component_count']) == 196 and int(raw['non_singleton_component_count']) == 113 and int(raw['singleton_component_count']) == 83, 'component counts changed')
 
-    sugar_rows = list(raw['hdb_candidate_rows']) if False else None
-    # Patched v44 engine stores HDB rows in hdb_candidate_rows and exact Sugar order diagnostics.
-    hdb_rows = list(raw['hdb_candidate_rows'])
-    require(len(hdb_rows) == HDB_N, 'HDB row count changed')
+    sugar_rows = list(raw['primary_component_rows']['sugar'])
+    hdb_rows = list(raw['primary_component_rows']['hdbscan'])
+    require(len(sugar_rows) == SUGAR_N and len(hdb_rows) == HDB_N, 'candidate row count changed')
+    require(all(bool(r['sugar_unchanged']) for r in sugar_rows), 'Sugar changed')
     frontier_count = int(sum(bool(r['pareto_frontier_record']) for r in hdb_rows))
     joint_count = int(sum(bool(r['joint_gate']) for r in hdb_rows))
     require(joint_count == 60 and frontier_count == sum(bool(x['pareto_frontier_record']) for x in _FRONTIER_ROWS.values()), 'v45 gate/frontier count mismatch')
 
+    sugar_v31_order = [str(x['family_id']) for x in sorted(sugar_rows,key=lambda r:int(r['v31_rank']))]
     hdb_v31_order = [str(x['family_id']) for x in sorted(hdb_rows,key=lambda r:int(r['v31_rank']))]
     hdb_v45_order = [str(x['family_id']) for x in sorted(hdb_rows,key=lambda r:int(r['v45_rank']))]
     old = {fid:i+1 for i,fid in enumerate(hdb_v31_order)}; new = {fid:i+1 for i,fid in enumerate(hdb_v45_order)}
     moved_up = int(sum(new[fid] < old[fid] for fid in hdb_v31_order)); moved_down = int(sum(new[fid] > old[fid] for fid in hdb_v31_order)); unchanged = HDB_N-moved_up-moved_down
-    panels = list(raw['panels']); wins = int(sum(bool(x['superiority_pair_pass']) for x in panels)); passed = bool(wins == 4)
+    panels = list(raw['panels']); wins = int(sum(bool(x['superiority_pair_pass']) for x in panels)); require(wins == int(raw['panel_wins']), 'panel win count mismatch'); passed = bool(wins == 4)
 
-    engine_ref = engine / 'v44_joint_component_best_placement_reference.npz'
+    engine_ref = engine / 'v40_component_best_evidence_representative_reference.npz'
     freeze: dict[str,Any] = {'verdict':'NOT_FROZEN_V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_FAIL','reference_sha256':None}
     if passed:
         require(engine_ref.is_file(), 'passing v45 engine reference missing')
@@ -209,9 +217,10 @@ def evaluate_mode(
         shutil.copyfile(engine_ref,dst)
         freeze = {
             'verdict':'PASS_V45_FULL_EXPOSED_PARETO_FRONTIER_COMPONENT_PLACEMENT_REFERENCE_FREEZE',
-            'reference_sha256':v44.v42.v40.v22.sha(dst),
-            'pretruth_graph_sha256':v44.v42.v40.GRAPH_SHA256,
-            'pretruth_component_sha256':v44.v42.v40.COMPONENT_SHA256,
+            'reference_sha256':v40.v22.sha(dst),
+            'pretruth_graph_sha256':v40.GRAPH_SHA256,
+            'pretruth_component_sha256':v40.COMPONENT_SHA256,
+            'quality_order_sha256':quality_sha,
             'frontier_vector_sha256':FRONTIER_VECTOR_SHA,
             'frontier_vector_canonical_sha256':FRONTIER_CANONICAL_SHA,
             'frontier_rule':'#1126 frozen Pareto frontier minimizing (v31 percentile, component-best percentile)',
@@ -226,6 +235,12 @@ def evaluate_mode(
         'scientific_stage':'EXPOSED_SONOTACO_V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_V1',
         'verdict':'PASS_V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT' if passed else 'FAIL_V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT',
         'sole_scientific_change':'apply component-best placement only to truth-blind #1126 Pareto-frontier records inside the exact reconstructed #1098 joint gate; all other HDB candidates and all Sugar candidates retain exact-v31 placement',
+        'gate_authorizing_run':v42.AUTHOR_RUN,
+        'gate_authorizing_artifact':v42.AUTHOR_ARTIFACT,
+        'gate_authorizing_sha256':v42.AUTHOR_RESULT_SHA,
+        'placement_authorizing_run':v44.PLACEMENT_RUN,
+        'placement_authorizing_artifact':v44.PLACEMENT_ARTIFACT,
+        'placement_authorizing_sha256':v44.PLACEMENT_RESULT_SHA,
         'frontier_source_run':FRONTIER_RUN,
         'frontier_source_artifact':FRONTIER_ARTIFACT,
         'frontier_source_digest':FRONTIER_DIGEST,
@@ -234,6 +249,7 @@ def evaluate_mode(
         'frontier_result_sha256':FRONTIER_RESULT_SHA,
         'frontier_family_count':frontier_count,
         'joint_positive_candidate_count':joint_count,
+        'quality_order_sha256':quality_sha,
         'parent_v31_reproduction_pass':True,
         'parent_v31_controls':raw['parent_v31_controls'],
         'pretruth_graph_sha256':raw['pretruth_graph_sha256'],
@@ -246,7 +262,15 @@ def evaluate_mode(
         'panel_wins':wins,
         'panels':panels,
         'order_diagnostics':{
-            'sugar':raw['order_diagnostics']['sugar'],
+            'sugar':{
+                'family_count':SUGAR_N,
+                'moved_up_in_total_order_count':0,
+                'moved_down_in_total_order_count':0,
+                'unchanged_count':SUGAR_N,
+                'v31_order_sha256':v40.order_sha(sugar_v31_order),
+                'v45_total_order_sha256':v40.order_sha(sugar_v31_order),
+                'exact_v31_unchanged':True,
+            },
             'hdbscan':{
                 'family_count':HDB_N,
                 'joint_positive_candidate_count':joint_count,
@@ -254,8 +278,8 @@ def evaluate_mode(
                 'moved_up_in_total_order_count':moved_up,
                 'moved_down_in_total_order_count':moved_down,
                 'unchanged_count':unchanged,
-                'v31_order_sha256':v44.v42.v40.order_sha(hdb_v31_order),
-                'v45_total_order_sha256':v44.v42.v40.order_sha(hdb_v45_order),
+                'v31_order_sha256':v40.order_sha(hdb_v31_order),
+                'v45_total_order_sha256':v40.order_sha(hdb_v45_order),
             },
         },
         'hdb_candidate_rows':hdb_rows,
@@ -306,9 +330,9 @@ def evaluate_mode(
 def main() -> int:
     p=argparse.ArgumentParser(); sub=p.add_subparsers(dest='mode',required=True)
     a=sub.add_parser('pretruth'); a.add_argument('--sugar-root',type=Path,required=True); a.add_argument('--hdbscan-root',type=Path,required=True); a.add_argument('--output',type=Path,required=True)
-    b=sub.add_parser('evaluate'); b.add_argument('--sugar-root',type=Path,required=True); b.add_argument('--hdbscan-root',type=Path,required=True); b.add_argument('--truth-root',type=Path,required=True); b.add_argument('--ranker-source',type=Path,required=True); b.add_argument('--graph-file',type=Path,required=True); b.add_argument('--component-file',type=Path,required=True); b.add_argument('--authorizing-diagnostic',type=Path,required=True); b.add_argument('--placement-diagnostic',type=Path,required=True); b.add_argument('--signal-file',type=Path,required=True); b.add_argument('--frontier-vector',type=Path,required=True); b.add_argument('--frontier-result',type=Path,required=True); b.add_argument('--output',type=Path,required=True)
+    b=sub.add_parser('evaluate'); b.add_argument('--sugar-root',type=Path,required=True); b.add_argument('--hdbscan-root',type=Path,required=True); b.add_argument('--truth-root',type=Path,required=True); b.add_argument('--ranker-source',type=Path,required=True); b.add_argument('--graph-file',type=Path,required=True); b.add_argument('--component-file',type=Path,required=True); b.add_argument('--authorizing-diagnostic',type=Path,required=True); b.add_argument('--placement-diagnostic',type=Path,required=True); b.add_argument('--frontier-vector',type=Path,required=True); b.add_argument('--frontier-result',type=Path,required=True); b.add_argument('--output',type=Path,required=True)
     x=p.parse_args()
     if x.mode=='pretruth': return pretruth_mode(x.sugar_root,x.hdbscan_root,x.output)
-    return evaluate_mode(x.sugar_root,x.hdbscan_root,x.truth_root,x.ranker_source,x.graph_file,x.component_file,x.authorizing_diagnostic,x.placement_diagnostic,x.signal_file,x.frontier_vector,x.frontier_result,x.output)
+    return evaluate_mode(x.sugar_root,x.hdbscan_root,x.truth_root,x.ranker_source,x.graph_file,x.component_file,x.authorizing_diagnostic,x.placement_diagnostic,x.frontier_vector,x.frontier_result,x.output)
 
 if __name__=='__main__': raise SystemExit(main())
