@@ -67,10 +67,11 @@ def validate_v51(vector_file: Path, diag_file: Path) -> tuple[dict[str, Any], di
     require(int(vector['family_count']) == HDB_N and len(vector['families']) == HDB_N, 'v51 family count changed')
     require(vector['local_order_sha256'] == LOCAL_SHA and vector['fused_order_sha256'] == V31_HDB_SHA, 'v51 order identity changed')
     require(vector['diagnostic_recoverability_attached'] is False and vector['annual_own_family_f1_attached'] is False, 'v51 vector contains diagnostic outcome')
-    require(vector['literature_budget_used_in_statistic'] is False and vector['boundary_identity_used'] is False and vector['component_quality_topology_signal_used'] is False, 'v51 statistic contaminated by prior mechanisms')
+    require(vector['literature_budget_used_in_statistic'] is False and vector['boundary_identity_used'] is False and vector['component_quality_topology_signal_used'] is False, 'v51 statistic contaminated')
     require(vector['new_candidate_order_evaluated'] is False and vector['selector_evaluated'] is False and vector['successor_selected'] is False, 'v51 vector evaluated successor')
     require(vector['threshold_selected'] is False and vector['top_k_selected'] is False and vector['rank_window_selected'] is False, 'v51 vector selected tuning')
-    check = dict(vector); expected = str(check.pop('canonical_sha256_without_self_field'))
+    check = dict(vector)
+    expected = str(check.pop('canonical_sha256_without_self_field'))
     require(canonical_sha(check) == expected, 'v51 vector canonical identity changed')
 
     require(diag['verdict'] == 'PASS_V51_V31_CONSENSUS_BOTTLENECK_DIAGNOSTIC', 'v51 diagnostic verdict changed')
@@ -86,40 +87,33 @@ def validate_v51(vector_file: Path, diag_file: Path) -> tuple[dict[str, Any], di
     return vector, diag
 
 
-def derive_order(vector: dict[str, Any]) -> tuple[list[str], list[str], dict[str, Any]]:
+def vector_orders(vector: dict[str, Any]) -> tuple[list[str], list[str], dict[str, dict[str, Any]]]:
     rows = list(vector['families'])
     ids = [str(r['family_id']) for r in rows]
     require(len(set(ids)) == HDB_N, 'duplicate v51 family identity')
-    by = {str(r['family_id']): r for r in rows}
-    local_ranks = sorted(int(r['local_rank']) for r in rows)
-    v19_ranks = sorted(int(r['v19_rank']) for r in rows)
-    require(local_ranks == list(range(1, HDB_N + 1)), 'v51 local ranks not permutation')
-    require(v19_ranks == list(range(1, HDB_N + 1)), 'v51 v19 ranks not permutation')
+    require(sorted(int(r['local_rank']) for r in rows) == list(range(1, HDB_N + 1)), 'v51 local ranks not permutation')
+    require(sorted(int(r['v19_rank']) for r in rows) == list(range(1, HDB_N + 1)), 'v51 v19 ranks not permutation')
     local_order = [str(r['family_id']) for r in sorted(rows, key=lambda r: (int(r['local_rank']), str(r['family_id'])))]
+    v19_order = [str(r['family_id']) for r in sorted(rows, key=lambda r: (int(r['v19_rank']), str(r['family_id'])))]
     require(order_sha(local_order) == LOCAL_SHA, 'v51 local order reconstruction changed')
-
-    # v31 fused order is frozen independently by hash; exact fused ranks are supplied at runtime
-    # and at freeze time by a caller-provided exact-v31 order.
+    by = {str(r['family_id']): r for r in rows}
     for r in rows:
         lr = int(r['local_rank']); vr = int(r['v19_rank'])
         b = max((lr - 1) / (HDB_N - 1), (vr - 1) / (HDB_N - 1))
         require(abs(float(r['consensus_bottleneck']) - b) < 1e-15, 'v51 bottleneck arithmetic changed')
-    return ids, local_order, by
+    return local_order, v19_order, by
 
 
-def freeze_mode(vector_file: Path, diag_file: Path, v31_order_file: Path, output: Path) -> int:
-    output.mkdir(parents=True, exist_ok=True)
-    vector, _ = validate_v51(vector_file, diag_file)
-    ids, local_order, by = derive_order(vector)
-    v31_obj = json.loads(v31_order_file.read_text())
-    v31_order = list(map(str, v31_obj['v31_hdb_order']))
-    require(len(v31_order) == HDB_N and set(v31_order) == set(ids), 'exact-v31 order universe changed')
-    require(order_sha(v31_order) == V31_HDB_SHA, 'exact-v31 order identity changed')
-    v31_rank = {f: i + 1 for i, f in enumerate(v31_order)}
-    order = sorted(ids, key=lambda f: (float(by[f]['consensus_bottleneck']), int(v31_rank[f]), f))
+def derive_v31_and_v52(vector: dict[str, Any]) -> tuple[list[str], list[str], dict[str, Any]]:
+    local_order, v19_order, by = vector_orders(vector)
+    fused = list(map(str, v31.v19.fusion_orders(local_order, v19_order)['rank_sum']))
+    require(len(fused) == HDB_N and set(fused) == set(local_order), 'v31 fused universe changed')
+    require(order_sha(fused) == V31_HDB_SHA, 'exact-v31 fused order reconstruction changed')
+    v31_rank = {f: i + 1 for i, f in enumerate(fused)}
+    order = sorted(fused, key=lambda f: (float(by[f]['consensus_bottleneck']), v31_rank[f], f))
     require(order_sha(order) == V52_HDB_SHA, 'v52 minimax order identity changed')
     new_rank = {f: i + 1 for i, f in enumerate(order)}
-    moved = [f for f in v31_order if new_rank[f] != v31_rank[f]]
+    moved = [f for f in fused if new_rank[f] != v31_rank[f]]
     up = [f for f in moved if new_rank[f] < v31_rank[f]]
     down = [f for f in moved if new_rank[f] > v31_rank[f]]
     stats = {
@@ -130,14 +124,14 @@ def freeze_mode(vector_file: Path, diag_file: Path, v31_order_file: Path, output
         'maximum_upward_displacement': max((v31_rank[f] - new_rank[f] for f in up), default=0),
         'maximum_downward_displacement': max((new_rank[f] - v31_rank[f] for f in down), default=0),
     }
-    require(stats == {
-        'moved_candidate_count': EXPECTED_CHANGED,
-        'moved_up_count': EXPECTED_UP,
-        'moved_down_count': EXPECTED_DOWN,
-        'unchanged_count': EXPECTED_UNCHANGED,
-        'maximum_upward_displacement': EXPECTED_MAX_UP,
-        'maximum_downward_displacement': EXPECTED_MAX_DOWN,
-    }, 'v52 structural consequences changed')
+    require(stats == {'moved_candidate_count': EXPECTED_CHANGED, 'moved_up_count': EXPECTED_UP, 'moved_down_count': EXPECTED_DOWN, 'unchanged_count': EXPECTED_UNCHANGED, 'maximum_upward_displacement': EXPECTED_MAX_UP, 'maximum_downward_displacement': EXPECTED_MAX_DOWN}, 'v52 structural consequences changed')
+    return fused, order, stats
+
+
+def freeze_mode(vector_file: Path, diag_file: Path, output: Path) -> int:
+    output.mkdir(parents=True, exist_ok=True)
+    vector, _ = validate_v51(vector_file, diag_file)
+    v31_order, order, stats = derive_v31_and_v52(vector)
     payload: dict[str, Any] = {
         'verdict': 'PASS_V52_CONSENSUS_BOTTLENECK_MINIMAX_ORDER_FREEZE',
         'scientific_role': 'COMPLETE_V52_HDB_MINIMAX_ORDER_FROZEN_BEFORE_CURRENT_OUTCOME_EVALUATION',
@@ -190,10 +184,8 @@ def run_v31(sugar_root: Path, hdb_root: Path, truth_root: Path, ranker_source: P
         captured.append({'local_order': a, 'v19_order': b, 'v31_fused_order': rs})
         if len(a) == HDB_N and replacement_hdb_order is not None:
             require(expected_vector is not None, 'missing v52 expected vector')
-            by = {str(r['family_id']): r for r in expected_vector['families']}
-            require(order_sha(a) == LOCAL_SHA, 'runtime HDB local order changed')
-            manifest = list(map(str, expected_vector.get('_v19_order_runtime', b)))
-            require(b == manifest, 'runtime HDB v19 order changed')
+            expected_local, expected_v19, by = vector_orders(expected_vector)
+            require(a == expected_local and b == expected_v19, 'runtime HDB constituent orders differ from v51 capture')
             require(order_sha(rs) == V31_HDB_SHA, 'runtime exact-v31 fused order changed')
             v31rank = {f: i + 1 for i, f in enumerate(rs)}
             recomputed = sorted(a, key=lambda f: (float(by[f]['consensus_bottleneck']), v31rank[f], f))
@@ -214,6 +206,7 @@ def run_v31(sugar_root: Path, hdb_root: Path, truth_root: Path, ranker_source: P
 
 
 def validate_parent(parent: dict[str, Any]) -> None:
+    require(parent['verdict'] == 'FAIL_V31_LOCAL_GEOMETRY_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT', 'v31 parent verdict changed')
     require(parent['panel_wins'] == 2 and len(parent['panels']) == 4, 'v31 parent panel state changed')
     require(parent['strict_whole_shower_oof'] is True and parent['feature_dimension'] == 71 and parent['nearest_k'] == 1, 'v31 geometry changed')
     require(parent['annual_margin'] == 'd_nonpositive-d_positive' and parent['annual_combiner'] == 'min(margin_2013,margin_2014)', 'v31 score changed')
@@ -240,24 +233,22 @@ def evaluate_mode(sugar_root: Path, hdb_root: Path, truth_root: Path, ranker_sou
     parent, pcapture = run_v31(sugar_root, hdb_root, truth_root, ranker_source, parent_dir)
     validate_parent(parent)
     ph = pcapture[str(HDB_N)]
-    require(order_sha(ph['local_order']) == LOCAL_SHA and order_sha(ph['v31_fused_order']) == V31_HDB_SHA, 'parent runtime HDB capture changed')
-    # bind runtime immutable v19 order to captured v51 vector execution
-    vector = dict(vector); vector['_v19_order_runtime'] = list(ph['v19_order'])
+    expected_local, expected_v19, _ = vector_orders(vector)
+    require(ph['local_order'] == expected_local and ph['v19_order'] == expected_v19 and order_sha(ph['v31_fused_order']) == V31_HDB_SHA, 'parent runtime HDB capture changed')
     variant, vcapture = run_v31(sugar_root, hdb_root, truth_root, ranker_source, variant_dir, list(map(str, f['v52_hdb_order'])), vector)
     vh = vcapture[str(HDB_N)]; vs = vcapture[str(SUGAR_N)]
-    require(order_sha(vh['local_order']) == LOCAL_SHA and order_sha(vh['v31_fused_order']) == V31_HDB_SHA, 'variant runtime constituent orders changed')
+    require(vh['local_order'] == expected_local and vh['v19_order'] == expected_v19 and order_sha(vh['v31_fused_order']) == V31_HDB_SHA, 'variant runtime constituent orders changed')
     require(vs == pcapture[str(SUGAR_N)], 'Sugar fusion inputs/output changed from exact parent')
 
     panels = list(variant['panels']); require(len(panels) == 4, 'variant panels changed')
-    wins = sum(bool(x['superiority_pair_pass']) for x in panels)
-    passed = wins == 4
-    freeze: dict[str, Any] = {'verdict': 'NOT_FROZEN_V52_CONSENSUS_BOTTLENECK_MINIMAX_FAIL', 'reference_sha256': None}
-    parent_ref = variant_dir / 'v31_local_geometry_reference.npz'
+    wins = sum(bool(x['superiority_pair_pass']) for x in panels); passed = wins == 4
+    model_freeze: dict[str, Any] = {'verdict': 'NOT_FROZEN_V52_CONSENSUS_BOTTLENECK_MINIMAX_FAIL', 'reference_sha256': None}
+    variant_ref = variant_dir / 'v31_local_geometry_reference.npz'
     if passed:
-        require(parent_ref.is_file(), 'passing v52 reference missing')
-        dst = output / 'v52_consensus_bottleneck_minimax_reference.npz'; shutil.copyfile(parent_ref, dst)
-        freeze = {'verdict': 'PASS_V52_FULL_EXPOSED_CONSENSUS_BOTTLENECK_MINIMAX_REFERENCE_FREEZE', 'reference_sha256': v31.v22.sha(dst), 'v31_hdb_order_sha256': V31_HDB_SHA, 'v52_hdb_order_sha256': V52_HDB_SHA, 'sugar_rule': 'exact v31 unchanged', 'hdb_rule': 'minimize worst normalized constituent rank; exact-v31 fused rank then family_id tie-break', 'in_sample_reference_score_used_for_promotion': False}
-    (output / 'V52_CONSENSUS_BOTTLENECK_MINIMAX_MODEL_FREEZE.json').write_text(json.dumps(freeze, indent=2, sort_keys=True, allow_nan=False) + '\n')
+        require(variant_ref.is_file(), 'passing v52 reference missing')
+        dst = output / 'v52_consensus_bottleneck_minimax_reference.npz'; shutil.copyfile(variant_ref, dst)
+        model_freeze = {'verdict': 'PASS_V52_FULL_EXPOSED_CONSENSUS_BOTTLENECK_MINIMAX_REFERENCE_FREEZE', 'reference_sha256': v31.v22.sha(dst), 'v31_hdb_order_sha256': V31_HDB_SHA, 'v52_hdb_order_sha256': V52_HDB_SHA, 'sugar_rule': 'exact v31 unchanged', 'hdb_rule': 'minimize worst normalized constituent rank; exact-v31 fused rank then family_id tie-break', 'in_sample_reference_score_used_for_promotion': False}
+    (output / 'V52_CONSENSUS_BOTTLENECK_MINIMAX_MODEL_FREEZE.json').write_text(json.dumps(model_freeze, indent=2, sort_keys=True, allow_nan=False) + '\n')
 
     result = {
         'scientific_stage': 'EXPOSED_SONOTACO_V52_CONSENSUS_BOTTLENECK_MINIMAX_V1',
@@ -285,7 +276,7 @@ def evaluate_mode(sugar_root: Path, hdb_root: Path, truth_root: Path, ranker_sou
         'hdb_rule': '(consensus_bottleneck=max(local_rank_percentile,v19_rank_percentile), exact_v31_fused_rank, family_id)',
         'panel_wins': wins,
         'panels': panels,
-        'full_model_freeze': freeze,
+        'full_model_freeze': model_freeze,
         'threshold_search': False,
         'quantile_search': False,
         'top_k_selected': False,
@@ -296,7 +287,6 @@ def evaluate_mode(sugar_root: Path, hdb_root: Path, truth_root: Path, ranker_sou
         'alternate_tiebreak_search': False,
         'budget_specific_rule': False,
         'year_specific_rule': False,
-        'route_specific_exception_beyond_frozen_sugar_parent': False,
         'diversity_search': False,
         'feature_search': False,
         'model_search': False,
@@ -317,16 +307,16 @@ def evaluate_mode(sugar_root: Path, hdb_root: Path, truth_root: Path, ranker_sou
     }
     (output / 'V52_CONSENSUS_BOTTLENECK_MINIMAX_RESULT.json').write_text(json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + '\n')
     shutil.rmtree(parent_dir); shutil.rmtree(variant_dir)
-    print(json.dumps({'verdict': result['verdict'], 'panel_wins': wins, 'panels': panels, 'v52_hdb_order_sha256': V52_HDB_SHA, 'full_model_freeze': freeze}, indent=2, sort_keys=True, allow_nan=False))
+    print(json.dumps({'verdict': result['verdict'], 'panel_wins': wins, 'panels': panels, 'v52_hdb_order_sha256': V52_HDB_SHA, 'full_model_freeze': model_freeze}, indent=2, sort_keys=True, allow_nan=False))
     return 0
 
 
 def main() -> int:
     p = argparse.ArgumentParser(); sub = p.add_subparsers(dest='mode', required=True)
-    f = sub.add_parser('freeze-order'); f.add_argument('--vector-file', type=Path, required=True); f.add_argument('--diagnostic-file', type=Path, required=True); f.add_argument('--v31-order-file', type=Path, required=True); f.add_argument('--output', type=Path, required=True)
+    f = sub.add_parser('freeze-order'); f.add_argument('--vector-file', type=Path, required=True); f.add_argument('--diagnostic-file', type=Path, required=True); f.add_argument('--output', type=Path, required=True)
     e = sub.add_parser('evaluate'); e.add_argument('--sugar-root', type=Path, required=True); e.add_argument('--hdbscan-root', type=Path, required=True); e.add_argument('--truth-root', type=Path, required=True); e.add_argument('--ranker-source', type=Path, required=True); e.add_argument('--vector-file', type=Path, required=True); e.add_argument('--diagnostic-file', type=Path, required=True); e.add_argument('--freeze-file', type=Path, required=True); e.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
-    if a.mode == 'freeze-order': return freeze_mode(a.vector_file, a.diagnostic_file, a.v31_order_file, a.output)
+    if a.mode == 'freeze-order': return freeze_mode(a.vector_file, a.diagnostic_file, a.output)
     return evaluate_mode(a.sugar_root, a.hdbscan_root, a.truth_root, a.ranker_source, a.vector_file, a.diagnostic_file, a.freeze_file, a.output)
 
 
