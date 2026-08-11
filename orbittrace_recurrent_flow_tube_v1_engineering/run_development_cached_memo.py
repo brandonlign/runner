@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,15 @@ def load_module_pinned(path: Path, name: str, expected_blob: str, label: str) ->
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot import {path}")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    # importlib's normal import path registers a module before executing it.
+    # dataclasses relies on that invariant through cls.__module__. Preserve the
+    # same import semantics here without changing the loaded source at all.
+    sys.modules[name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
     return mod
 
 
