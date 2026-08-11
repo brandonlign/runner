@@ -1,0 +1,1 @@
+Engineering-only trigger after the final runtime workflow registration on the v31 base. Scientific protocol/source, MILP objective and constraints, memberships, truth inputs, budgets, and evaluator remain unchanged.
