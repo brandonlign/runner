@@ -43,10 +43,11 @@ jobs:
           mkdir -p input/source/diag/_v31_capture_engine input/source/pretruth input/cross input/payload input/truth output/freeze output/diag
           test "$(git hash-object orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/PROTOCOL.md)" = '88e13ee67db71081238f8c6458c50564de235c7c'
           test "$(git hash-object orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py)" = '739059718a8c1e03f3b9b70f96e74835c5e1d5f2'
+          test "$(git hash-object orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/failclosed_audit.py)" = 'e69d104d13c6c9398b94ac4b0db201ba5c638a44'
           test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
           test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
           test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
-          python -m py_compile orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py
+          python -m py_compile orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/failclosed_audit.py
 
       - name: Restore only truth-blind #1098 source files before vector freeze
         env:
@@ -137,12 +138,12 @@ jobs:
           echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
           unzip -q input/truth.zip -d input/truth
 
-      - name: Validate against #1093 and audit incremental selector refinement
+      - name: Validate against #1093 and audit incremental selector refinement fail-closed
         env:
           PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:.
         run: |
           set -euo pipefail
-          python -u orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py audit \
+          python -u orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/failclosed_audit.py \
             --vector output/freeze/V31_THREEWAY_FULL_UNIVERSE_VECTOR.json \
             --cross-result input/cross/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json \
             --hdb-root input/payload/hdbscan \
@@ -173,6 +174,7 @@ jobs:
           sha256sum \
             orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/PROTOCOL.md \
             orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py \
+            orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/failclosed_audit.py \
             input/source/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json \
             input/source/diag/_v31_capture_engine/V40_COMPONENT_BEST_EVIDENCE_REPRESENTATIVE_RESULT.json \
             input/source/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
