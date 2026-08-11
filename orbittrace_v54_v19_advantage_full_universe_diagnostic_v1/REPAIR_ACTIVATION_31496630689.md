@@ -1,0 +1,1 @@
+Infrastructure-only activation marker for the already-registered v54 provenance-repair workflow after pre-truth technical failure 31496630689. No scientific source, statistic, split, outcome gate, order, selector, or firewall change.
