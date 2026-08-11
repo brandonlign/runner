@@ -13,7 +13,7 @@ def validate_placement_diagnostic(path: Path) -> None:
     v45.require(r['verdict'] == 'PASS_V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC', '#1113 verdict changed')
     v45.require(r['scientific_role'] == 'POST_V42_DIAGNOSTIC_ONLY_CONDITIONAL_COMPONENT_PLACEMENT_NO_SUCCESSOR_EVALUATED', '#1113 role changed')
     v45.require(int(r['joint_family_count']) == v45.JOINT_N, '#1113 joint family count changed')
-    v45.require(r['placement_statistic'] == 'component_best_v31_percentile', '#1113 placement statistic changed')
+    v45.require(r['placement_statistic'] == 'component_best_v31_percentile from frozen #1098 signal; lower is better', '#1113 placement statistic changed')
     v45.require(r['placement_direction_supported_both_years_both_levels'] is True, '#1113 direction not supported')
     v45.require(r['graph_sha256'] == v45.v40.GRAPH_SHA256 and r['component_sha256'] == v45.v40.COMPONENT_SHA256, '#1113 geometry identity changed')
     v45.require(set(r['annual_diagnostics']) == {'2013', '2014'}, '#1113 annual universe changed')
