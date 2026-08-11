@@ -1,0 +1,127 @@
+name: OrbitTrace cross-route component recurrence-Bayes diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-crossroute-component-recurrence-bayes-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin diagnostic source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'joblib==1.5.3' 'scikit-learn==1.5.2'
+          mkdir -p input/payload input/truth output/pretruth output/diag
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          test "$(git hash-object orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/PROTOCOL.md)" = 'c21a153339320fcd70380db1954333a672e660b5'
+          test "$(git hash-object orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/diagnose.py)" = 'f6de51a1e81af60f5866dd76695eb8ca2d7b0e88'
+          python -m py_compile orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/diagnose.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py
+      - name: Restore immutable #950 pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route in ('sugar','hdbscan'):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71 and f['truth_accessed'] is False
+          print('PASS_RECURRENCE_BAYES_IMMUTABLE_PRETRUTH')
+          PY
+      - name: Freeze exact components and recurrence-Bayes evidence before truth
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/diagnose.py pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --output output/pretruth
+          echo '2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json' | sha256sum -c -
+          echo 'c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('output/pretruth/CROSSROUTE_COMPONENT_RECURRENCE_BAYES_PRETRUTH.json'))
+          assert r['verdict']=='PASS_CROSSROUTE_COMPONENT_RECURRENCE_BAYES_PRETRUTH_FREEZE'
+          assert r['truth_accessed'] is False and r['component_count']==196
+          assert r['graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          assert r['component_event_union_deduplicated'] is True
+          assert r['alternate_prior_search'] is False and r['pseudocount_search'] is False and r['transform_search'] is False and r['balance_statistic_search'] is False and r['count_threshold_search'] is False and r['significance_threshold_selected'] is False and r['rank_or_selector_evaluated'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Load immutable exposed truth only after statistic freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Diagnose route-general recoverability enrichment
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/diagnose.py diagnose \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth \
+            --pretruth-file output/pretruth/CROSSROUTE_COMPONENT_RECURRENCE_BAYES_PRETRUTH.json \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/CROSSROUTE_COMPONENT_RECURRENCE_BAYES_DIAGNOSTIC.json'))
+          assert r['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_RANK_OR_SELECTOR_EVALUATED'
+          assert set(r['routes'])=={'sugar','hdbscan'}
+          assert r['successor_selected'] is False and r['rank_or_selector_evaluated'] is False and r['threshold_selected'] is False
+          assert r['alternate_prior_search'] is False and r['alternate_statistic_search'] is False and r['feature_search'] is False and r['fusion_search'] is False and r['post_result_second_search'] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/PROTOCOL.md orbittrace_crossroute_component_recurrence_bayes_diagnostic_v1/diagnose.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json output/pretruth/CROSSROUTE_COMPONENT_RECURRENCE_BAYES_PRETRUTH.json > output/COMPONENT_RECURRENCE_BAYES_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-crossroute-component-recurrence-bayes-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
