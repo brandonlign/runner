@@ -130,7 +130,9 @@ For each year and each level report:
 
 - stratum counts;
 - recoverable counts and fractions;
-- risk ratio `P(recoverable|threeway) / P(recoverable|joint_only)` when defined.
+- finite risk ratio `P(recoverable|threeway) / P(recoverable|joint_only)` when the joint-only recoverable fraction is positive;
+- `risk_ratio_infinite=true` when the joint-only recoverable fraction is zero and the three-way recoverable fraction is positive; in that case the numeric risk-ratio field is null for JSON serialization;
+- `risk_ratio_infinite=false` otherwise.
 
 Also report the frozen three-way family count/fraction and reduction relative to the 60-family #1098 joint set. These breadth values are descriptive; no maximum selector size is selected.
 
@@ -139,8 +141,10 @@ Also report the frozen three-way family count/fraction and reduction relative to
 The third sign is considered a useful categorical selector refinement only if **all** of the following hold:
 
 1. the frozen three-way family set is a strict nonempty subset of the #1098 joint set: `0 < threeway_family_count < 60`;
-2. in both 2013 and 2014, family-level recoverable fraction among three-way families is strictly greater than among joint-only families, with defined risk ratio strictly greater than 1;
-3. in both 2013 and 2014, diagnostic-group recoverable fraction among three-way groups is strictly greater than among joint-only groups, with defined risk ratio strictly greater than 1.
+2. in both 2013 and 2014, family-level recoverable fraction among three-way families is strictly greater than among joint-only families, and the risk-ratio condition is satisfied either by a finite ratio strictly greater than 1 or by `risk_ratio_infinite=true`;
+3. in both 2013 and 2014, diagnostic-group recoverable fraction among three-way groups is strictly greater than among joint-only groups, and the risk-ratio condition is satisfied either by a finite ratio strictly greater than 1 or by `risk_ratio_infinite=true`.
+
+If both strata have zero recoverable fraction, or the three-way recoverable fraction is not strictly greater, the corresponding gate fails.
 
 No minimum effect size, significance threshold, precision target, maximum family count, oracle cardinality, or literature-budget condition is selected.
 
