@@ -1,0 +1,112 @@
+name: OrbitTrace v31 HDB label-set substitution diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_hdb_labelset_substitution_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_hdb_labelset_substitution_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-hdb-labelset-substitution-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin runtime and diagnostic source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/payload input/truth input/ranker output/diag
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          test "$(git hash-object orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py)" = '917e3cd6f9310ca1282e0efa58ed0924d03ed4da'
+          test "$(git hash-object orbittrace_v31_hdb_labelset_substitution_diagnostic_v1/PROTOCOL.md)" = 'ac9d9fd2976865fcc43881d97acafd0eb552e30d'
+          test "$(git hash-object orbittrace_v31_hdb_labelset_substitution_diagnostic_v1/diagnose.py)" = '533312e6f7e45e85f51cc85fe69943003e205bed'
+          python -m py_compile orbittrace_v31_hdb_labelset_substitution_diagnostic_v1/diagnose.py orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable ranker
+        run: |
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - name: Restore immutable v24 pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route in ('sugar','hdbscan'):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71 and f['truth_accessed'] is False
+          print('PASS_LABELSET_DIAG_IMMUTABLE_PRETRUTH')
+          PY
+      - name: Load immutable exposed truth only after payload identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Reproduce v31 and exhaust frozen one/two-label substitution oracle
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_hdb_labelset_substitution_diagnostic_v1/diagnose.py --payload-root input/payload --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_HDB_LABELSET_SUBSTITUTION_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_HDB_LABELSET_SUBSTITUTION_DIAGNOSTIC'
+          assert r['scientific_role']=='POST_RESULT_TRUTH_AWARE_ORACLE_DIAGNOSTIC_ONLY'
+          assert r['substitution_counts_evaluated']==[1,2] and r['three_or_more_substitutions_evaluated'] is False
+          assert r['successor_selected'] is False and r['deployable_rank_selected'] is False and r['candidate_membership_changed'] is False
+          for k in ('feature_search','model_search','metric_search','k_search','threshold_search','diversity_search','fusion_search','post_result_second_search'): assert r[k] is False
+          assert set(r['annual'])=={'2013','2014'}
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['target_information_access'] is False and r['target_region_events_accessed'] is False and r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_hdb_labelset_substitution_diagnostic_v1/PROTOCOL.md orbittrace_v31_hdb_labelset_substitution_diagnostic_v1/diagnose.py orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py > output/V31_HDB_LABELSET_SUBSTITUTION_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-hdb-labelset-substitution-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
