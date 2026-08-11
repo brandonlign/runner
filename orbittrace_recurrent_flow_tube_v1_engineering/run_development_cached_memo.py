@@ -8,6 +8,7 @@ from typing import Any
 
 # Git blob SHA of the reviewed cached runner this wrapper is allowed to extend.
 CACHED_RUNNER_BLOB_SHA = "2a599c6e8247eb819a1090591d586526eda6c0c1"
+FROZEN_SCIENCE_BLOB_SHA = "a5d5371f0c30a9c57ee4d8756ea41f454cd86301"
 
 
 def git_blob_sha(path: Path) -> str:
@@ -15,15 +16,26 @@ def git_blob_sha(path: Path) -> str:
     return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
 
-def load_cached_runner(path: Path) -> Any:
-    if git_blob_sha(path) != CACHED_RUNNER_BLOB_SHA:
-        raise RuntimeError("cached engineering runner changed")
-    spec = importlib.util.spec_from_file_location("rft_cached_runner", path)
+def load_module_pinned(path: Path, name: str, expected_blob: str, label: str) -> Any:
+    if git_blob_sha(path) != expected_blob:
+        raise RuntimeError(f"{label} changed")
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot import {path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def load_cached_runner(path: Path) -> Any:
+    return load_module_pinned(path, "rft_cached_runner", CACHED_RUNNER_BLOB_SHA, "cached engineering runner")
+
+
+def load_frozen_science(path: Path) -> Any:
+    # The frozen source identifier is a Git blob SHA, matching the workflow's
+    # git hash-object pin. The earlier engineering wrapper mistakenly compared
+    # it to a raw SHA-256 digest and therefore failed before scientific work.
+    return load_module_pinned(path, "rft_v1_frozen", FROZEN_SCIENCE_BLOB_SHA, "frozen RFT v1 source")
 
 
 def memoized_build_cache(mod: Any, events: list[dict[str, Any]]) -> tuple[dict[int, list[Any]], dict[tuple[int, bool], list[Any]]]:
@@ -77,6 +89,7 @@ def main() -> int:
     here = Path(__file__).resolve().parent
     cached_path = here / "run_development_cached.py"
     cached = load_cached_runner(cached_path)
+    cached.load_frozen = load_frozen_science
     cached.build_cache = memoized_build_cache
     return int(cached.main())
 
