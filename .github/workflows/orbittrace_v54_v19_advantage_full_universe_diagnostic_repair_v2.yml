@@ -1,0 +1,48 @@
+name: OrbitTrace v54 v19-advantage provenance-repair diagnostic v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v54_v19_advantage_full_universe_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v54_v19_advantage_full_universe_diagnostic_repair_v2.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v54-v19-advantage-full-universe-diagnostic-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin repaired v54 execution plumbing v2
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v54_v19_advantage_full_universe_diagnostic_v1/PROTOCOL.md)" = '42b19b51df72d6073dc4ec9f802324aba86eeda2'
+          test "$(git hash-object orbittrace_v54_v19_advantage_full_universe_diagnostic_v1/diagnose.py)" = '441c6e48cb8b874361db87cc0a9f925f239e05a1'
+          test "$(git hash-object orbittrace_v54_v19_advantage_full_universe_diagnostic_v1/authorization_provenance_repair.sh)" = '6e8c1a1e3d4213a3d7c045fb37adaf54269974ac'
+          echo PASS_V54_PROVENANCE_REPAIR_V2_PINS
+      - name: Run repaired frozen v54 diagnostic v2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash orbittrace_v54_v19_advantage_full_universe_diagnostic_v1/authorization_provenance_repair.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v54-v19-advantage-full-universe-diagnostic-repair-v2
+          path: output
+          if-no-files-found: error
+          retention-days: 90
