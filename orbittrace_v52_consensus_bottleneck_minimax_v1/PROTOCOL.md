@@ -30,16 +30,16 @@ Before current outcome truth is used to evaluate v52, pin authoritative v51:
 - captured local HDB order SHA `9898a2ad69f251595b0de4ce5763ffb6641ad27141b6e54f839ebe240eb94595`;
 - exact-v31 HDB fused order SHA `85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d`.
 
-Require v51 verdict `PASS_V51_V31_CONSENSUS_BOTTLENECK_DIAGNOSTIC`, role `POST_V31_INTERNAL_CONSENSUS_BOTTLENECK_DIAGNOSTIC_ONLY_NO_SUCCESSOR_EVALUATED`, 229-family vector identity, both annual median directions, and all explicit no-successor/no-rank/no-threshold/no-budget-search flags.
+Require v51 verdict `PASS_V51_V31_CONSENSUS_BOTTLENECK_DIAGNOSTIC`, exact authoritative role `POST_V50_V31_FUSION_MECHANISM_DIAGNOSTIC_ONLY_NO_NEW_ORDER_OR_PANEL_EVALUATED`, 229-family vector identity, both annual median directions, and the exact artifact's explicit no-successor/no-order/no-threshold/no-budget-analysis flags.
 
 ## Complete truth-blind order freeze
 
-Before evaluating the current v52 outcome, construct the complete HDB order using only the frozen v51 capture vector and its exact-v31 fused order:
+Before evaluating the current v52 outcome, construct the complete HDB order using only the frozen v51 capture vector and its two constituent permutations:
 
 1. require exactly 229 unique HDB identities;
 2. require every local/v19 rank to be a permutation of `1..229`;
 3. recompute each bottleneck exactly as `max((local_rank-1)/228,(v19_rank-1)/228)` and require equality with v51's captured value;
-4. reconstruct exact-v31 fused ranks from the frozen v31 order;
+4. reconstruct exact-v31 fused ranks by applying the unchanged frozen v19 equal-rank-sum function to those same captured local and v19 permutations and require exact-v31 SHA identity;
 5. sort by `(consensus_bottleneck, exact_v31_fused_rank, family_id)`.
 
 Freeze the entire order before current outcome evaluation. The exact frozen v52 HDB order SHA-256 is:
