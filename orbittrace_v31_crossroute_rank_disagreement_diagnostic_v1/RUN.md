@@ -1,0 +1,1 @@
+Execution authorization only for the already-frozen cross-route rank-disagreement diagnostic. This marker changes no statistic, source artifact, scientific method, parameter, firewall, interpretation boundary, or successor rule.
