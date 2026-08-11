@@ -69,9 +69,10 @@ jobs:
           test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
           test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
           test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
-          export PYTHONPATH=frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v42:frozen-v40:frozen-v44:.:input/ranker
           python -m py_compile orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py orbittrace_v45_pareto_frontier_component_placement_v1/execution_symbol_repair.py
-          python - <<'PY'
+          ROOT="$PWD"
+          cd /tmp
+          PYTHONPATH="$ROOT/frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:$ROOT/frozen-v42:$ROOT/frozen-v40:$ROOT/frozen-v44:$ROOT:$ROOT/input/ranker" python - <<'PY'
           from orbittrace_v45_pareto_frontier_component_placement_v1 import execution_symbol_repair as repair
           assert repair.v46.v44.SIGNAL_SHA == repair.PARENT_SIGNAL_SHA256
           assert repair.v46.v44.component_best_percentiles is repair.v46.v42.component_best_percentiles
