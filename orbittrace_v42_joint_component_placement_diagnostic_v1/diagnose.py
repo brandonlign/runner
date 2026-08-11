@@ -62,7 +62,7 @@ def main() -> int:
     require(signal['verdict'] == 'PASS_V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL_FREEZE', '#1098 signal verdict changed')
     require(int(signal['family_count']) == HDB_N and len(signal['families']) == HDB_N, 'HDB signal universe changed')
     require(signal['graph_sha256'] == GRAPH_SHA256 and signal['component_sha256'] == COMPONENT_SHA256, 'graph/component identity changed')
-    require(signal['scientific_role'] == 'PRETRUTH_FIXED_229_HDB_FAMILY_JOINT_SIGNAL_ONLY', '#1098 signal role changed')
+    require(signal['scientific_role'] == 'FULL_FIXED_HDB_FAMILY_SIGNAL_VECTOR_NO_OUTCOME_USED_FOR_DEFINITION', '#1098 signal role changed')
     for k in ('threshold_selected', 'top_k_selected', 'rank_window_selected', 'alternate_boolean_rule_evaluated', 'oracle_identity_hardcoded', 'target_information_access', 'target_region_events_accessed', 'maarsy_scientific_access', 'dms_scientific_access'):
         require(signal[k] is False, f'#1098 forbidden flag set: {k}')
     require(signal['blind_exclusion'] == [20.0, 55.0], '#1098 blind exclusion changed')
