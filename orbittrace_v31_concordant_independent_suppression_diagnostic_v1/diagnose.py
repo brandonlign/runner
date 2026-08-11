@@ -21,7 +21,7 @@ def require(ok: bool, msg: str) -> None:
 
 def source_checks(rank: dict[str, Any], quality: dict[str, Any]) -> None:
     require(rank['verdict'] == 'PASS_V31_CROSSROUTE_RANK_DISAGREEMENT_DIAGNOSTIC', 'rank diagnostic verdict changed')
-    require(rank['scientific_role'] == 'POST_RESULT_DIAGNOSTIC_ONLY_NO_RANK_TRANSFER_EVALUATED', 'rank diagnostic role changed')
+    require(rank['scientific_role'] == 'POST_RESULT_DIAGNOSTIC_ONLY_NO_CROSSROUTE_RANK_TRANSFER_EVALUATED', 'rank diagnostic role changed')
     require(rank['new_rank_or_score_evaluated'] is False and rank['crossroute_rank_transfer_evaluated'] is False and rank['successor_selected'] is False, 'rank diagnostic evaluated successor')
     require(quality['verdict'] == 'PASS_V31_QUALITY_SUPPRESSION_DIAGNOSTIC', 'quality diagnostic verdict changed')
     require(quality['scientific_role'] == 'POST_RESULT_DIAGNOSTIC_ONLY_NO_QUALITY_RERANK_OR_SUCCESSOR_EVALUATED', 'quality diagnostic role changed')
