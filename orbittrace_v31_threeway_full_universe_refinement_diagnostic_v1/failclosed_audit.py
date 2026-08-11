@@ -7,6 +7,8 @@ from typing import Any
 
 from orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1 import diagnose as d
 
+_ORIGINAL_COMPARE_STRATA = d.compare_strata
+
 
 def _stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
     rec = sum(bool(r['recoverable']) for r in rows)
@@ -19,7 +21,7 @@ def _stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def failclosed_compare_strata(threeway: list[dict[str, Any]], joint_only: list[dict[str, Any]]) -> dict[str, Any]:
     if threeway and joint_only:
-        out = d.compare_strata(threeway, joint_only)
+        out = _ORIGINAL_COMPARE_STRATA(threeway, joint_only)
         out['comparison_defined'] = True
         return out
     return {
