@@ -1,0 +1,1 @@
+Engineering-only run trigger after dependency/import-path repairs #1076/#1077. No scientific protocol, MILP objective/constraints, memberships, truth inputs, evaluator, budgets, or diagnostic source changed.
