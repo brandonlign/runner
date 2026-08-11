@@ -1,0 +1,217 @@
+name: OrbitTrace v55 optimistic-constituent fusion development v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v55_optimistic_constituent_fusion_v1/**'
+      - '.github/workflows/orbittrace_v55_optimistic_constituent_fusion_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v55-optimistic-constituent-fusion-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and pin frozen v55 scientific sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v51 input/v54 input/ranker input/payload input/truth output/freeze output/result
+          test "$(git hash-object orbittrace_v55_optimistic_constituent_fusion_v1/PROTOCOL.md)" = '5406668cbcb3bbc9bd131bbbc60cf12d2b301719'
+          test "$(git hash-object orbittrace_v55_optimistic_constituent_fusion_v1/train_evaluate.py)" = '83c14be15219ea28546a438a45b4f4a91ea539cb'
+          test "$(git hash-object orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py)" = '917e3cd6f9310ca1282e0efa58ed0924d03ed4da'
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v55_optimistic_constituent_fusion_v1/train_evaluate.py
+          echo PASS_V55_FROZEN_SOURCE_PINS
+
+      - name: Restore binding v51 constituent vector and v54 mechanism authorizer before current v55 outcome
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9101972590/zip' -o input/v51.zip
+          echo '56258a0be52d83c0d6dbfcffdb9fd9a2c6b73587ba8d92d7bdccdef9729868c9  input/v51.zip' | sha256sum -c -
+          unzip -q input/v51.zip -d input/v51
+          echo '5f20a8bedb6e7b8d6c06d66e45d5037057a9853ded35a2b360333d6ea5e2c4cc  input/v51/capture/V51_V31_CONSENSUS_BOTTLENECK_VECTOR.json' | sha256sum -c -
+          echo 'fef1d2c5bb83748de5c5511615915e76ce6fcd0801afbddb0e01bab09b9ab76d  input/v51/diag/V51_V31_CONSENSUS_BOTTLENECK_DIAGNOSTIC.json' | sha256sum -c -
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9103776799/zip' -o input/v54.zip
+          echo 'db9bd25f8d8cea942f5db5dac655227ddb2e5c413a5f6ce7893e28abc03b795e  input/v54.zip' | sha256sum -c -
+          unzip -q input/v54.zip -d input/v54
+          echo '3a065240c07e2abd0e0a6b9d0b712fd21009096c06a714237390de22ea483667  input/v54/freeze/V54_V19_ADVANTAGE_FULL_UNIVERSE_SPLIT.json' | sha256sum -c -
+          echo '4cea3be96bd643585da4754c6ef039f454d3f83fcbdf7329ec4b1b39ff7d9159  input/v54/diag/V54_V19_ADVANTAGE_FULL_UNIVERSE_DIAGNOSTIC.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/v54/diag/V54_V19_ADVANTAGE_FULL_UNIVERSE_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V54_V19_ADVANTAGE_FULL_UNIVERSE_DIAGNOSTIC'
+          assert r['direction_supported_both_years'] is True
+          assert r['new_candidate_order_evaluated'] is False and r['literature_panel_evaluated'] is False and r['successor_selected'] is False
+          assert r['minimum_rank_order_evaluated'] is False and r['v19_only_order_evaluated'] is False and r['weighted_fusion_evaluated'] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print('PASS_V55_V51_V54_AUTHORIZER_PINS')
+          PY
+
+      - name: Freeze complete v55 HDB total order before current panel truth
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v55_optimistic_constituent_fusion_v1/train_evaluate.py freeze \
+            --vector-file input/v51/capture/V51_V31_CONSENSUS_BOTTLENECK_VECTOR.json \
+            --v51-result-file input/v51/diag/V51_V31_CONSENSUS_BOTTLENECK_DIAGNOSTIC.json \
+            --v54-split-file input/v54/freeze/V54_V19_ADVANTAGE_FULL_UNIVERSE_SPLIT.json \
+            --v54-result-file input/v54/diag/V54_V19_ADVANTAGE_FULL_UNIVERSE_DIAGNOSTIC.json \
+            --output output/freeze
+          python - <<'PY'
+          import hashlib,json
+          p='output/freeze/V55_OPTIMISTIC_CONSTITUENT_HDB_ORDER_FREEZE.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_V55_OPTIMISTIC_CONSTITUENT_HDB_ORDER_FREEZE'
+          assert r['family_count']==229 and len(r['v55_hdb_order'])==229 and len(r['families'])==229
+          assert r['v31_hdb_order_sha256']=='85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d'
+          assert r['v55_hdb_order_sha256']=='9cb7cf0597394f7c253452ed5788eb0dce6bcc6ad6442647ecb54dc31d438132'
+          assert r['moved_position_count']==221 and r['moved_up_count']==104 and r['moved_down_count']==117
+          assert r['top9_membership_substitution_count_vs_v31']==4 and r['top11_membership_substitution_count_vs_v31']==4
+          for k in ('current_v55_panel_outcome_accessed','annual_own_family_f1_used_for_order','recoverability_label_used_for_order','v54_annual_outcome_used_for_order','v54_outcome_identity_used_for_order','literature_budget_used_for_order','boundary_identity_used','component_quality_topology_crossroute_signal_used','fusion_weight_selected','threshold_selected','top_k_selected','rank_window_selected','alternate_tie_rule_evaluated','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print('PASS_V55_ORDER_FREEZE',hashlib.sha256(open(p,'rb').read()).hexdigest(),r['canonical_sha256_without_self_field'])
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - name: Verify immutable #839 ranker before truth
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          echo PASS_V55_IMMUTABLE_RANKER
+
+      - name: Restore immutable #950 pretruth payload only after v55 order freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route,n in (('sugar',267),('hdbscan',229)):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and f['truth_accessed'] is False
+              assert m['feature_dimension']==71 and len(m['family_ids'])==n and len(f['families'])==n
+              assert [str(x['family_id']) for x in f['families']]==list(map(str,m['family_ids']))
+              assert m['target_information_access'] is False
+              assert m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_V55_IMMUTABLE_PRETRUTH_PAYLOAD')
+          PY
+
+      - name: Load immutable exposed SonotaCo truth only after complete v55 order freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+          echo PASS_V55_EXPOSED_TRUTH_LOADED_AFTER_ORDER_FREEZE
+
+      - name: Reproduce exact v31 and evaluate sole frozen v55 order
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v55_optimistic_constituent_fusion_v1/train_evaluate.py evaluate \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --order-file output/freeze/V55_OPTIMISTIC_CONSTITUENT_HDB_ORDER_FREEZE.json \
+            --output output/result
+
+      - name: Enforce v55 scientific and protected-data firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V55_OPTIMISTIC_CONSTITUENT_FUSION_RESULT.json'))
+          assert r['verdict'] in {'PASS_V55_OPTIMISTIC_CONSTITUENT_FUSION_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT','FAIL_V55_OPTIMISTIC_CONSTITUENT_FUSION_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT'}
+          assert r['parent_reproduction_pass'] is True and len(r['parent_controls'])==4
+          exp={('sugar',2013):(0.2719801488280529,16),('sugar',2014):(0.31529041952487225,17),('hdbscan',2013):(0.14888037368183737,9),('hdbscan',2014):(0.15198123772301594,9)}
+          for x in r['parent_controls']:
+              e=exp[(x['comparator'],x['year'])]
+              assert abs(x['macro_f1']-e[0])<1e-12 and x['recovered_f1_gt_0_5']==e[1]
+          assert r['sugar_rule']=='exact v31 unchanged'
+          assert r['hdb_v31_order_sha256']=='85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d'
+          assert r['hdb_v55_order_sha256']=='9cb7cf0597394f7c253452ed5788eb0dce6bcc6ad6442647ecb54dc31d438132'
+          assert r['hdb_moved_position_count']==221 and r['hdb_top9_membership_substitution_count_vs_v31']==4 and r['hdb_top11_membership_substitution_count_vs_v31']==4
+          assert len(r['panels'])==4 and r['panel_wins']==sum(bool(x['superiority_pair_pass']) for x in r['panels'])
+          for k in ('candidate_membership_changed','pretruth_feature_changed','v54_outcome_used_for_ranking','v54_outcome_identity_used_for_ranking','v19_only_order_evaluated','asymmetric_v19_promotion_evaluated','weighted_minimum_used','soft_minimum_used','alternate_tie_rule_evaluated','fusion_weight_search','second_fusion_rule_evaluated','threshold_search','quantile_search','top_k_selected','rank_window_selected','budget_specific_rule','year_specific_rule','hdb_subgroup_exception','component_quality_topology_crossroute_rescue','boundary_identity_used','oracle_identity_used_for_ranking','diversity_changed','local_score_changed','v19_order_changed','feature_search','model_search','k_search','metric_search','scaling_search','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'],r['panel_wins'],r['panels'])
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v55_optimistic_constituent_fusion_v1/PROTOCOL.md \
+            orbittrace_v55_optimistic_constituent_fusion_v1/train_evaluate.py \
+            orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py \
+            input/v51.zip input/v51/capture/V51_V31_CONSENSUS_BOTTLENECK_VECTOR.json input/v51/diag/V51_V31_CONSENSUS_BOTTLENECK_DIAGNOSTIC.json \
+            input/v54.zip input/v54/freeze/V54_V19_ADVANTAGE_FULL_UNIVERSE_SPLIT.json input/v54/diag/V54_V19_ADVANTAGE_FULL_UNIVERSE_DIAGNOSTIC.json \
+            output/freeze/V55_OPTIMISTIC_CONSTITUENT_HDB_ORDER_FREEZE.json \
+            input/ranker/run_urc_union_ranker.py input/payload.zip input/truth.zip \
+            output/result/V55_OPTIMISTIC_CONSTITUENT_FUSION_RESULT.json \
+            > output/V55_OPTIMISTIC_CONSTITUENT_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v55-optimistic-constituent-fusion-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
