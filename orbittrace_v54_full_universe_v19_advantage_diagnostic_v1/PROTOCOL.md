@@ -27,7 +27,7 @@ SonotaCo 2013/2014 remains `EXPOSED_DEVELOPMENT_ONLY`, never external validation
 
 Before current annual recoverability is attached, require:
 
-1. binding #1157 run `31495853601`, artifact `9102914767`, artifact digest `sha256:ff40d3ed14347bce6ea150717961620f082bf15028ecb51999d27c8747c2cd75`, result JSON SHA-256 `165f094fafa0f0f1e78b57dca83fbbf2aeee5d15bdefc9ba4b6f349d495e0aa7`, verdict `PASS_V31_INTERNAL_V19_SUPPRESSION_DIAGNOSTIC`;
+1. binding #1157 run `31495853601`, artifact `9102914767`, artifact digest `sha256:2441cb6fb4401601976ada3feb59db6cf658bc8eba4f0e5a3bc06b743aa8c167`, result JSON SHA-256 `165f094fafa0f0f1e78b57dca83fbbf2aeee5d15bdefc9ba4b6f349d495e0aa7`, verdict `PASS_V31_INTERNAL_V19_SUPPRESSION_DIAGNOSTIC`;
 2. binding v51 run `31493423814`, artifact `9101972590`, artifact digest `sha256:56258a0be52d83c0d6dbfcffdb9fd9a2c6b73587ba8d92d7bdccdef9729868c9`;
 3. v51 capture vector SHA-256 `5f20a8bedb6e7b8d6c06d66e45d5037057a9853ded35a2b360333d6ea5e2c4cc`, canonical SHA-256 `0e13b3f9e6b791a13a3e90d853f8704573b1264dffcb67236e6423491ad70020`;
 4. exact HDB constituent-order identities: local SHA `9898a2ad69f251595b0de4ce5763ffb6641ad27141b6e54f839ebe240eb94595`, immutable-v19 SHA `e1e82ad70fb8c575ee7ee269906668931f07cbe3375c15ab84b0717b1f2c85dc`, exact-v31 fused SHA `85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d`.
