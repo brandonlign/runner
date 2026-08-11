@@ -1,0 +1,155 @@
+name: OrbitTrace post-v42 joint component placement diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v42_joint_component_placement_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v42_joint_component_placement_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v42-joint-component-placement-diagnostic-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 31704c312c09be2765ad3f65a0685d1acfd2b055
+          path: frozen-v40
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin frozen diagnostic sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/source input/payload input/truth output/diag
+          test "$(git hash-object orbittrace_v42_joint_component_placement_diagnostic_v1/PROTOCOL.md)" = 'db48c8d9f82f5f5e82491273c1503fdb29f42070'
+          test "$(git hash-object orbittrace_v42_joint_component_placement_diagnostic_v1/diagnose.py)" = 'd9ef4ab7615a4c674756e891fafc3b28502bee3c'
+          test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
+          test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v42_joint_component_placement_diagnostic_v1/diagnose.py
+      - name: Restore and pin authoritative #1098 truth-blind signal first
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088724826/zip' -o input/source.zip
+          echo '11498b73237304f4175f37910596700ed78284bc6106d0c21dcaab66f97b7978  input/source.zip' | sha256sum -c -
+          unzip -q input/source.zip -d input/source
+          echo 'a3bcea66b72003a38cc492ea3b182d92cd20f3d1b94a43acbc8a0cbdd465ed07  input/source/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          p='input/source/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL_FREEZE'
+          assert r['scientific_role']=='PRETRUTH_FIXED_229_HDB_FAMILY_JOINT_SIGNAL_ONLY'
+          assert r['family_count']==229 and len(r['families'])==229
+          assert sum(bool(x['joint_signal']) for x in r['families'])==60
+          assert r['graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          for k in ('threshold_selected','top_k_selected','rank_window_selected','alternate_boolean_rule_evaluated','oracle_identity_hardcoded','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_POST_V42_PLACEMENT_SIGNAL_PIN_BEFORE_TRUTH')
+          PY
+      - name: Restore immutable #950 HDB pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          python - <<'PY'
+          import json
+          m=json.load(open('input/payload/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+          f=json.load(open('input/payload/hdbscan/family_memberships.json'))
+          assert m['truth_accessed'] is False and f['truth_accessed'] is False
+          assert m['feature_dimension']==71 and len(m['family_ids'])==229
+          assert [str(x['family_id']) for x in f['families']]==list(map(str,m['family_ids']))
+          assert m['target_information_access'] is False
+          assert m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_POST_V42_PLACEMENT_PRETRUTH_PAYLOAD')
+          PY
+      - name: Restore immutable exposed truth only after all truth-free inputs are pinned
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Run sole frozen conditional component-placement diagnostic
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v42_joint_component_placement_diagnostic_v1/diagnose.py \
+            --signal-file input/source/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json \
+            --hdb-root input/payload/hdbscan \
+            --truth-root input/truth \
+            --output output/diag
+      - name: Enforce diagnostic-only scientific firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json'))
+          assert r['verdict'] in {'PASS_V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC','FAIL_V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC'}
+          assert r['scientific_role']=='POST_V42_DIAGNOSTIC_ONLY_CONDITIONAL_COMPONENT_PLACEMENT_NO_SUCCESSOR_EVALUATED'
+          assert r['source_1098_run']==31457923695 and r['source_1098_artifact']==9088724826
+          assert r['source_signal_sha256']=='a3bcea66b72003a38cc492ea3b182d92cd20f3d1b94a43acbc8a0cbdd465ed07'
+          assert r['graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          assert r['joint_family_count']==60 and set(r['annual_diagnostics'])=={'2013','2014'}
+          for y in ('2013','2014'):
+              assert set(r['annual_diagnostics'][y])=={'family_level','diagnostic_group_level'}
+          for k in ('new_rank_or_score_evaluated','selector_evaluated','replacement_rule_evaluated','successor_selected','quality_rank_placement_retry','threshold_search','top_k_search','rank_window_search','component_size_statistic_search','q_calibration_search','alternate_component_aggregation_search','suppression_magnitude_search','promotion_gain_search','route_specific_rule','year_specific_rule','budget_specific_rule','graph_or_component_redefinition','feature_search','model_search','k_search','scaling_search','diversity_search','fusion_search','source_quota_selected','oracle_identity_hardcoded','truth_aware_group_identity_used_for_ranking','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'])
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v42_joint_component_placement_diagnostic_v1/PROTOCOL.md \
+            orbittrace_v42_joint_component_placement_diagnostic_v1/diagnose.py \
+            input/source/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json \
+            input/payload.zip input/truth.zip \
+            frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py \
+            frozen-v40/orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py \
+            > output/V42_JOINT_COMPONENT_PLACEMENT_SOURCE_SHA256.txt 2>/dev/null || true
+          git -C frozen-v40 rev-parse HEAD > output/frozen_v40_execution_commit.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v42-joint-component-placement-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
