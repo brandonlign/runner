@@ -27,11 +27,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/orbittrace-v31-hdb-joint-nested-budget-oracle-diagnostic-v1
-      - uses: actions/checkout@v4
-        with:
-          repository: brandonlign/runner
-          ref: b1e257e9961c9240215a8ba2d64e1f7f8aa17a6e
-          path: frozen-v6
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -43,8 +38,6 @@ jobs:
           test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
           test "$(git hash-object orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/PROTOCOL.md)" = '8ea652f45a772760cb27743eebe52326fd067852'
           test "$(git hash-object orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py)" = 'd2744036723bb8e66ee15a00dac8e940122d5700'
-          test "$(git -C frozen-v6 rev-parse HEAD)" = 'b1e257e9961c9240215a8ba2d64e1f7f8aa17a6e'
-          test "$(git -C frozen-v6 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
           python -m py_compile orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py
       - name: Restore immutable #950 pretruth memberships before truth
         env:
@@ -84,7 +77,7 @@ jobs:
           unzip -q input/truth.zip -d input/truth
       - name: Solve minimum-correction joint nested oracle and exact evaluator
         env:
-          PYTHONPATH: frozen-v6:.
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.
         run: |
           set -euo pipefail
           python -u orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py \
@@ -117,7 +110,6 @@ jobs:
         run: |
           set +e
           sha256sum orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/PROTOCOL.md orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py input/labelset.zip > output/V31_HDB_JOINT_NESTED_BUDGET_ORACLE_SOURCE_SHA256.txt 2>/dev/null || true
-          git -C frozen-v6 rev-parse HEAD > output/frozen_v6_execution_commit.txt 2>/dev/null || true
           git rev-parse HEAD > output/execution_commit.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
