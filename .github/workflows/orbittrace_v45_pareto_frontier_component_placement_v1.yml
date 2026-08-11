@@ -60,6 +60,7 @@ jobs:
           mkdir -p input/ranker input/payload input/gate input/placement input/frontier input/truth output/pretruth output/result
           test "$(git hash-object orbittrace_v45_pareto_frontier_component_placement_v1/PROTOCOL.md)" = 'fd2e73e84183eea9d22bad577a39d65b5cde1c3f'
           test "$(git hash-object orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py)" = '2fff090ef8847f7f11d593cc1123cf7e54aed840'
+          test "$(git hash-object orbittrace_v45_pareto_frontier_component_placement_v1/execution_symbol_repair.py)" = 'd7508e482d0fae994654bbac66443cfc7d74fa34'
           test "$(git -C frozen-v44 rev-parse HEAD)" = 'c8882d6ac31fc8d21841f9710ccb85d5a3dbc349'
           test "$(git -C frozen-v44 hash-object orbittrace_v44_joint_component_best_placement_v1/train_evaluate.py)" = 'fe58c85c0b2c65d64656c4e4622dcea455bdd58a'
           test "$(git -C frozen-v42 rev-parse HEAD)" = '97e388bf8fdda6bbcf58d180285986e090046266'
@@ -68,7 +69,7 @@ jobs:
           test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
           test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
           test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
-          PYTHONPATH=frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v42:frozen-v40:frozen-v44:.:input/ranker python -m py_compile orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py
+          PYTHONPATH=frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v42:frozen-v40:frozen-v44:.:input/ranker python -m py_compile orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py orbittrace_v45_pareto_frontier_component_placement_v1/execution_symbol_repair.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -134,6 +135,12 @@ jobs:
           echo '5bddfbe4abda60006757561d4c6477102317e02f5fb9555330e0b62eaf3353df  input/placement.zip' | sha256sum -c -
           unzip -p input/placement.zip diag/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json > input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json
           echo '939f4288a5f0d2de84ef566bb93713da664230deb65777c422795c93fba10c6d  input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json'))
+          assert r['source_signal_sha256']=='a3bcea66b72003a38cc492ea3b182d92cd20f3d1b94a43acbc8a0cbdd465ed07'
+          print('PASS_V46_PARENT_SIGNAL_FROM_1113')
+          PY
 
       - name: Restore exact #1126 frozen frontier vector and authorizer
         env:
@@ -157,6 +164,7 @@ jobs:
           assert v['joint_family_count']==60 and 1 <= v['frontier_family_count'] < 60
           assert r['verdict']=='PASS_V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC'
           assert r['frontier_priority_supported_both_years_both_levels'] is True
+          assert r['source_signal_sha256']=='a3bcea66b72003a38cc492ea3b182d92cd20f3d1b94a43acbc8a0cbdd465ed07'
           print('PASS_V45_FRONTIER_PIN',v['frontier_family_count'])
           PY
 
@@ -175,7 +183,7 @@ jobs:
           PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v42:frozen-v40:frozen-v44:.:input/ranker
         run: |
           set -euo pipefail
-          python -u orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py evaluate \
+          python -u orbittrace_v45_pareto_frontier_component_placement_v1/execution_symbol_repair.py evaluate \
             --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
             --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
             --graph-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
@@ -220,7 +228,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_v45_pareto_frontier_component_placement_v1/PROTOCOL.md orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py \
+          sha256sum orbittrace_v45_pareto_frontier_component_placement_v1/PROTOCOL.md orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py orbittrace_v45_pareto_frontier_component_placement_v1/execution_symbol_repair.py \
             input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR.json input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC.json \
             input/gate/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json \
             output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
