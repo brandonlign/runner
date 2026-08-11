@@ -55,13 +55,14 @@ jobs:
           mkdir -p input/ranker input/payload input/auth input/truth output/pretruth output/result
           test "$(git hash-object orbittrace_v45_component_prioritized_joint_slot_v1/PROTOCOL.md)" = '27cca27b52103cf13652008fe9277468a498ccd2'
           test "$(git hash-object orbittrace_v45_component_prioritized_joint_slot_v1/train_evaluate.py)" = '3e9df8ae5be7a5e93b2935eaaa86233e20f880aa'
+          test "$(git hash-object orbittrace_v45_component_prioritized_joint_slot_v1/authorization_schema_repair.py)" = '566079f19ec337880ca5eee6d6625e55aa999850'
           test "$(git -C frozen-v43 rev-parse HEAD)" = '36ae58c80d4e4c751fd02064aa79305aeb818e7d'
           test "$(git -C frozen-v43 hash-object orbittrace_v43_conservative_conjunctive_rank_transfer_v1/train_evaluate.py)" = 'cb0e1d7fbc139e4dac459cbc7fc2023238e71435'
           test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
           test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
           test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
           test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
-          python -m py_compile orbittrace_v45_component_prioritized_joint_slot_v1/train_evaluate.py frozen-v43/orbittrace_v43_conservative_conjunctive_rank_transfer_v1/train_evaluate.py frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py
+          python -m py_compile orbittrace_v45_component_prioritized_joint_slot_v1/train_evaluate.py orbittrace_v45_component_prioritized_joint_slot_v1/authorization_schema_repair.py frozen-v43/orbittrace_v43_conservative_conjunctive_rank_transfer_v1/train_evaluate.py frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -122,7 +123,8 @@ jobs:
           import json
           r=json.load(open('input/auth/diag/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json'))
           assert r['verdict']=='PASS_V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC'
-          assert r['family_count']==229 and r['joint_family_count']==60
+          assert r['scientific_role']=='POST_V42_DIAGNOSTIC_ONLY_CONDITIONAL_COMPONENT_PLACEMENT_NO_SUCCESSOR_EVALUATED'
+          assert r['joint_family_count']==60
           assert r['placement_direction_supported_both_years_both_levels'] is True
           assert r['new_rank_or_score_evaluated'] is False and r['selector_evaluated'] is False
           assert r['replacement_rule_evaluated'] is False and r['successor_selected'] is False
@@ -147,7 +149,7 @@ jobs:
           PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:frozen-v43:.:input/ranker
         run: |
           set -euo pipefail
-          python -u orbittrace_v45_component_prioritized_joint_slot_v1/train_evaluate.py evaluate \
+          python -u orbittrace_v45_component_prioritized_joint_slot_v1/authorization_schema_repair.py evaluate \
             --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
             --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
             --graph-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
@@ -192,6 +194,7 @@ jobs:
           sha256sum \
             orbittrace_v45_component_prioritized_joint_slot_v1/PROTOCOL.md \
             orbittrace_v45_component_prioritized_joint_slot_v1/train_evaluate.py \
+            orbittrace_v45_component_prioritized_joint_slot_v1/authorization_schema_repair.py \
             frozen-v43/orbittrace_v43_conservative_conjunctive_rank_transfer_v1/train_evaluate.py \
             frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py \
             input/ranker/run_urc_union_ranker.py \
