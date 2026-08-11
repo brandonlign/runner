@@ -10,36 +10,26 @@ No new score, rerank, fusion, selector, replacement, threshold, component rule, 
 
 ## Immutable inputs
 
-Use the immutable #950 HDB pretruth payload only. Before exposed truth is interpreted, require:
+Use the immutable #950 HDB pretruth payload and the authoritative already-completed #1064 v31 diagnostic artifact only. Before exposed diagnostic rows are interpreted, require:
 
-- 229 HDB families;
+- #950 artifact identity and 229 HDB families;
 - `truth_accessed=false` in the feature and membership manifests;
 - exact 71D feature and centroid hashes from the manifest;
 - the exact manifest `quality_order`, containing every HDB family exactly once;
-- the exact manifest `v19_order` and all other v31 inputs unchanged.
+- the exact manifest `v19_order` and all other frozen pretruth inputs unchanged;
+- #1064 authoritative run `31454067856`, artifact `9087373195`, digest `sha256:361e6113110dcc58761a458fc842f8c3e613f79d0e13a85c593bad297cd49d7a`;
+- #1064 exact v31 reproduction and diagnostic/firewall verdicts unchanged.
 
-The pretruth `quality_order` is the fixed #839/#853 quality/diversity order inherited through v17. It must not be recomputed, retuned, or replaced.
+The pretruth `quality_order` is the fixed #839/#853 quality/diversity order inherited through v17. It must not be recomputed, retuned, or replaced. The #1064 artifact is consumed only as an immutable source of the already-validated exact v31 order/ranks and exposed annual recoverable-group rows; this diagnostic does not reopen or reinterpret raw SonotaCo events.
 
-Only after immutable pretruth identity is verified may the already-exposed SonotaCo truth be loaded and exact v31 reproduced.
+## Exact v31 source control
 
-## Exact v31 reproduction
-
-Reproduce the frozen v31 HDB order using the unchanged 71D strict-whole-shower five-fold OOF local geometry:
-
-- fold-training z-score across all 71 dimensions;
-- ordinary Euclidean `k=1` annual positive/nonpositive references;
-- annual positive iff fixed-label annual `F1 > 0.5`;
-- margin `d_nonpositive-d_positive`;
-- annual `min`;
-- exact #839 diversity `lambda=0.8`, `scale=1.0`;
-- one equal rank-sum with exact frozen v19.
-
-Required HDB parent controls:
+Require the frozen #1064 source artifact to contain the exact v31 HDB controls:
 
 - 2013: macro-F1 `0.14888037368183737`, recovered `9`, budget `11`;
 - 2014: macro-F1 `0.15198123772301594`, recovered `9`, budget `9`.
 
-Any mismatch is an engineering/provenance failure and yields no diagnostic result.
+Also require #1064's source role to remain diagnostic-only, its cross-route graph to remain pretruth-frozen, and all protected-data access flags false. Any mismatch is an engineering/provenance failure and yields no diagnostic result.
 
 ## Frozen disagreement statistic
 
@@ -55,16 +45,16 @@ There is exactly one statistic. No absolute value, ratio, log, clipping, coeffic
 
 ## Truth-aware descriptive grouping
 
-For each year separately, use exposed truth only after the two rank orders are fixed.
-
-A strict HDB shower group is annual-recoverable if at least one fixed HDB candidate in that group has annual `F1 > 0.5`. For each such group, define its diagnostic representative as the annual-recoverable candidate with the smallest exact v31 fused rank, tie family ID. This is the same rank-based representative convention used to determine whether a recoverable group is surfaced by the frozen v31 budget; it is not a new representative selector.
+For each year separately, use only the already-frozen #1064 annual recoverable-group rows. #1064 defines each annual-recoverable strict HDB shower group using at least one fixed candidate with annual `F1 > 0.5` and records its representative as the annual-recoverable candidate with the smallest exact v31 fused rank. Preserve those rows and their surfaced/missed classification exactly; do not choose a new representative.
 
 Classify the group as:
 
-- `surfaced` if that representative rank is within the frozen HDB literature budget for that year;
+- `surfaced` if #1064 records that representative within the frozen HDB literature budget for that year;
 - `missed` otherwise.
 
-Report for surfaced and missed groups: count, linked candidate identities for audit, median/Q25/Q75 suppression, positive-suppression count/fraction, median v31 rank, and median quality rank. Also report the exact current top-budget candidates descriptively, but do not select removals or replacements.
+For the exact #1064 representative candidate, attach only its frozen #839 quality rank and derive the single suppression statistic above.
+
+Report for surfaced and missed groups: count, representative identities for audit, median/Q25/Q75 suppression, positive-suppression count/fraction, median v31 rank, and median quality rank. Do not select removals or replacements.
 
 ## Predeclared interpretation gate
 
