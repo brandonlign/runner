@@ -1,0 +1,141 @@
+name: OrbitTrace v31 quality-component full-universe diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_quality_component_joint_universe_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_quality_component_joint_universe_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-quality-component-joint-universe-diagnostic-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 31704c312c09be2765ad3f65a0685d1acfd2b055
+          path: frozen-v40
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin runtime and diagnostic source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/truth output/pretruth output/diag
+          test "$(git hash-object orbittrace_v31_quality_component_joint_universe_diagnostic_v1/PROTOCOL.md)" = '4d67f486245346e7462a456df9fda26f78c61026'
+          test "$(git hash-object orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py)" = 'c7cb30a69cd26b3776f80081a931b9efa022c8e0'
+          test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
+          test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable #839 ranker
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - name: Restore immutable #950 pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route in ('sugar','hdbscan'):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71 and f['truth_accessed'] is False
+          assert len(json.load(open('input/payload/hdbscan/family_memberships.json'))['families'])==229
+          print('PASS_JOINT_UNIVERSE_IMMUTABLE_PRETRUTH')
+          PY
+      - name: Freeze exact cross-route graph and components before truth
+        env:
+          PYTHONPATH: frozen-v40:orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --output output/pretruth
+          echo '2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json' | sha256sum -c -
+          echo 'c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json' | sha256sum -c -
+      - name: Load immutable exposed truth only after component freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Freeze all-family joint signal and diagnose selectivity
+        env:
+          PYTHONPATH: frozen-v40:orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py diagnose \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --graph-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
+            --component-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          s=json.load(open('output/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json'))
+          r=json.load(open('output/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SELECTIVITY_DIAGNOSTIC.json'))
+          assert s['verdict']=='PASS_V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL_FREEZE'
+          assert s['family_count']==229 and len(s['families'])==229
+          assert s['threshold_selected'] is False and s['top_k_selected'] is False and s['rank_window_selected'] is False and s['alternate_boolean_rule_evaluated'] is False and s['oracle_identity_hardcoded'] is False
+          assert r['scientific_role']=='POST_RESULT_FULL_UNIVERSE_SELECTIVITY_DIAGNOSTIC_NO_SUCCESSOR_OR_ORDER_EVALUATED'
+          assert r['family_count']==229 and set(r['annual_diagnostics'])=={'2013','2014'}
+          assert r['parent_v31_reproduction_pass'] is True and len(r['parent_v31_controls'])==4
+          assert r['new_rank_or_score_evaluated'] is False and r['selector_evaluated'] is False and r['replacement_rule_evaluated'] is False and r['successor_selected'] is False
+          for k in ('threshold_search','top_k_search','rank_window_search','boolean_combination_search','component_size_rule_search','component_score_rule_search','route_specific_rule','year_specific_rule','budget_specific_rule','feature_search','model_search','k_search','scaling_search','diversity_search','fusion_search','source_quota_selected','oracle_identity_hardcoded','post_result_second_search'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0] and s['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_quality_component_joint_universe_diagnostic_v1/PROTOCOL.md orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json > output/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-quality-component-joint-universe-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
