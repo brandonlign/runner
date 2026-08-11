@@ -32,6 +32,11 @@ jobs:
           repository: brandonlign/runner
           ref: 31704c312c09be2765ad3f65a0685d1acfd2b055
           path: frozen-v40
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -43,9 +48,11 @@ jobs:
           test "$(git hash-object orbittrace_v31_quality_component_joint_universe_diagnostic_v1/PROTOCOL.md)" = '4d67f486245346e7462a456df9fda26f78c61026'
           test "$(git hash-object orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py)" = 'c7cb30a69cd26b3776f80081a931b9efa022c8e0'
           test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
+          test "$(git -C frozen-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
           test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
           test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
           test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          test "$(git -C frozen-v8 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
           python -m py_compile orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py
       - uses: actions/download-artifact@v4
         with:
@@ -77,7 +84,7 @@ jobs:
           PY
       - name: Freeze exact cross-route graph and components before truth
         env:
-          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:.:input/ranker
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:frozen-v8:.:input/ranker
         run: |
           set -euo pipefail
           python -u orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py pretruth \
@@ -95,7 +102,7 @@ jobs:
           unzip -q input/truth.zip -d input/truth
       - name: Freeze all-family joint signal and diagnose selectivity
         env:
-          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:.:input/ranker
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:frozen-v8:.:input/ranker
         run: |
           set -euo pipefail
           python -u orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py diagnose \
@@ -128,7 +135,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_v31_quality_component_joint_universe_diagnostic_v1/PROTOCOL.md orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json > output/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SOURCE_SHA256.txt 2>/dev/null || true
+          sha256sum orbittrace_v31_quality_component_joint_universe_diagnostic_v1/PROTOCOL.md orbittrace_v31_quality_component_joint_universe_diagnostic_v1/diagnose.py frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py frozen-v8/orbittrace_label_free_sparse_support_v6/run_development.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json > output/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SOURCE_SHA256.txt 2>/dev/null || true
           git rev-parse HEAD > output/execution_commit.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
