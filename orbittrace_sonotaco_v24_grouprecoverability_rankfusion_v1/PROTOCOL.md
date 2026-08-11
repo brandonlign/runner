@@ -1,0 +1,5 @@
+# OrbitTrace v24 + group-recoverability equal-rank fusion SonotaCo OOF v1
+
+Separately frozen exposed-SonotaCo development successor after #1008. Replay exact v24 annual-quality OOF and exact #1004 group-recoverability OOF under unchanged whole-shower folds, 71D features, memberships, #839 inverse-group weights, model capacities, and diversity. Require exact historical parent diversity-order and parent v19-fused-order hashes for Sugar and HDBSCAN. The sole new order is equal three-way rank sum: rank(v24 diversity) + rank(#1004 group-recoverability diversity) + rank(v19), with deterministic symmetric tie break by max rank, min rank, family ID. No weights, thresholds, route-specific choices, alternate fusions, class weights, calibration, resampling, source quotas, or second search.
+
+PASS requires all four Sugar/HDBSCAN 2013/2014 panels to have macro-F1 strictly above literature and recovered F1>0.5 count at least equal. First technically valid execution is binding. SonotaCo remains exposed development-only. MAARSY, DMS, OrbitTrace target information, target-region events, and protected solar longitude 20°-55° remain inaccessible.
