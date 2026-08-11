@@ -50,9 +50,16 @@ jobs:
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1/PROTOCOL.md)" = '515362e69bec642a891e44dfd87dce9693942574'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
-          python -m py_compile orbittrace_recurrent_flow_tube_v1/run_development.py
+          python -m py_compile orbittrace_recurrent_flow_tube_v1/run_development.py /tmp/run_wavelet_catalogue_v3_development.py
           echo PASS_RFT_V1_FROZEN_SOURCE_PINS
 
       - uses: actions/download-artifact@v4
