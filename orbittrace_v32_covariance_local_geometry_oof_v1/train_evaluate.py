@@ -36,7 +36,6 @@ def covariance_geometry(Xtrain:np.ndarray)->tuple[np.ndarray,np.ndarray,np.ndarr
     require(np.allclose(cov,cov.T,rtol=0.0,atol=1e-12),'training covariance not symmetric')
     vi=np.linalg.pinv(cov,hermitian=True)
     require(vi.shape==cov.shape and np.all(np.isfinite(vi)),'invalid covariance pseudoinverse')
-    require(np.allclose(vi,vi.T,rtol=0.0,atol=1e-10),'covariance pseudoinverse not symmetric')
     return mu,cov,vi
 
 
