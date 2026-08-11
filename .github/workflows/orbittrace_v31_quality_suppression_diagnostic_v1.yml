@@ -1,0 +1,105 @@
+name: OrbitTrace v31 quality-suppression diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_quality_suppression_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_quality_suppression_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-quality-suppression-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin diagnostic source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          mkdir -p input/payload input/source output/diag
+          test "$(git hash-object orbittrace_v31_quality_suppression_diagnostic_v1/PROTOCOL.md)" = 'c071d3bbcd9ab6dc9559c9f6a4a73b79ebd1c130'
+          test "$(git hash-object orbittrace_v31_quality_suppression_diagnostic_v1/diagnose.py)" = '1f26a42f3e37877c24fb616403c0150449bc9b2e'
+          python -m py_compile orbittrace_v31_quality_suppression_diagnostic_v1/diagnose.py
+      - name: Restore immutable #950 pretruth payload first
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          python - <<'PY'
+          import json
+          m=json.load(open('input/payload/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+          f=json.load(open('input/payload/hdbscan/family_memberships.json'))
+          assert m['truth_accessed'] is False and f['truth_accessed'] is False
+          assert m['feature_dimension']==71 and len(m['family_ids'])==229
+          assert len(m['quality_order'])==229 and set(m['quality_order'])==set(m['family_ids'])
+          assert m['target_information_access'] is False
+          assert m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_QUALITY_SUPPRESSION_IMMUTABLE_PRETRUTH')
+          PY
+      - name: Restore authoritative #1064 exposed diagnostic only after pretruth identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9087373195/zip' -o input/source.zip
+          echo '361e6113110dcc58761a458fc842f8c3e613f79d0e13a85c593bad297cd49d7a  input/source.zip' | sha256sum -c -
+          unzip -q input/source.zip -d input/source
+      - name: Derive frozen quality-suppression statistic only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_quality_suppression_diagnostic_v1/diagnose.py \
+            --hdb-root input/payload/hdbscan \
+            --source-root input/source \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_QUALITY_SUPPRESSION_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_QUALITY_SUPPRESSION_DIAGNOSTIC'
+          assert r['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_QUALITY_RERANK_OR_SUCCESSOR_EVALUATED'
+          assert r['source_run_id']==31454067856 and r['source_artifact_id']==9087373195
+          assert r['hdb_family_count']==229
+          assert r['suppression_definition']=='((v31_rank-1)/228)-((quality_rank-1)/228)'
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          for y,b in (('2013',11),('2014',9)):
+              a=r['annual_diagnostics'][y]
+              assert a['hdb_budget']==b and a['recoverable_groups']==18
+              assert a['surfaced_groups']==9 and a['missed_groups']==9 and len(a['groups'])==18
+          for k in ('new_rank_or_score_evaluated','quality_rerank_evaluated','quality_v31_fusion_evaluated','successor_selected','absolute_value_search','ratio_search','log_transform_search','clipping_search','coefficient_search','threshold_search','rank_window_search','top_k_search','component_aggregation_search','consensus_alternative_search','v19_alternative_search','feature_search','model_search','target_search','fusion_search','source_quota_selected','candidate_membership_changed','candidate_generation_changed','oracle_identity_used_for_statistic','post_result_second_search','maarsy_scientific_access','dms_scientific_access','target_information_access','target_region_events_accessed'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_quality_suppression_diagnostic_v1/PROTOCOL.md orbittrace_v31_quality_suppression_diagnostic_v1/diagnose.py input/payload.zip input/source.zip > output/V31_QUALITY_SUPPRESSION_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-quality-suppression-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
