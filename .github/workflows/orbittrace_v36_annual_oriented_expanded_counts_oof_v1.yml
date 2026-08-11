@@ -1,0 +1,133 @@
+name: OrbitTrace v36 annual-oriented expanded-count OOF development v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v24-twohead-contingency-freeze-v1
+    paths:
+      - 'orbittrace_v36_annual_oriented_expanded_counts_oof_v1/**'
+      - '.github/workflows/orbittrace_v36_annual_oriented_expanded_counts_oof_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v36-annual-oriented-expanded-counts-oof-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin runtime and scientific source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/payload input/prepare input/truth input/ranker output/pretruth/sugar output/pretruth/hdbscan output/result
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          test "$(git hash-object orbittrace_v36_annual_oriented_expanded_counts_oof_v1/PROTOCOL.md)" = 'a96f7d7502df996947dddf8a643a441331385010'
+          test "$(git hash-object orbittrace_v36_annual_oriented_expanded_counts_oof_v1/build_pretruth.py)" = 'f70e4032f1307af0777b348d9049b78b84d13833'
+          test "$(git hash-object orbittrace_v36_annual_oriented_expanded_counts_oof_v1/train_evaluate.py)" = '341964ae7056d5b57fb580815c130694dc6551fc'
+          python -m py_compile orbittrace_v36_annual_oriented_expanded_counts_oof_v1/build_pretruth.py orbittrace_v36_annual_oriented_expanded_counts_oof_v1/train_evaluate.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable #839 ranker
+        run: |
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - name: Restore immutable v24 payload and label-free rows before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9050107352/zip' -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+          python - <<'PY'
+          import json
+          m=json.load(open('input/prepare/label_free_preparation_manifest.json'))
+          assert m['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert m['shower_truth_accessed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False
+          for route in ('sugar','hdbscan'):
+              b=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert b['truth_accessed'] is False and b['feature_dimension']==71 and f['truth_accessed'] is False
+          print('PASS_V36_IMMUTABLE_PRETRUTH_INPUTS')
+          PY
+      - name: Freeze 73D annual-oriented route matrices before truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v36_annual_oriented_expanded_counts_oof_v1/build_pretruth.py --route sugar --payload-root input/payload/sugar --rows-2013 input/prepare/sugar_2013.json --rows-2014 input/prepare/sugar_2014.json --output output/pretruth/sugar
+          python -u orbittrace_v36_annual_oriented_expanded_counts_oof_v1/build_pretruth.py --route hdbscan --payload-root input/payload/hdbscan --rows-2013 input/prepare/hdbscan_2013.json --rows-2014 input/prepare/hdbscan_2014.json --output output/pretruth/hdbscan
+          python - <<'PY'
+          import json, numpy as np
+          for route in ('sugar','hdbscan'):
+              m=json.load(open(f'output/pretruth/{route}/V36_PRETRUTH_MANIFEST.json'))
+              x=np.load(f'output/pretruth/{route}/features_73.npy',allow_pickle=False)
+              assert m['verdict']=='PASS_V36_ANNUAL_ORIENTED_EXPANDED_COUNT_PRETRUTH' and m['truth_accessed'] is False and m['augmented_feature_dimension']==73 and x.shape[1]==73
+              assert m['augmentation_feature_names']==['log1p_expanded_member_count_2013','log1p_expanded_member_count_2014']
+              assert m['membership_changed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_V36_73D_PRETRUTH_FREEZE')
+          PY
+          sha256sum output/pretruth/sugar/features_73.npy output/pretruth/sugar/V36_PRETRUTH_MANIFEST.json output/pretruth/hdbscan/features_73.npy output/pretruth/hdbscan/V36_PRETRUTH_MANIFEST.json > output/V36_PRETRUTH_SHA256.txt
+      - name: Load immutable exposed truth only after 73D freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Reproduce exact v24 and evaluate sole v36 successor
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v36_annual_oriented_expanded_counts_oof_v1/train_evaluate.py --payload-root input/payload --aug-root output/pretruth --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py --output output/result
+      - name: Enforce scientific/result firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V36_ANNUAL_ORIENTED_EXPANDED_COUNTS_OOF_RESULT.json'))
+          assert r['feature_dimension']==73 and r['augmentation_feature_names']==['log1p_expanded_member_count_2013','log1p_expanded_member_count_2014']
+          assert len(r['v24_control_reproduction'])==4 and len(r['panels'])==4
+          assert r['candidate_membership_changed'] is False and r['strict_whole_shower_oof'] is True and r['model_changed'] is False and r['target_changed'] is False
+          assert r['annual_combiner']=='min(pred_2013,pred_2014)' and r['ratio_or_difference_feature_used'] is False
+          for k in ('additional_feature_search','count_transform_search','year_specific_feature_subset_search','model_search','target_search','annual_combiner_search','diversity_search','fusion_search','post_result_second_search'): assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['target_information_access'] is False and r['target_region_events_accessed'] is False and r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v36_annual_oriented_expanded_counts_oof_v1/PROTOCOL.md orbittrace_v36_annual_oriented_expanded_counts_oof_v1/build_pretruth.py orbittrace_v36_annual_oriented_expanded_counts_oof_v1/train_evaluate.py orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py > output/V36_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v36-annual-oriented-expanded-counts-oof-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
