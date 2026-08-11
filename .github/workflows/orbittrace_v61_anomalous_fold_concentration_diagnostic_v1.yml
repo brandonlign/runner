@@ -1,0 +1,110 @@
+name: OrbitTrace v61 anomalous-fold concentration diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v61_anomalous_fold_concentration_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v61-anomalous-fold-concentration-diagnostic-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pin frozen v61 science and pre-execution schema repair
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/rankgap output/diag
+          test "$(git hash-object orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/PROTOCOL.md)" = '9cb4ac7e8ff8517c8310e7c7b5f33d1e4b499c5c'
+          test "$(git hash-object orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/diagnose.py)" = '6661afd26be1ef605659de2283341db02cf0465e'
+          test "$(git hash-object orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/PREEXEC_LABEL_SCHEMA_CORRECTION.md)" = 'b3adaee590980769ba63c46697d73f2690dc8749'
+          test "$(git hash-object orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/diagnose_label_schema_repair.py)" = 'ccebde716abcc31969d4b31728f09eb7a49f83dc'
+          python -m py_compile orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/diagnose_label_schema_repair.py
+          echo PASS_V61_FROZEN_SCIENCE_PINS
+
+      - name: Restore authoritative #1046 fixed surfaced/missed status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9086399760/zip' -o input/rankgap.zip
+          echo 'a2c373df77ef7e0065c1d8aceb1f6e5826f1e30b6286f2331c362d959f1d7f69  input/rankgap.zip' | sha256sum -c -
+          unzip -p input/rankgap.zip diag/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json > input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json
+          echo 'e4e09546e17b9a5da7ce12ad9af4bb7129533fd9b5be846ebc859719f01a9758  input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json' | sha256sum -c -
+          echo PASS_V61_AUTHORITATIVE_STATUS_PIN
+
+      - name: Run sole predeclared fold-4 concentration statistic
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/diagnose_label_schema_repair.py \
+            --rankgap-result input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json \
+            --output output/diag
+
+      - name: Enforce diagnostic-only scientific and protected-data firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V61_ANOMALOUS_FOLD_CONCENTRATION_DIAGNOSTIC.json'))
+          assert r['verdict'] in {'PASS_V61_ANOMALOUS_FOLD_CONCENTRATION_DIAGNOSTIC','FAIL_V61_ANOMALOUS_FOLD_CONCENTRATION_DIAGNOSTIC'}
+          assert r['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_SUCCESSOR_SELECTED'
+          assert r['anomalous_fold']==4 and r['anomalous_fold_preselected_from_outcome_free_geometry'] is True
+          assert r['pass_rule']=='missed fold-4 fraction strictly greater than surfaced fold-4 fraction in both 2013 and 2014'
+          assert set(r['annual'])=={'2013','2014'}
+          assert r['annual']['2013']['candidate_recoverable_groups']==18 and r['annual']['2013']['surfaced_groups']==9 and r['annual']['2013']['missed_groups']==9
+          assert r['annual']['2014']['candidate_recoverable_groups']==19 and r['annual']['2014']['surfaced_groups']==9 and r['annual']['2014']['missed_groups']==10
+          for k in ('new_rank_evaluated','successor_selected','literature_panel_evaluated','fold_search','alternate_fold_evaluated','alternate_representative_used','cutoff_selected','parameter_search','feature_search','model_search','metric_search','k_search','scaling_search','threshold_search','annual_combiner_search','diversity_search','fusion_search','source_quota_search','post_result_second_diagnostic','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'],r['annual'])
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/PROTOCOL.md \
+            orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/diagnose.py \
+            orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/PREEXEC_LABEL_SCHEMA_CORRECTION.md \
+            orbittrace_v61_anomalous_fold_concentration_diagnostic_v1/diagnose_label_schema_repair.py \
+            input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json \
+            output/diag/V61_ANOMALOUS_FOLD_CONCENTRATION_DIAGNOSTIC.json \
+            > output/V61_ANOMALOUS_FOLD_CONCENTRATION_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v61-anomalous-fold-concentration-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
