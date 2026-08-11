@@ -1,0 +1,106 @@
+name: OrbitTrace v31 dual-disagreement enrichment diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-dual-disagreement-enrichment-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin frozen diagnostic source
+        run: |
+          set -euo pipefail
+          mkdir -p input/payload input/source output/diag
+          test "$(git hash-object orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1/PROTOCOL.md)" = '6651c986689186d811e323f6264554a13d3e4fdd'
+          test "$(git hash-object orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1/diagnose.py)" = '64d03074b738ff5d077d41e7a2c40206454262ac'
+          python -m py_compile orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1/diagnose.py
+      - name: Restore immutable #950 HDB pretruth payload first
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          python - <<'PY'
+          import json
+          m=json.load(open('input/payload/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+          f=json.load(open('input/payload/hdbscan/family_memberships.json'))
+          assert m['truth_accessed'] is False and f['truth_accessed'] is False
+          assert m['feature_dimension']==71 and len(m['family_ids'])==229
+          assert len(m['quality_order'])==229 and set(m['quality_order'])==set(m['family_ids'])
+          assert m['target_information_access'] is False
+          assert m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_DUAL_DISAGREEMENT_IMMUTABLE_PRETRUTH')
+          PY
+      - name: Restore authoritative #1072 diagnostic after pretruth identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9087743465/zip' -o input/source.zip
+          echo '8c45c00fd70300efb2f6f32bbb339141f8c34884ee5b1098c1bbb45ccf1a59cc  input/source.zip' | sha256sum -c -
+          unzip -q input/source.zip -d input/source
+      - name: Derive frozen dual-disagreement enrichment only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1/diagnose.py \
+            --hdb-root input/payload/hdbscan \
+            --source-root input/source \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_DUAL_DISAGREEMENT_ENRICHMENT_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_DUAL_DISAGREEMENT_ENRICHMENT_DIAGNOSTIC'
+          assert r['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_DUAL_DISAGREEMENT_SELECTOR_EVALUATED'
+          assert r['source_run_id']==31455141716 and r['source_artifact_id']==9087743465
+          assert r['pretruth_graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['pretruth_component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          assert r['hdb_family_count']==229
+          assert r['quality_suppressed_definition']=='quality_rank < exact_v31_rank'
+          assert r['component_supported_definition']=='best_component_normalized_v31_percentile < representative_hdb_percentile'
+          assert r['dual_disagreement_definition']=='quality_suppressed AND component_supported'
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          for y,b in (('2013',11),('2014',9)):
+              a=r['annual_diagnostics'][y]
+              assert a['hdb_budget']==b and a['surfaced_summary']['groups']==9 and a['missed_summary']['groups']==9 and len(a['groups'])==18
+          for k in ('new_rank_or_score_evaluated','dual_disagreement_selector_evaluated','successor_selected','or_rule_search','quality_magnitude_threshold_search','component_gain_threshold_search','weighted_combination_search','score_product_search','score_sum_search','quality_fusion_search','component_rerank_search','rank_window_search','top_k_search','route_specific_successor','year_specific_successor','budget_specific_successor','candidate_generation_changed','candidate_membership_changed','feature_search','model_search','source_quota_selected','oracle_identity_used_for_rule','post_result_second_rule','maarsy_scientific_access','dms_scientific_access','target_information_access','target_region_events_accessed'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1/PROTOCOL.md orbittrace_v31_dual_disagreement_enrichment_diagnostic_v1/diagnose.py input/payload.zip input/source.zip > output/V31_DUAL_DISAGREEMENT_ENRICHMENT_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-dual-disagreement-enrichment-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
