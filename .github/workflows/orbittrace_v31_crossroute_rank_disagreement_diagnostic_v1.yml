@@ -1,0 +1,119 @@
+name: OrbitTrace v31 cross-route rank-disagreement diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-crossroute-rank-disagreement-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin diagnostic source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          mkdir -p input/source output/diag
+          test "$(git hash-object orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1/PROTOCOL.md)" = '9c6c9a11fd56640258cafc938a92fa301ed8b835'
+          test "$(git hash-object orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1/diagnose.py)" = 'dbd72ef53b3fa9f24a5faa5b2c241e89ff27a054'
+          python -m py_compile orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1/diagnose.py
+      - name: Restore authoritative frozen #1064 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v31-crossroute-radius1-corroboration-diagnostic-v1
+          path: input/source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31454067856
+      - name: Verify inherited artifact identity before derivation
+        run: |
+          set -euo pipefail
+          test -f input/source/diag/V31_CROSSROUTE_RADIUS1_CORROBORATION_DIAGNOSTIC.json
+          test -f input/source/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json
+          test -f input/source/execution_commit.txt
+          test "$(tr -d '\r\n' < input/source/execution_commit.txt)" = 'b0f9efdafb6c4662fc8ac84bd6201bc54cd3191e'
+          python - <<'PY'
+          import json
+          d=json.load(open('input/source/diag/V31_CROSSROUTE_RADIUS1_CORROBORATION_DIAGNOSTIC.json'))
+          g=json.load(open('input/source/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json'))
+          assert d['verdict']=='PASS_V31_CROSSROUTE_RADIUS1_CORROBORATION_DIAGNOSTIC'
+          assert d['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_CROSSROUTE_RANK_EVALUATED'
+          assert d['crossroute_score_or_rerank_evaluated'] is False and d['successor_selected'] is False
+          assert g['verdict']=='PASS_CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY' and g['truth_accessed'] is False
+          assert g['radius']==1.0 and g['edge_count']==2334
+          assert len(g['sugar_family_ids'])==267 and len(g['hdbscan_family_ids'])==229
+          assert d['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          for x in (d,g):
+              assert x['target_information_access'] is False and x['target_region_events_accessed'] is False
+              assert x['maarsy_scientific_access'] is False and x['dms_scientific_access'] is False
+              assert x['blind_exclusion']==[20.0,55.0]
+          print('PASS_FROZEN_1064_INPUT_IDENTITY')
+          PY
+      - name: Derive sole frozen cross-route rank-disagreement statistic
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1/diagnose.py \
+            --input-root input/source --output output/diag
+      - name: Enforce diagnostic-only scientific firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_CROSSROUTE_RANK_DISAGREEMENT_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_CROSSROUTE_RANK_DISAGREEMENT_DIAGNOSTIC'
+          assert r['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_CROSSROUTE_RANK_TRANSFER_EVALUATED'
+          assert r['source_run_id']==31454067856 and r['source_artifact_id']==9087373195
+          assert r['source_artifact_digest']=='sha256:361e6113110dcc58761a458fc842f8c3e613f79d0e13a85c593bad297cd49d7a'
+          assert r['source_execution_commit']=='b0f9efdafb6c4662fc8ac84bd6201bc54cd3191e'
+          assert r['sugar_family_count']==267 and r['hdbscan_family_count']==229
+          assert r['rank_gap_definition']=='((linked_hdb_rank-1)/228)-((best_sugar_neighbor_rank-1)/266)'
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          assert r['annual_diagnostics']['2013']['hdb_budget']==11 and r['annual_diagnostics']['2013']['sugar_budget']==34
+          assert r['annual_diagnostics']['2014']['hdb_budget']==9 and r['annual_diagnostics']['2014']['sugar_budget']==46
+          for y in ('2013','2014'):
+              a=r['annual_diagnostics'][y]
+              assert a['annual_recoverable_hdb_groups']==18 and a['surfaced_hdb_groups']==9 and a['missed_hdb_groups']==9
+              assert len(a['groups'])==18
+          for k in ('new_rank_or_score_evaluated','crossroute_rank_transfer_evaluated','successor_selected','absolute_gap_search','rank_ratio_search','log_transform_search','overlap_weight_search','distance_weight_search','clipping_search','threshold_search','coefficient_search','budget_normalization_search','alternate_disagreement_statistic_search','fusion_search','selector_search','route_specific_rule_search','post_result_second_search','oracle_identity_hardcoded','graph_changed','radius_changed','metric_changed','feature_changed','membership_changed','candidate_generation_changed'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1/PROTOCOL.md orbittrace_v31_crossroute_rank_disagreement_diagnostic_v1/diagnose.py input/source/diag/V31_CROSSROUTE_RADIUS1_CORROBORATION_DIAGNOSTIC.json input/source/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json > output/V31_CROSSROUTE_RANK_DISAGREEMENT_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-crossroute-rank-disagreement-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
