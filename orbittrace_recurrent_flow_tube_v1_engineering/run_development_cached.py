@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +80,7 @@ def generate_cached(
         if len(members) < mod.MIN_EVENTS:
             continue
         med_trans = float(np.median(t.transition_costs)) if t.transition_costs else 0.0
-        score = persistence * np.log1p(len(members)) * np.log1p(t.strata) / (1.0 + med_trans + med_res)
+        score = persistence * math.log1p(len(members)) * math.log1p(t.strata) / (1.0 + med_trans + med_res)
         cid = hashlib.sha256(("RFT1|" + "|".join(members)).encode()).hexdigest()[:20]
         out.append({
             "family_id": cid,
