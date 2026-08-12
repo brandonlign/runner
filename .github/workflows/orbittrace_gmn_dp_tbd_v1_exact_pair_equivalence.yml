@@ -1,0 +1,43 @@
+name: OrbitTrace DP-TBD v1 exact-pair equivalence
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-gmn-dp-tbd-v1-exact-pair-optimization
+    paths:
+      - 'orbittrace_gmn_dp_track_before_detect_v1_engineering/**'
+      - '.github/workflows/orbittrace_gmn_dp_tbd_v1_exact_pair_equivalence.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  equivalence:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -q 'numpy==2.1.3' 'scipy==1.14.1'
+      - name: Verify frozen science and engineering pins
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1/run_development.py)" = 'fd25455d90720e81bc3ee4cb74bed9975533f808'
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1_engineering/exact_pair_runner.py)" = 'e76656ffa4137ce805911ca3716e2b1763eb1b5e'
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1_engineering/test_exact_pair_equivalence.py)" = 'ac162c290cbe983cc1b82d88a30670a991e7c90d'
+      - name: Prove exact radius-count equivalence
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_dp_track_before_detect_v1_engineering/test_exact_pair_equivalence.py
