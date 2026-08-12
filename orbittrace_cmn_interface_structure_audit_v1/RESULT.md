@@ -23,14 +23,12 @@ One non-redirecting request was made to `https://ceres.ta3.sk/`.
 - HTTP status: `200`
 - final scheme/host: `https` / `ceres.ta3.sk`
 - content type: `text/html`
-- response SHA-256: `e3b0c44298fc1c149afbf4ff85f4edc917bd9ad3` is NOT used; authoritative runtime response hash is recorded in the binding artifact.
-- response body length implied by the authoritative hash: empty response
+- response SHA-256: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+- response body: empty
 - CMN source label present: false
 - form count: 0
 - relevant structural links: 0
 - structural query/data control present: false
-
-The runtime artifact is authoritative for the exact response hash and fields; this summary intentionally does not invent or substitute interface content.
 
 ## Interpretation
 
