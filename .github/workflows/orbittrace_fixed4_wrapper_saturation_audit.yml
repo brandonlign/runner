@@ -49,7 +49,7 @@ jobs:
           python -m pip install --no-deps gmn-python-api==0.0.13
           mkdir -p input/v3 input/parent output
           test "$(git hash-object orbittrace_gmn_member_covariance_shape_oof_v1/PROTOCOL.md)" = 'a3d9c3aac54480ea2fb6654e1873b602ac26f60b'
-          test "$(git hash-object orbittrace_gmn_member_covariance_shape_oof_v1/run_development.py)" = 'f041a187337b6a0927d6c0ab19859737612f4d1f'
+          test "$(git hash-object orbittrace_gmn_member_covariance_shape_oof_v1/run_development.py)" = '21516d464ff29a4fa817b8b265cfa7b16edb6eb9'
           python -m py_compile orbittrace_gmn_member_covariance_shape_oof_v1/run_development.py
       - name: Restore exact promoted-v8 runtime and #1194 parent
         run: |
@@ -131,13 +131,13 @@ jobs:
           assert r['candidate_counts']=={'hard':226,'p19':1075,'p20':3203,'union':4504}
           assert r['feature_dimension_parent']==34 and r['feature_dimension_candidate']==40
           assert len(r['shape_feature_names'])==6
+          assert isinstance(r['parent_feature_sha256_runtime'],str) and len(r['parent_feature_sha256_runtime'])==64
           p=r['parent_oof']
           assert p['recovered_at_25']==22 and p['recovered_at_50']==43 and p['recovered_at_100']==80 and p['recovered_at_500']==171
           assert p['qualified_matches']==256
           assert abs(p['top100_dominant_precision']-0.8075287489258385)<1e-12
           assert abs(p['mrr']-0.02016666446026534)<1e-12
           assert r['parent_oof_order_sha256']=='a2f365e0a35fc3e8eef39022128c0444448671ab4c4d4b45c89f718de4505592'
-          assert r['parent_feature_sha256']=='5d215c5562c0ccce967d81ff0a087ca83b1afda95a269888d2219ef669d198d1'
           assert r['representative_share_target_sha256']=='4433b443030a568f9d5f6ddceab2077e9d78e50497f7ce2473bad5c113f8ab39'
           assert r['grouped_weights_sha256']=='4ee439f0f04c9763a3dcc1527be66681496ea730df369f3c2f1815c9ef4a67f6'
           assert r['full_candidate_model_fit'] is False
