@@ -1,0 +1,155 @@
+name: OrbitTrace v61 predictive-consistency rank fusion v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-v61-predictive-consistency-rank-fusion-v1
+    paths:
+      - 'orbittrace_v61_predictive_consistency_rank_fusion_v1/**'
+      - '.github/workflows/orbittrace_v61_predictive_consistency_rank_fusion_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v61-predictive-consistency-rank-fusion-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install runtime and pin frozen scientific source
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+          mkdir -p input/parent input/payload input/prep input/truth output/pretruth output/result
+          test "$(git hash-object orbittrace_v61_predictive_consistency_rank_fusion_v1/PROTOCOL.md)" = '5648f57b483a44eb45856fb10db2c6d0175f1d7f'
+          test "$(git hash-object orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py)" = '293e13b08e3b0b6a914d41a48a310664cfd90809'
+          python -m py_compile orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py
+      - name: Restore exact v31 parent orders from provenance-only run
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v31-parent-orders-export-v1
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31561557044
+      - name: Verify exact parent-order artifact payload
+        run: |
+          set -euo pipefail
+          echo 'c2f35b817c330689472bc432c6e982e095b75b6a50f45a3ddf6044ce314b937d  input/parent/V31_PARENT_ORDERS_EXPORT_V1.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/parent/V31_PARENT_ORDERS_EXPORT_V1.json'))
+          assert r['verdict']=='PASS_EXACT_V31_PARENT_ORDER_RECONSTRUCTION'
+          assert r['scientific_change'] is False
+          assert r['routes']['sugar']['v31_fused_order_sha256']=='5b3d27e11079f36148bbfb8bfdab60882fae380143fcfd84c6dc290c53295aae'
+          assert r['routes']['hdbscan']['v31_fused_order_sha256']=='85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d'
+          PY
+      - name: Restore immutable v31 candidate memberships and centroids
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+      - name: Restore frozen label-free SonotaCo rows without truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9050107352/zip' -o input/prep.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prep.zip' | sha256sum -c -
+          unzip -q input/prep.zip -d input/prep
+          python - <<'PY'
+          import json
+          m=json.load(open('input/prep/label_free_preparation_manifest.json'))
+          assert m['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert m['shower_truth_accessed'] is False
+          assert m['target_information_access'] is False and m['maarsy_scientific_access'] is False
+          assert m['target_region_retained'] is False
+          PY
+      - name: Compute and freeze sole v61 pretruth predictive fusion
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py pretruth \
+            --parent-orders input/parent/V31_PARENT_ORDERS_EXPORT_V1.json \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --prep-root input/prep --output output/pretruth
+      - name: Seal pretruth before any truth access
+        run: |
+          set -euo pipefail
+          sha256sum output/pretruth/V61_PREDICTIVE_CONSISTENCY_PRETRUTH.json | tee output/pretruth/V61_PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          r=json.load(open('output/pretruth/V61_PREDICTIVE_CONSISTENCY_PRETRUTH.json'))
+          assert r['truth_accessed'] is False
+          assert r['parameter_search'] is False and r['threshold_search'] is False and r['weight_search'] is False
+          assert r['feature_search'] is False and r['regression_search'] is False and r['route_specific_rule'] is False
+          assert r['candidate_deletion'] is False and r['membership_changed'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['routes']['sugar']['candidate_count']==267 and r['routes']['hdbscan']['candidate_count']==229
+          PY
+      - name: Load already-exposed SonotaCo truth only after pretruth seal
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Run first binding v61 SonotaCo outcome
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py evaluate \
+            --pretruth output/pretruth/V61_PREDICTIVE_CONSISTENCY_PRETRUTH.json \
+            --parent-orders input/parent/V31_PARENT_ORDERS_EXPORT_V1.json \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --output output/result
+      - name: Enforce frozen result and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V61_PREDICTIVE_CONSISTENCY_RANK_FUSION_RESULT.json'))
+          assert len(r['panels'])==4 and len(r['v31_parent_controls'])==4
+          assert r['first_valid_outcome_binding'] is True
+          assert r['parameter_search'] is False and r['threshold_search'] is False and r['weight_search'] is False
+          assert r['feature_search'] is False and r['regression_search'] is False and r['route_specific_rule'] is False
+          assert r['post_result_rescue'] is False and r['candidate_membership_changed'] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Preserve exact provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v61_predictive_consistency_rank_fusion_v1/PROTOCOL.md orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py input/parent/V31_PARENT_ORDERS_EXPORT_V1.json > output/V61_SOURCE_INPUT_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v61-predictive-consistency-rank-fusion-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
