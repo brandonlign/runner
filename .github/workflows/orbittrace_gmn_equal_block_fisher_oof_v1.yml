@@ -49,6 +49,8 @@ jobs:
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
           test "$(git hash-object orbittrace_gmn_equal_block_fisher_oof_v1/PROTOCOL.md)" = '8d34895edfbf91aad75821e02068916efc4805fb'
           test "$(git hash-object orbittrace_gmn_equal_block_fisher_oof_v1/run_development.py)" = '21472419eb2f62ab05a8de29a34b2d9984cd3bc3'
+          test "$(git hash-object orbittrace_gmn_equal_block_fisher_oof_v1/exact_parent_reconstruction.py)" = 'd8b41a51929b8b21046281bd3de2fc773f97f4bf'
+          test "$(git hash-object orbittrace_gmn_equal_block_fisher_oof_v1/run_binding.py)" = '380eb6bc8df624aad6267e84351bd97c75e9353d'
           test "$(git hash-object orbittrace_gmn_v31_principle_local_geometry_oof_v1/run_development.py)" = 'b4e2d72e532e47aa95ed335f690748423d11ea59'
           test "$(git hash-object orbittrace_gmn_balanced_shrinkage_fisher_oof_v1/run_development.py)" = 'a0ba7e45bcd43541e8a2eb57a9d638b36ff4a1d3'
       - uses: actions/download-artifact@v4
@@ -68,10 +70,12 @@ jobs:
             input/ranker/run_urc_union_ranker.py \
             orbittrace_gmn_v31_principle_local_geometry_oof_v1/run_development.py \
             orbittrace_gmn_balanced_shrinkage_fisher_oof_v1/run_development.py \
-            orbittrace_gmn_equal_block_fisher_oof_v1/run_development.py
+            orbittrace_gmn_equal_block_fisher_oof_v1/run_development.py \
+            orbittrace_gmn_equal_block_fisher_oof_v1/exact_parent_reconstruction.py \
+            orbittrace_gmn_equal_block_fisher_oof_v1/run_binding.py
           python - <<'PY'
-          from orbittrace_gmn_equal_block_fisher_oof_v1 import run_development
-          print('PASS_EQUAL_BLOCK_FISHER_IMPORT_CHAIN')
+          from orbittrace_gmn_equal_block_fisher_oof_v1 import run_binding
+          print('PASS_EQUAL_BLOCK_FISHER_BINDING_IMPORT_CHAIN')
           PY
       - uses: actions/download-artifact@v4
         with:
@@ -84,12 +88,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(sha256sum input/fixture/GMN_DEVELOPMENT_FIXTURE_V1.json | cut -d' ' -f1)" = '823f0b6db68f5ba2c061d94ebcdfe6bf70f0df6b2819d6479f7d63e544ac651b'
-      - name: Run first binding equal-block Fisher successor
+      - name: Run first technically valid binding equal-block Fisher successor
         env:
           PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_gmn_equal_block_fisher_oof_v1/run_development.py \
+          python -u orbittrace_gmn_equal_block_fisher_oof_v1/run_binding.py \
             --fixture-root input/fixture \
             --quality-source input/ranker/run_urc_union_ranker.py \
             --output output
@@ -132,6 +136,8 @@ jobs:
           sha256sum \
             orbittrace_gmn_equal_block_fisher_oof_v1/PROTOCOL.md \
             orbittrace_gmn_equal_block_fisher_oof_v1/run_development.py \
+            orbittrace_gmn_equal_block_fisher_oof_v1/exact_parent_reconstruction.py \
+            orbittrace_gmn_equal_block_fisher_oof_v1/run_binding.py \
             orbittrace_gmn_v31_principle_local_geometry_oof_v1/run_development.py \
             orbittrace_gmn_balanced_shrinkage_fisher_oof_v1/run_development.py \
             input/ranker/run_urc_union_ranker.py \
