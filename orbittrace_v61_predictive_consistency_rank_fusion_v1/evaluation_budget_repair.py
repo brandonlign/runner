@@ -10,7 +10,7 @@ literature recovered counts, or the binding 4/4 gate.
 """
 from __future__ import annotations
 
-from orbittrace_v61_predictive_consistency_rank_fusion_v1 import run_transfer as v61
+import run_transfer as v61
 
 v61.EXPECTED_LITERATURE = {
     ('sugar', 2013): (0.20372657466522806, 13, 34),
