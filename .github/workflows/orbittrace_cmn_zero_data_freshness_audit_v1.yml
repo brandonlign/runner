@@ -1,0 +1,69 @@
+name: OrbitTrace CMN zero-data freshness audit v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-gmn-sonotaco-domainshift-diagnostic-v1
+    paths:
+      - 'orbittrace_cmn_zero_data_freshness_audit_v1/**'
+      - '.github/workflows/orbittrace_cmn_zero_data_freshness_audit_v1.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-cmn-zero-data-freshness-audit-v1
+          fetch-depth: 0
+      - name: Fetch complete repository refs
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+      - name: Audit frozen source and zero-data boundary
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_cmn_zero_data_freshness_audit_v1/PROTOCOL.md)" = '71f9275b8ed96564b54d3421f20a6c864fe4ceda'
+          test "$(git hash-object orbittrace_cmn_zero_data_freshness_audit_v1/audit_history.py)" = '848bed6eb6c0c47e3f6323110fb8fd984d0f109c'
+          python -m py_compile orbittrace_cmn_zero_data_freshness_audit_v1/audit_history.py
+          ! grep -Eiq '(requests\.|urllib\.|urlopen|httpx|aiohttp|curl[[:space:]]|wget[[:space:]])' orbittrace_cmn_zero_data_freshness_audit_v1/audit_history.py
+      - name: Run repository-history-only CMN freshness audit
+        run: |
+          set -euo pipefail
+          python -u orbittrace_cmn_zero_data_freshness_audit_v1/audit_history.py
+      - name: Enforce zero-data firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/CMN_ZERO_DATA_REPO_FRESHNESS_AUDIT_V1.json'))
+          assert r['verdict']=='PASS_CMN_ZERO_DATA_REPO_FRESHNESS_AUDIT'
+          assert r['positive_controls_pass'] is True
+          assert not r['cmn_ref_hits']
+          assert all(not v for v in r['cmn_history_hits'].values())
+          for k in ('catalogue_network_access','cmn_scientific_value_access','cmn_event_identifier_access','cmn_shower_label_access','sonotaco_scientific_access','maarsy_scientific_access','dms_scientific_access','target_information_access','target_region_events_accessed'):
+              assert r[k] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_cmn_zero_data_freshness_audit_v1/PROTOCOL.md orbittrace_cmn_zero_data_freshness_audit_v1/audit_history.py > output/source_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/audit_commit.txt
+          git for-each-ref --format='%(refname) %(objectname)' refs/remotes/origin > output/remote_refs.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-cmn-zero-data-freshness-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

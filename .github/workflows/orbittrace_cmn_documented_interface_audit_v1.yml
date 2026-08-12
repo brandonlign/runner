@@ -1,0 +1,79 @@
+name: OrbitTrace documented CMN interface audit v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-gmn-sonotaco-domainshift-diagnostic-v1
+    paths:
+      - 'orbittrace_cmn_documented_interface_audit_v1/**'
+      - '.github/workflows/orbittrace_cmn_documented_interface_audit_v1.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-cmn-documented-interface-audit-v1
+      - name: Audit frozen source and prerequisites
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_cmn_documented_interface_audit_v1/PROTOCOL.md)" = 'eb4fe6e9618aacf0fe2d494c4843a54bb9bf1337'
+          test "$(git hash-object orbittrace_cmn_documented_interface_audit_v1/audit_interface.py)" = 'bed1676d9dac2779e7e800a14bf112524501877c'
+          grep -q 'PASS_CMN_ZERO_DATA_REPO_FRESHNESS_AUDIT' orbittrace_cmn_zero_data_freshness_audit_v1/RESULT.md
+          grep -q 'FAIL_CMN_PUBLIC_INTERFACE_STRUCTURE_AUDIT' orbittrace_cmn_interface_structure_audit_v1/RESULT.md
+          python -m py_compile orbittrace_cmn_documented_interface_audit_v1/audit_interface.py
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('orbittrace_cmn_documented_interface_audit_v1/audit_interface.py').read_text()
+          assert s.count('http://cmn.rgn.hr/downloads/downloads.html') == 1
+          assert 'https://cmn.rgn.hr/downloads/downloads.html' not in s
+          assert 'urlopen(' not in s
+          PY
+      - name: Run documented landing-page structure audit
+        run: |
+          set -euo pipefail
+          python -u orbittrace_cmn_documented_interface_audit_v1/audit_interface.py
+      - name: Enforce interface-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/CMN_DOCUMENTED_INTERFACE_AUDIT_V1.json'))
+          assert r['verdict']=='PASS_CMN_DOCUMENTED_INTERFACE_AUDIT'
+          assert 1 <= r['request_count'] <= 2
+          assert r['redirect_rule_satisfied'] is True
+          assert r['status']==200
+          assert r['final_host']=='cmn.rgn.hr'
+          assert r['final_path']=='/downloads/downloads.html'
+          assert r['final_query_empty'] is True
+          assert r['cmn_source_label_present'] is True
+          assert r['candidate_download_structurally_present'] is True
+          assert r['candidate_download_link_count'] >= 1
+          assert set(r['candidate_extension_counts'])=={'csv','dat','txt','zip'}
+          assert set(r['relevant_link_category_counts'])=={'orbit','catalog','data','download','query','search'}
+          for k in ('page_links_followed','candidate_files_downloaded','raw_html_emitted','filenames_emitted','scientific_row_values_emitted','cmn_scientific_value_access','cmn_event_identifier_access','cmn_shower_label_access','target_information_access','target_region_events_accessed','sonotaco_scientific_access','maarsy_scientific_access','dms_scientific_access','external_validation_performed'):
+              assert r[k] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_cmn_documented_interface_audit_v1/PROTOCOL.md orbittrace_cmn_documented_interface_audit_v1/audit_interface.py > output/source_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/audit_commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-cmn-documented-interface-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

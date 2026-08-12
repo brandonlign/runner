@@ -1,0 +1,86 @@
+name: OrbitTrace official CMN GitHub mirror structure audit v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-gmn-sonotaco-domainshift-diagnostic-v1
+    paths:
+      - 'orbittrace_cmn_official_github_mirror_audit_v1/**'
+      - '.github/workflows/orbittrace_cmn_official_github_mirror_audit_v1.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  CMN_MIRROR_COMMIT: '2077285b66b6fd8df633ff0aec5ef0af0bf24ef6'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-cmn-official-github-mirror-audit-v1
+      - name: Audit frozen OrbitTrace source and prerequisites
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_cmn_official_github_mirror_audit_v1/PROTOCOL.md)" = 'f141bd2795b6cb46f156f835d1ed1ef4f60ee5e6'
+          test "$(git hash-object orbittrace_cmn_official_github_mirror_audit_v1/audit_mirror.py)" = '1ef09bf9d531a7c7bb80a8c5e696570dc10620bf'
+          grep -q 'PASS_CMN_ZERO_DATA_REPO_FRESHNESS_AUDIT' orbittrace_cmn_zero_data_freshness_audit_v1/RESULT.md
+          grep -q 'FAIL_CMN_PUBLIC_INTERFACE_STRUCTURE_AUDIT' orbittrace_cmn_interface_structure_audit_v1/RESULT.md
+          grep -q 'BLOCKED_CMN_DOCUMENTED_INTERFACE_DNS_UNRESOLVED' orbittrace_cmn_documented_interface_audit_v1/RESULT.md
+          python -m py_compile orbittrace_cmn_official_github_mirror_audit_v1/audit_mirror.py
+      - name: Fetch exact official CMN mirror commit without catalogue blobs
+        run: |
+          set -euo pipefail
+          mkdir -p input/cmn-mirror
+          git -C input/cmn-mirror init
+          git -C input/cmn-mirror remote add origin https://github.com/CroatianMeteorNetwork/CMN-codes.git
+          git -C input/cmn-mirror config remote.origin.promisor true
+          git -C input/cmn-mirror config remote.origin.partialclonefilter blob:none
+          git -C input/cmn-mirror fetch --filter=blob:none --no-tags --depth=1 origin "$CMN_MIRROR_COMMIT"
+          test "$(git -C input/cmn-mirror rev-parse FETCH_HEAD)" = "$CMN_MIRROR_COMMIT"
+          git -C input/cmn-mirror update-ref refs/audit/cmn-mirror "$CMN_MIRROR_COMMIT"
+          test "$(git -C input/cmn-mirror remote get-url origin)" = 'https://github.com/CroatianMeteorNetwork/CMN-codes.git'
+      - name: Run frozen structure-only official mirror audit
+        run: |
+          set -euo pipefail
+          python -u orbittrace_cmn_official_github_mirror_audit_v1/audit_mirror.py \
+            --mirror-repo input/cmn-mirror \
+            --output output
+      - name: Enforce no-catalogue-content firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/CMN_OFFICIAL_GITHUB_MIRROR_STRUCTURE_AUDIT_V1.json'))
+          assert r['verdict']=='PASS_CMN_OFFICIAL_GITHUB_MIRROR_STRUCTURE_AUDIT'
+          assert r['official_repository']=='CroatianMeteorNetwork/CMN-codes'
+          assert r['pinned_commit']=='2077285b66b6fd8df633ff0aec5ef0af0bf24ef6'
+          assert r['orbitcat_cue_present'] is True
+          assert r['structural_candidate_link_count'] >= 1
+          assert r['resolved_candidate_blob_count'] >= 1
+          assert isinstance(r['selected_candidate_path_sha256'],str) and len(r['selected_candidate_path_sha256'])==64
+          assert isinstance(r['selected_candidate_git_blob_sha'],str) and len(r['selected_candidate_git_blob_sha'])==40
+          assert set(r['candidate_extension_counts'])=={'7z','bz2','csv','dat','gz','rar','txt','xls','xlsx','zip'}
+          for k in ('raw_html_emitted','link_text_emitted','filenames_or_paths_emitted','candidate_catalogue_blob_contents_read','cmn_scientific_value_access','cmn_event_identifier_access','cmn_shower_label_access','target_information_access','target_region_events_accessed','sonotaco_scientific_access','maarsy_scientific_access','dms_scientific_access','external_validation_performed'):
+              assert r[k] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_cmn_official_github_mirror_audit_v1/PROTOCOL.md orbittrace_cmn_official_github_mirror_audit_v1/audit_mirror.py > output/source_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/audit_commit.txt
+          git -C input/cmn-mirror rev-parse "$CMN_MIRROR_COMMIT" > output/cmn_mirror_commit.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-cmn-official-github-mirror-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
