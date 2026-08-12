@@ -13,6 +13,7 @@ from typing import Any
 MEMO_BLOB = "8a10e18daa6ba5bf99864a67e8cd059704695735"
 CACHED_BLOB = "2a599c6e8247eb819a1090591d586526eda6c0c1"
 FROZEN_BLOB = "a5d5371f0c30a9c57ee4d8756ea41f454cd86301"
+DEAD_MEDOID_BLOB = "c448055e500baf761a88a8823ae051ae59e9e436"
 SCHEMA = "RFT_V1_ENGINEERING_REPLICA_SHARD_V1"
 
 
@@ -44,9 +45,11 @@ def main() -> int:
     here = Path(__file__).resolve().parent
     memo_path = here / "run_development_cached_memo.py"
     cached_path = here / "run_development_cached.py"
-    if blob(memo_path) != MEMO_BLOB or blob(cached_path) != CACHED_BLOB:
+    dead_path = here / "dead_medoid_atomizer.py"
+    if blob(memo_path) != MEMO_BLOB or blob(cached_path) != CACHED_BLOB or blob(dead_path) != DEAD_MEDOID_BLOB:
         raise RuntimeError("engineering source pin changed")
     memo = load(memo_path, "rft_shard_memo")
+    dead = load(dead_path, "rft_dead_medoid_atomizer")
     cached = memo.load_cached_runner(cached_path)
     cached.load_frozen = memo.load_frozen_science
 
@@ -55,9 +58,22 @@ def main() -> int:
             raise RuntimeError("frozen science source changed")
         if not (0 <= a.replica <= mod.PERTURB_REPLICAS):
             raise RuntimeError(f"invalid replica {a.replica}")
+
+        # The frozen source pin proves Atom.medoid_residual is still dead downstream.
+        # Probe every downstream-relevant Atom field before the fast atomizer is used.
+        dead.assert_probe_equivalence(mod, events)
+        original_atoms = mod.atoms
+        mod.atoms = lambda rows: dead.atoms_without_dead_medoid(mod, rows)
         memo._WORKER_MOD = mod
         memo._WORKER_EVENTS = events
-        replica, owned, unowned, stats = memo._replica_worker(a.replica)
+        try:
+            replica, owned, unowned, stats = memo._replica_worker(a.replica)
+        finally:
+            mod.atoms = original_atoms
+        stats = dict(stats)
+        stats["dead_medoid_elision"] = True
+        stats["dead_medoid_probe_equivalent"] = True
+
         event_sha = hashlib.sha256("\n".join(str(e["id"]) for e in events).encode()).hexdigest()
         payload = {
             "schema": SCHEMA,
@@ -67,6 +83,7 @@ def main() -> int:
             "frozen_science_blob": FROZEN_BLOB,
             "cached_runner_blob": CACHED_BLOB,
             "memo_wrapper_blob": MEMO_BLOB,
+            "dead_medoid_atomizer_blob": DEAD_MEDOID_BLOB,
             "blind_exclusion": list(mod.BLIND),
             "target_information_access": False,
             "target_region_events_accessed": False,
