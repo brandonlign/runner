@@ -1,0 +1,225 @@
+name: OrbitTrace v63 GMN-Fisher SonotaCo transfer v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-v63-gmn-fisher-sonotaco-transfer-v1
+    paths:
+      - 'orbittrace_v63_gmn_fisher_sonotaco_transfer_v1/**'
+      - '.github/workflows/orbittrace_v63_gmn_fisher_sonotaco_transfer_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v63-gmn-fisher-sonotaco-transfer-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install runtime and pin frozen v63 science
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/parent input/truth input/gmn-fisher output/pretruth output/result
+          test "$(git hash-object orbittrace_v63_gmn_fisher_sonotaco_transfer_v1/PROTOCOL.md)" = '09a875fcdb88b20a20ab41809e74c701eb9b0476'
+          test "$(git hash-object orbittrace_v63_gmn_fisher_sonotaco_transfer_v1/run_transfer.py)" = 'f004a8f5862e0c61c227c06e58a8fa5c259c054c'
+          test "$(git hash-object orbittrace_v62_intrinsic_local_geometry_oof_v1/run_transfer.py)" = '07c6d0c8ae4666159b78e8cd962f475dba82ea18'
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          test "$(git hash-object orbittrace_v19_quality_consensus_fusion_v1/run_variants_pretruth.py)" = '7602a08cb2c01df4d64534e309aa160959cc490b'
+          git fetch --no-tags --depth=1 origin 9c2e961022c751cf0893c868caa393876f9bfa6c
+          git show FETCH_HEAD:orbittrace_gmn_balanced_shrinkage_fisher_oof_v1/PROTOCOL.md > input/gmn-fisher/PROTOCOL.md
+          git show FETCH_HEAD:orbittrace_gmn_balanced_shrinkage_fisher_oof_v1/run_development.py > input/gmn-fisher/run_development.py
+          test "$(git hash-object input/gmn-fisher/PROTOCOL.md)" = 'bb4a1e6505c9f4483e2f674b9dbf03e32030366b'
+          test "$(git hash-object input/gmn-fisher/run_development.py)" = 'a0ba7e45bcd43541e8a2eb57a9d638b36ff4a1d3'
+          python -m py_compile \
+            orbittrace_v63_gmn_fisher_sonotaco_transfer_v1/run_transfer.py \
+            orbittrace_v62_intrinsic_local_geometry_oof_v1/run_transfer.py \
+            orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py \
+            orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py \
+            orbittrace_v19_quality_consensus_fusion_v1/run_variants_pretruth.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable ranker source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - name: Restore immutable v24/v22 payload before any v63 truth access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          test "$(sha256sum input/payload/result/V24_EXPOSED_TWOHEAD_OOF_RESULT.json | cut -d' ' -f1)" = 'c8d95bc02ad1436c9924ec14a25bcd36e0eacd960fda1fb33db3a91738fe30cf'
+          python - <<'PY'
+          import json
+          for route,n in (('sugar',267),('hdbscan',229)):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and f['truth_accessed'] is False
+              assert m['feature_dimension']==71
+              assert m['feature_blocks']=={'raw_839':34,'relative_noncat_839':30,'rank_percentiles':3,'consensus_graph':4}
+              assert len(m['family_ids'])==n and len(f['families'])==n
+          print('PASS_V63_IMMUTABLE_SOURCE_PRETRUTH')
+          PY
+      - name: Reconstruct exact frozen v62 23D representation before truth
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v62_intrinsic_local_geometry_oof_v1/run_transfer.py pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --output output/pretruth
+      - name: Enforce exact pretruth identity before exposed SonotaCo truth
+        run: |
+          set -euo pipefail
+          test "$(sha256sum output/pretruth/V62_INTRINSIC_PRETRUTH.json | cut -d' ' -f1)" = '1988fcb89781a3ba94d19bd7b2e0c058c13b39c73ed020f7931c772952069e64'
+          python - <<'PY'
+          import json,hashlib,numpy as np
+          COLS=[1,2,3,4,5,6,7,8,9,10,14,15,16,17,18,19,20,28,29,30,31,32,33]
+          def ash(x):
+              a=np.ascontiguousarray(x); h=hashlib.sha256(); h.update(str(a.dtype).encode()); h.update(json.dumps(list(a.shape),separators=(',',':')).encode()); h.update(a.tobytes(order='C')); return h.hexdigest()
+          r=json.load(open('output/pretruth/V62_INTRINSIC_PRETRUTH.json'))
+          assert r['scientific_stage']=='V62_INTRINSIC_REPRESENTATION_PRETRUTH'
+          assert r['feature_dimension']==23 and r['selected_zero_based_columns']==COLS
+          assert r['truth_accessed'] is False and r['feature_search'] is False and r['column_search'] is False
+          assert r['imputation'] is False and r['representation_weighting'] is False and r['candidate_membership_changed'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          expected={'sugar':'423c9aef746cd873270cf8950ce79d93620282d12161449ebc99863f748834c7','hdbscan':'e0a8162e2b4d73df68552d56f0f81305e28cda1fc539d9e88943e42fb3394663'}
+          for route,n in (('sugar',267),('hdbscan',229)):
+              m=json.load(open(f'output/pretruth/{route}/V62_INTRINSIC_PRETRUTH_MANIFEST.json'))
+              x=np.load(f'output/pretruth/{route}/intrinsic_features.npy',allow_pickle=False)
+              assert m['candidate_count']==n and m['feature_dimension']==23 and m['selected_zero_based_columns']==COLS
+              assert m['truth_accessed'] is False and m['feature_search'] is False and m['column_search'] is False
+              assert m['candidate_membership_changed'] is False
+              assert m['intrinsic_feature_sha256']==expected[route] and ash(x)==expected[route]
+          print('PASS_V63_EXACT_V62_PRETRUTH_SEAL')
+          PY
+      - name: Restore exact v31 parent orders only after pretruth seal
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v31-parent-orders-export-v1
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31561557044
+      - name: Verify exact v31 parent-order payload
+        run: |
+          set -euo pipefail
+          echo 'c2f35b817c330689472bc432c6e982e095b75b6a50f45a3ddf6044ce314b937d  input/parent/V31_PARENT_ORDERS_EXPORT_V1.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/parent/V31_PARENT_ORDERS_EXPORT_V1.json'))
+          assert r['verdict']=='PASS_EXACT_V31_PARENT_ORDER_RECONSTRUCTION' and r['scientific_change'] is False
+          assert r['routes']['sugar']['v31_fused_order_sha256']=='5b3d27e11079f36148bbfb8bfdab60882fae380143fcfd84c6dc290c53295aae'
+          assert r['routes']['hdbscan']['v31_fused_order_sha256']=='85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d'
+          PY
+      - name: Load already-exposed SonotaCo truth only after v63 pretruth seal
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Run first binding v63 GMN-Fisher transfer
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v63_gmn_fisher_sonotaco_transfer_v1/run_transfer.py \
+            --pretruth-root output/pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --parent-orders input/parent/V31_PARENT_ORDERS_EXPORT_V1.json \
+            --output output/result
+      - name: Enforce binding v63 result and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          COLS=[1,2,3,4,5,6,7,8,9,10,14,15,16,17,18,19,20,28,29,30,31,32,33]
+          r=json.load(open('output/result/V63_GMN_FISHER_SONOTACO_TRANSFER_RESULT.json'))
+          assert r['first_valid_outcome_binding'] is True
+          assert r['scientific_stage']=='EXPOSED_SONOTACO_V63_GMN_BALANCED_SHRINKAGE_FISHER_TRANSFER_V1'
+          assert r['candidate_count']==496 and r['feature_dimension']==23 and r['selected_zero_based_columns']==COLS
+          assert r['pretruth_overall_sha256']=='1988fcb89781a3ba94d19bd7b2e0c058c13b39c73ed020f7931c772952069e64'
+          assert r['route_feature_sha256']=={'sugar':'423c9aef746cd873270cf8950ce79d93620282d12161449ebc99863f748834c7','hdbscan':'e0a8162e2b4d73df68552d56f0f81305e28cda1fc539d9e88943e42fb3394663'}
+          assert r['annual_fisher_used'] is False and r['strict_whole_shower_oof'] is True
+          assert r['mechanism']=='equal-class Ledoit-Wolf shrinkage Fisher discriminant'
+          assert r['pooled_covariance']=='0.5*Sigma_pos+0.5*Sigma_neg' and r['class_prior_geometry']=='equal-prior midpoint'
+          assert r['auxiliary_reference_margin']=='overall 23D k=1 Euclidean d_nonpositive-d_positive; units only; not evaluated'
+          assert r['candidate_membership_changed'] is False and r['source_pretruth_payload_immutable'] is True
+          assert r['diversity']=={'lambda':0.8,'scale':1.0} and r['fusion']=='one equal rank-sum with exact v19'
+          assert len(r['panels'])==4 and len(r['v31_parent_controls'])==4
+          assert r['gmn_fisher_pass_provenance']['run_id']==31565972049
+          assert r['gmn_fisher_pass_provenance']['recovered_at_100']==69
+          assert r['feature_search'] is False and r['column_search'] is False
+          assert r['class_prior_search'] is False and r['covariance_estimator_search'] is False and r['covariance_weight_search'] is False
+          assert r['regularization_search'] is False and r['solver_search'] is False
+          assert r['annual_reference_search'] is False and r['annual_combiner_search'] is False and r['local_geometry_blend_search'] is False
+          assert r['route_specific_rule_search'] is False and r['scale_statistic_search'] is False and r['unit_transform_search'] is False
+          assert r['threshold_search'] is False and r['diversity_search'] is False and r['fusion_search'] is False
+          assert r['source_quota_selected'] is False and r['post_result_rescue'] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_V63_RESULT_FIREWALL',r['verdict'],r['panel_wins'])
+          PY
+      - name: Preserve exact provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v63_gmn_fisher_sonotaco_transfer_v1/PROTOCOL.md \
+            orbittrace_v63_gmn_fisher_sonotaco_transfer_v1/run_transfer.py \
+            orbittrace_v62_intrinsic_local_geometry_oof_v1/run_transfer.py \
+            orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py \
+            orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py \
+            orbittrace_v19_quality_consensus_fusion_v1/run_variants_pretruth.py \
+            input/gmn-fisher/PROTOCOL.md input/gmn-fisher/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/parent/V31_PARENT_ORDERS_EXPORT_V1.json \
+            output/pretruth/V62_INTRINSIC_PRETRUTH.json \
+            > output/V63_SOURCE_INPUT_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v63-gmn-fisher-sonotaco-transfer-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
