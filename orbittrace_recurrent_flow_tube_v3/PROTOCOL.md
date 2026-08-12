@@ -4,11 +4,9 @@
 
 RFT v3 is the exact **pre-specified `owned_soft_evidence` variant** from the RFT v2 protocol, promoted as a distinct successor after its target-excluded GMN 2022 development result. This promotion does **not** change or rescue the binding RFT v2 verdict: RFT v2 remains `FAIL_RFT_V2_GMN2022_DEVELOPMENT_VIABILITY`.
 
-The exact variant was frozen before its first outcome in RFT v2 protocol blob `fa6ec175e1ec32608e12b0571d7bcab686408443`, under the preregistered explanatory ablation:
+The exact variant was frozen before its first outcome in RFT v2 protocol blob `fa6ec175e1ec32608e12b0571d7bcab686408443`, under the preregistered explanatory ablation `owned_soft_evidence`: identical soft-evidence procedure using the frozen owned tube lists instead of unowned lists. The exact RFT v2 implementation that produced this preregistered ablation is blob `4128d4d43a02dd583170d35d817866418f1fa880` and is part of the v3 scientific freeze.
 
-> `owned_soft_evidence`: identical soft-evidence procedure using the frozen owned tube lists instead of unowned lists.
-
-Therefore v3 introduces no post-outcome scientific parameter, threshold, weight, or ranking change. It simply promotes those already-frozen bytes/semantics as the sole method for a future one-shot held-out evaluation.
+Therefore v3 introduces no post-outcome scientific parameter, threshold, weight, tie-break, candidate namespace, or ranking change. The v3 heldout evaluator must call the exact frozen v2 `build_soft_candidates(...)` implementation on owned tubes with the exact namespace string **`RFT2OWNED`** used by the preregistered v2 ablation. This preserves the exact candidate-ID and family-ID tie semantics of the method that existed before its first outcome.
 
 The authoritative RFT v2 development workflow run is `31561653503`, artifact ID `9127986475`, artifact digest `sha256:adfe47ed0909ea7edcef6bedcfdc72fadb022829291ceeb1f1aff5a5658b7a1b`.
 
@@ -45,34 +43,34 @@ The scientific geometry and all numerical constants remain the frozen RFT v1 val
 - trajectory trim threshold 2.5;
 - exact frozen pair, transition, fit, and residual functions.
 
-The **sole v3 hypothesis generator is the frozen owned tube construction**: nominal paths are generated with RFT v1 path ownership enabled. No unowned tube may enter v3.
+The **sole v3 hypothesis generator is the frozen owned tube construction**: nominal paths are generated with RFT v1 path ownership enabled. No unowned tube may enter v3 scoring or ranking.
 
-For every nominal owned tube:
+For every nominal owned tube, execute the exact frozen RFT v2 soft-evidence helper on the owned replica tube sets:
 
-1. Measure persistence against the owned tubes of perturbation replicas 1–16 using the exact v1 maximum-member-Jaccard survival rule at Jaccard >=0.50.
-2. Persistence is a continuous measured feature. **No persistence cutoff is applied.**
+1. Measure persistence against the owned tubes of perturbation replicas 1–16 using the exact v2/v1 maximum-member-Jaccard survival rule at the frozen 0.50 threshold.
+2. Persistence is continuous evidence. **No persistence cutoff is applied.**
 3. Apply the unchanged RFT trajectory trim and require at least 10 retained members.
 4. Compute coherence without multiplying by persistence:
 
    `coherence = log1p(n_members) * log1p(strata) / (1 + median_transition_cost + median_trajectory_residual)`.
 
-5. Collapse exact post-trim member duplicates by retaining the representative with lowest `(median_transition_cost + median_trajectory_residual, tube_id)`.
-6. Candidate ID is SHA-256 prefix of `RFT3|<sorted member IDs>`.
+5. Collapse exact post-trim member duplicates by the exact v2 rule: lowest `(median_transition_cost + median_trajectory_residual, tube_id)`.
+6. Preserve the exact preregistered owned-ablation candidate-ID namespace: SHA-256 prefix of `RFT2OWNED|<sorted member IDs>`.
 
-Create 1-based ranks:
+The exact helper creates 1-based ranks:
 
-- coherence rank: descending coherence, tie by family ID;
-- persistence rank: descending persistence, tie by family ID.
+- coherence rank: descending coherence, tie by the resulting family ID;
+- persistence rank: descending persistence, tie by the resulting family ID.
 
-The **only v3 order** is:
+The **only v3 order** is the exact v2 owned-ablation equal rank-sum:
 
 `(coherence_rank + persistence_rank, coherence_rank, family_id)`.
 
-No fusion-weight search, persistence threshold, rank product, source quota, candidate budget optimization, diversity pass, reranking, parameter search, or alternate order is permitted.
+No fusion-weight search, persistence threshold, rank product, source quota, candidate budget optimization, diversity pass, reranking, parameter search, candidate-ID change, or alternate order is permitted.
 
 ## GMN 2023 one-shot held-out authorization
 
-GMN 2023 has not been accessed by v3 before this protocol freeze. The exact v3 method above is frozen before any v3 GMN 2023 outcome.
+GMN 2023 has not been accessed by v3 before this corrected protocol freeze. The correction above removes an accidental namespace drift and makes the promoted method exactly match the already-preregistered v2 ablation **before any v3 GMN2023 execution**.
 
 GMN 2023 may be accessed **once** only after execution verifies all of the following before catalogue parsing:
 
@@ -80,7 +78,7 @@ GMN 2023 may be accessed **once** only after execution verifies all of the follo
 2. RFT v2's binding verdict remains FAIL (not rewritten or rescued);
 3. the `owned_soft_evidence` ablation metrics exactly match the frozen values above and satisfy the four core development thresholds;
 4. the v2 result/prelabel firewall flags show no GMN2023, SonotaCo 2013/2014, OrbitTrace target information/events, MAARSY, DMS, or protected-region access;
-5. the v3 protocol and heldout implementation/workflow source pins match their frozen bytes.
+5. the v3 protocol, exact v2 soft-evidence helper, heldout implementation, engineering wrappers, and workflow source pins match their frozen bytes.
 
 Only after those checks may the runtime source list switch from GMN 2022 to the twelve fixed GMN 2023 months. No GMN 2022 data or labels may be reused to change v3 after the heldout begins.
 
