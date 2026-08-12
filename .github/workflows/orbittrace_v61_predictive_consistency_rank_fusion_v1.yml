@@ -38,7 +38,8 @@ jobs:
           mkdir -p input/parent input/payload input/prep input/truth output/pretruth output/result
           test "$(git hash-object orbittrace_v61_predictive_consistency_rank_fusion_v1/PROTOCOL.md)" = '5648f57b483a44eb45856fb10db2c6d0175f1d7f'
           test "$(git hash-object orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py)" = '293e13b08e3b0b6a914d41a48a310664cfd90809'
-          python -m py_compile orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py
+          test "$(git hash-object orbittrace_v61_predictive_consistency_rank_fusion_v1/evaluation_budget_repair.py)" = '95489103bb71e8d1d7bd6a52e8c0b05ec46b1a87'
+          python -m py_compile orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py orbittrace_v61_predictive_consistency_rank_fusion_v1/evaluation_budget_repair.py
       - name: Restore exact v31 parent orders from provenance-only run
         uses: actions/download-artifact@v4
         with:
@@ -83,16 +84,17 @@ jobs:
           assert m['target_information_access'] is False and m['maarsy_scientific_access'] is False
           assert m['target_region_retained'] is False
           PY
-      - name: Compute and freeze sole v61 pretruth predictive fusion
+      - name: Reproduce already-sealed v61 pretruth predictive fusion
         run: |
           set -euo pipefail
           python -u orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py pretruth \
             --parent-orders input/parent/V31_PARENT_ORDERS_EXPORT_V1.json \
             --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
             --prep-root input/prep --output output/pretruth
-      - name: Seal pretruth before any truth access
+      - name: Require exact first-run pretruth before any truth access
         run: |
           set -euo pipefail
+          echo '3c872ad83e0df17e6e9aca6f2ed6e2b5ea1613c3ef3b329e85b116902892fd84  output/pretruth/V61_PREDICTIVE_CONSISTENCY_PRETRUTH.json' | sha256sum -c -
           sha256sum output/pretruth/V61_PREDICTIVE_CONSISTENCY_PRETRUTH.json | tee output/pretruth/V61_PRETRUTH_SHA256.txt
           python - <<'PY'
           import json
@@ -105,8 +107,10 @@ jobs:
           assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
           assert r['blind_exclusion']==[20.0,55.0]
           assert r['routes']['sugar']['candidate_count']==267 and r['routes']['hdbscan']['candidate_count']==229
+          assert r['routes']['sugar']['fused_order_sha256']=='313bc7ecdef5a76d31ac8cafdfb9af0d63568414af3a6b074b537002359507b1'
+          assert r['routes']['hdbscan']['fused_order_sha256']=='5bdb17b5ffe0cf22d58aece399bb79f52f5d9d5f02a78b4731901c2a4df6dddc'
           PY
-      - name: Load already-exposed SonotaCo truth only after pretruth seal
+      - name: Load already-exposed SonotaCo truth only after exact pretruth replay
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -114,10 +118,10 @@ jobs:
           curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
           echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
           unzip -q input/truth.zip -d input/truth
-      - name: Run first binding v61 SonotaCo outcome
+      - name: Run first technically valid binding v61 SonotaCo outcome
         run: |
           set -euo pipefail
-          python -u orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py evaluate \
+          python -u orbittrace_v61_predictive_consistency_rank_fusion_v1/evaluation_budget_repair.py evaluate \
             --pretruth output/pretruth/V61_PREDICTIVE_CONSISTENCY_PRETRUTH.json \
             --parent-orders input/parent/V31_PARENT_ORDERS_EXPORT_V1.json \
             --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
@@ -130,6 +134,7 @@ jobs:
           r=json.load(open('output/result/V61_PREDICTIVE_CONSISTENCY_RANK_FUSION_RESULT.json'))
           assert len(r['panels'])==4 and len(r['v31_parent_controls'])==4
           assert r['first_valid_outcome_binding'] is True
+          assert r['pretruth_sha256']=='3c872ad83e0df17e6e9aca6f2ed6e2b5ea1613c3ef3b329e85b116902892fd84'
           assert r['parameter_search'] is False and r['threshold_search'] is False and r['weight_search'] is False
           assert r['feature_search'] is False and r['regression_search'] is False and r['route_specific_rule'] is False
           assert r['post_result_rescue'] is False and r['candidate_membership_changed'] is False
@@ -142,7 +147,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_v61_predictive_consistency_rank_fusion_v1/PROTOCOL.md orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py input/parent/V31_PARENT_ORDERS_EXPORT_V1.json > output/V61_SOURCE_INPUT_SHA256.txt 2>/dev/null || true
+          sha256sum orbittrace_v61_predictive_consistency_rank_fusion_v1/PROTOCOL.md orbittrace_v61_predictive_consistency_rank_fusion_v1/run_transfer.py orbittrace_v61_predictive_consistency_rank_fusion_v1/evaluation_budget_repair.py input/parent/V31_PARENT_ORDERS_EXPORT_V1.json > output/V61_SOURCE_INPUT_SHA256.txt 2>/dev/null || true
           git rev-parse HEAD > output/execution_commit.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
