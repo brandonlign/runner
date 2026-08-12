@@ -6,7 +6,7 @@ This is a **target-excluded GMN 2022/2023 successor diagnostic** to the binding 
 
 The successful parent uses a 23D intrinsic family representation, training-fold univariate z-standardization, and `k=1` Euclidean nearest-positive / nearest-nonpositive geometry. Univariate standardization equalizes marginal scales but does not account for correlated feature directions. If several intrinsic descriptors encode the same physical degree of freedom, ordinary Euclidean distance can implicitly count that direction multiple times.
 
-This successor tests exactly one parameter-free covariance correction: **Ledoit–Wolf shrinkage Mahalanobis distance fit only on each training fold after the exact parent z-standardization**. Ledoit–Wolf is chosen before outcome because it provides a deterministic, analytically estimated shrinkage covariance without a tunable regularization parameter and is well-conditioned for a 23D representation with roughly 180 training families per fold.
+This successor tests exactly one covariance correction: **Ledoit–Wolf shrinkage Mahalanobis distance fit only on each training fold after the exact parent z-standardization**. Ledoit–Wolf is chosen before outcome because it provides a deterministic, analytically estimated shrinkage covariance without a tunable regularization parameter and is well-conditioned for a 23D representation with roughly 180 training families per fold.
 
 No SonotaCo result is used to choose this metric.
 
@@ -21,7 +21,7 @@ The following remain exactly unchanged:
 - deterministic five-fold whole-shower groups;
 - fold-training-only feature means and marginal standard deviations;
 - `k=1` nearest positive and `k=1` nearest nonpositive reference rule;
-- signed margin `d_nonpositive - d_positive`;
+- signed nearest-reference margin semantics;
 - diversity `lambda=0.8`, `scale=1.0`;
 - hard-rank/stable-ID tie semantics;
 - one equal rank-sum fusion with the immutable hard order.
@@ -36,20 +36,36 @@ Binding parent controls:
 
 The same execution must reconstruct those parent controls exactly before the successor can be interpreted.
 
-## Sole scientific change: training-fold shrinkage Mahalanobis metric
+## Sole scientific change: training-fold shrinkage Mahalanobis geometry
 
 For each of the exact parent folds:
 
 1. Compute the exact parent training-fold mean and population standard deviation for all 23 dimensions; replace only zero standard deviations by 1 exactly as in the parent.
 2. Transform training and held-out features to the same parent z-space.
 3. Fit `sklearn.covariance.LedoitWolf(assume_centered=False, store_precision=True)` on **all training-fold z-vectors without using recoverability labels**.
-4. Require the returned precision matrix to be finite, symmetric to numerical tolerance, and positive definite.
+4. Require the returned precision matrix to be finite, symmetric to absolute tolerance `1e-12`, and positive definite.
 5. For each held-out family, compute Mahalanobis distance under that one training-fold precision matrix to every positive and nonpositive training reference.
-6. Set `d_pos` and `d_neg` to the respective `k=1` minima and define the sole successor score as `d_neg - d_pos`.
+6. Set `d_pos` and `d_neg` to the respective `k=1` minima and define the raw covariance-aware margin as `m_M = d_neg - d_pos`.
 
 No diagonal-only, empirical covariance, OAS, manually regularized covariance, PCA, whitening rank cutoff, class-specific covariance, supervised metric learning, or shrinkage search is allowed.
 
 The covariance fit is label-free and training-fold-only. Recoverability labels are used only to divide already-transformed training references into the same parent positive/nonpositive classes for nearest-reference lookup.
+
+### Frozen unit preservation for the unchanged diversity penalty
+
+The active parent diversity routine subtracts the fixed proximity term directly from the margin (`score - 0.8 * proximity_penalty`). Therefore a pure change of distance units would otherwise alter the effective diversity strength even if candidate ordering under the new metric were unchanged.
+
+To isolate the metric rather than retune diversity, after all OOF margins are computed define exactly:
+
+- `S_E = median(abs(m_E))`, where `m_E` is the exactly reproduced parent Euclidean OOF margin;
+- `S_M = median(abs(m_M))`, where `m_M` is the raw shrinkage-Mahalanobis OOF margin;
+- require both to be finite and strictly positive;
+- `unit_factor = S_E / S_M`;
+- sole successor score `m_M_scaled = m_M * unit_factor`.
+
+This transformation is positive scalar multiplication only: it cannot change the Mahalanobis score sign or pre-diversity ordering. Its sole purpose is to preserve the parent's typical absolute margin scale under the already-frozen diversity penalty.
+
+No mean, standard deviation, quantile, fitted scale, interpolation, clipping, or alternative normalization is allowed.
 
 ## Frozen post-score machinery
 
@@ -59,14 +75,14 @@ Use exactly the parent centroid geometry, diversity order (`lambda=0.8`, `scale=
 
 The first technically valid result is binding.
 
-PASS requires the sole fused shrinkage-Mahalanobis order simultaneously to:
+PASS requires the sole fused scaled shrinkage-Mahalanobis order simultaneously to:
 - recover strictly more than `66` qualified families in the top 100;
 - recover at least `41` in the top 50;
 - top-100 dominant precision at least `0.7229521515453452`;
 - MRR at least `0.050244164168646674`;
 - preserve exactly `95` qualified families.
 
-Failure of any gate permanently rejects this exact metric successor. No covariance estimator, regularization, metric interpolation, k, feature, scaling, diversity, fusion, threshold, or post-result rescue is authorized.
+Failure of any gate permanently rejects this exact metric successor. No covariance estimator, regularization, metric interpolation, unit transform, k, feature, scaling, diversity, fusion, threshold, or post-result rescue is authorized.
 
 A PASS establishes only a target-excluded GMN mechanism improvement and may motivate a separately frozen cross-dataset successor.
 
