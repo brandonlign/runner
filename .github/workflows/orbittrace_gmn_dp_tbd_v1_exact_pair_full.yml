@@ -1,0 +1,130 @@
+name: OrbitTrace GMN DP-TBD v1 exact-pair full replica
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-gmn-dp-tbd-v1-exact-pair-optimization
+    paths:
+      - '.github/workflows/orbittrace_gmn_dp_tbd_v1_exact_pair_full.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  replicate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 3e8799881d00303969636f85fa5be0042251cedb
+          path: runtime-support
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare exact frozen runtime and verify equivalence pins
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install -q --no-deps gmn-python-api==0.0.13
+          python -m pip install -q 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/v8 input/ranker output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1/PROTOCOL.md)" = '8b18c19af9df4bb0efe005af1a754ac524a0c58d'
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1/run_development.py)" = 'fd25455d90720e81bc3ee4cb74bed9975533f808'
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1_engineering/exact_pair_runner.py)" = 'e76656ffa4137ce805911ca3716e2b1763eb1b5e'
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1_engineering/test_exact_pair_equivalence.py)" = 'ac162c290cbe983cc1b82d88a30670a991e7c90d'
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1_engineering/ENGINEERING_EQUIVALENCE.md)" = 'aab0c469eacaaea44a58d35e97149f3f89c92fcd'
+          test "$(git -C runtime-support rev-parse HEAD)" = '3e8799881d00303969636f85fa5be0042251cedb'
+          python -u orbittrace_gmn_dp_track_before_detect_v1_engineering/test_exact_pair_equivalence.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Run exact-equivalent full DP-TBD v1 replica
+        env:
+          PYTHONPATH: input/ranker:runtime-support:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -o pipefail
+          python -u orbittrace_gmn_dp_track_before_detect_v1_engineering/exact_pair_runner.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output 2>&1 | tee output/EXACT_PAIR_EXECUTION_LOG.txt
+      - name: Enforce original frozen result and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/DP_TBD_V1_RESULT.json'))
+          p=json.load(open('output/DP_TBD_V1_PRELABEL.json'))
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_DEVELOPMENT_ONLY'
+          assert r['first_valid_outcome_binding'] is True
+          assert p['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_DP_TBD_PRELABEL'
+          assert p['truth_used_in_detection'] is False
+          assert p['hdbscan_candidates_used'] is False and r['hdbscan_candidates_used'] is False
+          assert r['blind_exclusion']==[20.0,55.0] and p['blind_exclusion']==[20.0,55.0]
+          for x in (r,p):
+            assert x['sonotaco_2013_2014_access'] is False
+            assert x['target_information_access'] is False
+            assert x['target_region_events_accessed'] is False
+            assert x['maarsy_scientific_access'] is False
+            assert x['dms_scientific_access'] is False
+          print('PASS_DP_TBD_V1_EXACT_PAIR_FULL_FIREWALL', r['verdict'], r['beats_839_full'])
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_gmn_dp_track_before_detect_v1/PROTOCOL.md \
+            orbittrace_gmn_dp_track_before_detect_v1/run_development.py \
+            orbittrace_gmn_dp_track_before_detect_v1_engineering/exact_pair_runner.py \
+            orbittrace_gmn_dp_track_before_detect_v1_engineering/test_exact_pair_equivalence.py \
+            orbittrace_gmn_dp_track_before_detect_v1_engineering/ENGINEERING_EQUIVALENCE.md \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            output/DP_TBD_V1_PRELABEL.json \
+            output/DP_TBD_V1_RESULT.json \
+            > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/development_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-dp-tbd-v1-exact-pair-full
+          path: output
+          if-no-files-found: error
+          retention-days: 90
