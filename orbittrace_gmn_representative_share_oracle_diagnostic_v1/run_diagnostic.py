@@ -48,7 +48,7 @@ INSERT = r'''
         return {
             str(label)
             for label, rank in metrics['first_rank_by_label'].items()
-            if int(rank) <= 100
+            if rank is not None and int(rank) <= 100
         }
 
     _parent_labels = _labels_at_100(share_metrics)
