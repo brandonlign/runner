@@ -1,0 +1,81 @@
+name: OrbitTrace GMN DP-TBD v1 engineering crash capture
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-gmn-dp-track-before-detect-v1
+    paths:
+      - '.github/workflows/orbittrace_gmn_dp_track_before_detect_v1_engineering_debug.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  capture:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare exact frozen runtime
+        run: |
+          set -euo pipefail
+          python -m pip install -q -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install -q --no-deps gmn-python-api==0.0.13
+          python -m pip install -q 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/v8 input/ranker output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1/PROTOCOL.md)" = '8b18c19af9df4bb0efe005af1a754ac524a0c58d'
+          test "$(git hash-object orbittrace_gmn_dp_track_before_detect_v1/run_development.py)" = 'fd25455d90720e81bc3ee4cb74bed9975533f808'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Capture frozen execution stdout and stderr
+        env:
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -o pipefail
+          python -u orbittrace_gmn_dp_track_before_detect_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output 2>&1 | tee output/ENGINEERING_EXECUTION_LOG.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-dp-tbd-v1-engineering-crash-capture
+          path: output
+          if-no-files-found: error
+          retention-days: 30
