@@ -1,9 +1,9 @@
-name: OrbitTrace GMN rank-Gaussian Fisher OOF v1 binding
+name: OrbitTrace GMN balanced logit OOF v1 binding
 
 on:
   push:
     branches:
-      - agent/orbittrace-gmn-rank-gaussian-fisher-oof-v1
+      - agent/orbittrace-gmn-balanced-logit-oof-v1
     paths:
       - .github/workflows/orbittrace_fixed4_wrapper_saturation_audit.yml
 
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: orbittrace-gmn-rank-gaussian-fisher-oof-v1-binding
+  group: orbittrace-gmn-balanced-logit-oof-v1-binding
   cancel-in-progress: false
 
 jobs:
@@ -20,7 +20,8 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
-      FROZEN_IMPLEMENTATION_SHA: 7cb868b71dd3c34f390f471a82ea684c5b2f4ac5
+      FROZEN_PROTOCOL_SHA: 5b2cf9aae07a2a84da03233a1e3a7105cc1eb5d0
+      FROZEN_IMPLEMENTATION_SHA: 6331a0fbe9731cf1f7a02cc199a08e726ab0ac04
       FROZEN_V8_RUNTIME_SHA: c9d6c44704013ba0c9430100e98a29a56b453304
       V3_SOURCE_SHA: d8258581af143308495bd97bedcc142abbbd951a
       PYTHONPATH: ${{ github.workspace }}/input/ranker:${{ github.workspace }}:${{ github.workspace }}/input/v3:${{ github.workspace }}/frozen-v8/orbittrace_wavelet_catalogue_v3:${{ github.workspace }}/frozen-v8
@@ -32,7 +33,7 @@ jobs:
       - name: Check out binding branch
         uses: actions/checkout@v4
         with:
-          fetch-depth: 7
+          fetch-depth: 8
 
       - name: Check out exact runtime used by verified Fisher fixture
         uses: actions/checkout@v4
@@ -42,18 +43,18 @@ jobs:
           path: frozen-v8
           fetch-depth: 1
 
-      - name: Assert no post-freeze scientific-code change
+      - name: Assert frozen scientific implementation
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C frozen-v8 rev-parse HEAD)" = "$FROZEN_V8_RUNTIME_SHA"
+          git cat-file -e "${FROZEN_PROTOCOL_SHA}^{commit}"
           git cat-file -e "${FROZEN_IMPLEMENTATION_SHA}^{commit}"
           git diff --exit-code "${FROZEN_IMPLEMENTATION_SHA}" HEAD -- \
-            orbittrace_gmn_rank_gaussian_fisher_oof_v1 \
+            orbittrace_gmn_balanced_logit_oof_v1 \
             orbittrace_gmn_v31_principle_local_geometry_oof_v1
           bad="$(git diff --name-only "${FROZEN_IMPLEMENTATION_SHA}" HEAD | grep -v '^\.github/workflows/' || true)"
           test -z "$bad"
-          git diff --name-only "${FROZEN_IMPLEMENTATION_SHA}" HEAD
 
       - name: Set up recorded Python version
         uses: actions/setup-python@v5
@@ -68,8 +69,7 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
-          python -m pip install \
-            numpy==2.1.3 scipy==1.14.1 scikit-learn==1.5.2 joblib==1.5.3
+          python -m pip install numpy==2.1.3 scipy==1.14.1 scikit-learn==1.5.2 joblib==1.5.3
 
       - name: Reconstruct exact historical source runtime
         shell: bash
@@ -102,7 +102,7 @@ jobs:
           test "$(sha256sum input/ranker/run_urc_union_ranker.py | awk '{print $1}')" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
           python -m py_compile input/ranker/run_urc_union_ranker.py \
             orbittrace_gmn_v31_principle_local_geometry_oof_v1/run_development.py \
-            orbittrace_gmn_rank_gaussian_fisher_oof_v1/run_development.py
+            orbittrace_gmn_balanced_logit_oof_v1/run_development.py
 
       - name: Assert cached firewall and parent identities
         shell: bash
@@ -129,11 +129,11 @@ jobs:
           print('PASS_EXACT_TARGET_EXCLUDED_GMN_BINDING_INPUTS')
           PY
 
-      - name: Execute first valid frozen rank-Gaussian outcome
+      - name: Execute first valid frozen balanced-logit outcome
         shell: bash
         run: |
           set -euo pipefail
-          python orbittrace_gmn_rank_gaussian_fisher_oof_v1/run_development.py \
+          python orbittrace_gmn_balanced_logit_oof_v1/run_development.py \
             --fixture-root input/fixture \
             --quality-source input/ranker/run_urc_union_ranker.py \
             --output output 2>&1 | tee output/binding_combined.log
@@ -144,8 +144,8 @@ jobs:
         run: |
           mkdir -p output
           printf '%s\n' \
-            'frozen_protocol_commit=100b65bc0e78ac70fccd67166ce453b71ec5cd85' \
-            'frozen_implementation_commit=7cb868b71dd3c34f390f471a82ea684c5b2f4ac5' \
+            'frozen_protocol_commit=5b2cf9aae07a2a84da03233a1e3a7105cc1eb5d0' \
+            'frozen_implementation_commit=6331a0fbe9731cf1f7a02cc199a08e726ab0ac04' \
             'frozen_v8_runtime_commit=c9d6c44704013ba0c9430100e98a29a56b453304' \
             'v3_source_commit=d8258581af143308495bd97bedcc142abbbd951a' \
             'fixture_run_id=31566749364' \
@@ -161,7 +161,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-gmn-rank-gaussian-fisher-oof-v1-binding
+          name: orbittrace-gmn-balanced-logit-oof-v1-binding
           path: output
           if-no-files-found: error
           retention-days: 90
