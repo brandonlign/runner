@@ -7,6 +7,7 @@ on:
     paths:
       - 'orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard.py'
       - 'orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py'
+      - 'orbittrace_recurrent_flow_tube_v1_engineering/dead_medoid_atomizer.py'
       - '.github/workflows/orbittrace_rft_v1_replica_matrix_resilience.yml'
 
 permissions:
@@ -64,9 +65,10 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py)" = '2a599c6e8247eb819a1090591d586526eda6c0c1'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8a10e18daa6ba5bf99864a67e8cd059704695735'
-          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard.py)" = '274315df314a2c9170f7b89c248524fc29fd6c8b'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard.py)" = '4db37025cdd28a111286c42b42e183ed3e26ef5f'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py)" = '96cda8f4de824373b4b214299b1def3d0dd8e163'
-          python -m py_compile orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard.py orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/dead_medoid_atomizer.py)" = 'c448055e500baf761a88a8823ae051ae59e9e436'
+          python -m py_compile orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard.py orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py orbittrace_recurrent_flow_tube_v1_engineering/dead_medoid_atomizer.py
           echo PASS_RFT_V1_REPLICA_MATRIX_SOURCE_PINS
 
       - uses: actions/download-artifact@v4
@@ -121,6 +123,8 @@ jobs:
           assert len(paths)==1
           with gzip.open(paths[0],'rt') as f: r=json.load(f)
           assert r['blind_exclusion']==[20.0,55.0]
+          assert r['stats']['dead_medoid_elision'] is True
+          assert r['stats']['dead_medoid_probe_equivalent'] is True
           for k in ['target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access','sonotaco_2013_2014_access','gmn_2023_access']:
               assert r[k] is False
           print('PASS_RFT_REPLICA_SHARD_FIREWALL',r['replica'])
@@ -168,8 +172,9 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py)" = '2a599c6e8247eb819a1090591d586526eda6c0c1'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8a10e18daa6ba5bf99864a67e8cd059704695735'
-          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard.py)" = '274315df314a2c9170f7b89c248524fc29fd6c8b'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard.py)" = '4db37025cdd28a111286c42b42e183ed3e26ef5f'
           test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py)" = '96cda8f4de824373b4b214299b1def3d0dd8e163'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/dead_medoid_atomizer.py)" = 'c448055e500baf761a88a8823ae051ae59e9e436'
 
       - uses: actions/download-artifact@v4
         with:
