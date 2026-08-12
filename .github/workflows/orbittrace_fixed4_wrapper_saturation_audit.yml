@@ -30,7 +30,7 @@ jobs:
       - name: Check out binding branch
         uses: actions/checkout@v4
         with:
-          fetch-depth: 4
+          fetch-depth: 5
 
       - name: Assert no post-freeze scientific-code change
         shell: bash
@@ -103,7 +103,7 @@ jobs:
           python orbittrace_gmn_rank_gaussian_fisher_oof_v1/run_development.py \
             --fixture-root input/fixture \
             --quality-source input/ranker/run_urc_union_ranker.py \
-            --output output | tee output/binding_stdout.json
+            --output output 2>&1 | tee output/binding_combined.log
 
       - name: Record binding provenance
         if: always()
