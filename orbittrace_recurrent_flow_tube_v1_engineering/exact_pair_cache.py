@@ -12,6 +12,7 @@ def make_exact_cached_pair_d(mod: Any) -> tuple[Callable[[dict[str, Any], dict[s
     calls reuse that exact vector and evaluate the identical dot/clip/acos/log/
     hypot expressions. Event objects are immutable during atomization.
     """
+    frozen_unit = mod.unit
     unit_by_object: dict[int, Any] = {}
     stats = {"vector_hits": 0, "vector_misses": 0, "pair_calls": 0}
 
@@ -22,7 +23,7 @@ def make_exact_cached_pair_d(mod: Any) -> tuple[Callable[[dict[str, Any], dict[s
             stats["vector_hits"] += 1
             return u
         stats["vector_misses"] += 1
-        u = mod.unit(mod.np.asarray([e["lon"]]), mod.np.asarray([e["lat"]]))[0]
+        u = frozen_unit(mod.np.asarray([e["lon"]]), mod.np.asarray([e["lat"]]))[0]
         unit_by_object[key] = u
         return u
 
