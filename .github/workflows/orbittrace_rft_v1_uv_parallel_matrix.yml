@@ -1,0 +1,241 @@
+name: OrbitTrace RFT v1 UV-parallel resilient matrix GMN 2022
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-rft-v1-exact-pair-optimization
+    paths:
+      - '.github/workflows/orbittrace_rft_v1_uv_parallel_matrix.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  RFT_BIN_WORKERS: '4'
+
+jobs:
+  replica:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        replica: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact runtime and verify UV-parallel source pins
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/v8 input/ranker output scratch
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py)" = '2a599c6e8247eb819a1090591d586526eda6c0c1'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8a10e18daa6ba5bf99864a67e8cd059704695735'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/dead_medoid_atomizer.py)" = 'c448055e500baf761a88a8823ae051ae59e9e436'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/uv_direct_atomizer.py)" = 'f14302fcc8258c16e514859cf927e895942853c1'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/direct_replica_builder.py)" = '0277fe069835ca832e82124ba4cc88a06f8021fe'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/parallel_uv_bin_atomizer.py)" = '4ecaa880c4212bed9baf719268704cf816fe3593'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/uv_parallel_replica_builder.py)" = 'a94343f87c6021eb7da03dcf095378272fea97d3'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard_uv_parallel.py)" = '1602e015f2dc16bcb4efedde840a27398ce4d77d'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py)" = '96cda8f4de824373b4b214299b1def3d0dd8e163'
+          python -m py_compile \
+            orbittrace_recurrent_flow_tube_v1_engineering/dead_medoid_atomizer.py \
+            orbittrace_recurrent_flow_tube_v1_engineering/uv_direct_atomizer.py \
+            orbittrace_recurrent_flow_tube_v1_engineering/direct_replica_builder.py \
+            orbittrace_recurrent_flow_tube_v1_engineering/parallel_uv_bin_atomizer.py \
+            orbittrace_recurrent_flow_tube_v1_engineering/uv_parallel_replica_builder.py \
+            orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard_uv_parallel.py \
+            orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py
+          echo PASS_RFT_UV_PARALLEL_MATRIX_SOURCE_PINS
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify frozen GMN runtime utility source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Verify runtime-support artifact only
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Build one UV-parallel target-excluded GMN 2022 RFT replica
+        env:
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/run_replica_shard_uv_parallel.py \
+            --replica '${{ matrix.replica }}' \
+            --shard-output 'output/rft_v1_replica_${{ matrix.replica }}.json.gz' \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output scratch
+
+      - name: Verify replica firewall and exact-output gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip,json,glob
+          paths=glob.glob('output/rft_v1_replica_*.json.gz')
+          assert len(paths)==1
+          with gzip.open(paths[0],'rt') as f: r=json.load(f)
+          s=r['stats']
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert s['dead_medoid_elision'] is True
+          assert s['uv_direct_probe_equivalent'] is True
+          assert s['parallel_uv_bin_probe_equivalent'] is True
+          assert s['parallel_uv_bin_atomization'] is True
+          for k in ['target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access','sonotaco_2013_2014_access','gmn_2023_access']:
+              assert r[k] is False
+          print('PASS_RFT_UV_PARALLEL_REPLICA_FIREWALL',r['replica'],s)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-v1-uv-parallel-replica-${{ matrix.replica }}
+          path: output/rft_v1_replica_${{ matrix.replica }}.json.gz
+          if-no-files-found: error
+          retention-days: 90
+
+  aggregate:
+    needs: replica
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact aggregation runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/v8 input/ranker input/shards output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py)" = '2a599c6e8247eb819a1090591d586526eda6c0c1'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8a10e18daa6ba5bf99864a67e8cd059704695735'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py)" = '96cda8f4de824373b4b214299b1def3d0dd8e163'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-v1-uv-parallel-replica-*
+          path: input/shards
+          merge-multiple: true
+
+      - name: Aggregate exact replica tubes and score frozen RFT v1
+        env:
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/aggregate_replica_shards.py \
+            --shards-dir input/shards \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce final engineering role and protected-data firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RFT_V1_GMN2022_DEVELOPMENT.json'))
+          e=json.load(open('output/ENGINEERING_CACHE_REPORT.json'))
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_DEVELOPMENT_ONLY'
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['gmn_2023_access'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['target_information_access'] is False
+          assert r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert e['role']=='ENGINEERING_EQUIVALENCE_ONLY'
+          assert e['scientific_changes'] is False
+          assert e['gmn_2023_access'] is False
+          assert e['sonotaco_access'] is False
+          print('RFT_UV_PARALLEL_MATRIX_ENGINEERING_RESULT',r['verdict'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rft-v1-uv-parallel-matrix-gmn2022
+          path: output
+          if-no-files-found: error
+          retention-days: 90
