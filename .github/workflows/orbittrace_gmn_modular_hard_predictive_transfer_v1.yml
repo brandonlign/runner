@@ -1,0 +1,189 @@
+name: OrbitTrace GMN modular hard predictive transfer v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-gmn-modular-hard-predictive-transfer-v1
+    paths:
+      - 'orbittrace_gmn_modular_hard_predictive_transfer_v1/**'
+      - '.github/workflows/orbittrace_gmn_modular_hard_predictive_transfer_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact runtime and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/v8 input/p19 input/p20 input/ranker input/authorizers/hard input/authorizers/union input/authorizers/hardslot output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          ( cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py )
+          test "$(cat frozen-v8/output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          test "$(git hash-object orbittrace_gmn_predictive_consistency_diagnostic_v1/run_development.py)" = '25d91e92c41f83416ad87766c2d96884c30b714c'
+          test "$(git hash-object orbittrace_gmn_modular_hard_predictive_transfer_v1/PROTOCOL.md)" = 'cdcf83cde0d8dad6abb3e43bca4bbc98e6a3af76'
+          test "$(git hash-object orbittrace_gmn_modular_hard_predictive_transfer_v1/run_development.py)" = 'cad05f949ff86fd7694f5c2430711bcb0e1bc619'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-gmn-predictive-consistency-diagnostic-v1
+          path: input/authorizers/hard
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31560470070
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-gmn-predictive-consistency-union-diagnostic-v1
+          path: input/authorizers/union
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31561024725
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-gmn-hard-slot-predictive-consistency-v1
+          path: input/authorizers/hardslot
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31561474296
+      - name: Verify exact GMN authorizers
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          h=json.load(open('input/authorizers/hard/GMN_PREDICTIVE_CONSISTENCY_DIAGNOSTIC_V1.json'))
+          u=json.load(open('input/authorizers/union/GMN_PREDICTIVE_CONSISTENCY_UNION_DIAGNOSTIC_V1.json'))
+          s=json.load(open('input/authorizers/hardslot/GMN_HARD_SLOT_PREDICTIVE_CONSISTENCY_V1.json'))
+          assert h['verdict']=='PASS_GMN_PREDICTIVE_CONSISTENCY_SIGNAL'
+          assert h['baseline']['recovered_at_100']==59 and h['equal_rank_fusion']['recovered_at_100']==62
+          assert h['prelabel_sha256']=='af936dab0ac0e13ec27de74d220cdff8b586dd0a81a1f60157dc26d60818ffa0'
+          assert u['verdict']=='FAIL_GMN_PREDICTIVE_CONSISTENCY_UNION_SIGNAL'
+          assert u['baseline']['recovered_at_100']==75 and u['fused']['recovered_at_100']==69
+          assert s['verdict']=='FAIL_GMN_HARD_SLOT_PREDICTIVE_CONSISTENCY_V1'
+          assert s['baseline']['recovered_at_100']==75 and s['successor']['recovered_at_100']==71
+          assert s['soft_absolute_slots_unchanged'] is True
+          for r in (h,u,s):
+            assert r['sonotaco_2013_2014_access'] is False and r['target_information_access'] is False and r['target_region_events_accessed'] is False
+            assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print('PASS_MODULAR_HARD_GMN_AUTHORIZERS')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify active #839 source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          PYTHONPATH=input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8 python -m py_compile orbittrace_gmn_predictive_consistency_diagnostic_v1/run_development.py orbittrace_gmn_modular_hard_predictive_transfer_v1/run_development.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p20-recurrent-isolated-quartet-development
+          path: input/p20
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31341591263
+      - name: Verify immutable target-excluded GMN universe
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/p19/p19_subthreshold_reciprocal_recurrence_development.json | cut -d' ' -f1)" = '6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319'
+          test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
+          test "$(sha256sum input/p20/p20_recurrent_isolated_quartet_development.json | cut -d' ' -f1)" = '9ec53f29281b11002a9e22b1086d12e054392e466ea74fe82ead0187289ba303'
+          test "$(sha256sum input/p20/p20_prelabel_payload.json | cut -d' ' -f1)" = '8ca358ae0f3ac96b188de9eac7bcfd6f870470873a2b7ee73b7ae76497c12734'
+      - name: Run binding modular hard predictive transfer
+        env:
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_modular_hard_predictive_transfer_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --predictive-source orbittrace_gmn_predictive_consistency_diagnostic_v1/run_development.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --p19-result-json input/p19/p19_subthreshold_reciprocal_recurrence_development.json \
+            --p19-prelabel-json input/p19/p19_prelabel_payload.json \
+            --p20-result-json input/p20/p20_recurrent_isolated_quartet_development.json \
+            --p20-prelabel-json input/p20/p20_prelabel_payload.json \
+            --output output
+      - name: Enforce modular slot preservation and protected-data firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/GMN_MODULAR_HARD_PREDICTIVE_TRANSFER_V1.json'))
+          p=json.load(open('output/GMN_MODULAR_HARD_PREDICTIVE_PRELABEL.json'))
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_MODULAR_SOURCE_SLOT_TRANSFER'
+          assert r['candidate_counts']=={'hard':226,'p19':1075,'p20':3203,'union':4504}
+          assert r['hard_slot_count']==226 and r['soft_absolute_slots_unchanged'] is True
+          assert r['p19_relative_order_unchanged'] is True and r['p20_relative_order_unchanged'] is True
+          assert r['additional_fusion_with_839_hard_order'] is False
+          assert r['parameter_search'] is False and r['slot_rule_search'] is False and r['source_partition_search'] is False
+          assert r['family_deletion'] is False and r['membership_changed'] is False and r['candidate_generation_recomputed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          for x in (r,p):
+            assert x['sonotaco_2013_2014_access'] is False and x['target_information_access'] is False and x['target_region_events_accessed'] is False
+            assert x['maarsy_scientific_access'] is False and x['dms_scientific_access'] is False
+          print('PASS_GMN_MODULAR_HARD_TRANSFER_FIREWALL',r['verdict'])
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_gmn_modular_hard_predictive_transfer_v1/PROTOCOL.md orbittrace_gmn_modular_hard_predictive_transfer_v1/run_development.py orbittrace_gmn_predictive_consistency_diagnostic_v1/run_development.py input/ranker/run_urc_union_ranker.py > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/development_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-modular-hard-predictive-transfer-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
