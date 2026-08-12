@@ -1,11 +1,11 @@
-name: OrbitTrace fixed4 wrapper saturation audit
+name: OrbitTrace GMN member-scatter representation v1
 
 on:
   push:
     branches:
-      - agent/orbittrace-fixed4-wrapper-saturation-audit
+      - agent/orbittrace-gmn-member-scatter-representation-v1
     paths:
-      - orbittrace_fixed4_wrapper_audit/**
+      - orbittrace_gmn_member_scatter_representation_v1/**
       - .github/workflows/orbittrace_fixed4_wrapper_saturation_audit.yml
   workflow_dispatch:
 
@@ -14,187 +14,162 @@ permissions:
   actions: read
 
 concurrency:
-  group: orbittrace-fixed4-wrapper-saturation-audit
+  group: orbittrace-gmn-member-scatter-representation-v1
   cancel-in-progress: false
 
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
 jobs:
-  audit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      BROAD_ARTIFACT_ID: '8957230278'
-      BROAD_ARTIFACT_SHA256: '2ee3d5c9edf299c0f9ea69b2d6254d7918e0aa659f8cc2c659bb99ff2dfc0d17'
-      CAL_SCAN_ARTIFACT_ID: '8958042095'
-      CAL_SCAN_ARTIFACT_SHA256: '3ce72dde553cf58c6d4b9e734c29558a0f2bbefee664ba98189f4e90e821c596'
-      CAL_REVEAL_ARTIFACT_ID: '8958194010'
-      CAL_REVEAL_ARTIFACT_SHA256: '74c95a3fd59650126a2a298fc1bab5cc055caa91bff2feae6c9256521fdc00aa'
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/orbittrace-fixed4-wrapper-saturation-audit
-      - name: Retrieve exact frozen artifacts
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+          ref: agent/orbittrace-gmn-member-scatter-representation-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact runtime and verify frozen successor source
         run: |
           set -euo pipefail
-          mkdir -p input/broad input/cal_scan input/cal_reveal output
-          fetch_artifact() {
-            local id="$1" out="$2"
-            curl --fail-with-body -L \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
-              -o "${out}"
-          }
-          fetch_artifact "${BROAD_ARTIFACT_ID}" input/broad.zip
-          fetch_artifact "${CAL_SCAN_ARTIFACT_ID}" input/cal_scan.zip
-          fetch_artifact "${CAL_REVEAL_ARTIFACT_ID}" input/cal_reveal.zip
-          echo "${BROAD_ARTIFACT_SHA256}  input/broad.zip" | sha256sum -c -
-          echo "${CAL_SCAN_ARTIFACT_SHA256}  input/cal_scan.zip" | sha256sum -c -
-          echo "${CAL_REVEAL_ARTIFACT_SHA256}  input/cal_reveal.zip" | sha256sum -c -
-          unzip -q input/broad.zip -d input/broad
-          unzip -q input/cal_scan.zip -d input/cal_scan
-          unzip -q input/cal_reveal.zip -d input/cal_reveal
-      - name: Audit ranking saturation
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/v3 input/parent output
+          test "$(git hash-object orbittrace_gmn_member_scatter_representation_v1/PROTOCOL.md)" = '9e74bcda9d8c2d9a112ad1f05469e7697bf2fddd'
+          test "$(git hash-object orbittrace_gmn_member_scatter_representation_v1/run_development.py)" = '94310f14080a65ea847e290f30eb2180423ce856'
+          python -m py_compile orbittrace_gmn_member_scatter_representation_v1/run_development.py
+      - name: Restore exact promoted-v8 runtime and #1194 parent source
+        run: |
+          set -euo pipefail
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          git fetch --no-tags --depth=1 origin a2d11f45cd6e5d6a3f80738a43e04962162abd23
+          git show FETCH_HEAD:orbittrace_gmn_representative_share_ranking_v1/run_development.py > input/parent/run_development.py
+          test "$(git hash-object input/parent/run_development.py)" = '340f9d54b42ba2500652d7f0a74f22bbd3354f2e'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p20-recurrent-isolated-quartet-development
+          path: input/p20
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31341591263
+      - name: Verify immutable development inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/p19/p19_subthreshold_reciprocal_recurrence_development.json | cut -d' ' -f1)" = '6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319'
+          test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
+          test "$(sha256sum input/p20/p20_recurrent_isolated_quartet_development.json | cut -d' ' -f1)" = '9ec53f29281b11002a9e22b1086d12e054392e466ea74fe82ead0187289ba303'
+          test "$(sha256sum input/p20/p20_prelabel_payload.json | cut -d' ' -f1)" = '8ca358ae0f3ac96b188de9eac7bcfd6f870470873a2b7ee73b7ae76497c12734'
+          python -m py_compile input/parent/run_development.py input/ranker/run_urc_union_ranker.py
+      - name: Run sole frozen member-scatter successor
+        env:
+          ORBITTRACE_REPRESENTATIVE_SHARE_PARENT_SOURCE: input/parent/run_development.py
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_member_scatter_representation_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --p19-result-json input/p19/p19_subthreshold_reciprocal_recurrence_development.json \
+            --p19-prelabel-json input/p19/p19_prelabel_payload.json \
+            --p20-result-json input/p20/p20_recurrent_isolated_quartet_development.json \
+            --p20-prelabel-json input/p20/p20_prelabel_payload.json \
+            --output output
+      - name: Enforce binding schema and firewall
         run: |
           set -euo pipefail
           python - <<'PY'
-          import gzip
           import json
-          from collections import Counter
-          from pathlib import Path
-
-          def unique(root: str, name: str) -> Path:
-              found = list(Path(root).rglob(name))
-              if len(found) != 1:
-                  raise RuntimeError(f'expected one {name} under {root}, found {found}')
-              return found[0]
-
-          broad_scan = json.loads(unique('input/broad', 'blind_scan.json').read_text(encoding='utf-8'))
-          broad_reveal = json.loads(unique('input/broad', 'orbittrace_blind_reveal.json').read_text(encoding='utf-8'))
-          with gzip.open(unique('input/cal_scan', 'orbittrace_fixed4_blind_scan.json.gz'), 'rt', encoding='utf-8') as handle:
-              calibrated_scan = json.load(handle)
-          calibrated_reveal = json.loads(unique('input/cal_reveal', 'orbittrace_fixed4_blind_reveal.json').read_text(encoding='utf-8'))
-
-          threshold_support = {}
-          complete_saturation = True
-          for threshold in ('1.5', '2', '2.5'):
-              families = broad_scan['families'][threshold]
-              if len(families) != 5000:
-                  raise RuntimeError(f'unexpected family count at {threshold}: {len(families)}')
-              counts = Counter(int(f['support']) for f in families)
-              threshold_support[threshold] = {str(k): int(v) for k, v in sorted(counts.items())}
-              complete_saturation &= counts == Counter({8: 5000})
-
-          availability = broad_reveal['canonical_availability']
-          canonical_by_year = {
-              str(year): int(record['present_in_blind_catalogue'])
-              for year, record in sorted(availability.items())
-          }
-          quartet_capable_years = [year for year, count in canonical_by_year.items() if count >= 4]
-          if sum(canonical_by_year.values()) != 101:
-              raise RuntimeError('canonical availability does not sum to 101')
-
-          selected = calibrated_reveal['selected_family']
-          if not (
-              calibrated_reveal['verdict'] == 'PARTIAL_BLIND_ORBITTRACE_RECOVERY'
-              and selected['family_id'] == 'F0059'
-              and selected['rank'] == 59
-              and selected['year_count'] == 4
-              and selected['event_count'] == 39
-              and selected['canonical_overlap'] == 29
-          ):
-              raise RuntimeError('calibrated reveal invariants changed')
-          family = next(f for f in calibrated_scan['families'] if f['family_id'] == 'F0059')
-          if family['year_count'] != 4 or family['rank'] != 59:
-              raise RuntimeError('calibrated scan family invariants changed')
-
-          minimum_broad_support = min(
-              int(f['support'])
-              for threshold in ('1.5', '2', '2.5')
-              for f in broad_scan['families'][threshold]
-          )
-          classification = (
-              'PERSISTENCE_RANKING_SATURATION_CONFIRMED'
-              if complete_saturation and selected['year_count'] < minimum_broad_support
-              else 'NO_COMPLETE_PERSISTENCE_SATURATION'
-          )
-          result = {
-              'classification': classification,
-              'broad_threshold_support_distributions': threshold_support,
-              'broad_preserved_families_per_threshold': 5000,
-              'broad_minimum_preserved_year_support': minimum_broad_support,
-              'broad_canonical_availability_by_year': canonical_by_year,
-              'broad_quartet_capable_canonical_years': quartet_capable_years,
-              'broad_quartet_capable_year_count': len(quartet_capable_years),
-              'calibrated_selected_family': {
-                  'family_id': selected['family_id'],
-                  'rank': selected['rank'],
-                  'year_count': selected['year_count'],
-                  'years': selected['years'],
-                  'event_count': selected['event_count'],
-                  'canonical_overlap': selected['canonical_overlap'],
-                  'precision': selected['precision'],
-              },
-              'interpretation': (
-                  'The broad negative is valid for its frozen persistence-first wrapper, but its reveal set '
-                  'contains no family with fewer than eight years. It therefore does not provide a balanced '
-                  'negative test of four-year episodic recurrence and cannot be treated as an equal-strength '
-                  'refutation of the calibrated partial recovery.'
-              ),
-              'authorized_next_step': (
-                  'Develop and freeze a support-normalized generic catalogue ranking using only known '
-                  'non-OrbitTrace showers after removing solar longitude 20-55 degrees before labels and endpoints.'
-              ),
-          }
-          Path('output/orbittrace_fixed4_wrapper_saturation_audit.json').write_text(
-              json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8'
-          )
-          md = f'''# OrbitTrace fixed4 wrapper-saturation audit
-
-Classification: `{classification}`
-
-## Broad ranked-quartet wrapper
-
-All three preserved top-5,000 lists were saturated by eight-year families:
-
-- threshold 1.5: `{threshold_support['1.5']}`
-- threshold 2.0: `{threshold_support['2']}`
-- threshold 2.5: `{threshold_support['2.5']}`
-
-The minimum year support anywhere in the preserved broad reveal set was **{minimum_broad_support}**.
-
-Canonical OrbitTrace availability was `{canonical_by_year}`. Only **{len(quartet_capable_years)}** years contained at least four canonical events: `{quartet_capable_years}`.
-
-## Calibrated component wrapper
-
-Family **F0059** ranked **59/780**, spanned **4 years**, contained **29/39** exact canonical members, and had precision **{selected['precision']:.4f}**.
-
-## Interpretation
-
-The broad negative remains a valid result for its persistence-first wrapper. It is not an equally informative refutation of episodic recovery because every preserved family had eight-year support, whereas the independently recovered OrbitTrace family had four-year support. The conflict is therefore explained primarily by ranking saturation, not by disagreement in the fixed four-clique core.
-
-The next authorized development is a support-normalized generic ranking trained and selected only on non-OrbitTrace showers after removing solar longitude 20–55° before labels and endpoints.
-'''
-          Path('output/ORBITTRACE_FIXED4_WRAPPER_SATURATION_AUDIT.md').write_text(md, encoding='utf-8')
-          print(md)
-          if classification != 'PERSISTENCE_RANKING_SATURATION_CONFIRMED':
-              raise SystemExit('frozen saturation classification did not pass')
+          r=json.load(open('output/GMN_MEMBER_SCATTER_REPRESENTATION_V1.json'))
+          assert r['verdict'] in {'PASS_GMN_MEMBER_SCATTER_REPRESENTATION_V1','FAIL_GMN_MEMBER_SCATTER_REPRESENTATION_V1'}
+          assert r['candidate_counts']=={'hard':226,'p19':1075,'p20':3203,'union':4504}
+          assert r['feature_dimensions']=={'parent':34,'scatter_added':20,'successor':54}
+          assert len(r['scatter_feature_names'])==20
+          p=r['parent']
+          assert p['recovered_at_25']==22 and p['recovered_at_50']==43 and p['recovered_at_100']==80 and p['recovered_at_500']==171
+          assert p['qualified_matches']==256
+          assert abs(p['top100_dominant_precision']-0.8075287489258385)<1e-12
+          assert abs(p['mrr']-0.02016666446026534)<1e-12
+          assert r['parent_order_sha256']=='a2f365e0a35fc3e8eef39022128c0444448671ab4c4d4b45c89f718de4505592'
+          assert r['target_changed'] is False and r['folds_changed'] is False and r['sample_weights_changed'] is False
+          assert r['estimator_changed'] is False and r['diversity_changed'] is False
+          assert r['family_membership_changed'] is False and r['candidate_identity_changed'] is False
+          assert r['representation_search'] is False and r['feature_selection'] is False and r['post_result_second_search'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['sonotaco_2013_2014_access'] is False and r['sonotaco_feature_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print(json.dumps({'verdict':r['verdict'],'successor':r['successor'],'gates':r['gates'],'scatter_sha256':r['scatter_matrix_sha256']},indent=2,sort_keys=True))
           PY
-      - name: Record provenance
+      - name: Record binding provenance
         if: always()
         run: |
+          set +e
           mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
           sha256sum \
-            orbittrace_fixed4_wrapper_audit/PROTOCOL.md \
-            input/broad.zip input/cal_scan.zip input/cal_reveal.zip \
-            > output/source_and_input_sha256.txt 2>/dev/null || true
-      - name: Upload audit evidence
+            orbittrace_gmn_member_scatter_representation_v1/PROTOCOL.md \
+            orbittrace_gmn_member_scatter_representation_v1/run_development.py \
+            input/parent/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            input/p19/p19_prelabel_payload.json \
+            input/p20/p20_prelabel_payload.json \
+            > output/binding_provenance_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-fixed4-wrapper-saturation-audit
+          name: orbittrace-gmn-member-scatter-representation-v1
           path: output
           if-no-files-found: error
           retention-days: 90
