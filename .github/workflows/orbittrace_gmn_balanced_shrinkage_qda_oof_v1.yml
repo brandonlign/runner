@@ -1,0 +1,150 @@
+name: OrbitTrace GMN balanced shrinkage QDA OOF v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-gmn-balanced-shrinkage-qda-oof-v1
+    paths:
+      - 'orbittrace_gmn_balanced_shrinkage_qda_oof_v1/**'
+      - '.github/workflows/orbittrace_gmn_balanced_shrinkage_qda_oof_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-gmn-balanced-shrinkage-qda-oof-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact fixture-backed runtime and pin science
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/fixture output
+          test "$(git hash-object orbittrace_gmn_balanced_shrinkage_qda_oof_v1/PROTOCOL.md)" = '8cb8e4a7951e291ccf60772e1d5e3b4fbc3669fa'
+          test "$(git hash-object orbittrace_gmn_balanced_shrinkage_qda_oof_v1/run_development.py)" = '6c8ca119eee221460e6ea373e06e2c696d28a88f'
+          test "$(git hash-object orbittrace_gmn_balanced_shrinkage_qda_oof_v1/run_binding.py)" = '8da155fae71b5e916ba61f0efd8542cfeff249aa'
+          test "$(git hash-object orbittrace_gmn_v31_principle_local_geometry_oof_v1/run_development.py)" = 'b4e2d72e532e47aa95ed335f690748423d11ea59'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable ranker source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          PYTHONPATH=input/ranker:. python -m py_compile \
+            input/ranker/run_urc_union_ranker.py \
+            orbittrace_gmn_v31_principle_local_geometry_oof_v1/run_development.py \
+            orbittrace_gmn_balanced_shrinkage_qda_oof_v1/run_development.py \
+            orbittrace_gmn_balanced_shrinkage_qda_oof_v1/run_binding.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-gmn-development-fixture-v1
+          path: input/fixture
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31566749364
+      - name: Verify exact authorized GMN development fixture
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/fixture/GMN_DEVELOPMENT_FIXTURE_V1.json | cut -d' ' -f1)" = '823f0b6db68f5ba2c061d94ebcdfe6bf70f0df6b2819d6479f7d63e544ac651b'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/fixture/GMN_DEVELOPMENT_FIXTURE_V1.json'))
+          assert r['verdict']=='PASS_GMN_DEVELOPMENT_FIXTURE_V1' and r['scientific_change'] is False
+          assert r['candidate_count']==226 and r['feature_dimension']==23
+          assert r['feature_matrix_sha256']=='fea3b063772c75b675e37a227b53a4aa3c5b86fdcbfcef1487b1e1448689cdf5'
+          assert r['hard_order_sha256']=='2dcaaffaefca68e877fea82ff46a68bbd4c7960dedfdd00a114311d41605b65e'
+          assert r['parent_margin_sha256']=='f38c96e3fa4ea98f51217b36d639e96edbf3ebcb65123248f0f118d3298173bd'
+          assert r['fisher_scaled_sha256']=='9957292fbe41efa407b9bc5b1f4160cdc0899632135a10b56d2f91f04d54c46e'
+          assert r['fisher_metrics']['recovered_at_100']==69 and r['fisher_metrics']['qualified_matches']==95
+          assert r['future_fixture_use_requires_exact_hash_match'] is True
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print('PASS_QDA_FIXTURE_PROVENANCE')
+          PY
+      - name: Run first binding balanced shrinkage QDA successor
+        env:
+          PYTHONPATH: input/ranker:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_balanced_shrinkage_qda_oof_v1/run_binding.py \
+            --fixture-root input/fixture \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --output output
+      - name: Enforce binding QDA result and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/GMN_BALANCED_SHRINKAGE_QDA_OOF_RESULT.json'))
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_BALANCED_SHRINKAGE_QDA_ARCHITECTURAL_SUCCESSOR_ONLY'
+          assert r['first_valid_outcome_binding'] is True
+          assert r['candidate_count']==226 and r['feature_dimension']==23
+          assert r['fixture_verdict']=='PASS_GMN_DEVELOPMENT_FIXTURE_V1' and r['fixture_scientific_change'] is False
+          assert r['feature_matrix_sha256']=='fea3b063772c75b675e37a227b53a4aa3c5b86fdcbfcef1487b1e1448689cdf5'
+          assert r['parent_margin_sha256']=='f38c96e3fa4ea98f51217b36d639e96edbf3ebcb65123248f0f118d3298173bd'
+          assert r['fisher_reconstructed_scaled_sha256']=='9957292fbe41efa407b9bc5b1f4160cdc0899632135a10b56d2f91f04d54c46e'
+          assert r['fisher_parent']['recovered_at_100']==69 and r['fisher_parent']['recovered_at_50']==41
+          assert abs(r['fisher_parent']['top100_dominant_precision']-0.7677499561973543)<1e-15
+          assert abs(r['fisher_parent']['mrr']-0.05055989766869564)<1e-15
+          assert r['fisher_parent']['qualified_matches']==95
+          assert r['mechanism']=='equal-prior separate-class Ledoit-Wolf Gaussian quadratic discriminant'
+          assert r['class_prior']=='equal' and r['strict_whole_shower_oof'] is True
+          assert r['diversity']=={'lambda':0.8,'scale':1.0}
+          assert r['class_prior_search'] is False and r['covariance_pooling_search'] is False
+          assert r['covariance_estimator_search'] is False and r['regularization_search'] is False
+          assert r['feature_search'] is False and r['dimensionality_reduction_search'] is False
+          assert r['fisher_blend_search'] is False and r['probability_calibration_search'] is False
+          assert r['threshold_search'] is False and r['scale_statistic_search'] is False and r['unit_transform_search'] is False
+          assert r['diversity_search'] is False and r['fusion_search'] is False
+          assert r['candidate_generation_recomputed'] is False and r['membership_changed'] is False and r['family_deletion'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_GMN_QDA_FIREWALL',r['verdict'])
+          PY
+      - name: Preserve exact provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_gmn_balanced_shrinkage_qda_oof_v1/PROTOCOL.md \
+            orbittrace_gmn_balanced_shrinkage_qda_oof_v1/run_development.py \
+            orbittrace_gmn_balanced_shrinkage_qda_oof_v1/run_binding.py \
+            orbittrace_gmn_v31_principle_local_geometry_oof_v1/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/fixture/GMN_DEVELOPMENT_FIXTURE_V1.json \
+            > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-balanced-shrinkage-qda-oof-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
