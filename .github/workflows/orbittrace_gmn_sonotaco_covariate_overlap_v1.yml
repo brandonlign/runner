@@ -1,0 +1,184 @@
+name: OrbitTrace GMN-SonotaCo covariate-overlap diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-gmn-sonotaco-domainshift-diagnostic-v1
+    paths:
+      - 'orbittrace_gmn_sonotaco_covariate_overlap_v1/**'
+      - '.github/workflows/orbittrace_gmn_sonotaco_covariate_overlap_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-gmn-sonotaco-covariate-overlap-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 677d111986a72af0df7bc1e6f787fc745cc8ca3a
+          path: frozen-v17
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact runtime and audit frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/v8 input/p19 input/p20 input/ranker input/prepare input/domain output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py /tmp/purity_source.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          git fetch --no-tags --depth=1 origin d7f1b310905265403d493814c5117f09fc57319c
+          git show FETCH_HEAD:orbittrace_urc_union_ranking_lab_v2/run_lab.py > /tmp/purity_source.py
+          test "$(git hash-object /tmp/purity_source.py)" = '976ae788ec76a2da7035735ea62118c7289adc5e'
+          test "$(sha256sum /tmp/purity_source.py | cut -d' ' -f1)" = '7bbaa13b90ba10eb41f708b5aec6ebebd83e9c7c34018aa3f973b4aec086b96a'
+          test "$(git hash-object orbittrace_gmn_sonotaco_domainshift_diagnostic_v1/PROTOCOL.md)" = '526d5a07d529e8fb88ed13777fe8cb050d033b12'
+          test "$(git hash-object orbittrace_gmn_sonotaco_domainshift_diagnostic_v1/run_diagnostic.py)" = 'e5505688ae5d732a33f9b44b4b26ec265d46c281'
+          test "$(git hash-object orbittrace_gmn_sonotaco_covariate_overlap_v1/PROTOCOL.md)" = '7545f3f8a695e424a46ac9ff389030e5e65aa585'
+          test "$(git hash-object orbittrace_gmn_sonotaco_covariate_overlap_v1/run_diagnostic.py)" = 'c38776c2f4507c8dd8640c4ea1b95018ac7c3067'
+          test "$(git hash-object orbittrace_v29_purity_diversity_sonotaco_canonical_v1/run_candidate_pretruth.py)" = 'd110d247ecd7dde0202dcfcd3615330a8c73ac39'
+          test "$(git -C frozen-v17 hash-object orbittrace_v16_v15_joint_conformal_membership_v1/expand_candidate.py)" = '2c4230c05acf3e63b3b3aee204f2025b62f83aeb'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p20-recurrent-isolated-quartet-development
+          path: input/p20
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31341591263
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-gmn-sonotaco-domainshift-diagnostic-v1
+          path: input/domain
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31441669816
+      - name: Verify immutable truth-free inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/p19/p19_subthreshold_reciprocal_recurrence_development.json | cut -d' ' -f1)" = '6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319'
+          test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
+          test "$(sha256sum input/p20/p20_recurrent_isolated_quartet_development.json | cut -d' ' -f1)" = '9ec53f29281b11002a9e22b1086d12e054392e466ea74fe82ead0187289ba303'
+          test "$(sha256sum input/p20/p20_prelabel_payload.json | cut -d' ' -f1)" = '8ca358ae0f3ac96b188de9eac7bcfd6f870470873a2b7ee73b7ae76497c12734'
+          test "$(sha256sum input/prepare/base_2013.json | cut -d' ' -f1)" = 'f84e6db4166be065a73c7d030d66fdf796c1c6c2b5ee692f1e3299e8ae7c05ce'
+          test "$(sha256sum input/prepare/base_2014.json | cut -d' ' -f1)" = '1fab29c7368b63cc9c9d172dcadec5918d6514bfbb09f0f71e54eebb9bf32f00'
+          python - <<'PY'
+          import json
+          d=json.load(open('input/domain/GMN_SONOTACO_GENERIC_FEATURE_DOMAIN_SHIFT_DIAGNOSTIC_V1.json'))
+          assert d['verdict']=='PASS_TRUTH_FREE_DOMAIN_SHIFT_DIAGNOSTIC_COMPLETE'
+          assert abs(d['domain_classifier']['overall_roc_auc']-0.88356922921475)<1e-15
+          assert d['sonotaco_shower_truth_accessed'] is False
+          assert d['literature_evaluation_performed'] is False
+          m=json.load(open('input/prepare/label_free_preparation_manifest.json'))
+          assert m['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert m['shower_truth_accessed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False
+          PY
+          PYTHONPATH=input/ranker:.:frozen-v17:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8 python -m py_compile orbittrace_gmn_sonotaco_covariate_overlap_v1/run_diagnostic.py
+      - name: Run frozen truth-free covariate-overlap diagnostic
+        env:
+          PYTHONPATH: input/ranker:.:frozen-v17:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_sonotaco_covariate_overlap_v1/run_diagnostic.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --purity-source /tmp/purity_source.py \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --p19-result-json input/p19/p19_subthreshold_reciprocal_recurrence_development.json \
+            --p19-prelabel-json input/p19/p19_prelabel_payload.json \
+            --p20-result-json input/p20/p20_recurrent_isolated_quartet_development.json \
+            --p20-prelabel-json input/p20/p20_prelabel_payload.json \
+            --prepared input/prepare \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --expected-domainshift-json input/domain/GMN_SONOTACO_GENERIC_FEATURE_DOMAIN_SHIFT_DIAGNOSTIC_V1.json \
+            --output output
+      - name: Enforce frozen diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/GMN_SONOTACO_COVARIATE_OVERLAP_DIAGNOSTIC_V1.json'))
+          assert r['verdict'] in {'PASS_COVARIATE_OVERLAP_V1_IMPORTANCE_WEIGHTING_FEASIBLE','FAIL_COVARIATE_OVERLAP_V1_IMPORTANCE_WEIGHTING_INFEASIBLE'}
+          assert abs(r['baseline_domain_auc']-0.88356922921475)<1e-12
+          assert r['feature_dimension']==21 and r['feature_representation_changed'] is False
+          assert set(r['by_source_gmn_weight_stats'])=={'hard','p19','p20'}
+          assert set(r['overlap_coefficient_by_source'])=={'hard','p19','p20'}
+          for k in ('weight_clipping_or_trimming','weight_exponent_or_temperature_search','alternate_density_ratio_estimator_search','scientific_shower_ranker_trained','sonotaco_shower_truth_accessed','literature_evaluation_performed','matched_comparator_rows_used','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access','post_result_second_search'):
+              assert r[k] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_gmn_sonotaco_covariate_overlap_v1/PROTOCOL.md orbittrace_gmn_sonotaco_covariate_overlap_v1/run_diagnostic.py input/domain/GMN_SONOTACO_GENERIC_FEATURE_DOMAIN_SHIFT_DIAGNOSTIC_V1.json > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/diagnostic_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-sonotaco-covariate-overlap-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
