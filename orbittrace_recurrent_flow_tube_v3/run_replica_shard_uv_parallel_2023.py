@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 YEAR = 2023
 YEARS = (YEAR,)
 MONTH_KEYS = tuple(f"{YEAR}-{m:02d}" for m in range(1, 13))
+DEV_RESULT_SHA256 = "d5ddbdf5f14a76588924f66a3cb138b888e83071fc3c29fd6522a374b44a37b6"
+DEV_PRELABEL_SHA256 = "856c874b49be03a019c7f96780832ada8094b4771527478a4cac6afd3e150c35"
 MEMO_BLOB = "8a10e18daa6ba5bf99864a67e8cd059704695735"
 CACHED_BLOB = "2a599c6e8247eb819a1090591d586526eda6c0c1"
 FROZEN_BLOB = "a5d5371f0c30a9c57ee4d8756ea41f454cd86301"
@@ -33,6 +36,15 @@ def blob(path: Path) -> str:
     return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
 
 
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def req(ok: bool, msg: str) -> None:
+    if not ok:
+        raise RuntimeError(msg)
+
+
 def load(path: Path, name: str) -> Any:
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
@@ -43,11 +55,53 @@ def load(path: Path, name: str) -> Any:
     return mod
 
 
+def authorize_development(result_path: Path, prelabel_path: Path) -> None:
+    # This function must complete before any GMN 2023 runtime/catalogue is loaded.
+    req(sha256(result_path) == DEV_RESULT_SHA256, "RFT v3 development-result authorizer changed")
+    req(sha256(prelabel_path) == DEV_PRELABEL_SHA256, "RFT v3 development-prelabel authorizer changed")
+    r = json.loads(result_path.read_text())
+    pre = json.loads(prelabel_path.read_text())
+    req(r["verdict"] == "FAIL_RFT_V2_GMN2022_DEVELOPMENT_VIABILITY", "RFT v2 binding verdict was rewritten")
+    owned = r["ablations"]["owned_soft_evidence"]
+    exact = {
+        "eligible_labels": 359,
+        "qualified_matches": 133,
+        "recovered_at_25": 18,
+        "recovered_at_50": 33,
+        "recovered_at_100": 60,
+        "recovered_at_500": 120,
+        "top100_dominant_precision": 0.6602954645802933,
+        "mrr": 0.03157184203024598,
+        "fragmentation_median_top500": 1.0,
+    }
+    for key, value in exact.items():
+        if isinstance(value, float):
+            req(math.isclose(float(owned[key]), value, rel_tol=0.0, abs_tol=1e-15), f"owned-soft development metric changed: {key}")
+        else:
+            req(int(owned[key]) == value, f"owned-soft development metric changed: {key}")
+    req(int(owned["qualified_matches"]) >= 120, "owned-soft development coverage gate failed")
+    req(int(owned["recovered_at_100"]) >= 55, "owned-soft development top100 gate failed")
+    req(float(owned["top100_dominant_precision"]) >= 0.60, "owned-soft development precision gate failed")
+    req(float(owned["fragmentation_median_top500"]) <= 3.0, "owned-soft development fragmentation gate failed")
+    req(r["prelabel_sha256"] == DEV_PRELABEL_SHA256, "development result/prelabel linkage changed")
+    req(pre["labels_enter_candidate_generation"] is False and r["labels_enter_candidate_generation"] is False, "development label firewall changed")
+    req(pre["blind_exclusion"] == [20.0, 55.0] and r["blind_exclusion"] == [20.0, 55.0], "development blind changed")
+    for key in ("target_information_access", "target_region_events_accessed", "maarsy_scientific_access", "dms_scientific_access", "sonotaco_2013_2014_access", "gmn_2023_access"):
+        req(pre[key] is False and r[key] is False, f"development authorizer has forbidden access: {key}")
+
+
 def main() -> int:
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--replica", type=int, required=True)
     pre.add_argument("--shard-output", type=Path, required=True)
+    pre.add_argument("--development-result", type=Path, required=True)
+    pre.add_argument("--development-prelabel", type=Path, required=True)
     a, remaining = pre.parse_known_args(sys.argv[1:])
+
+    # Absolute pre-access authorizer. Nothing below this line may load GMN 2023
+    # unless the exact preregistered GMN 2022 development evidence is intact.
+    authorize_development(a.development_result, a.development_prelabel)
+    print("PASS_RFT_V3_GMN2023_PREACCESS_AUTHORIZER", flush=True)
 
     here = Path(__file__).resolve().parents[1] / "orbittrace_recurrent_flow_tube_v1_engineering"
     paths = {
@@ -109,6 +163,8 @@ def main() -> int:
             "direct_replica_builder_blob": DIRECT_BLOB,
             "parallel_uv_bin_atomizer_blob": PUV_BLOB,
             "uv_parallel_builder_blob": BUILDER_BLOB,
+            "development_result_sha256": DEV_RESULT_SHA256,
+            "development_prelabel_sha256": DEV_PRELABEL_SHA256,
             "heldout_year": YEAR,
             "blind_exclusion": list(mod.BLIND),
             "target_information_access": False,
