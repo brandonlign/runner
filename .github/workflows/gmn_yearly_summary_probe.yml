@@ -1,0 +1,44 @@
+name: GMN yearly-summary probe
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - dynamics_summary_probe/**
+      - .github/workflows/gmn_yearly_summary_probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gmn-yearly-summary-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/stream-fdr-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile probe
+        run: python -m py_compile dynamics_summary_probe/probe_yearly_summaries.py
+      - name: Probe official yearly summaries
+        run: python dynamics_summary_probe/probe_yearly_summaries.py
+      - name: Record provenance
+        run: |
+          sha256sum dynamics_summary_probe/probe_yearly_summaries.py > dynamics_summary_probe/results/source_sha256.txt
+          python --version > dynamics_summary_probe/results/python_version.txt
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmn-yearly-summary-probe
+          path: dynamics_summary_probe/results
+          if-no-files-found: error
+          retention-days: 90

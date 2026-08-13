@@ -1,0 +1,67 @@
+name: Shared-stream multi-network feasibility audit
+
+on:
+  push:
+    branches:
+      - agent/stream-fdr-stage0
+    paths:
+      - stream_fdr_stage0/audit_multinetwork.py
+      - .github/workflows/shared_stream_multinetwork_audit.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - stream_fdr_stage0/audit_multinetwork.py
+      - .github/workflows/shared_stream_multinetwork_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shared-stream-multinetwork-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/stream-fdr-stage0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile audit
+        run: python -m py_compile stream_fdr_stage0/audit_multinetwork.py
+      - name: Audit four public meteor catalogs
+        run: python stream_fdr_stage0/audit_multinetwork.py
+      - name: Record hashes
+        run: |
+          mkdir -p stream_fdr_stage0/results/multinetwork_audit
+          sha256sum stream_fdr_stage0/audit_multinetwork.py > stream_fdr_stage0/results/multinetwork_audit/source_sha256.txt
+          find stream_fdr_stage0/data/multinetwork -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > stream_fdr_stage0/results/multinetwork_audit/input_sha256.txt
+          python --version > stream_fdr_stage0/results/multinetwork_audit/python_version.txt
+      - name: Upload feasibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-stream-multinetwork-audit
+          path: stream_fdr_stage0/results/multinetwork_audit
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve audit results on runner branch
+        if: github.event_name == 'push'
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stream_fdr_stage0/results/multinetwork_audit
+          if git diff --cached --quiet; then
+            echo 'No audit result changes to commit.'
+          else
+            git commit -m 'Preserve shared-stream multi-network audit'
+            git pull --rebase origin agent/stream-fdr-stage0
+            git push origin HEAD:agent/stream-fdr-stage0
+          fi

@@ -1,0 +1,44 @@
+name: GMN dynamical data audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - dynamics_audit/**
+      - .github/workflows/dynamics_zenodo_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gmn-dynamical-data-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/stream-fdr-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile frozen audit
+        run: python -m py_compile dynamics_audit/audit_zenodo_gmn.py
+      - name: Run checksum-verified GMN audit
+        run: python dynamics_audit/audit_zenodo_gmn.py
+      - name: Record provenance
+        run: |
+          sha256sum dynamics_audit/audit_zenodo_gmn.py > dynamics_audit/results/source_sha256.txt
+          python --version > dynamics_audit/results/python_version.txt
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmn-dynamical-data-audit
+          path: dynamics_audit/results
+          if-no-files-found: error
+          retention-days: 90
