@@ -59,14 +59,16 @@ jobs:
           p=Path('implementation/run_development.py')
           s=p.read_text()
           old="def signed_delta(a,b): return (float(a)-float(b)+180.0)%360.0-180.0\ndef ks2(a,b):"
-          new="""def signed_delta(a,b): return (float(a)-float(b)+180.0)%360.0-180.0
-def radial_distance(e,c):
-    dlon=abs(signed_delta(e['sun_lon'],c['sun_lon']))/4.0
-    dlat=abs(float(e['ecl_lat'])-float(c['ecl_lat']))/4.0
-    ve=max(abs(float(e['vg'])),1e-6); vc=max(abs(float(c['vg'])),1e-6)
-    dv=abs(math.log(ve/vc))/math.log(1.10)
-    r=float(math.sqrt(dlon*dlon+dlat*dlat+dv*dv)); req(math.isfinite(r) and r>=0.0,'invalid radial distance'); return r
-def ks2(a,b):"""
+          new=(
+              "def signed_delta(a,b): return (float(a)-float(b)+180.0)%360.0-180.0\n"
+              "def radial_distance(e,c):\n"
+              "    dlon=abs(signed_delta(e['sun_lon'],c['sun_lon']))/4.0\n"
+              "    dlat=abs(float(e['ecl_lat'])-float(c['ecl_lat']))/4.0\n"
+              "    ve=max(abs(float(e['vg'])),1e-6); vc=max(abs(float(c['vg'])),1e-6)\n"
+              "    dv=abs(math.log(ve/vc))/math.log(1.10)\n"
+              "    r=float(math.sqrt(dlon*dlon+dlat*dlat+dv*dv)); req(math.isfinite(r) and r>=0.0,'invalid radial distance'); return r\n"
+              "def ks2(a,b):"
+          )
           assert s.count(old)==1
           s=s.replace(old,new)
           repl={
