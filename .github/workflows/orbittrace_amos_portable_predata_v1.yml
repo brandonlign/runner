@@ -41,19 +41,21 @@ jobs:
           test "$(git -C frozen-v8 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
           test "$(git -C frozen-v3 hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
           test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
-          python -m py_compile amos_portable_v15_v1/run.py amos_portable_v15_v1/guarded_run.py
-          sha256sum amos_portable_v15_v1/FREEZE.txt amos_portable_v15_v1/run.py amos_portable_v15_v1/guarded_run.py
+          python -m py_compile amos_portable_v15_v1/run.py amos_portable_v15_v1/guarded_run.py amos_portable_v15_v1/entrypoint.py
+          sha256sum amos_portable_v15_v1/FREEZE.txt amos_portable_v15_v1/run.py amos_portable_v15_v1/guarded_run.py amos_portable_v15_v1/entrypoint.py
       - name: Install exact inherited scientific runtime
         run: |
           python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
-      - name: Prove guarded imports come from frozen checkout
+      - name: Prove all runtime imports come from frozen checkouts
         env:
-          PYTHONPATH: frozen-v8:frozen-common:frozen-v3/orbittrace_multi_anchor_energy_v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8/orbittrace_sparse_support_multiplicity_v5:amos_portable_v15_v1
+          PYTHONPATH: ${{ github.workspace }}/frozen-common:${{ github.workspace }}/frozen-v8:${{ github.workspace }}/frozen-v3/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/frozen-v8/orbittrace_wavelet_catalogue_v3:${{ github.workspace }}/frozen-v8/orbittrace_sparse_support_multiplicity_v5:${{ github.workspace }}/amos_portable_v15_v1
+          ORBITTRACE_FROZEN_COMMON_ROOT: ${{ github.workspace }}/frozen-common
           ORBITTRACE_FROZEN_V8_ROOT: ${{ github.workspace }}/frozen-v8
         run: |
+          cd "$RUNNER_TEMP"
           python - <<'PY'
-          import guarded_run
-          guarded_run.guard_imports()
-          print('PASS_AMOS_PORTABLE_V15_PINNED_IMPORT_GUARD')
+          import entrypoint
+          entrypoint.guard_all()
+          print('PASS_AMOS_PORTABLE_V15_FULLY_PINNED_IMPORT_GUARD')
           PY
