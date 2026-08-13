@@ -40,10 +40,10 @@ def pairwise_radii(Z):
     return rho
 
 def self_test():
-    Z=np.asarray([[0.,0.],[2.,0.],[10.,0.]],dtype=float); rho=pairwise_radii(Z); req(np.array_equal(rho,np.asarray([2.,2.,8.])),f'radius test {rho}')
-    z=np.asarray([7.,0.]); d=np.linalg.norm(Z-z,axis=1); slack=rho-d; req(np.array_equal(slack,np.asarray([-5.,-3.,5.])),f'slack test {slack}')
+    Z=np.asarray([[0.,0.],[1.,0.],[10.,0.]],dtype=float); rho=pairwise_radii(Z); req(np.array_equal(rho,np.asarray([1.,1.,9.])),f'radius test {rho}')
+    z=np.asarray([5.,0.]); d=np.linalg.norm(Z-z,axis=1); slack=rho-d; req(np.array_equal(slack,np.asarray([-4.,-3.,4.])),f'slack test {slack}')
     # Sparse positive reference can have greater reverse slack than a closer dense negative reference.
-    # p at 10 has rho 8 and q=7 => +5; n at 2 is closer (distance 5) but rho 2 => -3.
+    # p at 10 has rho 9 and q=5 => +4; n at 1 is closer (distance 4) but rho 1 => -3.
     req(float(d[1])<float(d[2]) and float(slack[2])>float(slack[1]),'density-adaptive support self-test failed')
     print(json.dumps({'verdict':'PASS_REVERSE1NN_SLACK_ENGINEERING_SELF_TESTS','radii':rho.tolist(),'slack':slack.tolist(),'reverse_k':1,'radius_label_blind':True,'search':False},indent=2,sort_keys=True)); return 0
 
