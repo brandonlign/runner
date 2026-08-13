@@ -1,0 +1,32 @@
+name: OrbitTrace GMN observable schema source audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-gmn-observable-schema-source-audit-v1
+    paths:
+      - 'orbittrace_gmn_observable_schema_source_audit_v1/**'
+      - '.github/workflows/orbittrace_gmn_observable_schema_source_audit_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Decode and audit frozen parser source only
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_gmn_observable_schema_source_audit_v1/audit.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-gmn-observable-schema-source-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
