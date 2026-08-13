@@ -58,7 +58,10 @@ def main():
     parent=oof_margin(X,folds,y,ids,hard_rank); req(arrsha(parent)==MARGIN_SHA,'parent margin hash mismatch')
 
     # Source pass for the sole additional field. The protected sol mask is established before any f-param value is retained.
-    allowed_ids=set(lookup); fmap={}; seen=set(); resolved_cols=set()
+    allowed_ids=set(lookup)
+    member_ids={str(eid) for f in hard for eid in f['event_ids']}
+    req(member_ids.issubset(allowed_ids),'frozen family member absent from blind-allowed lookup')
+    fmap={}; seen=set(); resolved_cols=set()
     for key in support.MONTH_KEYS:
         text=support.dd.get_monthly_file_content_by_date(key); frame=support.read_gmn_frame(text); cols=support.column_map(frame); candidates=[c for c in frame.columns if normcol(c)=='fparam']; req(len(candidates)==1,f'fparam column resolution failed {key}: {candidates}'); fcol=candidates[0]; resolved_cols.add(str(fcol))
         sol=pd.to_numeric(frame[cols['sol']],errors='coerce'); ids_raw=frame[cols['id']].astype(str); valid=np.isfinite(sol); valid &= sol.between(0.0,360.0); valid &= ~sol.between(BLIND[0],BLIND[1],inclusive='both')
@@ -66,10 +69,10 @@ def main():
             eid=str(ids_raw.loc[idx])
             if eid in seen: continue
             seen.add(eid)
-            if eid not in allowed_ids: continue
+            if eid not in allowed_ids or eid not in member_ids: continue
             v=pd.to_numeric(pd.Series([frame.loc[idx,fcol]]),errors='coerce').iloc[0]
             if pd.isna(v): continue
-            fv=float(v); req(math.isfinite(fv) and 0.0<=fv<=1.0,f'out-of-range fparam for {eid}: {fv}'); fmap[eid]=fv
+            fv=float(v); req(math.isfinite(fv) and 0.0<=fv<=1.0,f'out-of-range fparam for frozen family member {eid}: {fv}'); fmap[eid]=fv
     req(len(resolved_cols)==1,'fparam column name changed across months')
 
     ksvals=[]; counts=[]
