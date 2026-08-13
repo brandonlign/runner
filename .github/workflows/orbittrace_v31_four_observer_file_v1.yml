@@ -1,0 +1,95 @@
+name: OrbitTrace v31 four-observer confirmation v1
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      NUMEXPR_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-gmn-v31-offline-development-package-v1
+          path: input/offline
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31663453082
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v31-observer-count-file-v1
+          path: input/availability
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31754845814
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore exact evaluator
+        run: |
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          p=Path('orbittrace_v31_four_observer_file_v1/runner.py.gz.b64')
+          raw=gzip.decompress(base64.b64decode(''.join(p.read_text().split()),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='2fe4f02a25d0fbdb1f6d2a00eb162b8286e44094a89e532262ae43db932e11bc'
+          Path('/tmp/run_four_observer.py').write_bytes(raw)
+          compile(raw,'/tmp/run_four_observer.py','exec')
+          PY
+      - name: Execute first valid binding outcome
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_v31_four_observer_file_v1
+        run: |
+          mkdir -p output
+          python -u /tmp/run_four_observer.py \
+            --p19 input/p19/p19_prelabel_payload.json \
+            --x input/offline/package/GMN_V31_OFFLINE_X.npy \
+            --centroids input/offline/package/GMN_V31_OFFLINE_CENTROIDS.npy \
+            --manifest input/offline/package/GMN_V31_OFFLINE_DEVELOPMENT_PACKAGE_V1.json \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --availability input/availability/GMN_V31_OBSERVER_COUNT_FILE_AVAILABILITY_RESULT.json \
+            --output output
+      - name: Preserve binding verdict
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('output/RESULT.json')
+          if p.exists():
+              r=json.loads(p.read_text())
+              assert r['verdict'] in {'PASS_GMN_V31_FOUR_OBSERVER_CONFIRMATION_V1','FAIL_GMN_V31_FOUR_OBSERVER_CONFIRMATION_V1'}
+              assert r['threshold']==4 and r['cross_year_combiner']=='minimum'
+              assert r['sonotaco_access'] is False and r['target_information_access'] is False and r['maarsy_access'] is False and r['dms_access'] is False
+              print('BINDING',r['verdict'],r['candidate'],r['pass_gates'])
+          else:
+              print('NO_SCIENTIFIC_RESULT_FILE')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-four-observer-file-v1
+          path: output
+          if-no-files-found: warn
+          retention-days: 90
