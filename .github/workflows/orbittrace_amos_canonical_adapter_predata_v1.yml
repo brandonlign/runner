@@ -1,0 +1,24 @@
+name: OrbitTrace AMOS canonical adapter pre-data v1
+on:
+  pull_request:
+    paths:
+      - 'amos_canonical_adapter_v1/**'
+      - '.github/workflows/orbittrace_amos_canonical_adapter_predata_v1.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and self-test
+        run: |
+          python -m py_compile amos_canonical_adapter_v1/transform.py amos_canonical_adapter_v1/adapt.py amos_canonical_adapter_v1/selftest.py
+          PYTHONPATH=amos_canonical_adapter_v1 python amos_canonical_adapter_v1/selftest.py
+      - name: Record immutable source hashes
+        run: |
+          sha256sum amos_canonical_adapter_v1/FREEZE.json amos_canonical_adapter_v1/transform.py amos_canonical_adapter_v1/adapt.py amos_canonical_adapter_v1/selftest.py
