@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import ast, base64, gzip, hashlib, json, re
+import ast, base64, gzip, hashlib, json
 from pathlib import Path
 
 parts = sorted(Path('orbittrace_fixed4_support_wrapper_development/source_parts').glob('part*.b64'))
@@ -18,7 +18,6 @@ for i, line in enumerate(lines, 1):
     if any(t.lower() in low for t in terms):
         matches.append({'line': i, 'text': line.strip()[:500]})
 
-# Extract string literal keys from subscripts/dicts for a schema-oriented audit without executing the module.
 tree = ast.parse(source)
 keys = set()
 for node in ast.walk(tree):
@@ -27,6 +26,7 @@ for node in ast.walk(tree):
         if len(v) <= 80:
             keys.add(v)
 interesting = sorted(k for k in keys if any(t in k.lower() for t in ('mag','height','begin','end','peak','orbit','peri','node','incl','ecc','q','sol','vg')))
+parser_excerpt = [{'line': i, 'text': lines[i-1]} for i in range(155, 221)]
 
 out = {
     'verdict': 'PASS_FROZEN_GMN_OBSERVABLE_SCHEMA_SOURCE_AUDIT_V1',
@@ -36,6 +36,7 @@ out = {
     'decoded_source_lines': len(lines),
     'interesting_string_literals': interesting,
     'matching_source_lines': matches,
+    'parser_excerpt_lines_155_220': parser_excerpt,
 }
 Path('output').mkdir(exist_ok=True)
 Path('output/GMN_OBSERVABLE_SCHEMA_SOURCE_AUDIT_V1.json').write_text(json.dumps(out, indent=2, sort_keys=True) + '\n')
