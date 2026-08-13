@@ -1,0 +1,50 @@
+name: OrbitTrace GMN v31 station-count availability v1
+on:
+  push:
+    branches: [agent/orbittrace-gmn-v31-station-count-availability-v1]
+    paths: ['orbittrace_gmn_v31_station_count_availability_v1/**','.github/workflows/orbittrace_gmn_v31_station_count_availability_v1.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-gmn-v31-station-count-availability-v1
+      - name: Restore immutable P19 prelabel payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/p19 output
+          gh run download 31340446086 -n orbittrace-p19-subthreshold-reciprocal-recurrence-development -D input/p19
+          test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
+          test "$(git hash-object orbittrace_gmn_v31_station_count_availability_v1/PROTOCOL.md)" = '08201183f86002716339885309b80764dcde3a6c'
+          test "$(git hash-object orbittrace_gmn_v31_station_count_availability_v1/audit.py)" = '5533a502796cfd68923ce483f2bbf79da2761198'
+      - name: Execute truth-free official station-count availability gate
+        run: |
+          python -u orbittrace_gmn_v31_station_count_availability_v1/audit.py --p19-prelabel-json input/p19/p19_prelabel_payload.json --output output
+      - name: Enforce frozen semantics
+        run: |
+          python - <<'PY'
+          import json
+          r=json.load(open('output/GMN_V31_STATION_COUNT_AVAILABILITY_RESULT.json'))
+          assert r['verdict'] in {'PASS_GMN_V31_STATION_COUNT_AVAILABILITY_V1','FAIL_GMN_V31_STATION_COUNT_AVAILABILITY_V1'}
+          assert r['family_count']==226 and r['unique_member_count']==8794
+          assert r['minimum_complete_fraction']==0.95
+          assert r['station_codes_emitted'] is False and r['station_geography_accessed'] is False
+          assert r['meteor_geometry_accessed'] is False and r['shower_truth_accessed'] is False and r['scientific_ranking_computed'] is False
+          assert r['sonotaco_scientific_access'] is False and r['target_information_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print('STATION_COUNT_AVAILABILITY_BINDING',r['verdict'],r['year_stats'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-v31-station-count-availability-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
