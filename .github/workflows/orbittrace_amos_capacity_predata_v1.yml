@@ -1,0 +1,21 @@
+name: OrbitTrace AMOS capacity pre-data v1
+on:
+  pull_request:
+    paths:
+      - 'amos_capacity_v1/**'
+      - '.github/workflows/orbittrace_amos_capacity_predata_v1.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-capacity-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and verify inherited capacity rule
+        run: |
+          python -m py_compile amos_capacity_v1/audit.py amos_capacity_v1/selftest.py
+          python amos_capacity_v1/selftest.py
+          sha256sum amos_capacity_v1/audit.py amos_capacity_v1/selftest.py

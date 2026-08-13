@@ -1,0 +1,61 @@
+name: OrbitTrace AMOS portable pre-data v1
+on:
+  pull_request:
+    paths:
+      - 'amos_portable_v15_v1/**'
+      - '.github/workflows/orbittrace_amos_portable_predata_v1.yml'
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: a1f672fa505a962a18c8ec47bb607bc14e73d7f8
+          path: frozen-common
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: d8258581af143308495bd97bedcc142abbbd951a
+          path: frozen-v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Check exact #921-qualified pins and compile AMOS wrapper
+        run: |
+          test "$(git -C frozen-common rev-parse HEAD)" = 'a1f672fa505a962a18c8ec47bb607bc14e73d7f8'
+          test "$(git -C frozen-common hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '674eaec2acd8bf908bde797243c9414f0fa9559d'
+          test "$(git -C frozen-common hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          test "$(git -C frozen-v8 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
+          test "$(git -C frozen-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git -C frozen-v8 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
+          test "$(git -C frozen-v3 hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          python -m py_compile amos_portable_v15_v1/run.py amos_portable_v15_v1/guarded_run.py amos_portable_v15_v1/entrypoint.py
+          sha256sum amos_portable_v15_v1/FREEZE.txt amos_portable_v15_v1/run.py amos_portable_v15_v1/guarded_run.py amos_portable_v15_v1/entrypoint.py
+      - name: Install exact inherited scientific runtime
+        run: |
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Prove all runtime imports come from frozen checkouts
+        env:
+          PYTHONPATH: ${{ github.workspace }}/frozen-common:${{ github.workspace }}/frozen-v8:${{ github.workspace }}/frozen-v3/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/frozen-v8/orbittrace_wavelet_catalogue_v3:${{ github.workspace }}/frozen-v8/orbittrace_sparse_support_multiplicity_v5:${{ github.workspace }}/amos_portable_v15_v1
+          ORBITTRACE_FROZEN_COMMON_ROOT: ${{ github.workspace }}/frozen-common
+          ORBITTRACE_FROZEN_V8_ROOT: ${{ github.workspace }}/frozen-v8
+        run: |
+          cd "$RUNNER_TEMP"
+          python - <<'PY'
+          import entrypoint
+          entrypoint.guard_all()
+          print('PASS_AMOS_PORTABLE_V15_FULLY_PINNED_IMPORT_GUARD')
+          PY
