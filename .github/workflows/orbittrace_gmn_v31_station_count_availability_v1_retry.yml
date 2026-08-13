@@ -1,0 +1,29 @@
+name: OrbitTrace GMN v31 station availability retry
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - run: |
+          test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
+          mkdir -p output
+          python -u orbittrace_gmn_v31_station_count_availability_v1/audit.py --p19-prelabel-json input/p19/p19_prelabel_payload.json --output output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-v31-station-count-availability-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
