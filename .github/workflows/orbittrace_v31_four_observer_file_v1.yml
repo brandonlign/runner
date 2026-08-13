@@ -46,17 +46,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Restore exact evaluator
+      - name: Restore exact frozen evaluator
         run: |
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
           python - <<'PY'
           import base64,gzip,hashlib
           from pathlib import Path
-          p=Path('orbittrace_v31_four_observer_file_v1/runner.py.gz.b64')
-          raw=gzip.decompress(base64.b64decode(''.join(p.read_text().split()),validate=True))
+          root=Path('orbittrace_v31_four_observer_file_v1/runner_parts')
+          encoded=''.join((root/f'part{i:02d}.b64').read_text().strip() for i in range(3))
+          raw=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert len(raw)==8808
           assert hashlib.sha256(raw).hexdigest()=='2fe4f02a25d0fbdb1f6d2a00eb162b8286e44094a89e532262ae43db932e11bc'
           Path('/tmp/run_four_observer.py').write_bytes(raw)
           compile(raw,'/tmp/run_four_observer.py','exec')
+          print('PASS_EXACT_FOUR_OBSERVER_EVALUATOR_RESTORE')
           PY
       - name: Execute first valid binding outcome
         env:
