@@ -1,0 +1,109 @@
+name: OrbitTrace GMN v31 measurement uncertainty schema v1
+on:
+  push:
+    branches: [agent/orbittrace-gmn-v31-measurement-uncertainty-schema-v1]
+    paths:
+      - 'orbittrace_gmn_v31_measurement_uncertainty_schema_v1/**'
+      - '.github/workflows/orbittrace_gmn_v31_measurement_uncertainty_schema_v1.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-gmn-v31-measurement-uncertainty-schema-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Restore exact parent runtime and verify frozen audit source
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/v8 input/ranker output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          test "$(cat frozen-v8/output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          test "$(git hash-object orbittrace_gmn_v31_measurement_uncertainty_schema_v1/PROTOCOL.md)" = 'd3f31720fbe50cbb03e0a47ae7b176c1ffd406cb'
+          test "$(git hash-object orbittrace_gmn_v31_measurement_uncertainty_schema_v1/raw_uncertainty.py)" = 'b312fc5ea1626726d5ac89481655161ee41b3901'
+          test "$(git hash-object orbittrace_gmn_v31_measurement_uncertainty_schema_v1/active_scan.py)" = 'eba65ba64a2c499e1d723ff0474c951f3e055a66'
+          test "$(git hash-object orbittrace_gmn_v31_measurement_uncertainty_schema_v1/audit.py)" = '72536d31e4ec4a9903c899fbfada25b3f0c93907'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Verify immutable inputs and execute truth-free schema gate
+        env:
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8:orbittrace_gmn_v31_measurement_uncertainty_schema_v1
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          python -m py_compile orbittrace_gmn_v31_measurement_uncertainty_schema_v1/*.py
+          python -u orbittrace_gmn_v31_measurement_uncertainty_schema_v1/audit.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+      - name: Enforce frozen decision semantics
+        run: |
+          python - <<'PY'
+          import json
+          r=json.load(open('output/GMN_V31_MEASUREMENT_UNCERTAINTY_SCHEMA_RESULT.json'))
+          assert r['verdict'] in {'PASS_GMN_V31_MEASUREMENT_UNCERTAINTY_SCHEMA_V1','FAIL_GMN_V31_MEASUREMENT_UNCERTAINTY_SCHEMA_V1'}
+          assert r['scientific_role']=='TARGET_EXCLUDED_TRUTH_FREE_FEASIBILITY_ONLY'
+          assert r['years']==[2022,2023] and r['blind_exclusion']==[20.0,55.0]
+          assert r['minimum_complete_fraction']==0.95 and len(r['monthly_sources'])==24
+          assert r['protected_uncertainty_fields_indexed'] is False
+          assert r['labels_interpreted'] is False and r['scientific_ranking_computed'] is False
+          assert r['sonotaco_2013_2014_access'] is False and r['target_information_access'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print('GMN_V31_UNCERTAINTY_SCHEMA_BINDING',r['verdict'],r['year_stats'])
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          sha256sum orbittrace_gmn_v31_measurement_uncertainty_schema_v1/* input/ranker/run_urc_union_ranker.py > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-v31-measurement-uncertainty-schema-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
