@@ -14,12 +14,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: brandonlign/runner
+          ref: a1f672fa505a962a18c8ec47bb607bc14e73d7f8
+          path: frozen-common
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
           ref: c9d6c44704013ba0c9430100e98a29a56b453304
           path: frozen-v8
-      - name: Check pins and compile
+      - name: Check exact #921-qualified pins and compile AMOS wrapper
         run: |
-          test "$(git hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '674eaec2acd8bf908bde797243c9414f0fa9559d'
-          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          test "$(git -C frozen-common rev-parse HEAD)" = 'a1f672fa505a962a18c8ec47bb607bc14e73d7f8'
+          test "$(git -C frozen-common hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '674eaec2acd8bf908bde797243c9414f0fa9559d'
+          test "$(git -C frozen-common hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
           test "$(git -C frozen-v8 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
           test "$(git -C frozen-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
           test "$(git -C frozen-v8 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
