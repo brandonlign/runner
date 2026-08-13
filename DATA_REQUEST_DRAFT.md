@@ -8,11 +8,13 @@ Dear Prof. Tóth,
 
 I am conducting a meteor-stream methodology project and would like to ask whether the AMOS team could provide the complete reduced multi-station meteor solutions for calendar years 2023 and 2024 for a blinded method-development/generalization study.
 
-I need the complete solved sample, including sporadic meteors rather than only shower-associated events. The required physical fields are a stable event identifier, geocentric radiant (RA/Dec or equivalent Sun-centered ecliptic coordinates), geocentric velocity, and any standard AMOS solution-quality flag.
+To preserve a preregistered blinded solar-longitude interval, could the transfer occur in two steps if feasible?
 
-To preserve a preregistered blinded interval, if convenient could the delivery also include a separate minimal CSV for each year containing only these columns: `event_id,utc_time,solar_longitude_deg`? I would use that file first to remove the blinded interval before opening the corresponding physical solution rows.
+First, for each year, a minimal CSV containing exactly `event_id,utc_time,solar_longitude_deg` for the complete solved multi-station sample. I would return the event IDs outside the blinded interval.
 
-If AMOS maintains shower associations, a separate event-ID-to-shower mapping would also be especially useful so those labels can remain unopened until the physical candidate/ranking stage is frozen.
+Second, only for those returned IDs, a CSV containing exactly `event_id,ra_j2000_deg,dec_j2000_deg,vg_km_s`. This prevents radiant or velocity values from the blinded interval from being opened at all. I do not need a shower-only subset; sporadic meteors are required too.
+
+If AMOS maintains quality information or shower associations, those could be supplied separately by event ID and kept unopened until the geometry-only candidate/ranking stage is frozen.
 
 I would be happy to follow any citation, acknowledgement, data-use, or coauthorship requirements your group considers appropriate.
 
