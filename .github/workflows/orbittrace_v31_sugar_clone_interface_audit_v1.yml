@@ -1,0 +1,22 @@
+name: OrbitTrace v31 Sugar clone source audit
+on: [workflow_dispatch, push]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-sugar-uncertainty-catalogue-development
+          path: sugar-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python orbittrace_v31_sugar_clone_interface_audit_v1/audit.py --parts sugar-source/orbittrace_literature_comparison/sugar_uncertainty_core_parts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v31-sugar-clone-interface-audit-v1
+          path: output
