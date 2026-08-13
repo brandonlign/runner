@@ -3,8 +3,7 @@ import math
 OBLIQUITY_DEG=23.43928
 
 def wrap180(x):
-    x=float(x); out=(x+180.0)%360.0-180.0
-    return 180.0 if out==-180.0 and x>0.0 else out
+    return (float(x)+180.0)%360.0-180.0
 
 def equatorial_to_ecliptic(ra_deg,dec_deg):
     ra=math.radians(float(ra_deg)); dec=math.radians(float(dec_deg)); eps=math.radians(OBLIQUITY_DEG)
