@@ -1,0 +1,75 @@
+name: Capture exact NPC scientific status v3
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-gmn-v31-exact-npc-robustness-v1
+    paths:
+      - '.github/workflows/capture_orbittrace_gmn_v31_exact_npc_status_v3.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-gmn-v31-exact-npc-robustness-v1
+          fetch-depth: 0
+      - name: Wait for scientific run and write status/result snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          workflow='orbittrace_gmn_v31_exact_npc_robustness_v1.yml'
+          branch='agent/orbittrace-gmn-v31-exact-npc-robustness-v1'
+          mkdir -p captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1
+          run_id=''
+          for poll in $(seq 1 360); do
+            row="$(gh run list --repo '${{ github.repository }}' --workflow "$workflow" --branch "$branch" --limit 1 --json databaseId,status,conclusion,headSha,createdAt,updatedAt --jq '.[0] | [.databaseId,.status,(.conclusion // ""),.headSha,.createdAt,.updatedAt] | @tsv')"
+            run_id="$(printf '%s' "$row" | cut -f1)"
+            status="$(printf '%s' "$row" | cut -f2)"
+            conclusion="$(printf '%s' "$row" | cut -f3)"
+            echo "RUN=$run_id STATUS=$status CONCLUSION=$conclusion POLL=$poll"
+            if [ "$status" = completed ]; then break; fi
+            sleep 15
+          done
+          test -n "$run_id"
+          gh run view "$run_id" --repo '${{ github.repository }}' --json databaseId,status,conclusion,headSha,createdAt,updatedAt,jobs > captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/workflow_status.json
+          conclusion="$(python -c "import json; print(json.load(open('captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/workflow_status.json'))['conclusion'])")"
+          if [ "$conclusion" = success ]; then
+            rm -rf /tmp/npc-capture; mkdir -p /tmp/npc-capture
+            gh run download "$run_id" --repo '${{ github.repository }}' --name orbittrace-gmn-v31-exact-npc-robustness-v1 --dir /tmp/npc-capture
+            cp /tmp/npc-capture/GMN_V31_EXACT_NPC_ROBUSTNESS_V1_RESULT.json captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/result.json
+            cp /tmp/npc-capture/solver_self_test.txt captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/solver_self_test.txt || true
+            python - <<'PY'
+          import json, pathlib
+          r=json.load(open('captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/result.json'))
+          m=r['exact_robustness_equal_rank_fusion']
+          s={'verdict':r['verdict'],'recovered_at_25':m['recovered_at_25'],'recovered_at_50':m['recovered_at_50'],'recovered_at_100':m['recovered_at_100'],'recovered_at_500':m['recovered_at_500'],'top100_dominant_precision':m['top100_dominant_precision'],'mrr':m['mrr'],'qualified_matches':m['qualified_matches'],'pass_gates':r['pass_gates'],'sonotaco_benchmark_authorized_by_this_result':r['sonotaco_benchmark_authorized_by_this_result']}
+          pathlib.Path('captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/summary.json').write_text(json.dumps(s,indent=2,sort_keys=True)+'\n')
+          PY
+          else
+            gh run view "$run_id" --repo '${{ github.repository }}' --log-failed > captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/failed_log.txt || true
+          fi
+      - name: Commit snapshot outside scientific workflow paths
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git pull --rebase origin agent/orbittrace-gmn-v31-exact-npc-robustness-v1
+          git add captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1
+          git diff --cached --quiet && exit 0
+          conclusion="$(python -c "import json; print(json.load(open('captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/workflow_status.json'))['conclusion'])")"
+          if [ -f captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/summary.json ]; then
+            r100="$(python -c "import json; print(json.load(open('captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/summary.json'))['recovered_at_100'])")"
+            verdict="$(python -c "import json; print(json.load(open('captured_results/orbittrace_gmn_v31_exact_npc_robustness_v1/summary.json'))['verdict'])")"
+            git commit -m "Capture exact NPC: ${verdict} @100=${r100}"
+          else
+            git commit -m "Capture exact NPC workflow conclusion: ${conclusion}"
+          fi
+          git push origin HEAD:agent/orbittrace-gmn-v31-exact-npc-robustness-v1
