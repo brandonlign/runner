@@ -1,0 +1,96 @@
+name: OrbitTrace EDMOND 2009/2010 freshness inventory v2
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-edmond-2009-2010-freshness-audit-v2
+    paths:
+      - '.github/workflows/orbittrace_edmond_2009_2010_freshness_inventory_v2.yml'
+      - 'orbittrace_edmond_2009_2010_freshness_audit_v2/PROTOCOL.md'
+      - 'orbittrace_edmond_2009_2010_freshness_audit_v2/audit_inventory.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  freshness-inventory:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen zero-event audit bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_edmond_2009_2010_freshness_audit_v2/PROTOCOL.md)" = '779a08351093520cb66ea1d70cb09db448d3c5eb'
+          test "$(git hash-object orbittrace_edmond_2009_2010_freshness_audit_v2/audit_inventory.py)" = 'b2e86d16aaaaf33f14cb423c147f1d1808e8e3c9'
+          python -m py_compile orbittrace_edmond_2009_2010_freshness_audit_v2/audit_inventory.py
+
+      - name: Fetch repository heads only for history inventory
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          echo "remote_heads=$(git for-each-ref --format='%(refname)' refs/remotes/origin | grep -v '/HEAD$' | wc -l)"
+
+      - name: Run repository and Actions metadata inventory with no EDMOND request
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf output_edmond_2009_2010_freshness_inventory_v2
+          python -u -m orbittrace_edmond_2009_2010_freshness_audit_v2.audit_inventory
+
+      - name: Enforce zero-event firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('output_edmond_2009_2010_freshness_inventory_v2/EDMOND_2009_2010_FRESHNESS_INVENTORY_V2.json'))
+          assert p['verdict'] in {
+              'PASS_EDMOND_2009_2010_FRESHNESS_INVENTORY_NO_EXPOSURE_CANDIDATE',
+              'REVIEW_EDMOND_2009_2010_FRESHNESS_EXPOSURE_CANDIDATES',
+          }
+          assert p['event_level_edmond_access'] is False
+          assert p['external_edmond_request_made'] is False
+          assert p['historical_scientific_artifact_contents_downloaded'] is False
+          assert p['historical_edmond_logs_downloaded'] is False
+          for key in ('target_information_access','target_region_events_accessed','sonotaco_scientific_access','amos_scientific_access','efn_scientific_access','maarsy_scientific_access','dms_scientific_access'):
+              assert p[key] is False, key
+          assert p['actions']['known_failed_metadata_run_present'] is True
+          print(p['verdict'])
+          print('exposure_candidates', len(p['exposure_candidates']))
+          PY
+
+      - name: Preserve exact metadata inventory provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output_edmond_2009_2010_freshness_inventory_v2
+          sha256sum \
+            orbittrace_edmond_2009_2010_freshness_audit_v2/PROTOCOL.md \
+            orbittrace_edmond_2009_2010_freshness_audit_v2/audit_inventory.py \
+            output_edmond_2009_2010_freshness_inventory_v2/EDMOND_2009_2010_FRESHNESS_INVENTORY_V2.json \
+            > output_edmond_2009_2010_freshness_inventory_v2/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output_edmond_2009_2010_freshness_inventory_v2/execution_commit.txt
+          git for-each-ref --format='%(refname)|%(objectname)' refs/heads refs/remotes/origin \
+            > output_edmond_2009_2010_freshness_inventory_v2/scanned_refs.txt 2>/dev/null || true
+          python --version > output_edmond_2009_2010_freshness_inventory_v2/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-edmond-2009-2010-freshness-inventory-v2
+          path: output_edmond_2009_2010_freshness_inventory_v2
+          if-no-files-found: error
+          retention-days: 90
