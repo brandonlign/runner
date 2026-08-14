@@ -1,14 +1,14 @@
 # OrbitTrace GMN v31 intrinsic-width successor v1 — frozen protocol
 
-Status: **FROZEN BEFORE FIRST SCIENTIFIC OUTCOME**.
+Status: **FROZEN BEFORE FIRST SCIENTIFIC OUTCOME**. This revision is a pre-implementation geometry correction made before any candidate feature, OOF margin, truth endpoint, or successor outcome was computed. It supersedes the initial protocol-only commit `9513524308b2360a58aaff5d46f3c3975908d7e4`.
 
 This is a target-excluded GMN 2022/2023 development successor to exact v31. It does not access SonotaCo 2013/2014, OrbitTrace target information/events, the protected solar-longitude interval 20°–55°, MAARSY, or DMS. A valid result is development evidence only.
 
 ## Scientific motivation
 
-Exact v31 already encodes candidate geometry/cohesion but does not contain event-level measurement uncertainty. GMN publishes Monte-Carlo radiant and velocity uncertainty estimates. Moorhead, Clements & Vida, *Meteor shower radiant dispersions in Global Meteor Network data* (MNRAS 2021/2022 publication lineage) explicitly treats formal radiant errors as a systematic broadening of measured shower dispersion and estimates the physical dispersion after accounting for that broadening. Vida et al., *Global Meteor Network — Methodology and first results*, documents the trajectory uncertainty estimates and their relevance to measuring physical shower dispersion.
+Exact v31 already encodes candidate geometry/cohesion but does not contain event-level measurement uncertainty. GMN publishes Monte-Carlo radiant and velocity uncertainty estimates. Moorhead, Clements & Vida, *Meteor shower radiant dispersions in Global Meteor Network data*, explicitly treats formal radiant errors as a systematic broadening of measured shower dispersion and estimates physical dispersion after accounting for that broadening. Vida et al., *Global Meteor Network — Methodology and first results*, documents the trajectory uncertainty estimates and their relevance to measuring physical shower dispersion.
 
-The hypothesis is therefore not that low-uncertainty observations are intrinsically better candidates. The hypothesis is that, after removing annual radiant/velocity drift and subtracting the expected contribution of the reported measurement noise, a real recurrent stream should have a smaller **intrinsic physical width** than a spurious/fragmentary family with the same apparent observed compactness.
+The hypothesis is therefore not that low-uncertainty observations are intrinsically better candidates. The hypothesis is that, after removing annual radiant/velocity drift and subtracting the expected contribution of reported measurement noise, a real recurrent stream should have a smaller **intrinsic physical width** than a spurious/fragmentary family with the same apparent observed compactness.
 
 This mechanism is distinct from:
 
@@ -61,17 +61,19 @@ Parent controls must reproduce exactly before the successor is evaluated:
 
 ## Sole new coordinate
 
-For each fixed family `f` and year `y in {2022, 2023}`, use the exact annual v31 centroid `c_y` and its fixed member IDs. For member `i`, define the same physical residual coordinates used in the recent v31 physical diagnostics:
+For each fixed family `f` and year `y in {2022, 2023}`, use the exact annual v31 centroid `c_y` and its fixed member IDs. For member `i`, define a locally orthonormal, fixed-scale physical residual vector:
 
-- `r1_i = signed_delta(sun_lon_i, c_y.sun_lon) / 4 degrees`;
+- `r1_i = signed_delta(sun_lon_i, c_y.sun_lon) * cos(c_y.ecl_lat) / 4 degrees`;
 - `r2_i = (ecl_lat_i - c_y.ecl_lat) / 4 degrees`;
 - `r3_i = log(Vg_i / c_y.Vg) / log(1.10)`.
+
+The `cos(c_y.ecl_lat)` factor is mandatory: it converts local radiant longitude to an angular tangent-plane displacement. It was added in this pre-implementation protocol correction specifically so the angular measurement-covariance trace below is expressed in the same local orthonormal geometry. No candidate feature or outcome existed before this correction.
 
 Define activity phase only as a nuisance regressor:
 
 `p_i = signed_delta(sol_i, c_y.sol)`.
 
-Fit ordinary unweighted least squares independently to all three columns of `r_i` using the fixed design matrix `[1, p_i]`. Let `H` be that design matrix's ordinary hat matrix, `h_i = H_ii`, `R` the `n x 3` residual matrix, and `df = n - 2`.
+Fit ordinary unweighted least squares independently to all three columns of `r_i` using the fixed design matrix `[1, p_i]`. The design must have rank 2; otherwise the formulation fails closed. Let `H` be that design matrix's ordinary hat matrix, `h_i = H_ii`, `R` the `n x 3` residual matrix, and `df = n - 2`.
 
 The observed drift-adjusted residual variance trace is:
 
@@ -81,7 +83,7 @@ For the same event, define the dimensionless formal measurement-noise trace
 
 `q_i = ((sigma_RA,i * cos(dec_i)) / 4 degrees)^2 + (sigma_Dec,i / 4 degrees)^2 + ((sigma_Vg,i / Vg_i) / log(1.10))^2`.
 
-The first two terms are the local orthonormal radiant-tangent-plane variance trace expressed in the inherited 4-degree scale. The covariance trace is rotation invariant, so no unreported RA/Dec covariance is invented when comparing the equatorial formal uncertainties with the locally rotated radiant residual coordinates. The speed term uses first-order propagation through the fixed log-speed coordinate.
+The first two terms are the local orthonormal radiant-tangent-plane variance trace expressed in the inherited 4-degree scale. A covariance trace is invariant under local orthonormal rotation, so no unreported RA/Dec covariance is invented when using that trace in the locally orthonormal ecliptic tangent plane. The speed term uses first-order propagation through the fixed log-speed coordinate.
 
 The expected contribution of measurement noise to the OLS residual variance trace is
 
