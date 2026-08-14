@@ -1,0 +1,71 @@
+name: OrbitTrace phase-equalized recurrent-EOM v1 source audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-phase-equalized-recurrent-eom-v1
+    paths:
+      - '.github/workflows/orbittrace_phase_equalized_recurrent_eom_v1_source_audit.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen scientific and audit sources
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          test "$(git hash-object orbittrace_phase_equalized_recurrent_eom_v1/PROTOCOL.md)" = 'ff509b57fd2139406e823497a85468017414dcca'
+          test "$(git hash-object orbittrace_phase_equalized_recurrent_eom_v1/phase_equalization.py)" = '6577d900814b8c79aad355bdb05d426204f20d4a'
+          test "$(git hash-object orbittrace_phase_equalized_recurrent_eom_v1/run_development.py)" = 'd91fa6c95befc43e27d0dbb11a08c23e03f483cd'
+          test "$(git hash-object orbittrace_phase_equalized_recurrent_eom_v1/source_audit.py)" = 'e1c2076da5d94a48704f805420b19e28ee5b7d38'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_phase_equalized_recurrent_eom_v1/source_audit.py orbittrace_phase_equalized_recurrent_eom_v1/run_development.py orbittrace_phase_equalized_recurrent_eom_v1/phase_equalization.py
+      - name: Run zero-data source/firewall audit
+        run: |
+          set -euo pipefail
+          python orbittrace_phase_equalized_recurrent_eom_v1/source_audit.py \
+            --runner orbittrace_phase_equalized_recurrent_eom_v1/run_development.py \
+            --transform orbittrace_phase_equalized_recurrent_eom_v1/phase_equalization.py \
+            --output output
+          python - <<'PY'
+          import json
+          p=json.load(open('output/PHASE_EQUALIZED_RECURRENT_EOM_V1_SOURCE_AUDIT.json'))
+          assert p['verdict']=='PASS_PHASE_EQUALIZED_RECURRENT_EOM_V1_SOURCE_AUDIT'
+          assert all(p['checks'].values())
+          assert p['gmn_accessed'] is False and p['truth_accessed'] is False
+          for k in ('target_information_access','target_region_events_accessed','sonotaco_2013_2014_access','amos_scientific_access','efn_scientific_access','asfn_scientific_access','maarsy_scientific_access','dms_scientific_access'):
+              assert p[k] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_phase_equalized_recurrent_eom_v1/PROTOCOL.md \
+            orbittrace_phase_equalized_recurrent_eom_v1/phase_equalization.py \
+            orbittrace_phase_equalized_recurrent_eom_v1/run_development.py \
+            orbittrace_phase_equalized_recurrent_eom_v1/source_audit.py \
+            output/PHASE_EQUALIZED_RECURRENT_EOM_V1_SOURCE_AUDIT.json \
+            > output/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-phase-equalized-recurrent-eom-v1-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
