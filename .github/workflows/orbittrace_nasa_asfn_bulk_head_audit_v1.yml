@@ -1,0 +1,40 @@
+name: OrbitTrace NASA ASFN primary bulk HEAD audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-nasa-asfn-bulk-head-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_nasa_asfn_bulk_head_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install HEAD-audit runtime and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'requests==2.32.5'
+          test "$(git hash-object orbittrace_nasa_asfn_bulk_head_audit_v1/PROTOCOL.md)" = '154e67d1ddef5f60db58dfe3a9ec76993621df84'
+          test "$(git hash-object orbittrace_nasa_asfn_bulk_head_audit_v1/head_audit.py)" = '9089535b6b95eda321d377ee22643223f63468a3'
+          python -m py_compile orbittrace_nasa_asfn_bulk_head_audit_v1/head_audit.py
+      - name: Run sole primary-paper bulk HEAD request
+        run: |
+          set -euo pipefail
+          python orbittrace_nasa_asfn_bulk_head_audit_v1/head_audit.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-nasa-asfn-bulk-head-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
