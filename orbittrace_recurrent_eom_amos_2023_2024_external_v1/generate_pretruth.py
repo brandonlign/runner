@@ -58,10 +58,12 @@ def load_canonical(path: Path, year: int) -> list[dict[str, Any]]:
     require(isinstance(raw, list) and raw, f"empty/non-list canonical input for {year}")
     out: list[dict[str, Any]] = []
     ids: list[str] = []
+    seen: set[str] = set()
     for row in raw:
         require(isinstance(row, dict) and set(row) == EXPECTED_KEYS, f"unexpected canonical schema for {year}")
         eid = str(row["id"])
-        require(eid and eid not in ids, f"blank/duplicate ID in {year}: {eid!r}")
+        require(eid and eid not in seen, f"blank/duplicate ID in {year}: {eid!r}")
+        seen.add(eid)
         require(int(row["year"]) == year, f"wrong canonical year for {eid}")
         require(int(row["iau"]) == 0 and str(row["complex_key"]) == "HIDDEN", f"label state exposed before pretruth for {eid}")
         sol = float(row["sol"])
