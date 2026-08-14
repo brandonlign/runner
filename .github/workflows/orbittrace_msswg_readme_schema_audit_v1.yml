@@ -1,0 +1,40 @@
+name: OrbitTrace MSSWG readme schema audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-msswg-readme-schema-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_msswg_readme_schema_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install readme-audit runtime and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'requests==2.32.5'
+          test "$(git hash-object orbittrace_msswg_readme_schema_audit_v1/PROTOCOL.md)" = '1e4203974bfa68d34be9b48b252ab94a9653c4ec'
+          test "$(git hash-object orbittrace_msswg_readme_schema_audit_v1/fetch_readme.py)" = '91ae54a9630439df1433aab5ebe29e39975a873f'
+          python -m py_compile orbittrace_msswg_readme_schema_audit_v1/fetch_readme.py
+      - name: Run sole readme request
+        run: |
+          set -euo pipefail
+          python orbittrace_msswg_readme_schema_audit_v1/fetch_readme.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-msswg-readme-schema-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
