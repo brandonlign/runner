@@ -34,7 +34,8 @@ jobs:
           set -euo pipefail
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
           test "$(git hash-object orbittrace_stratified_core_hdbscan_v1/PROTOCOL.md)" = '3e01aa6e24b8b85cd10b24c3aef05312c78e3aa6'
-          test "$(git hash-object orbittrace_stratified_core_hdbscan_v1/stratified_core.py)" = 'ab5ef31c9d25e753f341a79e673d735e2c61e7f2'
+          test "$(git hash-object orbittrace_stratified_core_hdbscan_v1/INJECTION_INITIALIZATION_REPAIR.md)" = '6be86c7956d205144d20136fbb18605af899592a'
+          test "$(git hash-object orbittrace_stratified_core_hdbscan_v1/stratified_core.py)" = 'ce22a6c762829b03184e136cd43cc0b821763e0c'
           test "$(git hash-object orbittrace_stratified_core_hdbscan_v1/audit_injection.py)" = 'b2856bcc93ab6249a1fc43bf8dde39a2072daed8'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
           python -m py_compile \
@@ -42,15 +43,16 @@ jobs:
             orbittrace_stratified_core_hdbscan_v1/audit_injection.py \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py
           python - <<'PY'
-          import ast
           p='orbittrace_stratified_core_hdbscan_v1/stratified_core.py'
-          s=open(p).read(); t=ast.parse(s)
+          s=open(p).read()
           assert 'K_YEAR = 5' in s and 'MIN_SAMPLES = 10' in s
           assert 'LEAF_SIZE = 40' in s and 'BORUVKA_LEAF_SIZE = LEAF_SIZE // 3' in s
-          assert 'KDTreeBoruvkaAlgorithm' in s and 'min_samples=0' not in s
           assert '        0,\n        metric="euclidean"' in s
           assert 'approx_min_span_tree=True' in s and 'alpha=1.0' in s and 'n_jobs=1' in s
           assert 'np.square(core' in s
+          assert '_seed_hdbscan_first_pass' in s
+          assert 'candidate_point[n] = n' in s and 'candidate_distance[n] = injected_rdist[n]' in s
+          assert 'bounds[:] = 0.0' in s
           print('PASS_STRATIFIED_CORE_FROZEN_ENGINEERING_SOURCE_PINS')
           PY
       - name: Run synthetic injection/core audit only
@@ -86,6 +88,7 @@ jobs:
           mkdir -p orbittrace_stratified_core_hdbscan_v1/output
           sha256sum \
             orbittrace_stratified_core_hdbscan_v1/PROTOCOL.md \
+            orbittrace_stratified_core_hdbscan_v1/INJECTION_INITIALIZATION_REPAIR.md \
             orbittrace_stratified_core_hdbscan_v1/stratified_core.py \
             orbittrace_stratified_core_hdbscan_v1/audit_injection.py \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
