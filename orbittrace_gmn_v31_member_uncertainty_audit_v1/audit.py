@@ -12,8 +12,16 @@ def req(x,m):
     if not x: raise RuntimeError(m)
 def f(row,k):
     s=row[IDX[k]].strip(); x=float(s); req(math.isfinite(x),f'nonfinite {k}'); return x
-def i(row,k):
-    x=f(row,k); req(abs(x-round(x))<=1e-8,f'noninteger {k}'); return int(round(x))
+def optf(row,k):
+    s=row[IDX[k]].strip()
+    if not s or s.lower() in {'nan','none','null','na','...'}: return None
+    try: x=float(s)
+    except ValueError: return None
+    return x if math.isfinite(x) else None
+def opti(row,k):
+    x=optf(row,k)
+    if x is None or abs(x-round(x))>1e-8: return None
+    return int(round(x))
 def download(url,path):
     h=hashlib.sha256(); n=0
     request=urllib.request.Request(url,headers={'User-Agent':USER_AGENT})
@@ -49,7 +57,7 @@ def main():
                         sol=f(row,'sol'); req(not (BLIND[0] <= sol <= BLIND[1]),f'protected member row {eid}')
                         ra=f(row,'ra'); dec=f(row,'dec'); vg=f(row,'vg'); ras=f(row,'ra_sigma'); decs=f(row,'dec_sigma'); vgs=f(row,'vg_sigma')
                         req(0<=ra<360 and -90<=dec<=90 and vg>0 and ras>=0 and decs>=0 and vgs>=0,f'invalid physical member row {eid}')
-                        found[y][eid]={'id':eid,'year':y,'sol':sol,'ra':ra,'dec':dec,'vg':vg,'ra_sigma':ras,'dec_sigma':decs,'vg_sigma':vgs,'Qc':f(row,'Qc'),'fiterr':f(row,'fiterr'),'num_stat':i(row,'num_stat')}
+                        found[y][eid]={'id':eid,'year':y,'sol':sol,'ra':ra,'dec':dec,'vg':vg,'ra_sigma':ras,'dec_sigma':decs,'vg_sigma':vgs,'Qc':optf(row,'Qc'),'fiterr':optf(row,'fiterr'),'num_stat':opti(row,'num_stat')}
                 path.unlink(missing_ok=True)
     for y in YEARS: req(set(found[y])==wanted[y],f'missing fixed v31 members in {y}: {len(wanted[y]-set(found[y]))}')
     out=a.output/'GMN_V31_FIXED_MEMBER_UNCERTAINTY_V1.jsonl.gz'
