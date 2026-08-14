@@ -1,0 +1,87 @@
+name: OrbitTrace recurrent-EOM AMOS multi-method predata contract v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-amos-multimethod-freeze-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_amos_multimethod_predata_contract_v1.yml'
+      - 'orbittrace_recurrent_eom_amos_multimethod_v1/PROTOCOL.md'
+      - 'orbittrace_recurrent_eom_amos_multimethod_v1/DATA_CONTRACT_SUPPLEMENT.md'
+      - 'orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py'
+      - 'orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  zero-data-contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify exact frozen predata bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_amos_multimethod_v1/PROTOCOL.md)" = 'd712eb82d19c894fb2a9de1407d18a2fd1d84517'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_multimethod_v1/DATA_CONTRACT_SUPPLEMENT.md)" = 'bb05facb4a8f1ea0023d9c8a9d8a425cda5a5c9f'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py)" = 'c54ced9b495a5c1aba01208d1fd21b66c690e683'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py)" = 'f0be2faa24e1cf524662e2599116aec26cc52eaf'
+          python -m py_compile \
+            orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py \
+            orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py
+
+      - name: Run synthetic-only supplement firewall test
+        run: |
+          set -euo pipefail
+          rm -f amos_multimethod_predata_contract_selftest.json
+          python -u -m orbittrace_recurrent_eom_amos_multimethod_v1.predata_contract_selftest
+
+      - name: Enforce zero-data result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('amos_multimethod_predata_contract_selftest.json'))
+          assert p['verdict']=='PASS_AMOS_MULTIMETHOD_PREDATA_CONTRACT_SELFTEST_V1'
+          assert p['synthetic_only'] is True
+          assert p['amos_data_accessed'] is False
+          assert p['amos_truth_accessed'] is False
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['maarsy_scientific_access'] is False
+          assert p['dms_scientific_access'] is False
+          assert p['comparator_only_fields_entered_recurrent_eom'] is False
+          print(p['verdict'])
+          PY
+
+      - name: Preserve zero-data audit provenance
+        run: |
+          set -euo pipefail
+          mkdir -p output_amos_multimethod_contract
+          cp amos_multimethod_predata_contract_selftest.json output_amos_multimethod_contract/
+          sha256sum \
+            orbittrace_recurrent_eom_amos_multimethod_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_amos_multimethod_v1/DATA_CONTRACT_SUPPLEMENT.md \
+            orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py \
+            orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py \
+            amos_multimethod_predata_contract_selftest.json \
+            > output_amos_multimethod_contract/source_output_sha256.txt
+          git rev-parse HEAD > output_amos_multimethod_contract/execution_commit.txt
+          python --version > output_amos_multimethod_contract/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-amos-multimethod-predata-contract-v1
+          path: output_amos_multimethod_contract
+          if-no-files-found: error
+          retention-days: 90
