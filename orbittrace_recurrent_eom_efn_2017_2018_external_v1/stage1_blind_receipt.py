@@ -21,6 +21,7 @@ BLIND = (20.0, 55.0)
 QUERY = 'SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"'
 INTEGER_RE = re.compile(r"^[0-9]+$")
 DATE_ENCODING = "VIZIER_SEC_PER_2000"
+SOLAR_LONGITUDE_NORMALIZATION = "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event"
 SEC_2017 = 536544000
 SEC_2018 = 568080000
 SEC_2019 = 599616000
@@ -60,6 +61,16 @@ def parse_year(value: str) -> int:
     raise RuntimeError(f"Obs.date sec/2000 outside frozen 2017/2018 domain: {seconds}")
 
 
+def canonical_solar_longitude(value: str, code: str) -> tuple[float, bool]:
+    raw = float(value)
+    require(math.isfinite(raw), f"nonfinite EFN Lsun for {code}")
+    require(0.0 <= raw <= 360.0, f"EFN Lsun outside frozen representational domain [0,360] for {code}")
+    canonical = raw % 360.0
+    wrapped_exact_360 = raw == 360.0
+    require(0.0 <= canonical < 360.0, f"canonical EFN Lsun outside [0,360) for {code}")
+    return canonical, wrapped_exact_360
+
+
 def main() -> int:
     raw = query_csv()
     raw_sha = hashlib.sha256(raw).hexdigest()
@@ -70,6 +81,7 @@ def main() -> int:
     retained: dict[int, list[str]] = {2017: [], 2018: []}
     total_by_year = {2017: 0, 2018: 0}
     excluded_by_year = {2017: 0, 2018: 0}
+    wrapped_360_by_year = {2017: 0, 2018: 0}
     seen: set[str] = set()
     row_count = 0
 
@@ -81,8 +93,9 @@ def main() -> int:
         seen.add(code)
         year = parse_year(row["Obs_date"])
         total_by_year[year] += 1
-        sol = float(row["Lsun"])
-        require(math.isfinite(sol) and 0.0 <= sol < 360.0, f"invalid EFN Lsun for {code}")
+        sol, wrapped_exact_360 = canonical_solar_longitude(row["Lsun"], code)
+        if wrapped_exact_360:
+            wrapped_360_by_year[year] += 1
         if BLIND[0] <= sol <= BLIND[1]:
             excluded_by_year[year] += 1
         else:
@@ -125,8 +138,14 @@ def main() -> int:
             "2018_start": SEC_2018,
             "2019_start": SEC_2019,
         },
+        "solar_longitude_normalization": SOLAR_LONGITUDE_NORMALIZATION,
+        "raw_solar_longitude_allowed_domain_inclusive": [0.0, 360.0],
+        "exact_360_wrapped_to_zero_by_year": {str(y): wrapped_360_by_year[y] for y in YEARS},
+        "exact_360_wrapped_to_zero_total": int(sum(wrapped_360_by_year.values())),
         "blind_exclusion": [20.0, 55.0],
+        "blind_exclusion_applied_after_modulo_normalization": True,
         "raw_response_persisted": False,
+        "solar_longitude_values_persisted": False,
         "geometry_returned": False,
         "shower_labels_returned": False,
         "orbit_fields_returned": False,
@@ -146,6 +165,8 @@ def main() -> int:
         "retained_ids_sha256": retained_sha,
         "blind_index_response_sha256": raw_sha,
         "obs_date_encoding": DATE_ENCODING,
+        "solar_longitude_normalization": SOLAR_LONGITUDE_NORMALIZATION,
+        "exact_360_wrapped_to_zero_by_year": result["exact_360_wrapped_to_zero_by_year"],
     }, sort_keys=True))
     return 0
 
