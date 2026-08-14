@@ -1,0 +1,83 @@
+name: OrbitTrace GMN v31 member uncertainty audit v1
+
+on:
+  push:
+    branches: [agent/orbittrace-gmn-v31-member-uncertainty-audit-v1]
+    paths: ['.github/workflows/orbittrace_gmn_v31_member_uncertainty_audit_v1.yml']
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: orbittrace-gmn-v31-member-uncertainty-audit-v1
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen extraction interface before network access
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_gmn_v31_member_uncertainty_audit_v1/audit.py)" = '98ad18e2f84a6531cb96d5fd05203be29423ee5d'
+          test "$(git -C frozen-v8 hash-object real_shower_meta_stage0/audit_real_shower_data.py)" = '4a029051230f7c6e99b09e911f8a9e5228a58783'
+          python -m py_compile orbittrace_gmn_v31_member_uncertainty_audit_v1/audit.py
+          mkdir -p input output
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-p19-subthreshold-reciprocal-recurrence-development
+          path: input/p19
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31340446086
+      - name: Verify immutable fixed-member universe
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/p19/p19_prelabel_payload.json | cut -d' ' -f1)" = '276129ef8f9f31a1f8e7b1570c15f5e67ed1a7274f293f5da65bab60f86e32b8'
+      - name: Extract uncertainty only for fixed target-excluded v31 members
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_v31_member_uncertainty_audit_v1/audit.py \
+            --p19-prelabel input/p19/p19_prelabel_payload.json \
+            --output output
+      - name: Enforce zero-endpoint completeness and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip,json
+          r=json.load(open('output/GMN_V31_MEMBER_UNCERTAINTY_AUDIT_V1.json'))
+          assert r['verdict']=='PASS_GMN_V31_MEMBER_UNCERTAINTY_AUDIT_V1'
+          assert r['member_counts']=={'2022':4726,'2023':4068}
+          assert r['total_member_rows']==8794 and r['source_month_count']==24
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['scientific_endpoint_computed'] is False and r['candidate_ranking_computed'] is False and r['truth_metric_computed'] is False
+          for k in ('sonotaco_2013_2014_access','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'): assert r[k] is False
+          with gzip.open('output/GMN_V31_FIXED_MEMBER_UNCERTAINTY_V1.jsonl.gz','rt') as f: rows=[json.loads(x) for x in f]
+          assert len(rows)==8794 and len({x['id'] for x in rows})==8794
+          assert all(not (20.0 <= float(x['sol']) <= 55.0) for x in rows)
+          assert all(float(x['ra_sigma'])>=0 and float(x['dec_sigma'])>=0 and float(x['vg_sigma'])>=0 for x in rows)
+          print(r['verdict'],r['member_counts'],r['enriched_member_file_sha256'])
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_gmn_v31_member_uncertainty_audit_v1/audit.py input/p19/p19_prelabel_payload.json output/GMN_V31_MEMBER_UNCERTAINTY_AUDIT_V1.json output/GMN_V31_FIXED_MEMBER_UNCERTAINTY_V1.jsonl.gz > output/source_input_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-v31-member-uncertainty-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
