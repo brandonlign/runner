@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from importlib.metadata import version
 from pathlib import Path
 
 import hdbscan
@@ -72,7 +73,7 @@ def main() -> int:
         "verdict": "PASS_RECURRENT_EOM_HDBSCAN_IDENTITY_AUDIT",
         "scientific_endpoint": False,
         "synthetic_only": True,
-        "hdbscan_version": hdbscan.__version__,
+        "hdbscan_version": version("hdbscan"),
         "points": int(X.shape[0]),
         "ordinary_partition_sha256": hashlib.sha256(repr(canonical_partition(parent.labels_)).encode()).hexdigest(),
         "custom_parent_partition_sha256": hashlib.sha256(repr(canonical_partition(custom_parent)).encode()).hexdigest(),
