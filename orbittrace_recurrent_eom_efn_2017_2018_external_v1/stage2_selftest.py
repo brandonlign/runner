@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import csv
 import hashlib
 import importlib.util
 import io
@@ -83,12 +84,30 @@ def make_rows(ids: dict[int, list[str]], *, protected=False, bad_vg=False, missi
     return rows
 
 
+def csv_for_requested(rows, requested: list[str]) -> bytes:
+    wanted = set(requested)
+    selected = [r for r in rows if r["Code"] in wanted]
+    # Preserve the response schema even if a particular negative case omits all rows from a batch.
+    if rows:
+        fields = list(rows[0].keys())
+    else:
+        fields = ["Code", "Obs_date", "Lsun", "Lgeo_Lsun", "Bgeo", "Vgeo"]
+    b = io.StringIO()
+    w = csv.DictWriter(b, fieldnames=fields, lineterminator="\n")
+    w.writeheader()
+    for row in selected:
+        w.writerow(row)
+    return b.getvalue().encode()
+
+
 def run_case(mod, td: Path, rows, name: str) -> tuple[bool, Path, str]:
     case = td / name
     case.mkdir()
     stage1, ids17, ids18, _ = write_stage1(case)
     out = case / "out"
-    mod.iter_returned_rows = lambda expected_ids: iter(rows)
+    # Inject at the raw TAP-response boundary so production CSV header, per-batch ID,
+    # duplicate, and exact-set checks all execute in the synthetic audit.
+    mod.query_batch = lambda requested: csv_for_requested(rows, requested)
     old = os.getcwd()
     cap = io.StringIO()
     try:
@@ -119,7 +138,7 @@ def main() -> int:
     require("Code IN ('SYN_A','SYN_B')" in q, "Stage-2 query is not retained-ID restricted")
     require("Lsun <" not in q and "Lsun >" not in q, "raw-longitude Stage-2 filter survived")
     require("Shower" not in q and "Object" not in q, "truth-bearing field entered Stage 2")
-    require("''" in mod.quote_adql_string("A'B"), "ADQL string escaping changed")
+    require(mod.quote_adql_string("A'B") == "'A''B'", "ADQL string escaping changed")
     for raw, expected in (("360.0466", 0.0466), ("361.1739", 1.1739), ("-0.25", 359.75), ("380", 20.0)):
         sol, wrapped = mod.canonical_solar_longitude(raw, "SYN")
         require(abs(sol - expected) < 1e-12 and wrapped is True, f"Stage-2 generic modulo changed for {raw}")
@@ -145,10 +164,10 @@ def main() -> int:
         require(result["modulo_wrapped_rows_by_year"] == {"2017": 1, "2018": 1}, "Stage-2 wrap counts changed")
         require(result["labels_accessed"] is False and result["shower_column_returned"] is False and result["orbit_fields_returned"] is False, "Stage 2 exposed truth/orbit state")
         for year in (2017, 2018):
-            rows = json.loads((out / f"EFN_{year}_CANONICAL_GEOMETRY.json").read_text())
-            require([r["id"] for r in rows] == ids[year], f"Stage-2 output ID order changed {year}")
-            require(all(r["iau"] == 0 and r["complex_key"] == "HIDDEN" for r in rows), "Stage-2 output exposed labels")
-            require(all(not (20.0 <= float(r["sol"]) <= 55.0) for r in rows), "protected canonical geometry survived Stage 2")
+            out_rows = json.loads((out / f"EFN_{year}_CANONICAL_GEOMETRY.json").read_text())
+            require([r["id"] for r in out_rows] == ids[year], f"Stage-2 output ID order changed {year}")
+            require(all(r["iau"] == 0 and r["complex_key"] == "HIDDEN" for r in out_rows), "Stage-2 output exposed labels")
+            require(all(not (20.0 <= float(r["sol"]) <= 55.0) for r in out_rows), "protected canonical geometry survived Stage 2")
 
         for name, rows in (
             ("extra-column", make_rows(ids, extra=True)),
@@ -167,6 +186,8 @@ def main() -> int:
         "raw_longitude_server_filter_removed": True,
         "stage1_allowlist_hash_binding": True,
         "exact_retained_id_equality_required": True,
+        "csv_schema_boundary_exercised": True,
+        "per_batch_id_boundary_exercised": True,
         "solar_longitude_normalization": "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event",
         "generic_over_360_modulo_supported": True,
         "protected_canonical_row_fails_closed": True,
