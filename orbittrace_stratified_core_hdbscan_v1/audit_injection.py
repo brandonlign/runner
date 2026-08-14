@@ -72,8 +72,9 @@ def core_mechanics_case() -> dict:
     require(np.array_equal(got, want), "stratified core differs from brute force")
     require(np.array_equal(parts["d_2022"], want22), "2022 fifth-neighbor vector differs from brute force")
     require(np.array_equal(parts["d_2023"], want23), "2023 fifth-neighbor vector differs from brute force")
-    # For event 0, event 1 is an exact-coordinate distinct identity and must count.
-    require(want22[0] == 0.3, f"duplicate-coordinate self exclusion changed: {want22[0]}")
+    # For event 0, event 1 is the first other event at distance 0, followed by
+    # 0.1, 0.2, 0.3 and 0.4; therefore the fifth *other* is exactly 0.4.
+    require(want22[0] == 0.4, f"duplicate-coordinate self exclusion changed: {want22[0]}")
     return {
         "points": int(len(X)),
         "stratified_core_sha256": hashlib.sha256(np.asarray(got, dtype="<f8").tobytes()).hexdigest(),
@@ -137,6 +138,7 @@ def main() -> int:
     result = {
         "verdict": "PASS_STRATIFIED_CORE_HDBSCAN_V1_ZERO_TRUTH_INJECTION_AUDIT",
         "synthetic_only": True,
+        "cases": cases,
         "core_mechanics": mechanics,
         "injection_cases": cases,
         "balanced_k_year": 5,
