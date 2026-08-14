@@ -1,0 +1,40 @@
+name: OrbitTrace NASA ASFN interface structure audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-nasa-asfn-interface-structure-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_nasa_asfn_interface_structure_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install structure-audit runtime and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'requests==2.32.5' 'beautifulsoup4==4.12.3'
+          test "$(git hash-object orbittrace_nasa_asfn_interface_structure_audit_v1/PROTOCOL.md)" = '91b863caa947b54dfee80fbf90c7ab9714e50246'
+          test "$(git hash-object orbittrace_nasa_asfn_interface_structure_audit_v1/audit_interface.py)" = '9fc6c2f32abf3c9f61f88cb7bdded0195ef81ebb'
+          python -m py_compile orbittrace_nasa_asfn_interface_structure_audit_v1/audit_interface.py
+      - name: Run sole official NASA page request
+        run: |
+          set -euo pipefail
+          python orbittrace_nasa_asfn_interface_structure_audit_v1/audit_interface.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-nasa-asfn-interface-structure-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
