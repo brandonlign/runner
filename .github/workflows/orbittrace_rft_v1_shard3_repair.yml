@@ -1,0 +1,167 @@
+name: OrbitTrace RFT v1 targeted shard3 repair
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  repair-atoms:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        replica: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+        piece: [0,1,2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - name: Verify frozen targeted-repair bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/SHARD3_REPAIR_PROTOCOL.md)" = '86a5be12a73b113850fa4d89a99f3b798ba87845'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/shard3_repair.py)" = '65fe63a3034b88efbd14288dd918f3e338ae55d2'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa'
+          mkdir -p out
+      - name: Compute one complete-bin piece of original shard 3
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/shard3_repair.py atoms \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --wrapper orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py \
+            --events prep/events.json.gz --replica ${{ matrix.replica }} --piece ${{ matrix.piece }} --output out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-shard3-repair-r${{ matrix.replica }}-p${{ matrix.piece }}
+          path: out
+          retention-days: 7
+
+  tubes:
+    needs: repair-atoms
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 17
+      matrix:
+        replica: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-atoms-r${{ matrix.replica }}-s0
+          path: atoms
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-atoms-r${{ matrix.replica }}-s1
+          path: atoms
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-atoms-r${{ matrix.replica }}-s2
+          path: atoms
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-shard3-repair-r${{ matrix.replica }}-p*
+          path: repair
+          merge-multiple: true
+      - name: Reconstruct original shard 3 exactly and build frozen tubes
+        run: |
+          set -euo pipefail
+          mkdir -p merged out
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/shard3_repair.py merge \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --events prep/events.json.gz --piece-dir repair --replica ${{ matrix.replica }} --output merged
+          cp merged/atoms_r$(printf '%02d' ${{ matrix.replica }})_s3.json.gz atoms/
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py tubes \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --atom-dir atoms --replica ${{ matrix.replica }} --output out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-shard3-repaired-tubes-r${{ matrix.replica }}
+          path: out
+          retention-days: 7
+
+  final:
+    needs: tubes
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-shard3-repaired-tubes-r*
+          path: tubes
+          merge-multiple: true
+      - name: Evaluate exact frozen RFT after targeted execution repair
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py final \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --cached-runner orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py \
+            --events prep/events.json.gz --hidden prep/hidden.json.gz --tube-dir tubes --output output
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RFT_V1_GMN2022_SHARDED_ENGINEERING.json'))
+          assert r['execution_role']=='SHARDED_ENGINEERING_NONAUTHORITATIVE_PENDING_EQUIVALENCE'
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('SHARD3_REPAIR_NONAUTHORITATIVE',r['verdict'],r['metrics'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rft-v1-shard3-repaired-engineering-gmn2022
+          path: output
+          retention-days: 90
