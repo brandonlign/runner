@@ -1,0 +1,133 @@
+name: OrbitTrace RFT v1 fast atom equivalence v2
+
+on:
+  push:
+    branches: [agent/orbittrace-rft-v1-fast-atom-equivalence-v2]
+    paths: ['.github/workflows/orbittrace_rft_v1_fast_atom_equivalence_v2.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  compare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-equivalence-sharded-input
+          path: prep
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31817540176
+      - name: Verify frozen compositional-equivalence bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_rft_v1_fast_atom_equivalence_v2/PROTOCOL.md)" = 'b2c9eb1c0c4f1ef85a29a2ecbec4c8a631e278fa'
+          test "$(git hash-object orbittrace_rft_v1_fast_atom_equivalence_v2/audit.py)" = 'ca93610e9427ac5eb52975cf612791353528f13b'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/fast_pair_exact.py)" = '5c6e914849a24bc2683c7e7e86e5f34f80834df4'
+          mkdir -p output
+      - name: Compare frozen scalar-query and batched-query atoms using exact authorized fast ordered pair_d
+        run: |
+          set -euo pipefail
+          python -u orbittrace_rft_v1_fast_atom_equivalence_v2/audit.py \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --wrapper orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py \
+            --fast-pair-source orbittrace_recurrent_flow_tube_v1_engineering/fast_pair_exact.py \
+            --events prep/events.json.gz --assignment prep/assignment.json \
+            --shard ${{ matrix.shard }} --output output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rft-fast-atom-equivalence-v2-shard-${{ matrix.shard }}
+          path: output
+          if-no-files-found: error
+          retention-days: 7
+
+  reduce:
+    needs: compare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-equivalence-sharded-input
+          path: prep
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31817540176
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-fast-atom-equivalence-v2-shard-*
+          path: shards
+          merge-multiple: true
+      - name: Require all 163 frozen bins and exact atoms
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          assignment=json.load(open('prep/assignment.json'))
+          expected=list(map(int,assignment['all_bins']))
+          results=[]
+          for s in range(8):
+              p=Path(f'shards/fast_atom_equiv_shard_{s}.json')
+              if not p.exists(): raise RuntimeError(f'missing comparison shard {s}')
+              r=json.load(open(p)); results.append(r)
+              assert r['verdict']=='PASS_RFT_V1_COMPOSITIONAL_FAST_ATOM_EQUIVALENCE_SHARD'
+              assert r['shard']==s
+              assert r['assigned_bins']==list(map(int,assignment['shard_bins'][s]))
+              assert r['passed_bins']==r['assigned_bins']
+              assert r['all_candidate_sets_exact'] is True and r['all_atom_fields_exact'] is True
+              for k in ('scientific_endpoint_computed','tubes_computed','labels_used','gmn_2023_access','sonotaco_2013_2014_access','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+                  assert r[k] is False
+          passed=[b for r in results for b in r['passed_bins']]
+          assert len(passed)==len(set(passed))==len(expected)==163
+          assert sorted(passed)==sorted(expected)
+          out={
+            'verdict':'PASS_RFT_V1_COMPOSITIONAL_FAST_ATOM_EQUIVALENCE',
+            'role':'ENGINEERING_IDENTITY_AUDIT_ONLY',
+            'events':315024,'bin_count':163,'shards':8,
+            'all_candidate_sets_exact':True,'all_atom_fields_exact':True,
+            'atom_count':sum(r['atoms'] for r in results),
+            'scalar_queries':sum(r['scalar_queries'] for r in results),
+            'shard_elapsed_seconds':[r['elapsed_seconds'] for r in results],
+            'scientific_endpoint_computed':False,'tubes_computed':False,'labels_used':False,
+            'blind_exclusion':[20.0,55.0],'gmn_2023_access':False,'sonotaco_2013_2014_access':False,'target_information_access':False,'target_region_events_accessed':False,'maarsy_scientific_access':False,'dms_scientific_access':False,
+            'frozen_science_blob':'a5d5371f0c30a9c57ee4d8756ea41f454cd86301',
+            'batched_wrapper_blob':'8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa',
+            'fast_pair_blob':'5c6e914849a24bc2683c7e7e86e5f34f80834df4',
+            'fast_pair_authorizer_run':31818476734,
+            'fast_pair_authorizer_artifact':9225971510,
+            'shard_result_sha256':{str(s):hashlib.sha256(Path(f'shards/fast_atom_equiv_shard_{s}.json').read_bytes()).hexdigest() for s in range(8)}
+          }
+          Path('output/RFT_V1_COMPOSITIONAL_FAST_ATOM_EQUIVALENCE.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rft-v1-compositional-fast-atom-equivalence
+          path: output
+          retention-days: 90
