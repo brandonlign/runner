@@ -1,0 +1,196 @@
+name: OrbitTrace RFT v1 sharded batched KD equivalence
+
+on:
+  push:
+    branches: [agent/orbittrace-rft-v1-sharded-batched-kd-equivalence]
+    paths: ['.github/workflows/orbittrace_rft_v1_sharded_batched_kd_equivalence.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-rft-v1-sharded-batched-kd-equivalence
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Verify frozen audit execution sources and install parser runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          test "$(git hash-object orbittrace_rft_v1_batched_kd_equivalence_audit/PROTOCOL.md)" = '8c272987ac0247cd4299bf74370f03b405ec595e'
+          test "$(git hash-object orbittrace_rft_v1_batched_kd_equivalence_audit/SHARDED_EXECUTION.md)" = 'e4e294c3a09e132cd51d9c8ab95b526b63e14e59'
+          test "$(git hash-object orbittrace_rft_v1_batched_kd_equivalence_audit/sharded_audit.py)" = '5e223efe59d1cc314f4a7471a9a40b3328713399'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          mkdir -p input/v3 input/v8 input/ranker prep
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Prepare exact target-excluded 2022 events and deterministic 8-shard assignment
+        env:
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          python -u orbittrace_rft_v1_batched_kd_equivalence_audit/sharded_audit.py prepare \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output prep
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-equivalence-sharded-input
+          path: prep
+          retention-days: 7
+
+  compare:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 9abdc2c80679b648c25aee33e03b1e3557613fdc
+          path: engineering-head
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-equivalence-sharded-input
+          path: prep
+      - name: Compare frozen scalar and batched atomization for assigned complete bins
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git -C engineering-head hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa'
+          python -u orbittrace_rft_v1_batched_kd_equivalence_audit/sharded_audit.py shard \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --engineering-wrapper engineering-head/orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py \
+            --events prep/events.json.gz --assignment prep/assignment.json \
+            --shard ${{ matrix.shard }} --output output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rft-equivalence-shard-${{ matrix.shard }}
+          path: output
+          if-no-files-found: error
+          retention-days: 7
+
+  reduce:
+    needs: [prepare,compare]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-equivalence-sharded-input
+          path: prep
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-equivalence-shard-*
+          path: shards
+          merge-multiple: true
+      - name: Require exact complete-bin coverage and all-shard PASS
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          a=json.load(open('prep/assignment.json'))
+          expected=list(map(int,a['all_bins']))
+          results=[]
+          for s in range(8):
+              p=Path(f'shards/equivalence_shard_{s}.json')
+              if not p.exists(): raise RuntimeError(f'missing shard result {s}')
+              r=json.load(open(p)); results.append(r)
+              assert r['verdict']=='PASS_RFT_V1_BATCHED_KD_ATOM_EQUIVALENCE_SHARD'
+              assert r['shard']==s and r['assigned_bins']==list(map(int,a['shard_bins'][s]))
+              assert r['passed_bins']==r['assigned_bins']
+              assert r['all_kdtree_candidate_sets_exact'] is True and r['all_atom_fields_exact'] is True
+              for k in ('scientific_endpoint_computed','tube_construction_computed','labels_used_in_computed_quantity','gmn_2023_access','sonotaco_2013_2014_access','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+                  assert r[k] is False
+          passed=[b for r in results for b in r['passed_bins']]
+          assert len(passed)==len(set(passed))==len(expected)
+          assert sorted(passed)==sorted(expected)
+          out={
+            'verdict':'PASS_RFT_V1_BATCHED_KD_ATOM_EQUIVALENCE',
+            'role':'ENGINEERING_IDENTITY_AUDIT_ONLY',
+            'execution':'SHARDED_COMPLETE_BIN_REDUCTION',
+            'year':2022,'events':a['events'],'source_month_count':a['source_month_count'],
+            'bin_count':len(expected),'shards':8,
+            'all_kdtree_candidate_sets_exact':True,'all_atom_fields_exact':True,
+            'scalar_kdtree_queries_audited':sum(r['scalar_kdtree_queries_audited'] for r in results),
+            'atom_count':sum(r['atoms'] for r in results),
+            'shard_elapsed_seconds':[r['elapsed_seconds'] for r in results],
+            'shard_result_sha256':{str(s):hashlib.sha256(Path(f'shards/equivalence_shard_{s}.json').read_bytes()).hexdigest() for s in range(8)},
+            'scientific_endpoint_computed':False,'tube_construction_computed':False,'labels_used_in_computed_quantity':False,
+            'blind_exclusion':[20.0,55.0],'gmn_2023_access':False,'sonotaco_2013_2014_access':False,'target_information_access':False,'target_region_events_accessed':False,'maarsy_scientific_access':False,'dms_scientific_access':False,
+            'frozen_protocol_blob':'8c272987ac0247cd4299bf74370f03b405ec595e',
+            'frozen_science_blob':'a5d5371f0c30a9c57ee4d8756ea41f454cd86301',
+            'engineering_wrapper_blob':'8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa'
+          }
+          Path('output/RFT_V1_BATCHED_KD_EQUIVALENCE.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rft-v1-sharded-batched-kd-equivalence
+          path: output
+          retention-days: 90
