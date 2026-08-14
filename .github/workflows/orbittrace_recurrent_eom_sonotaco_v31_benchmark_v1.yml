@@ -1,0 +1,166 @@
+name: OrbitTrace recurrent-EOM SonotaCo v31 benchmark v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact HDBSCAN runtime and pin frozen science
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/rows input/truth input/v31 output
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/PROTOCOL.md)" = '7c269adf77fb8758bd5d95b7a479237f08f8dafd'
+          test "$(git hash-object orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/run_benchmark.py)" = '2b833e5f7a9d5daab5bbdf5e01f1ba96bd41af17'
+          python -m py_compile orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/run_benchmark.py
+          echo PASS_RECURRENT_EOM_SONOTACO_V31_FROZEN_SOURCE_PINS
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Verify exact label-free SonotaCo inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/rows/label_free_preparation_manifest.json | cut -d' ' -f1)" = '0a24077f352ddba91c5fea2a102f996d6bea154b1bc769235a4dd916850dba2b'
+          test "$(sha256sum input/rows/sugar_2013.json | cut -d' ' -f1)" = '47fb0b700fbf710c7b061eead343016bd8d182756eb0c7f406507c5739e4c4f8'
+          test "$(sha256sum input/rows/sugar_2014.json | cut -d' ' -f1)" = 'bc83c113e9a14b1c6e1ef460ca9a40e05df77f3a449fec6064f8910add04c912'
+          test "$(sha256sum input/rows/hdbscan_2013.json | cut -d' ' -f1)" = '2433b556d4a859580ef5431d2307ef34c8fa4c15d42841a2ec7b0c11e5f1f158'
+          test "$(sha256sum input/rows/hdbscan_2014.json | cut -d' ' -f1)" = '206692292b2ca252777e40c13c367880740d8e2576d27615f7ea94b7790e3f55'
+          python - <<'PY'
+          import json
+          m=json.load(open('input/rows/label_free_preparation_manifest.json'))
+          assert m['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert m['shower_truth_accessed'] is False
+          assert m['target_information_access'] is False
+          assert m['target_region_retained'] is False
+          assert m['maarsy_scientific_access'] is False
+          print('PASS_LABEL_FREE_PRETRUTH_BOUNDARY')
+          PY
+
+      - name: Freeze recurrent-EOM memberships and ranks before truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/run_benchmark.py pretruth \
+            --rows-root input/rows --output output
+          sha256sum output/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json > output/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json'))
+          assert p['truth_accessed'] is False and p['v31_result_accessed'] is False
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['target_information_access'] is False and p['target_region_events_accessed'] is False
+          assert p['maarsy_scientific_access'] is False and p['dms_scientific_access'] is False
+          print('PRETRUTH_FROZEN', {r:(p['routes'][r]['events'],p['routes'][r]['candidate_count']) for r in ('sugar','hdbscan')})
+          PY
+
+      # Truth and v31 are deliberately unavailable until the complete candidate payload above exists.
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v31-local-geometry-margin-oof-development-v1
+          path: input/v31
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31509767311
+
+      - name: Verify immutable exposed truth and exact v31 control
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v31/result/V31_LOCAL_GEOMETRY_OOF_RESULT.json | cut -d' ' -f1)" = 'f69555d443f453fd40a769da09b2bbec8bf62cd4a932cd84278bb23305b5ac8e'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/v31/result/V31_LOCAL_GEOMETRY_OOF_RESULT.json'))
+          assert r['verdict']=='FAIL_V31_LOCAL_GEOMETRY_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT'
+          assert r['panel_wins']==2
+          print('PASS_EXACT_V31_CONTROL')
+          PY
+
+      - name: Evaluate sole frozen SonotaCo portability outcome
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/run_benchmark.py evaluate \
+            --pretruth output/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --truth-root input/truth \
+            --v31-result input/v31/result/V31_LOCAL_GEOMETRY_OOF_RESULT.json \
+            --output output
+
+      - name: Enforce benchmark firewall and binding verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json'))
+          assert r['verdict'] in {'PASS_RECURRENT_EOM_SONOTACO_V31_SUPERIORITY_V1','FAIL_RECURRENT_EOM_SONOTACO_V31_SUPERIORITY_V1'}
+          assert r['scientific_role']=='EXPOSED_SONOTACO_2013_2014_PORTABILITY_AND_V31_COMPARISON_ONLY'
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['method_changed_after_gmn_result'] is False
+          assert r['post_result_parameter_search'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert len(r['panels'])==4
+          print(r['verdict'], 'v31_wins=',r['v31_panel_wins'],'literature_wins=',r['literature_panel_wins'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/run_benchmark.py \
+            input/rows/label_free_preparation_manifest.json \
+            output/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            input/v31/result/V31_LOCAL_GEOMETRY_OOF_RESULT.json \
+            output/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
