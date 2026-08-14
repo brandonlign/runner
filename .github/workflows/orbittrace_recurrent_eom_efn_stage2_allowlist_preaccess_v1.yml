@@ -31,8 +31,9 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_BINDING_FREEZE.json)" = '8d736feb464584c6e8302d9efdbf62784a296163'
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_ALLOWLIST_ACCESS_CORRECTION.md)" = 'b4505da0656b3514f8a2aa9e92faef19d3f42009'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_PREACCESS_AUDIT1_NO_RESULT.md)" = 'b17bd57c8e4d4bf0cb980cedcc3b463b450ffd30'
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py)" = 'cba27084ad2cb906de0432e1a095329343ff8439'
-          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py)" = '6e9c45843fa9f20634db32f6453fb95602966b38'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py)" = '6580f5cf57d39bd81e98a79a705c38f88d27a708'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
           python -m py_compile \
@@ -46,9 +47,6 @@ jobs:
           assert 'Lsun < 20.0 OR Lsun > 55.0' not in src
           assert 'canonical = raw % 360.0' in src
           assert 'QUERY_BATCH_SIZE = 150' in src
-          for forbidden in ('Shower','Object','RAgeo','DEgeo','Vinf'):
-              # Names may appear in defensive rejection strings, but never in SELECT_COLUMNS.
-              pass
           ns={}
           exec(compile(tree,p,'exec'),ns)
           assert ns['QUERY_COLUMNS']==['Code','Obs.date','Lsun','Lgeo-Lsun','Bgeo','Vgeo']
@@ -62,6 +60,7 @@ jobs:
       - name: Run synthetic retained-ID-only geometry audit
         run: |
           set -euo pipefail
+          mkdir -p orbittrace_recurrent_eom_efn_2017_2018_external_v1/output
           rm -f orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT.json
           python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py
           python - <<'PY'
@@ -74,6 +73,8 @@ jobs:
           assert r['raw_longitude_server_filter_removed'] is True
           assert r['stage1_allowlist_hash_binding'] is True
           assert r['exact_retained_id_equality_required'] is True
+          assert r['csv_schema_boundary_exercised'] is True
+          assert r['per_batch_id_boundary_exercised'] is True
           assert r['solar_longitude_normalization']=='raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event'
           assert r['generic_over_360_modulo_supported'] is True
           assert r['protected_canonical_row_fails_closed'] is True
@@ -91,10 +92,12 @@ jobs:
         run: |
           set +e
           root='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output'
+          mkdir -p "$root"
           sha256sum \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_BINDING_FREEZE.json \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_ALLOWLIST_ACCESS_CORRECTION.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_PREACCESS_AUDIT1_NO_RESULT.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py \
             orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
