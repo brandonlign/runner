@@ -1,0 +1,135 @@
+name: OrbitTrace RFT v1 balanced sharded engineering v2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  atoms:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        replica: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+        shard: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - name: Verify frozen balanced execution bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/BALANCED_SHARDED_PROTOCOL_V2.md)" = '4b3bfb881956020853f83f58ec892bd21e088cca'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/balanced_atoms.py)" = 'ecd2d589efb78066609b6c127bca7da9c3f668fa'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa'
+          mkdir -p out
+      - name: Compute one balanced complete-bin atom shard
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/balanced_atoms.py \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --wrapper orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py \
+            --events prep/events.json.gz --replica ${{ matrix.replica }} --shard ${{ matrix.shard }} --output out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-balanced-atoms-r${{ matrix.replica }}-s${{ matrix.shard }}
+          path: out
+          retention-days: 7
+
+  tubes:
+    needs: atoms
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 17
+      matrix:
+        replica: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-balanced-atoms-r${{ matrix.replica }}-s*
+          path: atoms
+          merge-multiple: true
+      - name: Recombine exact complete bins and build frozen tubes
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py tubes \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --atom-dir atoms --replica ${{ matrix.replica }} --output out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-balanced-tubes-r${{ matrix.replica }}
+          path: out
+          retention-days: 7
+
+  final:
+    needs: tubes
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31816118410
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-balanced-tubes-r*
+          path: tubes
+          merge-multiple: true
+      - name: Reassemble exact frozen RFT cache and evaluate nonauthoritatively
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py final \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --cached-runner orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py \
+            --events prep/events.json.gz --hidden prep/hidden.json.gz --tube-dir tubes --output output
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RFT_V1_GMN2022_SHARDED_ENGINEERING.json'))
+          assert r['execution_role']=='SHARDED_ENGINEERING_NONAUTHORITATIVE_PENDING_EQUIVALENCE'
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('BALANCED_V2_NONAUTHORITATIVE',r['verdict'],r['metrics'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rft-v1-balanced-sharded-engineering-gmn2022
+          path: output
+          retention-days: 90
