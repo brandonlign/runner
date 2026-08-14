@@ -1,0 +1,80 @@
+name: OrbitTrace reciprocal-transfer HDBSCAN v1 source audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-reciprocal-transfer-hdbscan-v1
+    paths:
+      - '.github/workflows/orbittrace_reciprocal_transfer_hdbscan_source_audit_v1.yml'
+      - 'orbittrace_reciprocal_transfer_hdbscan_v1/source_audit.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify source-audit bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_reciprocal_transfer_hdbscan_v1/source_audit.py)" = '82bbe09f3cd9d33d8a5a909610d9e6daa1e4f4f7'
+          python -m py_compile orbittrace_reciprocal_transfer_hdbscan_v1/source_audit.py
+
+      - name: Run source-only firewall audit
+        run: |
+          set -euo pipefail
+          rm -rf output_reciprocal_transfer_source_audit
+          python -u -m orbittrace_reciprocal_transfer_hdbscan_v1.source_audit
+
+      - name: Enforce zero-data audit
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('output_reciprocal_transfer_source_audit/RECIPROCAL_TRANSFER_HDBSCAN_V1_SOURCE_AUDIT.json'))
+          assert p['verdict']=='PASS_RECIPROCAL_TRANSFER_HDBSCAN_V1_SOURCE_AUDIT'
+          assert p['successor_build_line'] < p['prelabel_freeze_line'] < p['first_parent_output_read_line']
+          assert p['prelabel_freeze_line'] < p['truth_unseal_line']
+          assert p['prediction_probabilities_enter_matching'] is False
+          assert p['prediction_probabilities_enter_ranking'] is False
+          assert p['majority_fractions_enter_ranking'] is False
+          assert p['kernel_truth_surface'] is False
+          for key in ('scientific_data_accessed','gmn_accessed','truth_accessed','sonotaco_accessed','amos_accessed','efn_accessed','orbittrace_target_access','maarsy_scientific_access','dms_scientific_access'):
+              assert p[key] is False, key
+          print(p['verdict'])
+          PY
+
+      - name: Preserve audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output_reciprocal_transfer_source_audit
+          sha256sum \
+            orbittrace_reciprocal_transfer_hdbscan_v1/PROTOCOL.md \
+            orbittrace_reciprocal_transfer_hdbscan_v1/reciprocal_transfer.py \
+            orbittrace_reciprocal_transfer_hdbscan_v1/run_development.py \
+            orbittrace_reciprocal_transfer_hdbscan_v1/source_audit.py \
+            output_reciprocal_transfer_source_audit/RECIPROCAL_TRANSFER_HDBSCAN_V1_SOURCE_AUDIT.json \
+            > output_reciprocal_transfer_source_audit/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output_reciprocal_transfer_source_audit/execution_commit.txt
+          python --version > output_reciprocal_transfer_source_audit/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-reciprocal-transfer-hdbscan-v1-source-audit
+          path: output_reciprocal_transfer_source_audit
+          if-no-files-found: error
+          retention-days: 90
