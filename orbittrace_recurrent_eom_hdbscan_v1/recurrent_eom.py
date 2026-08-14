@@ -19,7 +19,15 @@ def _birth_lambdas(tree: np.ndarray) -> dict[int, float]:
 
 
 def _descendant_year_counts(tree: np.ndarray, years: np.ndarray) -> dict[int, np.ndarray]:
-    """Count point descendants by year for every condensed-tree cluster node."""
+    """Count point descendants by year for every condensed-tree cluster node.
+
+    HDBSCAN condensed-tree cluster IDs are topologically ordered: point IDs are
+    below the root, and every cluster child has a larger numeric ID than its
+    parent. Process cluster nodes in descending ID so every cluster child's
+    annual descendant count is available before its parent. This is exactly the
+    same tree sum as the prior recursive implementation, without Python-stack
+    depth dependence.
+    """
     root = int(tree["parent"].min())
     n_points = root
     if years.shape != (n_points,):
@@ -30,26 +38,28 @@ def _descendant_year_counts(tree: np.ndarray, years: np.ndarray) -> dict[int, np
     y_index = {y: i for i, y in enumerate(year_values)}
 
     children: dict[int, list[int]] = defaultdict(list)
+    cluster_nodes: set[int] = set()
     for parent, child in zip(tree["parent"], tree["child"]):
-        children[int(parent)].append(int(child))
+        p = int(parent)
+        c = int(child)
+        children[p].append(c)
+        cluster_nodes.add(p)
+        if c >= n_points:
+            if c <= p:
+                raise RuntimeError(f"HDBSCAN condensed-tree topological order changed: parent={p}, child={c}")
+            cluster_nodes.add(c)
 
     memo: dict[int, np.ndarray] = {}
-
-    def count(node: int) -> np.ndarray:
-        if node < n_points:
-            out = np.zeros(2, dtype=np.int64)
-            out[y_index[int(years[node])]] = 1
-            return out
-        if node in memo:
-            return memo[node]
+    for node in sorted(cluster_nodes, reverse=True):
         out = np.zeros(2, dtype=np.int64)
         for child in children.get(node, []):
-            out += count(child)
+            if child < n_points:
+                out[y_index[int(years[child])]] += 1
+            else:
+                if child not in memo:
+                    raise RuntimeError(f"bottom-up descendant count missing cluster child {child} for parent {node}")
+                out += memo[child]
         memo[node] = out
-        return out
-
-    for node in set(int(x) for x in tree["parent"]):
-        count(node)
     return memo
 
 
