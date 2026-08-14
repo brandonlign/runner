@@ -1,0 +1,158 @@
+name: OrbitTrace recurrent-EOM EFN Stage-2 live retained geometry v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+    paths:
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_LIVE_ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  retained-geometry-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify exact Stage-2 authorization pins
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_BINDING_FREEZE.json)" = '8d736feb464584c6e8302d9efdbf62784a296163'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_ALLOWLIST_ACCESS_CORRECTION.md)" = 'b4505da0656b3514f8a2aa9e92faef19d3f42009'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_PREACCESS_FREEZE.json)" = 'fbdf6e11bce30c6579fd89b72a1befcd670d5176'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py)" = 'cba27084ad2cb906de0432e1a095329343ff8439'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          python -m py_compile orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py
+          python - <<'PY'
+          import ast,json
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py'
+          src=open(p).read(); tree=ast.parse(src); ns={}; exec(compile(tree,p,'exec'),ns)
+          assert ns['QUERY_COLUMNS']==['Code','Obs.date','Lsun','Lgeo-Lsun','Bgeo','Vgeo']
+          q=ns['build_query'](['A','B'])
+          assert "Code IN ('A','B')" in q
+          assert 'Lsun <' not in q and 'Lsun >' not in q
+          assert 'Shower' not in ns['SELECT_COLUMNS'] and 'Object' not in ns['SELECT_COLUMNS']
+          f=json.load(open('orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_PREACCESS_FREEZE.json'))
+          assert f['binding_preaccess_audit_verdict']=='PASS_RECURRENT_EOM_EFN_STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT'
+          assert f['binding_preaccess_audit_run']==31841561662
+          assert f['binding_preaccess_audit_artifact']==9234420634
+          assert f['binding_preaccess_audit_artifact_digest']=='sha256:75656aed9ce05ae5b4fa182336f58fc66de8d5b426843b8011cb206f3f18cac2'
+          assert f['efn_geometry_accessed_before_freeze'] is False and f['efn_shower_labels_accessed'] is False
+          print('PASS_EFN_STAGE2_LIVE_AUTHORIZATION')
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-efn-stage1-live-retry5-v1
+          path: input/stage1
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31841115599
+
+      - name: Verify exact binding Stage-1 retained set
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/stage1/EFN_2017_RETAINED_IDS.txt | cut -d' ' -f1)" = '1f4bc6d32c7b65f70b567d8b618f2a4b672214e692405a568db5cf2b00b77745'
+          test "$(sha256sum input/stage1/EFN_2018_RETAINED_IDS.txt | cut -d' ' -f1)" = '7358ea62ad18559da8006b174e37c82e0a3d22eb44dfee1bd138433615a9b7dd'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/stage1/STAGE1_BLIND_RECEIPT.json'))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE1_BLIND_RECEIPT'
+          assert r['catalogue']=='J/A+A/667/A157' and r['rows_received']==824
+          assert r['rows_by_year']=={'2017':346,'2018':478}
+          assert r['excluded_rows_by_year']=={'2017':8,'2018':34}
+          assert r['retained_rows_by_year']=={'2017':338,'2018':444}
+          assert r['retained_ids_sha256']=={'2017':'1f4bc6d32c7b65f70b567d8b618f2a4b672214e692405a568db5cf2b00b77745','2018':'7358ea62ad18559da8006b174e37c82e0a3d22eb44dfee1bd138433615a9b7dd'}
+          assert r['modulo_wrapped_rows_by_year']=={'2017':0,'2018':4}
+          assert r['geometry_returned'] is False and r['shower_labels_returned'] is False
+          assert r['target_information_access'] is False and r['target_region_physical_values_accessed'] is False
+          print('PASS_BINDING_EFN_STAGE1_INPUT')
+          PY
+
+      - name: Execute first retained-ID-only EFN geometry access
+        run: |
+          set -euo pipefail
+          rm -rf output/stage2
+          python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py \
+            --stage1-result input/stage1/STAGE1_BLIND_RECEIPT.json \
+            --ids-2017 input/stage1/EFN_2017_RETAINED_IDS.txt \
+            --ids-2018 input/stage1/EFN_2018_RETAINED_IDS.txt \
+            --output output/stage2
+
+      - name: Enforce retained-geometry-only endpoint
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('output/stage2')
+          assert {p.name for p in root.iterdir() if p.is_file()}=={'EFN_2017_CANONICAL_GEOMETRY.json','EFN_2018_CANONICAL_GEOMETRY.json','STAGE2_RETAINED_GEOMETRY.json'}
+          r=json.load(open(root/'STAGE2_RETAINED_GEOMETRY.json'))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE2_RETAINED_NATIVE_GEOMETRY'
+          assert r['scientific_role']=='PRISTINE_EXTERNAL_EFN_2017_2018_STAGE2_RETAINED_GEOMETRY_ONLY'
+          assert r['catalogue']=='J/A+A/667/A157' and r['years']==[2017,2018]
+          assert r['rows_by_year']=={'2017':338,'2018':444}
+          assert r['stage1_retained_ids_sha256']=={'2017':'1f4bc6d32c7b65f70b567d8b618f2a4b672214e692405a568db5cf2b00b77745','2018':'7358ea62ad18559da8006b174e37c82e0a3d22eb44dfee1bd138433615a9b7dd'}
+          assert r['query_columns']==['Code','Obs.date','Lsun','Lgeo-Lsun','Bgeo','Vgeo']
+          assert r['server_side_access_restriction']=='frozen Stage-1 retained-ID allowlist only'
+          assert r['solar_longitude_normalization']=='raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event'
+          assert r['modulo_wrapped_rows_by_year']=={'2017':0,'2018':4}
+          assert r['native_mapping']=={'sol':'Lsun % 360.0','sun_lon':'Lgeo-Lsun','ecl_lat':'Bgeo','vg':'Vgeo'}
+          assert r['quality_filter_used'] is False and r['survey_calibration_used'] is False
+          assert r['labels_accessed'] is False and r['shower_column_returned'] is False and r['orbit_fields_returned'] is False
+          assert r['target_region_physical_values_accessed'] is False and r['target_information_access'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['orbittrace_target_access'] is False
+          expected={'2017':338,'2018':444}
+          for y,n in expected.items():
+              rows=json.load(open(root/f'EFN_{y}_CANONICAL_GEOMETRY.json'))
+              assert len(rows)==n
+              assert all(set(x)=={'id','year','sol','sun_lon','ecl_lat','vg','iau','complex_key'} for x in rows)
+              assert all(x['iau']==0 and x['complex_key']=='HIDDEN' for x in rows)
+              assert all(not (20.0 <= float(x['sol']) <= 55.0) for x in rows)
+              assert all(float(x['vg'])>0 for x in rows)
+          print(r['verdict'], r['rows_by_year'], r['canonical_geometry_sha256'])
+          PY
+
+      - name: Preserve Stage-2 provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/stage2
+          sha256sum \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_BINDING_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_ALLOWLIST_ACCESS_CORRECTION.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_PREACCESS_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py \
+            input/stage1/STAGE1_BLIND_RECEIPT.json \
+            input/stage1/EFN_2017_RETAINED_IDS.txt \
+            input/stage1/EFN_2018_RETAINED_IDS.txt \
+            output/stage2/EFN_2017_CANONICAL_GEOMETRY.json \
+            output/stage2/EFN_2018_CANONICAL_GEOMETRY.json \
+            output/stage2/STAGE2_RETAINED_GEOMETRY.json \
+            > output/stage2/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/stage2/execution_commit.txt
+          python --version > output/stage2/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-efn-stage2-retained-geometry-v1
+          path: output/stage2
+          if-no-files-found: error
+          retention-days: 90
