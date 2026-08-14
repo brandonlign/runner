@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 
 ENDPOINT = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
-TABLE = "J/A+A/667/A157/catalog"
+CANONICAL_TABLE = "J/A+A/667/A157/catalog"
 REQUIRED = {
     "Code",
     "Obs.date",
@@ -20,7 +20,6 @@ REQUIRED = {
     "Vgeo",
     "Shower",
 }
-FORBIDDEN_EVENT_TOKENS = ("select * from \"j/a+a/667/a157/catalog\"", "from \"j/a+a/667/a157/catalog\"")
 
 
 def require(ok: bool, msg: str) -> None:
@@ -31,14 +30,9 @@ def require(ok: bool, msg: str) -> None:
 def post_adql(query: str) -> str:
     qnorm = " ".join(query.lower().split())
     require("tap_schema." in qnorm, "schema audit attempted a non-TAP_SCHEMA query")
-    require(all(tok not in qnorm for tok in FORBIDDEN_EVENT_TOKENS), "schema audit attempted event-table access")
+    require('from "j/a+a/667/a157/catalog"' not in qnorm, "schema audit attempted event-table access")
     body = urllib.parse.urlencode(
-        {
-            "REQUEST": "doQuery",
-            "LANG": "ADQL",
-            "FORMAT": "csv",
-            "QUERY": query,
-        }
+        {"REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv", "QUERY": query}
     ).encode("ascii")
     req = urllib.request.Request(
         ENDPOINT,
@@ -57,37 +51,60 @@ def rows(text: str) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(text)))
 
 
+def strip_quotes(value: str) -> str:
+    s = str(value).strip()
+    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+        return s[1:-1]
+    return s
+
+
+def adql_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
 def main() -> int:
     table_query = (
         "SELECT table_name, description FROM TAP_SCHEMA.tables "
-        "WHERE table_name = 'J/A+A/667/A157/catalog'"
+        "WHERE table_name LIKE '%A157%' ORDER BY table_name"
     )
+    table_rows_all = rows(post_adql(table_query))
+    matches = [r for r in table_rows_all if strip_quotes(r.get("table_name", "")) == CANONICAL_TABLE]
+    require(len(matches) == 1, f"expected one canonical EFN metadata table after normalized discovery, got {len(matches)} from {[r.get('table_name') for r in table_rows_all]}")
+    table_row = matches[0]
+    raw_table_name = str(table_row["table_name"])
+
     column_query = (
         "SELECT column_name, datatype, unit, description FROM TAP_SCHEMA.columns "
-        "WHERE table_name = 'J/A+A/667/A157/catalog' ORDER BY column_name"
+        f"WHERE table_name = {adql_string(raw_table_name)} ORDER BY column_name"
     )
-    table_rows = rows(post_adql(table_query))
     column_rows = rows(post_adql(column_query))
-    require(len(table_rows) == 1, f"expected exactly one EFN TAP table metadata row, got {len(table_rows)}")
-    require(table_rows[0].get("table_name") == TABLE, f"unexpected table name: {table_rows[0]}")
-    require(column_rows, "no TAP_SCHEMA column rows")
-    names = [str(r.get("column_name", "")) for r in column_rows]
-    require(len(names) == len(set(names)), "duplicate TAP column metadata")
-    require(REQUIRED.issubset(set(names)), f"required EFN TAP fields missing: {sorted(REQUIRED - set(names))}")
+    require(column_rows, "no TAP_SCHEMA column rows for resolved EFN table")
+    raw_names = [str(r.get("column_name", "")) for r in column_rows]
+    names = [strip_quotes(n) for n in raw_names]
+    require(len(names) == len(set(names)), "duplicate normalized TAP column metadata")
+    require(REQUIRED.issubset(set(names)), f"required EFN TAP fields missing: {sorted(REQUIRED - set(names))}; got {names}")
     require("Obs.time" not in set(names), "unexpected separate Obs.time column appeared; access repair requires review")
 
-    selected = {
-        n: next(r for r in column_rows if r.get("column_name") == n)
-        for n in sorted(REQUIRED)
-    }
+    selected = {}
+    for required in sorted(REQUIRED):
+        i = names.index(required)
+        selected[required] = {
+            "raw_column_name": raw_names[i],
+            "datatype": column_rows[i].get("datatype"),
+            "unit": column_rows[i].get("unit"),
+            "description": column_rows[i].get("description"),
+        }
+
     result = {
         "verdict": "PASS_RECURRENT_EOM_EFN_TAP_SCHEMA_PREACCESS_AUDIT",
         "endpoint": ENDPOINT,
         "catalogue": "J/A+A/667/A157",
-        "table_name": TABLE,
-        "table_description": table_rows[0].get("description"),
+        "canonical_table_name": CANONICAL_TABLE,
+        "tap_schema_raw_table_name": raw_table_name,
+        "tap_schema_normalized_table_name": strip_quotes(raw_table_name),
+        "table_description": table_row.get("description"),
         "required_columns": selected,
-        "all_column_names_sha256": hashlib.sha256(("\n".join(names) + "\n").encode()).hexdigest(),
+        "all_normalized_column_names_sha256": hashlib.sha256(("\n".join(names) + "\n").encode()).hexdigest(),
         "all_column_count": len(names),
         "obs_time_separate_column_present": False,
         "query_classes": ["TAP_SCHEMA.tables", "TAP_SCHEMA.columns"],
