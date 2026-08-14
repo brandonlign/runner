@@ -7,7 +7,7 @@ on:
     paths:
       - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py'
       - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py'
-      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_DATE_ENCODING_REPAIR.md'
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_SOLAR_WRAP_REPAIR.md'
       - '.github/workflows/orbittrace_recurrent_eom_efn_stage1_preaccess_v1.yml'
   workflow_dispatch:
 
@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Verify date-repaired Stage-1 bytes
+      - name: Verify solar-wrap-repaired Stage-1 bytes
         run: |
           set -euo pipefail
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
@@ -33,8 +33,10 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md)" = '62cc76281f4d4bbeaef9ffe6a028338d7cd3473c'
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_RETURNED_HEADER_REPAIR.md)" = '04d7d704bd17eb9115de0982089ba57daae5798c'
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_DATE_ENCODING_REPAIR.md)" = '9c9d26005def33bbddced82b3f4819bff31f9021'
-          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py)" = '95c0b034cf1ab98237a019a01df79bc7c70d11fd'
-          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py)" = 'da96027c525b513d1c4d76e37ca59cfbbda8878d'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_SOLAR_WRAP_REPAIR.md)" = '40d16eeb4db2392c0842ff4be5ccdb4d225f7436'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py)" = 'eb4f3e44ccb92a96d9ac7bb77622fbab805c46ea'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py)" = 'a9cb87ec27817049693af298273cd8ad34ef0d82'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
           python -m py_compile \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py
@@ -44,44 +46,51 @@ jobs:
           src=open(p).read(); tree=ast.parse(src)
           q=[n.value.value for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='QUERY' for t in n.targets) and isinstance(n.value,ast.Constant)]
           assert q==['SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"']
-          assert 'RETURNED_COLUMNS = ["Code", "Obs_date", "Lsun"]' in src
-          assert 'DATE_ENCODING = "VIZIER_SEC_PER_2000"' in src
-          assert 'SEC_2017 = 536544000' in src and 'SEC_2018 = 568080000' in src and 'SEC_2019 = 599616000' in src
+          assert 'SOLAR_LONGITUDE_NORMALIZATION = "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event"' in src
+          assert 'require(0.0 <= raw <= 360.0' in src
+          assert 'canonical = raw % 360.0' in src
           for forbidden in ('Lgeo-Lsun','Bgeo','Vgeo','Shower','Object','RAgeo','DEgeo','Vinf'):
               assert forbidden not in q[0]
-          print('PASS_EFN_STAGE1_DATE_REPAIRED_FROZEN_QUERY')
+          promoted=open('orbittrace_recurrent_eom_hdbscan_v1/run_development.py').read()
+          assert ')) % 360.0' in promoted
+          print('PASS_EFN_STAGE1_SOLAR_WRAP_REPAIRED_FROZEN_QUERY')
           PY
 
-      - name: Run sec-per-2000 synthetic blind-index audit only
+      - name: Run modulo-360 synthetic blind-index audit only
         run: |
           set -euo pipefail
-          rm -f orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_DATE_ENCODING_REPAIR_SYNTHETIC_AUDIT.json
+          rm -f orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT.json
           python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py
           python - <<'PY'
           import json
-          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_DATE_ENCODING_REPAIR_SYNTHETIC_AUDIT.json'
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT.json'
           r=json.load(open(p))
-          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE1_DATE_ENCODING_REPAIR_SYNTHETIC_AUDIT'
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT'
           assert r['synthetic_only'] is True
           assert r['expected_catalogue_rows']==824
           assert r['query_columns']==['Code','Obs.date','Lsun']
           assert r['returned_columns']==['Code','Obs_date','Lsun']
           assert r['query_unchanged'] is True
           assert r['obs_date_encoding']=='VIZIER_SEC_PER_2000'
-          assert r['year_boundaries_sec_per_2000']=={'2017_start':536544000,'2018_start':568080000,'2019_start':599616000}
-          assert r['observed_safe_value_594264654_resolves_to_year']==2018
-          assert r['out_of_domain_date_fails_closed'] is True and r['noninteger_date_fails_closed'] is True
+          assert r['solar_longitude_normalization']=='raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event'
+          assert r['raw_solar_longitude_allowed_domain_inclusive']==[0.0,360.0]
+          assert r['exact_360_canonicalizes_to_zero'] is True
+          assert r['exact_360_retained_outside_protected_interval'] is True
+          assert r['over_360_fails_closed'] is True
+          assert r['negative_fails_closed'] is True
+          assert r['nonfinite_fails_closed'] is True
           assert r['boundary_20_excluded'] is True and r['boundary_55_excluded'] is True
           assert r['extra_column_fails_closed'] is True
           assert r['duplicate_code_fails_closed'] is True
           assert r['wrong_row_count_fails_closed'] is True
           assert r['raw_response_persisted'] is False
+          assert r['solar_longitude_values_persisted'] is False
           assert r['efn_geometry_accessed'] is False
           assert r['efn_shower_labels_accessed'] is False
           print(r['verdict'])
           PY
 
-      - name: Preserve date-repair audit provenance
+      - name: Preserve solar-wrap repair audit provenance
         if: always()
         run: |
           set +e
@@ -92,21 +101,22 @@ jobs:
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_RETURNED_HEADER_REPAIR.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_DATE_ENCODING_REPAIR.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_SOLAR_WRAP_REPAIR.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py \
-            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_DATE_ENCODING_REPAIR_SYNTHETIC_AUDIT.json \
-            > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_date_repair_source_output_sha256.txt 2>/dev/null || true
-          git rev-parse HEAD > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_date_repair_execution_commit.txt
-          python --version > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_date_repair_python_version.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT.json \
+            > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_solar_wrap_source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_solar_wrap_execution_commit.txt
+          python --version > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_solar_wrap_python_version.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: orbittrace-recurrent-eom-efn-stage1-date-repair-preaccess-v1
+          name: orbittrace-recurrent-eom-efn-stage1-solar-wrap-preaccess-v1
           path: |
-            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_DATE_ENCODING_REPAIR_SYNTHETIC_AUDIT.json
-            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_date_repair_source_output_sha256.txt
-            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_date_repair_execution_commit.txt
-            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_date_repair_python_version.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT.json
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_solar_wrap_source_output_sha256.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_solar_wrap_execution_commit.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_solar_wrap_python_version.txt
           if-no-files-found: error
           retention-days: 90
