@@ -35,7 +35,7 @@ jobs:
           set -euo pipefail
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
 
-      - name: Verify pre-data scientific and adapter pins
+      - name: Verify pre-data scientific, adapter, and split-stage pins
         run: |
           set -euo pipefail
           test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/PROTOCOL.md)" = '6cc45ef9e0b7b7cf1bf71f22361b64d537977f4f'
@@ -44,12 +44,22 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py)" = '612ad23af6e11ac2155282258e3d1429fbe00d67'
           test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py)" = '9a0fb05f94d6a28cd95f97d864e76400056273b0'
           test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/selftest.py)" = 'd0ff80a520bf1861f935dd83afaa313fe56a9986'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/generate_pretruth.py)" = '07fd6649080f8355a62acbaf71abb739a47319bd'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/evaluate_labels.py)" = 'b84422e9f037d6784b18943302a4c734777d8479'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/full_pipeline_selftest.py)" = '201e893d8dde15c2e574ccecd0caa88a8c5d30d2'
           python -m py_compile \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
             orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py \
             orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py \
-            orbittrace_recurrent_eom_amos_2023_2024_external_v1/selftest.py
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/selftest.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/generate_pretruth.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/evaluate_labels.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/full_pipeline_selftest.py
+          if python orbittrace_recurrent_eom_amos_2023_2024_external_v1/generate_pretruth.py --help | grep -q -- '--labels'; then
+            echo 'pretruth generator unexpectedly accepts labels' >&2
+            exit 1
+          fi
           echo PASS_RECURRENT_EOM_AMOS_PRE_DATA_SOURCE_PINS
 
       - name: Prove exact zero-data AMOS-to-GEO6 mapping and blind fail-closed behavior
@@ -76,6 +86,27 @@ jobs:
           print(r['verdict'])
           PY
 
+      - name: Prove label-inaccessible pretruth and hash-bound posttruth stages end to end
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_amos_2023_2024_external_v1/full_pipeline_selftest.py
+          python - <<'PY'
+          import json
+          p='orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/SPLIT_STAGE_SYNTHETIC_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_RECURRENT_EOM_AMOS_SPLIT_STAGE_SYNTHETIC_AUDIT'
+          assert r['synthetic_only'] is True
+          assert r['pretruth_program_accepts_label_argument'] is False
+          assert r['pretruth_hash_bound_before_label_evaluation'] is True
+          assert r['candidate_generation_recomputed_after_labels'] is False
+          assert r['ranking_changed_after_labels'] is False
+          assert r['amos_event_rows_accessed'] is False and r['amos_labels_accessed'] is False
+          assert r['years_frozen']==[2023,2024] and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'])
+          PY
+
       - name: Preserve zero-data provenance
         if: always()
         run: |
@@ -88,7 +119,11 @@ jobs:
             orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py \
             orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py \
             orbittrace_recurrent_eom_amos_2023_2024_external_v1/selftest.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/generate_pretruth.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/evaluate_labels.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/full_pipeline_selftest.py \
             orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/PRE_DATA_MAPPING_AUDIT.json \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/SPLIT_STAGE_SYNTHETIC_AUDIT.json \
             > orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/source_output_sha256.txt 2>/dev/null || true
           git rev-parse HEAD > orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/execution_commit.txt
           python --version > orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/python_version.txt
