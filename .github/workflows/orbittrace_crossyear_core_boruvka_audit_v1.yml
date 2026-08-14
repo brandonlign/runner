@@ -1,0 +1,108 @@
+name: OrbitTrace cross-year-core Boruvka exactness audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-crossyear-core-boruvka-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_crossyear_core_boruvka_audit_v1.yml'
+      - 'orbittrace_crossyear_core_hdbscan_v1/BORUVKA_AUDIT_PROTOCOL.md'
+      - 'orbittrace_crossyear_core_hdbscan_v1/boruvka_exactness_audit.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  boruvka-exactness:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact frozen runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+
+      - name: Verify all pre-outcome source pins
+        run: |
+          set -euo pipefail
+          check_blob() {
+            path="$1"
+            expected="$2"
+            actual="$(git hash-object "$path")"
+            echo "BLOB $path actual=$actual expected=$expected"
+            test "$actual" = "$expected"
+          }
+          check_blob orbittrace_crossyear_core_hdbscan_v1/PROTOCOL.md 980d2f26d6477ff80d1b57606ee86ae96bebe972
+          check_blob orbittrace_crossyear_core_hdbscan_v1/BORUVKA_AUDIT_PROTOCOL.md 97446b46f8ab5adaac477124e420954668f3e009
+          check_blob orbittrace_crossyear_core_hdbscan_v1/reference.py 5380dd68a01c0f35c3e212972b840ae7b9dea7aa
+          check_blob orbittrace_crossyear_core_hdbscan_v1/boruvka_adapter.py a7fec249d82fef23158ae52897ae28f9d0126153
+          check_blob orbittrace_crossyear_core_hdbscan_v1/boruvka_exactness_audit.py b8bad31e8e46269e281e118f58e0ff6940aa04f7
+          check_blob orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py 30ac3fa3bc47910370df528fcf3ae8ecb6277b47
+          python -m py_compile \
+            orbittrace_crossyear_core_hdbscan_v1/reference.py \
+            orbittrace_crossyear_core_hdbscan_v1/boruvka_adapter.py \
+            orbittrace_crossyear_core_hdbscan_v1/boruvka_exactness_audit.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py
+
+      - name: Run zero-data scalable equivalence audit
+        run: |
+          set -euo pipefail
+          rm -rf output
+          python -u orbittrace_crossyear_core_hdbscan_v1/boruvka_exactness_audit.py
+
+      - name: Enforce frozen verdict and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('output/CROSSYEAR_CORE_BORUVKA_EXACTNESS_AUDIT_V1.json'))
+          assert p['verdict']=='PASS_CROSSYEAR_CORE_BORUVKA_EXACTNESS_AUDIT_V1'
+          assert p['absolute_tolerance_frozen_pre_execution']==1e-12
+          assert p['k']==10 and p['min_cluster_size']==10
+          assert len(p['fixtures'])==5
+          assert all(f['status']=='PASS' for f in p['fixtures'])
+          for key in ('scientific_data_accessed','gmn_accessed','sonotaco_accessed','amos_accessed','orbittrace_target_access','maarsy_scientific_access','dms_scientific_access'):
+              assert p[key] is False, key
+          print(p['verdict'])
+          PY
+
+      - name: Preserve binding engineering provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_crossyear_core_hdbscan_v1/PROTOCOL.md \
+            orbittrace_crossyear_core_hdbscan_v1/BORUVKA_AUDIT_PROTOCOL.md \
+            orbittrace_crossyear_core_hdbscan_v1/reference.py \
+            orbittrace_crossyear_core_hdbscan_v1/boruvka_adapter.py \
+            orbittrace_crossyear_core_hdbscan_v1/boruvka_exactness_audit.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            output/CROSSYEAR_CORE_BORUVKA_EXACTNESS_AUDIT_V1.json \
+            > output/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-crossyear-core-boruvka-exactness-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
