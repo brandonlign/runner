@@ -1,0 +1,42 @@
+name: OrbitTrace Adelaide zero-data freshness audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-adelaide-zero-data-freshness-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_adelaide_zero_data_freshness_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch all remote branches and tags for complete reachable history
+        run: |
+          set -euo pipefail
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --prune
+      - name: Verify frozen audit sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_adelaide_zero_data_freshness_audit_v1/PROTOCOL.md)" = '8c8a8661350f3367fdbb920bb645ced48b113172'
+          test "$(git hash-object orbittrace_adelaide_zero_data_freshness_audit_v1/audit_history.py)" = '8fdb5614c97a54a1beb8bbcc233490ffd5fbde44'
+          python -m py_compile orbittrace_adelaide_zero_data_freshness_audit_v1/audit_history.py
+      - name: Run zero-network history audit
+        run: |
+          set -euo pipefail
+          python orbittrace_adelaide_zero_data_freshness_audit_v1/audit_history.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-adelaide-zero-data-freshness-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
