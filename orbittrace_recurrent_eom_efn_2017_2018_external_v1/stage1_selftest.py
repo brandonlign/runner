@@ -27,7 +27,7 @@ def load_module():
     return mod
 
 
-def make_csv(extra_column: bool = False, duplicate: bool = False) -> bytes:
+def make_csv(extra_column: bool = False, duplicate: bool = False, invalid_lsun: str | None = None) -> bytes:
     buf = io.StringIO()
     fields = ["Code", "Obs_date", "Lsun"] + (["Shower"] if extra_column else [])
     w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
@@ -41,18 +41,23 @@ def make_csv(extra_column: bool = False, duplicate: bool = False) -> bytes:
         base = 536544000 if year == 2017 else 568080000
         obs_date = base + local * 6000
         if local == 0:
-            sol = 20.0
+            sol: float | str = 20.0
         elif local == 1:
             sol = 55.0
         elif local == 2:
             sol = 19.999999
         elif local == 3:
             sol = 55.000001
+        elif local == 4:
+            sol = 360.0
         else:
             sol = (100.0 + local * 0.41) % 360.0
             if 20.0 <= sol <= 55.0:
                 sol = 60.0 + local * 0.001
-        row = {"Code": code, "Obs_date": str(obs_date), "Lsun": f"{sol:.6f}"}
+        if invalid_lsun is not None and i == 5:
+            sol = invalid_lsun
+        text_sol = str(sol) if isinstance(sol, str) else f"{sol:.6f}"
+        row = {"Code": code, "Obs_date": str(obs_date), "Lsun": text_sol}
         if extra_column:
             row["Shower"] = "FORBIDDEN"
         w.writerow(row)
@@ -75,12 +80,20 @@ def run_with(mod, payload: bytes, cwd: Path) -> tuple[bool, str]:
         os.chdir(old)
 
 
+def expect_fail(mod, payload: bytes, root: Path, name: str) -> None:
+    d = root / name
+    d.mkdir()
+    ok, _ = run_with(mod, payload, d)
+    require(not ok, f"{name} did not fail closed")
+
+
 def main() -> int:
     mod = load_module()
     require(mod.QUERY == 'SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"', "frozen Stage-1 query changed")
     require(mod.QUERY_COLUMNS == ["Code", "Obs.date", "Lsun"], "semantic query columns changed")
     require(mod.RETURNED_COLUMNS == ["Code", "Obs_date", "Lsun"], "VizieR returned-header mapping changed")
     require(mod.DATE_ENCODING == "VIZIER_SEC_PER_2000", "VizieR date encoding changed")
+    require(mod.SOLAR_LONGITUDE_NORMALIZATION == "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event", "promoted solar-longitude normalization changed")
     require((mod.SEC_2017, mod.SEC_2018, mod.SEC_2019) == (536544000, 568080000, 599616000), "sec/2000 year boundaries changed")
     require(mod.parse_year("536544000") == 2017, "2017 lower boundary changed")
     require(mod.parse_year("568079999") == 2017, "2017 upper boundary changed")
@@ -94,6 +107,18 @@ def main() -> int:
             pass
         else:
             raise RuntimeError(f"invalid/out-of-domain date did not fail closed: {bad!r}")
+
+    sol0, wrapped0 = mod.canonical_solar_longitude("0.0", "SYN")
+    sol360, wrapped360 = mod.canonical_solar_longitude("360.0", "SYN")
+    require(sol0 == 0.0 and wrapped0 is False, "raw zero canonicalization changed")
+    require(sol360 == 0.0 and wrapped360 is True, "exact 360 no longer canonicalizes to zero")
+    for bad in ("-0.000001", "360.000001", "nan", "inf", "-inf"):
+        try:
+            mod.canonical_solar_longitude(bad, "SYN_BAD")
+        except Exception:
+            pass
+        else:
+            raise RuntimeError(f"invalid solar longitude did not fail closed: {bad!r}")
     for forbidden in ("Lgeo-Lsun", "Bgeo", "Vgeo", "Shower", "Object", "RAgeo", "DEgeo", "Vinf"):
         require(forbidden not in mod.QUERY, f"forbidden Stage-1 column entered query: {forbidden}")
 
@@ -112,46 +137,48 @@ def main() -> int:
         require(result["vizier_returned_header_alias"] == {"Obs_date": "Obs.date"}, "VizieR date-header alias changed")
         require(result["obs_date_encoding"] == "VIZIER_SEC_PER_2000", "persisted date encoding changed")
         require(result["obs_date_year_boundaries_sec_per_2000"] == {"2017_start": 536544000, "2018_start": 568080000, "2019_start": 599616000}, "persisted sec/2000 boundaries changed")
-        require(result["raw_response_persisted"] is False, "raw blind-index response persistence flag changed")
+        require(result["solar_longitude_normalization"] == "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event", "persisted solar normalization changed")
+        require(result["raw_solar_longitude_allowed_domain_inclusive"] == [0.0, 360.0], "raw solar domain changed")
+        require(result["exact_360_wrapped_to_zero_by_year"] == {"2017": 1, "2018": 1}, "exact-360 synthetic wrap counts changed")
+        require(result["exact_360_wrapped_to_zero_total"] == 2, "exact-360 total changed")
+        require(result["blind_exclusion_applied_after_modulo_normalization"] is True, "blind ordering changed")
+        require(result["raw_response_persisted"] is False and result["solar_longitude_values_persisted"] is False, "blind response/value persistence flag changed")
         require(result["geometry_returned"] is False and result["shower_labels_returned"] is False and result["orbit_fields_returned"] is False, "forbidden Stage-1 science flag changed")
-        require(len((root / "EFN_2017_RETAINED_IDS.txt").read_text().splitlines()) == 410, "2017 allowlist size changed")
-        require(len((root / "EFN_2018_RETAINED_IDS.txt").read_text().splitlines()) == 410, "2018 allowlist size changed")
+        kept17 = (root / "EFN_2017_RETAINED_IDS.txt").read_text().splitlines()
+        kept18 = (root / "EFN_2018_RETAINED_IDS.txt").read_text().splitlines()
+        require(len(kept17) == 410 and "SYN2017_0004" in kept17, "2017 exact-360 row was not retained as canonical zero")
+        require(len(kept18) == 410 and "SYN2018_0416" in kept18, "2018 exact-360 row was not retained as canonical zero")
 
-        bad_dir = td / "bad-extra"
-        bad_dir.mkdir()
-        ok_extra, _ = run_with(mod, make_csv(extra_column=True), bad_dir)
-        require(not ok_extra, "extra Shower column did not fail closed")
-
-        dup_dir = td / "bad-duplicate"
-        dup_dir.mkdir()
-        ok_dup, _ = run_with(mod, make_csv(duplicate=True), dup_dir)
-        require(not ok_dup, "duplicate Code did not fail closed")
-
+        expect_fail(mod, make_csv(extra_column=True), td, "bad-extra")
+        expect_fail(mod, make_csv(duplicate=True), td, "bad-duplicate")
         short = make_csv().decode("utf-8").splitlines()
-        short_payload = ("\n".join(short[:-1]) + "\n").encode()
-        short_dir = td / "bad-short"
-        short_dir.mkdir()
-        ok_short, _ = run_with(mod, short_payload, short_dir)
-        require(not ok_short, "823-row release did not fail closed")
+        expect_fail(mod, ("\n".join(short[:-1]) + "\n").encode(), td, "bad-short")
+        expect_fail(mod, make_csv(invalid_lsun="360.000001"), td, "bad-over-360")
+        expect_fail(mod, make_csv(invalid_lsun="-0.000001"), td, "bad-negative")
+        expect_fail(mod, make_csv(invalid_lsun="nan"), td, "bad-nan")
 
     result = {
-        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE1_DATE_ENCODING_REPAIR_SYNTHETIC_AUDIT",
+        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT",
         "synthetic_only": True,
         "expected_catalogue_rows": 824,
         "query_columns": ["Code", "Obs.date", "Lsun"],
         "returned_columns": ["Code", "Obs_date", "Lsun"],
         "query_unchanged": True,
         "obs_date_encoding": "VIZIER_SEC_PER_2000",
-        "year_boundaries_sec_per_2000": {"2017_start": 536544000, "2018_start": 568080000, "2019_start": 599616000},
-        "observed_safe_value_594264654_resolves_to_year": 2018,
-        "out_of_domain_date_fails_closed": True,
-        "noninteger_date_fails_closed": True,
+        "solar_longitude_normalization": "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event",
+        "raw_solar_longitude_allowed_domain_inclusive": [0.0, 360.0],
+        "exact_360_canonicalizes_to_zero": True,
+        "exact_360_retained_outside_protected_interval": True,
+        "over_360_fails_closed": True,
+        "negative_fails_closed": True,
+        "nonfinite_fails_closed": True,
         "boundary_20_excluded": True,
         "boundary_55_excluded": True,
         "extra_column_fails_closed": True,
         "duplicate_code_fails_closed": True,
         "wrong_row_count_fails_closed": True,
         "raw_response_persisted": False,
+        "solar_longitude_values_persisted": False,
         "efn_geometry_accessed": False,
         "efn_shower_labels_accessed": False,
         "target_information_access": False,
@@ -162,7 +189,7 @@ def main() -> int:
     }
     out = HERE / "output"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "STAGE1_DATE_ENCODING_REPAIR_SYNTHETIC_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
     return 0
 
