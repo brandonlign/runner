@@ -11,9 +11,11 @@ def sha256(p):
     with p.open('rb') as f:
         for b in iter(lambda:f.read(1<<20),b''): h.update(b)
     return h.hexdigest()
+
 def parse_utc(s):
     s=s.strip().replace('Z','+00:00')
     return datetime.fromisoformat(s)
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--index',type=Path,required=True)
