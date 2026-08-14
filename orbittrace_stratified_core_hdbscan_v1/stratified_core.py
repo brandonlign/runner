@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Iterable
-
 import numpy as np
 from sklearn.neighbors import KDTree
 from hdbscan._hdbscan_boruvka import KDTreeBoruvkaAlgorithm
@@ -48,9 +46,6 @@ def _same_year_fifth_other_distance(
             if len(accepted) >= K_YEAR:
                 out[local_self] = accepted[K_YEAR - 1]
             else:
-                # This can only occur if the exact self was not returned and the
-                # query somehow returned fewer than k values, which sklearn does
-                # not permit for n > k; preserve a fail-closed guard anyway.
                 raise RuntimeError(f"could not obtain fifth other neighbor for local row {local_self}")
     require(np.all(np.isfinite(out)) and np.all(out >= 0.0), "invalid same-year fifth-other distances")
     return out
@@ -121,16 +116,52 @@ def standard_pooled_core_distances(X: np.ndarray, *, chunk_size: int = QUERY_CHU
     return out
 
 
+def _seed_hdbscan_first_pass(
+    alg: KDTreeBoruvkaAlgorithm,
+    spatial_tree: KDTree,
+    X: np.ndarray,
+    injected_rdist: np.ndarray,
+) -> int:
+    """Recreate HDBSCAN 0.8.43's constructor shortcut under injected cores.
+
+    The constructor was intentionally created with min_samples=0 so it committed
+    no first-pass edge. We now seed the exact min_samples=10 shortcut candidates
+    into the public arrays. Bounds are set to zero so the first public
+    spanning_tree() traversal is a no-op and compiled update_components() consumes
+    precisely these candidates.
+    """
+    _, knn_indices = spatial_tree.query(
+        X,
+        k=MIN_SAMPLES + 1,
+        dualtree=True,
+        breadth_first=True,
+    )
+    candidate_point = np.asarray(alg.candidate_point)
+    candidate_neighbor = np.asarray(alg.candidate_neighbor)
+    candidate_distance = np.asarray(alg.candidate_distance)
+    seeded = 0
+    for n in range(X.shape[0]):
+        for m_raw in knn_indices[n]:
+            m = int(m_raw)
+            if n == m:
+                continue
+            if injected_rdist[m] <= injected_rdist[n]:
+                candidate_point[n] = n
+                candidate_neighbor[n] = m
+                candidate_distance[n] = injected_rdist[n]
+                seeded += 1
+                break
+    bounds = np.asarray(alg.bounds)
+    require(bounds.ndim == 1 and len(bounds) > 0, "Boruvka public bounds unavailable")
+    bounds[:] = 0.0
+    return seeded
+
+
 def condensed_tree_from_injected_core(
     X: np.ndarray,
     core_distances: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Build HDBSCAN hierarchy using frozen externally supplied Euclidean cores.
-
-    The compiled Boruvka implementation stores Euclidean reduced distances
-    internally, so the supplied Euclidean distances are squared in-place in the
-    public core-distance array before spanning_tree().
-    """
+    """Build HDBSCAN hierarchy using frozen externally supplied Euclidean cores."""
     X = np.asarray(X, dtype=np.float64, order="C")
     core = np.asarray(core_distances, dtype=np.float64)
     require(core.shape == (X.shape[0],), "injected core shape mismatch")
@@ -152,6 +183,9 @@ def condensed_tree_from_injected_core(
     arr[:] = injected_rdist
     public_view = np.asarray(alg.core_distance)
     require(np.array_equal(public_view, injected_rdist), "in-place core-distance injection did not reach compiled memoryview")
+
+    seeded = _seed_hdbscan_first_pass(alg, spatial_tree, X, injected_rdist)
+    require(0 < seeded <= X.shape[0], "injected-core HDBSCAN first-pass seeding failed")
 
     mst = np.asarray(alg.spanning_tree(), dtype=np.float64)
     require(mst.shape == (X.shape[0] - 1, 3), f"unexpected Boruvka MST shape: {mst.shape}")
