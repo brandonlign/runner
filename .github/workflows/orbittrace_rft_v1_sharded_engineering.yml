@@ -1,0 +1,194 @@
+name: OrbitTrace RFT v1 sharded engineering GMN 2022
+
+on:
+  push:
+    branches: [agent/orbittrace-rft-v1-sharded-engineering-v1]
+    paths: ['.github/workflows/orbittrace_rft_v1_sharded_engineering.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen execution sources and install parser runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/SHARDED_PROTOCOL.md)" = 'e4bb7112b6a2dd8554b1fd6ad61e8d796135db42'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py)" = 'adae7342f272f07b6c5c9d74d36223ffa4bba379'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py)" = '2a599c6e8247eb819a1090591d586526eda6c0c1'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa'
+          mkdir -p input/v3 input/v8 input/ranker prep
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Prepare exact normalized target-excluded 2022 execution input
+        env:
+          PYTHONPATH: input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py prepare \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output prep
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+          retention-days: 7
+
+  atoms:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        replica: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+        shard: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+      - name: Compute one exact replica/bin shard
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py)" = '8b8a9d373f908dbb32ac9a6b43addeaeb19bb8fa'
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py atoms \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --wrapper orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached_memo.py \
+            --events prep/events.json.gz \
+            --replica ${{ matrix.replica }} --shard ${{ matrix.shard }} --output out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-atoms-r${{ matrix.replica }}-s${{ matrix.shard }}
+          path: out
+          retention-days: 7
+
+  tubes:
+    needs: atoms
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 17
+      matrix:
+        replica: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-atoms-r${{ matrix.replica }}-s*
+          path: atoms
+          merge-multiple: true
+      - name: Recombine all four exact atom shards and build frozen tubes
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py tubes \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --atom-dir atoms --replica ${{ matrix.replica }} --output out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rft-tubes-r${{ matrix.replica }}
+          path: out
+          retention-days: 7
+
+  final:
+    needs: [prepare,tubes]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rft-sharded-input
+          path: prep
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rft-tubes-r*
+          path: tubes
+          merge-multiple: true
+      - name: Reassemble exact replica cache and evaluate frozen RFT modes
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_recurrent_flow_tube_v1_engineering/sharded_execution.py final \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --cached-runner orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py \
+            --events prep/events.json.gz --hidden prep/hidden.json.gz --tube-dir tubes --output output
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RFT_V1_GMN2022_SHARDED_ENGINEERING.json')); e=json.load(open('output/SHARDED_ENGINEERING_REPORT.json'))
+          assert r['execution_role']=='SHARDED_ENGINEERING_NONAUTHORITATIVE_PENDING_EQUIVALENCE'
+          assert e['scientific_changes'] is False and e['replicas']==17 and e['shards_per_replica']==4
+          assert r['blind_exclusion']==[20.0,55.0]
+          for k in ('gmn_2023_access','sonotaco_2013_2014_access','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'): assert r[k] is False
+          print('NONAUTHORITATIVE_SHARDED_ENGINEERING',r['verdict'],r['metrics'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rft-v1-sharded-engineering-gmn2022
+          path: output
+          retention-days: 90
