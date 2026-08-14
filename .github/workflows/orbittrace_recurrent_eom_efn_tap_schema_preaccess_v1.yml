@@ -1,0 +1,83 @@
+name: OrbitTrace recurrent-EOM EFN TAP schema preaccess v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+    paths:
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py'
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md'
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/SOURCE_PIN_REPAIR.md'
+      - '.github/workflows/orbittrace_recurrent_eom_efn_tap_schema_preaccess_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen preaccess bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/SOURCE_PIN_REPAIR.md)" = 'c8efc8cddadf17562795700155f1796f2cc90b83'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md)" = '62cc76281f4d4bbeaef9ffe6a028338d7cd3473c'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py)" = '712fd796913c9d4359bcd78ac37998d5a32e7956'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          python -m py_compile orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py
+          echo PASS_EFN_PREACCESS_SOURCE_PINS
+
+      - name: Query VizieR TAP_SCHEMA only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py
+          python - <<'PY'
+          import json
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/TAP_SCHEMA_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_TAP_SCHEMA_PREACCESS_AUDIT'
+          assert r['catalogue']=='J/A+A/667/A157'
+          assert r['table_name']=='J/A+A/667/A157/catalog'
+          assert r['obs_time_separate_column_present'] is False
+          assert set(r['required_columns'])=={'Code','Obs.date','Lsun','Lgeo-Lsun','Bgeo','Vgeo','Shower'}
+          assert r['query_classes']==['TAP_SCHEMA.tables','TAP_SCHEMA.columns']
+          assert r['event_table_queried'] is False
+          assert r['efn_event_rows_accessed'] is False
+          assert r['efn_geometry_accessed'] is False
+          assert r['efn_shower_labels_accessed'] is False
+          for k in ('target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access','orbittrace_target_access'):
+              assert r[k] is False
+          print(r['verdict'])
+          PY
+
+      - name: Preserve metadata-only provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p orbittrace_recurrent_eom_efn_2017_2018_external_v1/output
+          sha256sum \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/SOURCE_PIN_REPAIR.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/TAP_SCHEMA_AUDIT.json \
+            > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/tap_schema_source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/tap_schema_execution_commit.txt
+          python --version > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/tap_schema_python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-efn-tap-schema-preaccess-v1
+          path: orbittrace_recurrent_eom_efn_2017_2018_external_v1/output
+          if-no-files-found: error
+          retention-days: 90
