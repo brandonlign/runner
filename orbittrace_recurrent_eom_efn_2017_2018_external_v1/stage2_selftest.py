@@ -72,7 +72,7 @@ def make_rows(ids: dict[int, list[str]], *, protected=False, bad_vg=False, missi
                 "Code": code,
                 "Obs_date": str(base + i * 1000),
                 "Lsun": str(sol),
-                "Lgeo_Lsun": str(-40.0 + i * 2.0),
+                "Lgeo-Lsun": str(-40.0 + i * 2.0),
                 "Bgeo": str(-15.0 + i),
                 "Vgeo": "0.0" if bad_vg and year == 2018 and i == 2 else str(25.0 + i),
             }
@@ -87,11 +87,10 @@ def make_rows(ids: dict[int, list[str]], *, protected=False, bad_vg=False, missi
 def csv_for_requested(rows, requested: list[str]) -> bytes:
     wanted = set(requested)
     selected = [r for r in rows if r["Code"] in wanted]
-    # Preserve the response schema even if a particular negative case omits all rows from a batch.
     if rows:
         fields = list(rows[0].keys())
     else:
-        fields = ["Code", "Obs_date", "Lsun", "Lgeo_Lsun", "Bgeo", "Vgeo"]
+        fields = ["Code", "Obs_date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"]
     b = io.StringIO()
     w = csv.DictWriter(b, fieldnames=fields, lineterminator="\n")
     w.writeheader()
@@ -105,8 +104,6 @@ def run_case(mod, td: Path, rows, name: str) -> tuple[bool, Path, str]:
     case.mkdir()
     stage1, ids17, ids18, _ = write_stage1(case)
     out = case / "out"
-    # Inject at the raw TAP-response boundary so production CSV header, per-batch ID,
-    # duplicate, and exact-set checks all execute in the synthetic audit.
     mod.query_batch = lambda requested: csv_for_requested(rows, requested)
     old = os.getcwd()
     cap = io.StringIO()
@@ -132,7 +129,7 @@ def run_case(mod, td: Path, rows, name: str) -> tuple[bool, Path, str]:
 def main() -> int:
     mod = load_module()
     require(mod.QUERY_COLUMNS == ["Code", "Obs.date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"], "Stage-2 semantic columns changed")
-    require(mod.RETURNED_COLUMNS == ["Code", "Obs_date", "Lsun", "Lgeo_Lsun", "Bgeo", "Vgeo"], "Stage-2 returned columns changed")
+    require(mod.RETURNED_COLUMNS == ["Code", "Obs_date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"], "Stage-2 returned columns changed")
     require(mod.QUERY_BATCH_SIZE == 150, "Stage-2 deterministic batch size changed")
     q = mod.build_query(["SYN_A", "SYN_B"])
     require("Code IN ('SYN_A','SYN_B')" in q, "Stage-2 query is not retained-ID restricted")
@@ -159,6 +156,7 @@ def main() -> int:
         result = json.loads((out / "STAGE2_RETAINED_GEOMETRY.json").read_text())
         require(result["verdict"] == "PASS_RECURRENT_EOM_EFN_STAGE2_RETAINED_NATIVE_GEOMETRY", "wrong Stage-2 verdict")
         require(result["rows_by_year"] == {"2017": 12, "2018": 12}, "Stage-2 counts changed")
+        require(result["returned_columns"] == ["Code", "Obs_date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"], "literal-hyphen returned-header mapping changed")
         require(result["server_side_access_restriction"] == "frozen Stage-1 retained-ID allowlist only", "Stage-2 access restriction changed")
         require(result["native_mapping"] == {"sol": "Lsun % 360.0", "sun_lon": "Lgeo-Lsun", "ecl_lat": "Bgeo", "vg": "Vgeo"}, "native mapping changed")
         require(result["modulo_wrapped_rows_by_year"] == {"2017": 1, "2018": 1}, "Stage-2 wrap counts changed")
@@ -179,9 +177,11 @@ def main() -> int:
             require(not ok, f"Stage-2 negative case did not fail closed: {name}")
 
     result = {
-        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT",
+        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE2_LITERAL_HYPHEN_HEADER_REPAIR_SYNTHETIC_AUDIT",
         "synthetic_only": True,
         "native_geometry_only": True,
+        "returned_columns": ["Code", "Obs_date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"],
+        "literal_hyphen_lgeo_header_exercised": True,
         "server_side_access_restriction": "frozen Stage-1 retained-ID allowlist only",
         "raw_longitude_server_filter_removed": True,
         "stage1_allowlist_hash_binding": True,
@@ -207,7 +207,7 @@ def main() -> int:
     }
     out = HERE / "output"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    (out / "STAGE2_HEADER_REPAIR_SYNTHETIC_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, sort_keys=True))
     return 0
 
