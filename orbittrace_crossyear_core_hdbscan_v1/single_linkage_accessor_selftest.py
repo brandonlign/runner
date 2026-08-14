@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib.metadata import version
 import json
 from pathlib import Path
 
@@ -62,7 +63,7 @@ def main() -> None:
 
     payload = {
         "verdict": "PASS_CROSSYEAR_CORE_SINGLE_LINKAGE_ACCESSOR_COMPAT_V1",
-        "hdbscan_version": hdbscan.__version__,
+        "hdbscan_version": version("hdbscan"),
         "shape": list(estimator_raw.shape),
         "dtype": str(estimator_raw.dtype),
         "public_to_numpy_equals_estimator_raw": True,
