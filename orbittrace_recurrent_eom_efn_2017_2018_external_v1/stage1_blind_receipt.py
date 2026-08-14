@@ -14,7 +14,8 @@ from pathlib import Path
 ENDPOINT = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
 TABLE = "J/A+A/667/A157/catalog"
 EXPECTED_ROWS = 824
-EXPECTED_COLUMNS = ["Code", "Obs.date", "Lsun"]
+QUERY_COLUMNS = ["Code", "Obs.date", "Lsun"]
+RETURNED_COLUMNS = ["Code", "Obs_date", "Lsun"]
 YEARS = (2017, 2018)
 BLIND = (20.0, 55.0)
 QUERY = 'SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"'
@@ -56,7 +57,7 @@ def main() -> int:
     raw_sha = hashlib.sha256(raw).hexdigest()
     text = raw.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
-    require(reader.fieldnames == EXPECTED_COLUMNS, f"Stage-1 returned wrong columns: {reader.fieldnames}")
+    require(reader.fieldnames == RETURNED_COLUMNS, f"Stage-1 returned wrong columns: {reader.fieldnames}")
 
     retained: dict[int, list[str]] = {2017: [], 2018: []}
     total_by_year = {2017: 0, 2018: 0}
@@ -66,11 +67,11 @@ def main() -> int:
 
     for row in reader:
         row_count += 1
-        require(set(row) == set(EXPECTED_COLUMNS), "Stage-1 row schema changed")
+        require(set(row) == set(RETURNED_COLUMNS), "Stage-1 row schema changed")
         code = str(row["Code"]).strip()
         require(code and code not in seen, f"blank/duplicate EFN Code: {code!r}")
         seen.add(code)
-        year = parse_year(row["Obs.date"])
+        year = parse_year(row["Obs_date"])
         total_by_year[year] += 1
         sol = float(row["Lsun"])
         require(math.isfinite(sol) and 0.0 <= sol < 360.0, f"invalid EFN Lsun for {code}")
@@ -107,7 +108,9 @@ def main() -> int:
         "retained_rows_by_year": retained_counts,
         "retained_ids_sha256": retained_sha,
         "blind_index_response_sha256": raw_sha,
-        "selected_columns": EXPECTED_COLUMNS,
+        "selected_columns": QUERY_COLUMNS,
+        "returned_columns": RETURNED_COLUMNS,
+        "vizier_returned_header_alias": {"Obs_date": "Obs.date"},
         "blind_exclusion": [20.0, 55.0],
         "raw_response_persisted": False,
         "geometry_returned": False,
