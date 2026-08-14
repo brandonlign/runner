@@ -1,0 +1,117 @@
+name: OrbitTrace recurrent-EOM EFN Stage-2 allowlist preaccess v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_efn_stage2_allowlist_preaccess_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify exact pre-geometry source pins
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_BINDING_FREEZE.json)" = '8d736feb464584c6e8302d9efdbf62784a296163'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_ALLOWLIST_ACCESS_CORRECTION.md)" = 'b4505da0656b3514f8a2aa9e92faef19d3f42009'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py)" = 'cba27084ad2cb906de0432e1a095329343ff8439'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py)" = '6e9c45843fa9f20634db32f6453fb95602966b38'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          python -m py_compile \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py
+          python - <<'PY'
+          import ast
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py'
+          src=open(p).read(); tree=ast.parse(src)
+          assert 'WHERE Code IN (' in src
+          assert 'Lsun < 20.0 OR Lsun > 55.0' not in src
+          assert 'canonical = raw % 360.0' in src
+          assert 'QUERY_BATCH_SIZE = 150' in src
+          for forbidden in ('Shower','Object','RAgeo','DEgeo','Vinf'):
+              # Names may appear in defensive rejection strings, but never in SELECT_COLUMNS.
+              pass
+          ns={}
+          exec(compile(tree,p,'exec'),ns)
+          assert ns['QUERY_COLUMNS']==['Code','Obs.date','Lsun','Lgeo-Lsun','Bgeo','Vgeo']
+          assert 'Shower' not in ns['SELECT_COLUMNS'] and 'Object' not in ns['SELECT_COLUMNS']
+          q=ns['build_query'](['A','B'])
+          assert "Code IN ('A','B')" in q
+          assert 'Lsun <' not in q and 'Lsun >' not in q
+          print('PASS_EFN_STAGE2_ALLOWLIST_SOURCE_BOUNDARY')
+          PY
+
+      - name: Run synthetic retained-ID-only geometry audit
+        run: |
+          set -euo pipefail
+          rm -f orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT.json
+          python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py
+          python - <<'PY'
+          import json
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT'
+          assert r['synthetic_only'] is True
+          assert r['server_side_access_restriction']=='frozen Stage-1 retained-ID allowlist only'
+          assert r['raw_longitude_server_filter_removed'] is True
+          assert r['stage1_allowlist_hash_binding'] is True
+          assert r['exact_retained_id_equality_required'] is True
+          assert r['solar_longitude_normalization']=='raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event'
+          assert r['generic_over_360_modulo_supported'] is True
+          assert r['protected_canonical_row_fails_closed'] is True
+          assert r['extra_column_fails_closed'] is True
+          assert r['missing_retained_id_fails_closed'] is True
+          assert r['nonpositive_velocity_fails_closed'] is True
+          assert r['efn_event_rows_accessed'] is False and r['efn_geometry_accessed'] is False and r['efn_shower_labels_accessed'] is False
+          assert r['target_information_access'] is False and r['target_region_physical_values_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['orbittrace_target_access'] is False
+          print(r['verdict'])
+          PY
+
+      - name: Preserve preaccess provenance
+        if: always()
+        run: |
+          set +e
+          root='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output'
+          sha256sum \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_BINDING_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_ALLOWLIST_ACCESS_CORRECTION.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_geometry.py \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage2_selftest.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            "$root/STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT.json" \
+            > "$root/stage2_allowlist_preaccess_source_output_sha256.txt" 2>/dev/null || true
+          git rev-parse HEAD > "$root/stage2_allowlist_preaccess_execution_commit.txt"
+          python --version > "$root/stage2_allowlist_preaccess_python_version.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-efn-stage2-allowlist-preaccess-v1
+          path: |
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT.json
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage2_allowlist_preaccess_source_output_sha256.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage2_allowlist_preaccess_execution_commit.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage2_allowlist_preaccess_python_version.txt
+          if-no-files-found: error
+          retention-days: 90
