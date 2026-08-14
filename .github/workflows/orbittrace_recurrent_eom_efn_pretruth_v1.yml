@@ -1,0 +1,170 @@
+name: OrbitTrace recurrent-EOM EFN pretruth candidate freeze v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+    paths:
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/PRETRUTH_ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact promoted runtime and verify frozen science
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PRETRUTH_CANDIDATE_PROTOCOL.md)" = '4bc7870d566dd1cd6056add53b4e19155f98814d'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_BINDING_FREEZE.json)" = '463d31b738c3c133be000c36ee88e025d1565c5a'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/generate_pretruth.py)" = 'af0749d55728fd9ad6dd34abeff42c8bf3a296d6'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/generate_pretruth.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py
+          python - <<'PY'
+          import ast
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/generate_pretruth.py'
+          src=open(p).read(); tree=ast.parse(src)
+          imports={n.names[0].name for n in ast.walk(tree) if isinstance(n,ast.Import)}
+          assert 'urllib' not in imports and 'requests' not in imports
+          args=[]
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute) and n.func.attr=='add_argument' and n.args and isinstance(n.args[0],ast.Constant):
+                  args.append(n.args[0].value)
+          assert sorted(args)==sorted(['--geometry-2017','--geometry-2018','--stage2-result','--output'])
+          assert 'min_cluster_size=MIN_CLUSTER_SIZE' in src and 'MIN_CLUSTER_SIZE = 10' in src
+          assert 'min_samples=MIN_SAMPLES' in src and 'MIN_SAMPLES = 10' in src
+          assert 'SPEED_SCALE = 72.0' in src
+          assert 'cluster_selection_method="eom"' in src
+          assert 'truth_interface_available": False' in src
+          print('PASS_EFN_PRETRUTH_SOURCE_BOUNDARY')
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-efn-stage2-retained-geometry-retry1-v1
+          path: input/stage2
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31841984405
+
+      - name: Verify exact pristine Stage-2 geometry input
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/stage2/EFN_2017_CANONICAL_GEOMETRY.json | cut -d' ' -f1)" = '7583ae47b78401b52dfd9fe2fa1863580b987c69b3d6c8142445f6f3795e82b2'
+          test "$(sha256sum input/stage2/EFN_2018_CANONICAL_GEOMETRY.json | cut -d' ' -f1)" = '01491fcecbd6e407a8c7424239210e2f233a22e527c9b74d694d0d2f936f9008'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/stage2/STAGE2_RETAINED_GEOMETRY.json'))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE2_RETAINED_NATIVE_GEOMETRY'
+          assert r['scientific_role']=='PRISTINE_EXTERNAL_EFN_2017_2018_STAGE2_RETAINED_GEOMETRY_ONLY'
+          assert r['rows_by_year']=={'2017':338,'2018':444}
+          assert r['canonical_geometry_sha256']=={'2017':'7583ae47b78401b52dfd9fe2fa1863580b987c69b3d6c8142445f6f3795e82b2','2018':'01491fcecbd6e407a8c7424239210e2f233a22e527c9b74d694d0d2f936f9008'}
+          assert r['labels_accessed'] is False and r['shower_column_returned'] is False and r['orbit_fields_returned'] is False
+          assert r['target_region_physical_values_accessed'] is False and r['target_information_access'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['orbittrace_target_access'] is False
+          print('PASS_BINDING_EFN_STAGE2_GEOMETRY_INPUT')
+          PY
+
+      - name: Generate complete pretruth hierarchy memberships and ranks
+        run: |
+          set -euo pipefail
+          rm -rf output/pretruth
+          python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/generate_pretruth.py \
+            --geometry-2017 input/stage2/EFN_2017_CANONICAL_GEOMETRY.json \
+            --geometry-2018 input/stage2/EFN_2018_CANONICAL_GEOMETRY.json \
+            --stage2-result input/stage2/STAGE2_RETAINED_GEOMETRY.json \
+            --output output/pretruth
+
+      - name: Enforce complete pretruth freeze boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('output/pretruth')
+          assert {p.name for p in root.iterdir() if p.is_file()}=={'EFN_RECURRENT_EOM_PRETRUTH.json','EFN_RECURRENT_EOM_PRETRUTH_MANIFEST.json'}
+          raw=(root/'EFN_RECURRENT_EOM_PRETRUTH.json').read_bytes()
+          p=json.loads(raw)
+          m=json.load(open(root/'EFN_RECURRENT_EOM_PRETRUTH_MANIFEST.json'))
+          assert p['verdict']=='PASS_RECURRENT_EOM_EFN_PRETRUTH_CANDIDATE_FREEZE'
+          assert p['scientific_role']=='PRISTINE_EXTERNAL_EFN_2017_2018_VALIDATION_ONLY'
+          assert p['phase']=='PRETRUTH_CANDIDATE_FREEZE_ONLY'
+          assert p['catalogue']=='J/A+A/667/A157' and p['catalogue_rows_expected']==824
+          assert p['years']==[2017,2018] and p['blind_exclusion']==[20.0,55.0]
+          assert p['retained_rows_by_year']=={'2017':338,'2018':444} and p['pooled_event_count']==782
+          assert p['canonical_geometry_sha256']=={'2017':'7583ae47b78401b52dfd9fe2fa1863580b987c69b3d6c8142445f6f3795e82b2','2018':'01491fcecbd6e407a8c7424239210e2f233a22e527c9b74d694d0d2f936f9008'}
+          assert p['source_pins']=={'recurrent_eom_git_blob':'30ac3fa3bc47910370df528fcf3ae8ecb6277b47','promoted_runner_git_blob':'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c','pretruth_protocol_git_blob':'4bc7870d566dd1cd6056add53b4e19155f98814d','stage2_binding_freeze_git_blob':'463d31b738c3c133be000c36ee88e025d1565c5a'}
+          assert p['configuration']['min_cluster_size']==10 and p['configuration']['min_samples']==10
+          assert p['configuration']['metric']=='euclidean' and p['configuration']['cluster_selection_method']=='eom'
+          assert p['configuration']['speed_scale']==72.0
+          assert p['vanilla_model_partition_sha256']==p['vanilla_custom_partition_sha256']
+          assert len(p['condensed_tree']['records'])==p['condensed_tree']['shape'][0]
+          assert p['condensed_tree']['raw_tree_bytes_sha256'] and p['condensed_tree']['records_sha256']
+          assert len(p['vanilla_selected_nodes'])==p['vanilla_candidate_count']
+          assert len(p['recurrent_selected_nodes'])==p['recurrent_candidate_count']
+          assert len(p['vanilla_candidates'])==p['vanilla_candidate_count']
+          assert len(p['recurrent_candidates'])==p['recurrent_candidate_count']
+          assert p['mechanism_active']==(p['vanilla_selected_nodes']!=p['recurrent_selected_nodes'])
+          assert p['truth_interface_available'] is False and p['shower_column_accessed'] is False and p['object_column_accessed'] is False and p['orbit_fields_accessed'] is False
+          assert p['quality_filter_used'] is False and p['survey_calibration_used'] is False and p['post_result_parameter_search'] is False
+          assert p['target_information_access'] is False and p['target_region_events_accessed'] is False and p['target_region_physical_values_accessed'] is False
+          assert p['maarsy_scientific_access'] is False and p['dms_scientific_access'] is False and p['orbittrace_target_access'] is False
+          assert m['pretruth_sha256']==hashlib.sha256(raw).hexdigest()
+          assert m['verdict']==p['verdict'] and m['shower_column_accessed'] is False
+          print('PRETRUTH_FROZEN', m)
+          PY
+          sha256sum output/pretruth/EFN_RECURRENT_EOM_PRETRUTH.json > output/pretruth/PRETRUTH_SHA256.txt
+
+      - name: Preserve pretruth provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/pretruth
+          sha256sum \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PRETRUTH_CANDIDATE_PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE2_BINDING_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/generate_pretruth.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            input/stage2/EFN_2017_CANONICAL_GEOMETRY.json \
+            input/stage2/EFN_2018_CANONICAL_GEOMETRY.json \
+            input/stage2/STAGE2_RETAINED_GEOMETRY.json \
+            output/pretruth/EFN_RECURRENT_EOM_PRETRUTH.json \
+            output/pretruth/EFN_RECURRENT_EOM_PRETRUTH_MANIFEST.json \
+            > output/pretruth/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/pretruth/execution_commit.txt
+          python --version > output/pretruth/python_version.txt
+          python -m pip freeze > output/pretruth/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-efn-pretruth-candidate-freeze-v1
+          path: output/pretruth
+          if-no-files-found: error
+          retention-days: 90
