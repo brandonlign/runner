@@ -50,11 +50,17 @@ def make_csv(extra_column: bool = False, duplicate: bool = False, invalid_lsun: 
             sol = 55.000001
         elif local == 4:
             sol = 360.0
+        elif local == 5:
+            sol = 361.1739
+        elif local == 6:
+            sol = -0.25
+        elif local == 7:
+            sol = 380.0  # canonical 20.0: must be excluded after modulo
         else:
             sol = (100.0 + local * 0.41) % 360.0
             if 20.0 <= sol <= 55.0:
                 sol = 60.0 + local * 0.001
-        if invalid_lsun is not None and i == 5:
+        if invalid_lsun is not None and i == 8:
             sol = invalid_lsun
         text_sol = str(sol) if isinstance(sol, str) else f"{sol:.6f}"
         row = {"Code": code, "Obs_date": str(obs_date), "Lsun": text_sol}
@@ -108,17 +114,26 @@ def main() -> int:
         else:
             raise RuntimeError(f"invalid/out-of-domain date did not fail closed: {bad!r}")
 
-    sol0, wrapped0 = mod.canonical_solar_longitude("0.0", "SYN")
-    sol360, wrapped360 = mod.canonical_solar_longitude("360.0", "SYN")
-    require(sol0 == 0.0 and wrapped0 is False, "raw zero canonicalization changed")
-    require(sol360 == 0.0 and wrapped360 is True, "exact 360 no longer canonicalizes to zero")
-    for bad in ("-0.000001", "360.000001", "nan", "inf", "-inf"):
+    cases = {
+        "0.0": (0.0, False),
+        "359.9": (359.9, False),
+        "360.0": (0.0, True),
+        "360.0466": (0.0466, True),
+        "361.1739": (1.1739, True),
+        "720.0": (0.0, True),
+        "-0.25": (359.75, True),
+        "380.0": (20.0, True),
+    }
+    for raw, expected in cases.items():
+        sol, wrapped = mod.canonical_solar_longitude(raw, "SYN")
+        require(abs(sol - expected[0]) < 1e-12 and wrapped is expected[1], f"modulo normalization changed for {raw}")
+    for bad in ("nan", "inf", "-inf"):
         try:
             mod.canonical_solar_longitude(bad, "SYN_BAD")
         except Exception:
             pass
         else:
-            raise RuntimeError(f"invalid solar longitude did not fail closed: {bad!r}")
+            raise RuntimeError(f"nonfinite solar longitude did not fail closed: {bad!r}")
     for forbidden in ("Lgeo-Lsun", "Bgeo", "Vgeo", "Shower", "Object", "RAgeo", "DEgeo", "Vinf"):
         require(forbidden not in mod.QUERY, f"forbidden Stage-1 column entered query: {forbidden}")
 
@@ -130,35 +145,35 @@ def main() -> int:
         result = json.loads((root / "STAGE1_BLIND_RECEIPT.json").read_text(encoding="utf-8"))
         require(result["rows_received"] == 824, "fixed 824-row gate changed")
         require(result["rows_by_year"] == {"2017": 412, "2018": 412}, "synthetic sec/2000 year parsing changed")
-        require(result["excluded_rows_by_year"] == {"2017": 2, "2018": 2}, "inclusive blind boundary changed")
-        require(result["retained_rows_by_year"] == {"2017": 410, "2018": 410}, "synthetic retained counts changed")
+        require(result["excluded_rows_by_year"] == {"2017": 3, "2018": 3}, "modulo-before-inclusive-blind boundary changed")
+        require(result["retained_rows_by_year"] == {"2017": 409, "2018": 409}, "synthetic retained counts changed")
         require(result["selected_columns"] == ["Code", "Obs.date", "Lsun"], "semantic Stage-1 column contract changed")
         require(result["returned_columns"] == ["Code", "Obs_date", "Lsun"], "returned Stage-1 column contract changed")
         require(result["vizier_returned_header_alias"] == {"Obs_date": "Obs.date"}, "VizieR date-header alias changed")
         require(result["obs_date_encoding"] == "VIZIER_SEC_PER_2000", "persisted date encoding changed")
-        require(result["obs_date_year_boundaries_sec_per_2000"] == {"2017_start": 536544000, "2018_start": 568080000, "2019_start": 599616000}, "persisted sec/2000 boundaries changed")
         require(result["solar_longitude_normalization"] == "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event", "persisted solar normalization changed")
-        require(result["raw_solar_longitude_allowed_domain_inclusive"] == [0.0, 360.0], "raw solar domain changed")
-        require(result["exact_360_wrapped_to_zero_by_year"] == {"2017": 1, "2018": 1}, "exact-360 synthetic wrap counts changed")
-        require(result["exact_360_wrapped_to_zero_total"] == 2, "exact-360 total changed")
+        require(result["raw_solar_longitude_required_finite_only"] is True, "finite-only raw solar contract changed")
+        require(result["modulo_wrapped_rows_by_year"] == {"2017": 4, "2018": 4}, "synthetic modulo-wrap counts changed")
+        require(result["modulo_wrapped_rows_total"] == 8, "synthetic modulo-wrap total changed")
         require(result["blind_exclusion_applied_after_modulo_normalization"] is True, "blind ordering changed")
         require(result["raw_response_persisted"] is False and result["solar_longitude_values_persisted"] is False, "blind response/value persistence flag changed")
         require(result["geometry_returned"] is False and result["shower_labels_returned"] is False and result["orbit_fields_returned"] is False, "forbidden Stage-1 science flag changed")
         kept17 = (root / "EFN_2017_RETAINED_IDS.txt").read_text().splitlines()
         kept18 = (root / "EFN_2018_RETAINED_IDS.txt").read_text().splitlines()
-        require(len(kept17) == 410 and "SYN2017_0004" in kept17, "2017 exact-360 row was not retained as canonical zero")
-        require(len(kept18) == 410 and "SYN2018_0416" in kept18, "2018 exact-360 row was not retained as canonical zero")
+        require("SYN2017_0004" in kept17 and "SYN2017_0005" in kept17 and "SYN2017_0006" in kept17, "2017 wrapped retained rows missing")
+        require("SYN2017_0007" not in kept17, "2017 raw 380/canonical 20 protected row leaked")
+        require("SYN2018_0416" in kept18 and "SYN2018_0417" in kept18 and "SYN2018_0418" in kept18, "2018 wrapped retained rows missing")
+        require("SYN2018_0419" not in kept18, "2018 raw 380/canonical 20 protected row leaked")
 
         expect_fail(mod, make_csv(extra_column=True), td, "bad-extra")
         expect_fail(mod, make_csv(duplicate=True), td, "bad-duplicate")
         short = make_csv().decode("utf-8").splitlines()
         expect_fail(mod, ("\n".join(short[:-1]) + "\n").encode(), td, "bad-short")
-        expect_fail(mod, make_csv(invalid_lsun="360.000001"), td, "bad-over-360")
-        expect_fail(mod, make_csv(invalid_lsun="-0.000001"), td, "bad-negative")
         expect_fail(mod, make_csv(invalid_lsun="nan"), td, "bad-nan")
+        expect_fail(mod, make_csv(invalid_lsun="inf"), td, "bad-inf")
 
     result = {
-        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT",
+        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE1_GENERIC_MODULO_REPAIR_SYNTHETIC_AUDIT",
         "synthetic_only": True,
         "expected_catalogue_rows": 824,
         "query_columns": ["Code", "Obs.date", "Lsun"],
@@ -166,11 +181,11 @@ def main() -> int:
         "query_unchanged": True,
         "obs_date_encoding": "VIZIER_SEC_PER_2000",
         "solar_longitude_normalization": "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event",
-        "raw_solar_longitude_allowed_domain_inclusive": [0.0, 360.0],
-        "exact_360_canonicalizes_to_zero": True,
-        "exact_360_retained_outside_protected_interval": True,
-        "over_360_fails_closed": True,
-        "negative_fails_closed": True,
+        "finite_raw_values_only": True,
+        "generic_over_360_modulo_supported": True,
+        "generic_negative_modulo_supported": True,
+        "diagnostic_values_360_0466_and_361_1739_supported": True,
+        "canonical_20_after_modulo_excluded": True,
         "nonfinite_fails_closed": True,
         "boundary_20_excluded": True,
         "boundary_55_excluded": True,
@@ -189,7 +204,7 @@ def main() -> int:
     }
     out = HERE / "output"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "STAGE1_SOLAR_WRAP_REPAIR_SYNTHETIC_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "STAGE1_GENERIC_MODULO_REPAIR_SYNTHETIC_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
     return 0
 
