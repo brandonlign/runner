@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from importlib.metadata import version
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import hdbscan
 import numpy as np
 
 from recurrent_eom import (
+    _descendant_year_counts,
     eom_labels,
     parent_labels_through_custom_path,
     recurrent_stability,
@@ -23,6 +25,46 @@ def canonical_partition(labels: np.ndarray) -> tuple[tuple[int, ...], ...]:
     for lab in sorted(int(x) for x in np.unique(labels) if int(x) >= 0):
         groups.append(tuple(np.flatnonzero(labels == lab).tolist()))
     return tuple(sorted(groups))
+
+
+def legacy_recursive_descendant_year_counts(tree: np.ndarray, years: np.ndarray) -> dict[int, np.ndarray]:
+    """Exact pre-repair recursive traversal, retained only as a synthetic engineering reference."""
+    root = int(tree["parent"].min())
+    n_points = root
+    if years.shape != (n_points,):
+        raise ValueError(f"years shape {years.shape} does not match condensed-tree point count {n_points}")
+    year_values = tuple(sorted(int(y) for y in np.unique(years)))
+    if len(year_values) != 2:
+        raise ValueError(f"recurrent EOM v1 requires exactly two years, got {year_values}")
+    y_index = {y: i for i, y in enumerate(year_values)}
+
+    children: dict[int, list[int]] = defaultdict(list)
+    for parent, child in zip(tree["parent"], tree["child"]):
+        children[int(parent)].append(int(child))
+
+    memo: dict[int, np.ndarray] = {}
+
+    def count(node: int) -> np.ndarray:
+        if node < n_points:
+            out = np.zeros(2, dtype=np.int64)
+            out[y_index[int(years[node])]] = 1
+            return out
+        if node in memo:
+            return memo[node]
+        out = np.zeros(2, dtype=np.int64)
+        for child in children.get(node, []):
+            out += count(child)
+        memo[node] = out
+        return out
+
+    for node in set(int(x) for x in tree["parent"]):
+        count(node)
+    return memo
+
+
+def count_digest(counts: dict[int, np.ndarray]) -> str:
+    canonical = tuple((int(node), tuple(int(x) for x in counts[node])) for node in sorted(counts))
+    return hashlib.sha256(repr(canonical).encode()).hexdigest()
 
 
 def main() -> int:
@@ -58,6 +100,24 @@ def main() -> int:
     if canonical_partition(parent.labels_) != canonical_partition(custom_parent):
         raise RuntimeError("ordinary HDBSCAN labels do not reproduce through custom EOM path")
 
+    # The only implementation repair after the first full-catalogue technical stop
+    # replaced recursion with a bottom-up tree pass. Prove exact equality to the
+    # pre-repair traversal on a zero-truth synthetic tree before any scientific rerun.
+    legacy_counts = legacy_recursive_descendant_year_counts(tree, years)
+    bottom_up_counts = _descendant_year_counts(tree, years)
+    if set(legacy_counts) != set(bottom_up_counts):
+        raise RuntimeError("bottom-up descendant traversal changed the cluster-node set")
+    mismatched = [
+        node for node in sorted(legacy_counts)
+        if not np.array_equal(legacy_counts[node], bottom_up_counts[node])
+    ]
+    if mismatched:
+        raise RuntimeError(f"bottom-up descendant traversal differs from recursive reference at nodes {mismatched[:10]}")
+    legacy_digest = count_digest(legacy_counts)
+    bottom_up_digest = count_digest(bottom_up_counts)
+    if legacy_digest != bottom_up_digest:
+        raise RuntimeError("descendant-count digests differ despite elementwise comparison")
+
     ordinary = compute_stability(tree)
     ordinary_nodes = selected_eom_nodes(tree, ordinary)
     recurrent, annual = recurrent_stability(tree, years)
@@ -81,6 +141,9 @@ def main() -> int:
         "recurrent_selected_nodes": list(recurrent_nodes),
         "mechanism_active_on_synthetic": ordinary_nodes != recurrent_nodes,
         "annual_stability_cluster_count": len(annual),
+        "bottom_up_equals_pre_repair_recursive_traversal": True,
+        "legacy_recursive_descendant_count_sha256": legacy_digest,
+        "bottom_up_descendant_count_sha256": bottom_up_digest,
         "target_information_access": False,
         "target_region_events_accessed": False,
         "sonotaco_2013_2014_access": False,
