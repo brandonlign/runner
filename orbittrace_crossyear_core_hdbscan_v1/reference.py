@@ -48,7 +48,8 @@ def pairwise_euclidean(X: np.ndarray) -> np.ndarray:
     diff = X[:, None, :] - X[None, :, :]
     d2 = np.einsum("ijk,ijk->ij", diff, diff)
     np.maximum(d2, 0.0, out=d2)
-    return np.sqrt(d2, dtype=np.float64)
+    np.sqrt(d2, out=d2)
+    return d2
 
 
 def opposite_year_core_distances(
