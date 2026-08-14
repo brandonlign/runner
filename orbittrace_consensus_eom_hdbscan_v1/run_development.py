@@ -26,7 +26,7 @@ PROTOCOL_BLOB = "6a2650585a8d92356581d75316f2c92a33b80471"
 CONSENSUS_BLOB = "cef79d99bded4f93dfce6a930703b5493fd72fb6"
 PARENT_METHOD_BLOB = "30ac3fa3bc47910370df528fcf3ae8ecb6277b47"
 PARENT_RUNNER_BLOB = "fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c"
-IDENTITY_FREEZE_BLOB = "2df902ca266bc35df3fe5e5c73e0df5553b46bd7"
+IDENTITY_FREEZE_BLOB = "78857f910f3acb00ce66e1b8088e0269f3a06225"
 
 
 def req(ok: bool, msg: str) -> None:
@@ -76,7 +76,6 @@ def recurrent_parent_candidates(
     ordinary: dict[float, float],
     recurrent: dict[float, float],
 ) -> list[dict[str, Any]]:
-    # Exact parent construction/ranking from recurrent-EOM v1.
     return parent.candidates_from_labels(labels, selected_nodes, events, ordinary, recurrent, True)
 
 
@@ -137,7 +136,6 @@ def main() -> int:
     tree = model.condensed_tree_._raw_tree
     ordinary = compute_stability(tree)
 
-    # Engineering/provenance identity on the binding GMN hierarchy before truth use.
     vanilla_labels = eom_labels(tree, ordinary)
     req(parent.canonical_partition(model.labels_) == parent.canonical_partition(vanilla_labels), "vanilla custom extraction diverged on binding GMN hierarchy")
 
@@ -189,7 +187,6 @@ def main() -> int:
     prelabel_path.write_text(json.dumps(prelabel, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
     prelabel_sha = sha(prelabel_path)
 
-    # Only now evaluate the already-sealed GMN shower truth using the exact parent evaluator.
     hidden = hidden_sealed
     ids_by_year = {y: {e["id"] for e in events if e["year"] == y} for y in YEARS}
     req(all(eid in ids_by_year[2022] or eid in ids_by_year[2023] for eid in hidden), "label outside pooled accessible event IDs")
