@@ -42,11 +42,18 @@ jobs:
       - name: Verify pre-GMN frozen sources
         run: |
           set -euo pipefail
-          test "$(git hash-object orbittrace_crossyear_core_hdbscan_v1/PROTOCOL.md)" = '980d2f26d6477ff80d1b57606ee86ae96bebe972'
-          test "$(git hash-object orbittrace_crossyear_core_hdbscan_v1/reference.py)" = '50695f5deba31235fc0f7ffd6defe6f339be68cc'
-          test "$(git hash-object orbittrace_crossyear_core_hdbscan_v1/audit_candidate.py)" = '786307370a433aeb8fd961976bed35feec5b0845'
-          test "$(git hash-object orbittrace_crossyear_core_hdbscan_v1/audit_exactness.py)" = 'd2d76c45915e02cebff57417689f79f4a35d1793'
-          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          check_blob() {
+            path="$1"
+            expected="$2"
+            actual="$(git hash-object "$path")"
+            echo "BLOB $path actual=$actual expected=$expected"
+            test "$actual" = "$expected"
+          }
+          check_blob orbittrace_crossyear_core_hdbscan_v1/PROTOCOL.md 980d2f26d6477ff80d1b57606ee86ae96bebe972
+          check_blob orbittrace_crossyear_core_hdbscan_v1/reference.py 50695f5deba31235fc0f7ffd6defe6f339be68cc
+          check_blob orbittrace_crossyear_core_hdbscan_v1/audit_candidate.py 786307370a433aeb8fd961976bed35feec5b0845
+          check_blob orbittrace_crossyear_core_hdbscan_v1/audit_exactness.py d2d76c45915e02cebff57417689f79f4a35d1793
+          check_blob orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py 30ac3fa3bc47910370df528fcf3ae8ecb6277b47
           python -m py_compile \
             orbittrace_crossyear_core_hdbscan_v1/reference.py \
             orbittrace_crossyear_core_hdbscan_v1/audit_candidate.py \
