@@ -1,0 +1,96 @@
+name: OrbitTrace recurrent-EOM EFN Stage-1 preaccess v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+    paths:
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py'
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py'
+      - '.github/workflows/orbittrace_recurrent_eom_efn_stage1_preaccess_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen Stage-1 bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/SOURCE_PIN_REPAIR.md)" = 'c8efc8cddadf17562795700155f1796f2cc90b83'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md)" = '62cc76281f4d4bbeaef9ffe6a028338d7cd3473c'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py)" = '61c6589ace0c5d36d83b7eb506c76200e0aa57ce'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py)" = '17bb806294b8ab3f15cc9f7e484d6773421751e5'
+          python -m py_compile \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py
+          python - <<'PY'
+          import ast
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py'
+          src=open(p).read(); tree=ast.parse(src)
+          assert 'SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"' in src
+          for forbidden in ('Lgeo-Lsun','Bgeo','Vgeo','Shower','Object','RAgeo','DEgeo','Vinf'):
+              # Forbidden names may appear only in the explicit fail-closed list, never inside QUERY assignment.
+              pass
+          q=[n.value.value for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='QUERY' for t in n.targets) and isinstance(n.value,ast.Constant)]
+          assert q==['SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"']
+          print('PASS_EFN_STAGE1_FROZEN_QUERY')
+          PY
+
+      - name: Run synthetic blind-index audit only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py
+          python - <<'PY'
+          import json
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_SYNTHETIC_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE1_SYNTHETIC_AUDIT'
+          assert r['synthetic_only'] is True
+          assert r['expected_catalogue_rows']==824
+          assert r['stage1_selected_columns']==['Code','Obs.date','Lsun']
+          assert r['boundary_20_excluded'] is True and r['boundary_55_excluded'] is True
+          assert r['extra_column_fails_closed'] is True
+          assert r['duplicate_code_fails_closed'] is True
+          assert r['wrong_row_count_fails_closed'] is True
+          assert r['raw_response_persisted'] is False
+          assert r['efn_event_rows_accessed'] is False
+          assert r['efn_geometry_accessed'] is False
+          assert r['efn_shower_labels_accessed'] is False
+          print(r['verdict'])
+          PY
+
+      - name: Preserve preaccess provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p orbittrace_recurrent_eom_efn_2017_2018_external_v1/output
+          sha256sum \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/SOURCE_PIN_REPAIR.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_selftest.py \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/STAGE1_SYNTHETIC_AUDIT.json \
+            > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_preaccess_source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_preaccess_execution_commit.txt
+          python --version > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1_preaccess_python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-efn-stage1-preaccess-v1
+          path: orbittrace_recurrent_eom_efn_2017_2018_external_v1/output
+          if-no-files-found: error
+          retention-days: 90
