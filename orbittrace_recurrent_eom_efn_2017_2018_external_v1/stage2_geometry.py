@@ -16,7 +16,7 @@ ENDPOINT = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
 TABLE = "J/A+A/667/A157/catalog"
 SELECT_COLUMNS = 'Code, "Obs.date", Lsun, "Lgeo-Lsun", Bgeo, Vgeo'
 QUERY_COLUMNS = ["Code", "Obs.date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"]
-RETURNED_COLUMNS = ["Code", "Obs_date", "Lsun", "Lgeo_Lsun", "Bgeo", "Vgeo"]
+RETURNED_COLUMNS = ["Code", "Obs_date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"]
 YEARS = (2017, 2018)
 BLIND = (20.0, 55.0)
 INTEGER_RE = re.compile(r"^[0-9]+$")
@@ -123,13 +123,14 @@ def iter_returned_rows(expected_ids: list[str]):
         reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
         require(reader.fieldnames == RETURNED_COLUMNS, f"Stage-2 returned wrong columns: {reader.fieldnames}")
         batch_seen: set[str] = set()
+        batch_set = set(batch)
         for row in reader:
             require(set(row) == set(RETURNED_COLUMNS), "Stage-2 row schema changed")
             code = str(row["Code"]).strip()
-            require(code in set(batch) and code not in batch_seen, f"Stage-2 batch returned nonrequested/duplicate Code: {code!r}")
+            require(code in batch_set and code not in batch_seen, f"Stage-2 batch returned nonrequested/duplicate Code: {code!r}")
             batch_seen.add(code)
             yield row
-        require(batch_seen == set(batch), f"Stage-2 batch retained-set mismatch: missing={len(set(batch)-batch_seen)} extra={len(batch_seen-set(batch))}")
+        require(batch_seen == batch_set, f"Stage-2 batch retained-set mismatch: missing={len(batch_set-batch_seen)} extra={len(batch_seen-batch_set)}")
 
 
 def main() -> int:
@@ -157,7 +158,7 @@ def main() -> int:
         require(not (BLIND[0] <= sol <= BLIND[1]), f"protected EFN row reached Stage 2: {code}")
         if wrapped:
             modulo_wrapped_by_year[year] += 1
-        lon = finite(row["Lgeo_Lsun"], "Lgeo-Lsun", code)
+        lon = finite(row["Lgeo-Lsun"], "Lgeo-Lsun", code)
         lat = finite(row["Bgeo"], "Bgeo", code)
         vg = finite(row["Vgeo"], "Vgeo", code)
         require(-90.0 <= lat <= 90.0, f"invalid EFN Bgeo for {code}")
@@ -188,6 +189,7 @@ def main() -> int:
         "canonical_geometry_sha256": geometry_sha,
         "query_columns": QUERY_COLUMNS,
         "returned_columns": RETURNED_COLUMNS,
+        "vizier_returned_header_alias": {"Obs_date": "Obs.date", "Lgeo-Lsun": "Lgeo-Lsun"},
         "server_side_access_restriction": "frozen Stage-1 retained-ID allowlist only",
         "query_batch_size": QUERY_BATCH_SIZE,
         "solar_longitude_normalization": SOLAR_LONGITUDE_NORMALIZATION,
