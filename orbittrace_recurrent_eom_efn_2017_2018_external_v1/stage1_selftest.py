@@ -29,7 +29,7 @@ def load_module():
 
 def make_csv(extra_column: bool = False, duplicate: bool = False) -> bytes:
     buf = io.StringIO()
-    fields = ["Code", "Obs.date", "Lsun"] + (["Shower"] if extra_column else [])
+    fields = ["Code", "Obs_date", "Lsun"] + (["Shower"] if extra_column else [])
     w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
     w.writeheader()
     for i in range(824):
@@ -37,7 +37,6 @@ def make_csv(extra_column: bool = False, duplicate: bool = False) -> bytes:
         code = f"SYN{year}_{i:04d}"
         if duplicate and i == 1:
             code = "SYN2017_0000"
-        # Test both inclusive edges in both years. Everything else is retained.
         local = i if year == 2017 else i - 412
         if local == 0:
             sol = 20.0
@@ -51,7 +50,7 @@ def make_csv(extra_column: bool = False, duplicate: bool = False) -> bytes:
             sol = (100.0 + local * 0.41) % 360.0
             if 20.0 <= sol <= 55.0:
                 sol = 60.0 + local * 0.001
-        row = {"Code": code, "Obs.date": f"{year}-07-01 00:00:00", "Lsun": f"{sol:.6f}"}
+        row = {"Code": code, "Obs_date": f"{year}-07-01 00:00:00", "Lsun": f"{sol:.6f}"}
         if extra_column:
             row["Shower"] = "FORBIDDEN"
         w.writerow(row)
@@ -68,7 +67,7 @@ def run_with(mod, payload: bytes, cwd: Path) -> tuple[bool, str]:
             with redirect_stdout(capture):
                 mod.main()
             return True, capture.getvalue()
-        except Exception as exc:  # expected in negative synthetic cases
+        except Exception as exc:
             return False, f"{type(exc).__name__}: {exc}"
     finally:
         os.chdir(old)
@@ -77,6 +76,8 @@ def run_with(mod, payload: bytes, cwd: Path) -> tuple[bool, str]:
 def main() -> int:
     mod = load_module()
     require(mod.QUERY == 'SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"', "frozen Stage-1 query changed")
+    require(mod.QUERY_COLUMNS == ["Code", "Obs.date", "Lsun"], "semantic query columns changed")
+    require(mod.RETURNED_COLUMNS == ["Code", "Obs_date", "Lsun"], "VizieR returned-header mapping changed")
     for forbidden in ("Lgeo-Lsun", "Bgeo", "Vgeo", "Shower", "Object", "RAgeo", "DEgeo", "Vinf"):
         require(forbidden not in mod.QUERY, f"forbidden Stage-1 column entered query: {forbidden}")
 
@@ -90,7 +91,9 @@ def main() -> int:
         require(result["rows_by_year"] == {"2017": 412, "2018": 412}, "synthetic year parsing changed")
         require(result["excluded_rows_by_year"] == {"2017": 2, "2018": 2}, "inclusive blind boundary changed")
         require(result["retained_rows_by_year"] == {"2017": 410, "2018": 410}, "synthetic retained counts changed")
-        require(result["selected_columns"] == ["Code", "Obs.date", "Lsun"], "Stage-1 column contract changed")
+        require(result["selected_columns"] == ["Code", "Obs.date", "Lsun"], "semantic Stage-1 column contract changed")
+        require(result["returned_columns"] == ["Code", "Obs_date", "Lsun"], "returned Stage-1 column contract changed")
+        require(result["vizier_returned_header_alias"] == {"Obs_date": "Obs.date"}, "VizieR date-header alias changed")
         require(result["raw_response_persisted"] is False, "raw blind-index response persistence flag changed")
         require(result["geometry_returned"] is False and result["shower_labels_returned"] is False and result["orbit_fields_returned"] is False, "forbidden Stage-1 science flag changed")
         require(len((root / "EFN_2017_RETAINED_IDS.txt").read_text().splitlines()) == 410, "2017 allowlist size changed")
@@ -114,17 +117,18 @@ def main() -> int:
         require(not ok_short, "823-row release did not fail closed")
 
     result = {
-        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE1_SYNTHETIC_AUDIT",
+        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE1_RETURNED_HEADER_REPAIR_SYNTHETIC_AUDIT",
         "synthetic_only": True,
         "expected_catalogue_rows": 824,
-        "stage1_selected_columns": ["Code", "Obs.date", "Lsun"],
+        "query_columns": ["Code", "Obs.date", "Lsun"],
+        "returned_columns": ["Code", "Obs_date", "Lsun"],
+        "query_unchanged": True,
         "boundary_20_excluded": True,
         "boundary_55_excluded": True,
         "extra_column_fails_closed": True,
         "duplicate_code_fails_closed": True,
         "wrong_row_count_fails_closed": True,
         "raw_response_persisted": False,
-        "efn_event_rows_accessed": False,
         "efn_geometry_accessed": False,
         "efn_shower_labels_accessed": False,
         "target_information_access": False,
@@ -135,7 +139,7 @@ def main() -> int:
     }
     out = HERE / "output"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "STAGE1_SYNTHETIC_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "STAGE1_RETURNED_HEADER_REPAIR_SYNTHETIC_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
     return 0
 
