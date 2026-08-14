@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import csv
 import hashlib
 import importlib.util
 import io
@@ -29,17 +28,14 @@ def load_module():
 
 
 def write_stage1(root: Path) -> tuple[Path, Path, Path, dict[int, list[str]]]:
-    ids = {
-        2017: [f"SYN2017_{i:03d}" for i in range(12)],
-        2018: [f"SYN2018_{i:03d}" for i in range(12)],
-    }
-    id_paths = {}
+    ids = {2017: [f"SYN2017_{i:03d}" for i in range(12)], 2018: [f"SYN2018_{i:03d}" for i in range(12)]}
+    paths = {}
     hashes = {}
     for year in (2017, 2018):
         p = root / f"EFN_{year}_RETAINED_IDS.txt"
         data = ("\n".join(ids[year]) + "\n").encode()
         p.write_bytes(data)
-        id_paths[year] = p
+        paths[year] = p
         hashes[str(year)] = hashlib.sha256(data).hexdigest()
     result = {
         "verdict": "PASS_RECURRENT_EOM_EFN_STAGE1_BLIND_RECEIPT",
@@ -60,45 +56,39 @@ def write_stage1(root: Path) -> tuple[Path, Path, Path, dict[int, list[str]]]:
     }
     stage1 = root / "STAGE1_BLIND_RECEIPT.json"
     stage1.write_text(json.dumps(result, sort_keys=True) + "\n")
-    return stage1, id_paths[2017], id_paths[2018], ids
+    return stage1, paths[2017], paths[2018], ids
 
 
-def make_geometry_csv(ids: dict[int, list[str]], *, extra: bool = False, protected: bool = False, bad_vg: bool = False, missing: bool = False) -> bytes:
-    fields = ["Code", "Obs_date", "Lsun", "Lgeo_Lsun", "Bgeo", "Vgeo"] + (["Shower"] if extra else [])
-    b = io.StringIO()
-    w = csv.DictWriter(b, fieldnames=fields, lineterminator="\n")
-    w.writeheader()
+def make_rows(ids: dict[int, list[str]], *, protected=False, bad_vg=False, missing=False, extra=False):
     rows = []
     for year in (2017, 2018):
         base = 536544000 if year == 2017 else 568080000
         for i, code in enumerate(ids[year]):
-            sol = 360.0 if i == 0 else 100.0 + i
+            sol = 361.1739 if i == 0 else 100.0 + i
             if protected and year == 2017 and i == 1:
-                sol = 30.0
+                sol = 380.0  # canonical protected 20
             row = {
                 "Code": code,
                 "Obs_date": str(base + i * 1000),
-                "Lsun": f"{sol:.6f}",
-                "Lgeo_Lsun": f"{-40.0 + i * 2.0:.6f}",
-                "Bgeo": f"{-15.0 + i:.6f}",
-                "Vgeo": "0.0" if bad_vg and year == 2018 and i == 2 else f"{25.0 + i:.6f}",
+                "Lsun": str(sol),
+                "Lgeo_Lsun": str(-40.0 + i * 2.0),
+                "Bgeo": str(-15.0 + i),
+                "Vgeo": "0.0" if bad_vg and year == 2018 and i == 2 else str(25.0 + i),
             }
             if extra:
                 row["Shower"] = "BAD"
             rows.append(row)
     if missing:
         rows = rows[:-1]
-    for row in rows:
-        w.writerow(row)
-    return b.getvalue().encode()
+    return rows
 
 
-def run_case(mod, td: Path, payload: bytes, name: str) -> tuple[bool, Path, str]:
+def run_case(mod, td: Path, rows, name: str) -> tuple[bool, Path, str]:
     case = td / name
     case.mkdir()
     stage1, ids17, ids18, _ = write_stage1(case)
     out = case / "out"
-    mod.query_csv = lambda: payload
+    mod.iter_returned_rows = lambda expected_ids: iter(rows)
     old = os.getcwd()
     cap = io.StringIO()
     try:
@@ -122,54 +112,64 @@ def run_case(mod, td: Path, payload: bytes, name: str) -> tuple[bool, Path, str]
 
 def main() -> int:
     mod = load_module()
-    require(mod.QUERY == 'SELECT Code, "Obs.date", Lsun, "Lgeo-Lsun", Bgeo, Vgeo FROM "J/A+A/667/A157/catalog" WHERE Lsun < 20.0 OR Lsun > 55.0', "Stage-2 query changed")
     require(mod.QUERY_COLUMNS == ["Code", "Obs.date", "Lsun", "Lgeo-Lsun", "Bgeo", "Vgeo"], "Stage-2 semantic columns changed")
-    require("Shower" not in mod.QUERY and "Object" not in mod.QUERY, "truth-bearing field entered Stage 2")
-    sol, wrapped = mod.canonical_solar_longitude("360.0", "SYN")
-    require(sol == 0.0 and wrapped is True, "Stage-2 exact-360 canonicalization changed")
+    require(mod.RETURNED_COLUMNS == ["Code", "Obs_date", "Lsun", "Lgeo_Lsun", "Bgeo", "Vgeo"], "Stage-2 returned columns changed")
+    require(mod.QUERY_BATCH_SIZE == 150, "Stage-2 deterministic batch size changed")
+    q = mod.build_query(["SYN_A", "SYN_B"])
+    require("Code IN ('SYN_A','SYN_B')" in q, "Stage-2 query is not retained-ID restricted")
+    require("Lsun <" not in q and "Lsun >" not in q, "raw-longitude Stage-2 filter survived")
+    require("Shower" not in q and "Object" not in q, "truth-bearing field entered Stage 2")
+    require("''" in mod.quote_adql_string("A'B"), "ADQL string escaping changed")
+    for raw, expected in (("360.0466", 0.0466), ("361.1739", 1.1739), ("-0.25", 359.75), ("380", 20.0)):
+        sol, wrapped = mod.canonical_solar_longitude(raw, "SYN")
+        require(abs(sol - expected) < 1e-12 and wrapped is True, f"Stage-2 generic modulo changed for {raw}")
+    for bad in ("nan", "inf", "-inf"):
+        try:
+            mod.canonical_solar_longitude(bad, "BAD")
+        except Exception:
+            pass
+        else:
+            raise RuntimeError(f"Stage-2 nonfinite Lsun did not fail: {bad}")
 
     with tempfile.TemporaryDirectory() as td_raw:
         td = Path(td_raw)
-        seed = td / "seed"
-        seed.mkdir()
+        seed = td / "seed"; seed.mkdir()
         _, _, _, ids = write_stage1(seed)
-        valid_payload = make_geometry_csv(ids)
-        ok, out, text = run_case(mod, td, valid_payload, "valid")
+        ok, out, text = run_case(mod, td, make_rows(ids), "valid")
         require(ok, f"valid synthetic Stage 2 failed: {text}")
         result = json.loads((out / "STAGE2_RETAINED_GEOMETRY.json").read_text())
         require(result["verdict"] == "PASS_RECURRENT_EOM_EFN_STAGE2_RETAINED_NATIVE_GEOMETRY", "wrong Stage-2 verdict")
         require(result["rows_by_year"] == {"2017": 12, "2018": 12}, "Stage-2 counts changed")
-        require(result["server_side_filter"] == "Lsun < 20.0 OR Lsun > 55.0", "Stage-2 server filter changed")
+        require(result["server_side_access_restriction"] == "frozen Stage-1 retained-ID allowlist only", "Stage-2 access restriction changed")
         require(result["native_mapping"] == {"sol": "Lsun % 360.0", "sun_lon": "Lgeo-Lsun", "ecl_lat": "Bgeo", "vg": "Vgeo"}, "native mapping changed")
-        require(result["exact_360_wrapped_to_zero_by_year"] == {"2017": 1, "2018": 1}, "Stage-2 wrap counts changed")
+        require(result["modulo_wrapped_rows_by_year"] == {"2017": 1, "2018": 1}, "Stage-2 wrap counts changed")
         require(result["labels_accessed"] is False and result["shower_column_returned"] is False and result["orbit_fields_returned"] is False, "Stage 2 exposed truth/orbit state")
         for year in (2017, 2018):
             rows = json.loads((out / f"EFN_{year}_CANONICAL_GEOMETRY.json").read_text())
             require([r["id"] for r in rows] == ids[year], f"Stage-2 output ID order changed {year}")
-            require(rows[0]["sol"] == 0.0, f"Stage-2 exact-360 row not canonical zero {year}")
             require(all(r["iau"] == 0 and r["complex_key"] == "HIDDEN" for r in rows), "Stage-2 output exposed labels")
             require(all(not (20.0 <= float(r["sol"]) <= 55.0) for r in rows), "protected canonical geometry survived Stage 2")
 
-        for name, payload in (
-            ("extra-column", make_geometry_csv(ids, extra=True)),
-            ("protected-row", make_geometry_csv(ids, protected=True)),
-            ("nonpositive-vg", make_geometry_csv(ids, bad_vg=True)),
-            ("missing-id", make_geometry_csv(ids, missing=True)),
+        for name, rows in (
+            ("extra-column", make_rows(ids, extra=True)),
+            ("protected-row", make_rows(ids, protected=True)),
+            ("nonpositive-vg", make_rows(ids, bad_vg=True)),
+            ("missing-id", make_rows(ids, missing=True)),
         ):
-            ok, _, _ = run_case(mod, td, payload, name)
+            ok, _, _ = run_case(mod, td, rows, name)
             require(not ok, f"Stage-2 negative case did not fail closed: {name}")
 
     result = {
-        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE2_SYNTHETIC_PREACCESS_AUDIT",
+        "verdict": "PASS_RECURRENT_EOM_EFN_STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT",
         "synthetic_only": True,
-        "stage2_query": mod.QUERY,
-        "server_side_protected_filter": "Lsun < 20.0 OR Lsun > 55.0",
         "native_geometry_only": True,
+        "server_side_access_restriction": "frozen Stage-1 retained-ID allowlist only",
+        "raw_longitude_server_filter_removed": True,
         "stage1_allowlist_hash_binding": True,
         "exact_retained_id_equality_required": True,
         "solar_longitude_normalization": "raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event",
-        "exact_360_canonicalizes_to_zero": True,
-        "protected_row_fails_closed": True,
+        "generic_over_360_modulo_supported": True,
+        "protected_canonical_row_fails_closed": True,
         "extra_column_fails_closed": True,
         "missing_retained_id_fails_closed": True,
         "nonpositive_velocity_fails_closed": True,
@@ -182,11 +182,11 @@ def main() -> int:
         "target_region_physical_values_accessed": False,
         "maarsy_scientific_access": False,
         "dms_scientific_access": False,
-        "orbittrace_target_access": False,
+        "orbittrace_target_access": False
     }
     out = HERE / "output"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "STAGE2_SYNTHETIC_PREACCESS_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    (out / "STAGE2_ALLOWLIST_SYNTHETIC_PREACCESS_AUDIT.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, sort_keys=True))
     return 0
 
