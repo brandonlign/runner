@@ -58,27 +58,29 @@ def strip_quote_wrapper(value: str) -> str:
     return s
 
 
-def adql_string(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
 def main() -> int:
     table_query = (
         "SELECT table_name, description FROM TAP_SCHEMA.tables "
         "WHERE table_name LIKE '%A157%' ORDER BY table_name"
     )
     table_rows_all = rows(post_adql(table_query))
-    matches = [r for r in table_rows_all if strip_quote_wrapper(r.get("table_name", "")) == CANONICAL_TABLE]
-    require(len(matches) == 1, f"expected one canonical EFN metadata table after normalized discovery, got {len(matches)} from {[r.get('table_name') for r in table_rows_all]}")
-    table_row = matches[0]
+    table_matches = [r for r in table_rows_all if strip_quote_wrapper(r.get("table_name", "")) == CANONICAL_TABLE]
+    require(len(table_matches) == 1, f"expected one canonical EFN metadata table after normalized discovery, got {len(table_matches)} from {[r.get('table_name') for r in table_rows_all]}")
+    table_row = table_matches[0]
     raw_table_name = str(table_row["table_name"])
 
     column_query = (
-        "SELECT column_name, datatype, unit, description FROM TAP_SCHEMA.columns "
-        f"WHERE table_name = {adql_string(raw_table_name)} ORDER BY column_name"
+        "SELECT table_name, column_name, datatype, unit, description FROM TAP_SCHEMA.columns "
+        "WHERE table_name LIKE '%667/A157%' ORDER BY table_name, column_name"
     )
-    column_rows = rows(post_adql(column_query))
-    require(column_rows, "no TAP_SCHEMA column rows for resolved EFN table")
+    column_rows_all = rows(post_adql(column_query))
+    require(column_rows_all, "no TAP_SCHEMA column metadata returned for 667/A157 discovery")
+    column_rows = [r for r in column_rows_all if strip_quote_wrapper(r.get("table_name", "")) == CANONICAL_TABLE]
+    require(column_rows, f"no normalized EFN catalog columns found; table encodings={[r.get('table_name') for r in column_rows_all[:20]]}")
+    normalized_column_tables = {strip_quote_wrapper(r.get("table_name", "")) for r in column_rows}
+    require(normalized_column_tables == {CANONICAL_TABLE}, f"ambiguous EFN column metadata tables: {normalized_column_tables}")
+    raw_column_table_names = sorted({str(r.get("table_name", "")) for r in column_rows})
+
     raw_names = [str(r.get("column_name", "")) for r in column_rows]
     names = [strip_quote_wrapper(n) for n in raw_names]
     require(len(names) == len(set(names)), "duplicate normalized TAP column metadata")
@@ -100,8 +102,10 @@ def main() -> int:
         "endpoint": ENDPOINT,
         "catalogue": "J/A+A/667/A157",
         "canonical_table_name": CANONICAL_TABLE,
-        "tap_schema_raw_table_name": raw_table_name,
-        "tap_schema_normalized_table_name": strip_quote_wrapper(raw_table_name),
+        "tap_schema_tables_raw_table_name": raw_table_name,
+        "tap_schema_tables_normalized_table_name": strip_quote_wrapper(raw_table_name),
+        "tap_schema_columns_raw_table_names": raw_column_table_names,
+        "tap_schema_columns_normalized_table_name": CANONICAL_TABLE,
         "table_description": table_row.get("description"),
         "required_columns": selected,
         "all_normalized_column_names_sha256": hashlib.sha256(("\n".join(names) + "\n").encode()).hexdigest(),
