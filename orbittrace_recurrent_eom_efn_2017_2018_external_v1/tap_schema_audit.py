@@ -51,9 +51,9 @@ def rows(text: str) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(text)))
 
 
-def strip_quotes(value: str) -> str:
+def strip_quote_wrapper(value: str) -> str:
     s = str(value).strip()
-    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
+    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
         return s[1:-1]
     return s
 
@@ -68,7 +68,7 @@ def main() -> int:
         "WHERE table_name LIKE '%A157%' ORDER BY table_name"
     )
     table_rows_all = rows(post_adql(table_query))
-    matches = [r for r in table_rows_all if strip_quotes(r.get("table_name", "")) == CANONICAL_TABLE]
+    matches = [r for r in table_rows_all if strip_quote_wrapper(r.get("table_name", "")) == CANONICAL_TABLE]
     require(len(matches) == 1, f"expected one canonical EFN metadata table after normalized discovery, got {len(matches)} from {[r.get('table_name') for r in table_rows_all]}")
     table_row = matches[0]
     raw_table_name = str(table_row["table_name"])
@@ -80,7 +80,7 @@ def main() -> int:
     column_rows = rows(post_adql(column_query))
     require(column_rows, "no TAP_SCHEMA column rows for resolved EFN table")
     raw_names = [str(r.get("column_name", "")) for r in column_rows]
-    names = [strip_quotes(n) for n in raw_names]
+    names = [strip_quote_wrapper(n) for n in raw_names]
     require(len(names) == len(set(names)), "duplicate normalized TAP column metadata")
     require(REQUIRED.issubset(set(names)), f"required EFN TAP fields missing: {sorted(REQUIRED - set(names))}; got {names}")
     require("Obs.time" not in set(names), "unexpected separate Obs.time column appeared; access repair requires review")
@@ -101,7 +101,7 @@ def main() -> int:
         "catalogue": "J/A+A/667/A157",
         "canonical_table_name": CANONICAL_TABLE,
         "tap_schema_raw_table_name": raw_table_name,
-        "tap_schema_normalized_table_name": strip_quotes(raw_table_name),
+        "tap_schema_normalized_table_name": strip_quote_wrapper(raw_table_name),
         "table_description": table_row.get("description"),
         "required_columns": selected,
         "all_normalized_column_names_sha256": hashlib.sha256(("\n".join(names) + "\n").encode()).hexdigest(),
