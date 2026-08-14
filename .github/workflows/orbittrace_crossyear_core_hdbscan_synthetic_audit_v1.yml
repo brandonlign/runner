@@ -1,0 +1,109 @@
+name: OrbitTrace cross-year-core HDBSCAN synthetic exactness audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-crossyear-core-hdbscan-v1
+    paths:
+      - '.github/workflows/orbittrace_crossyear_core_hdbscan_synthetic_audit_v1.yml'
+      - 'orbittrace_crossyear_core_hdbscan_v1/PROTOCOL.md'
+      - 'orbittrace_crossyear_core_hdbscan_v1/reference.py'
+      - 'orbittrace_crossyear_core_hdbscan_v1/audit_candidate.py'
+      - 'orbittrace_crossyear_core_hdbscan_v1/audit_exactness.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  synthetic-exactness:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact audit runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+
+      - name: Verify pre-GMN frozen sources
+        run: |
+          set -euo pipefail
+          check_blob() {
+            path="$1"
+            expected="$2"
+            actual="$(git hash-object "$path")"
+            echo "BLOB $path actual=$actual expected=$expected"
+            test "$actual" = "$expected"
+          }
+          check_blob orbittrace_crossyear_core_hdbscan_v1/PROTOCOL.md 980d2f26d6477ff80d1b57606ee86ae96bebe972
+          check_blob orbittrace_crossyear_core_hdbscan_v1/reference.py 50695f5deba31235fc0f7ffd6defe6f339be68cc
+          check_blob orbittrace_crossyear_core_hdbscan_v1/audit_candidate.py 786307370a433aeb8fd961976bed35feec5b0845
+          check_blob orbittrace_crossyear_core_hdbscan_v1/audit_exactness.py d2d76c45915e02cebff57417689f79f4a35d1793
+          check_blob orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py 30ac3fa3bc47910370df528fcf3ae8ecb6277b47
+          python -m py_compile \
+            orbittrace_crossyear_core_hdbscan_v1/reference.py \
+            orbittrace_crossyear_core_hdbscan_v1/audit_candidate.py \
+            orbittrace_crossyear_core_hdbscan_v1/audit_exactness.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py
+
+      - name: Run synthetic-only exactness audit
+        run: |
+          set -euo pipefail
+          rm -rf output
+          python -u orbittrace_crossyear_core_hdbscan_v1/audit_exactness.py
+
+      - name: Enforce zero-data audit boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('output/CROSSYEAR_CORE_HDBSCAN_V1_SYNTHETIC_AUDIT.json'))
+          assert p['verdict']=='PASS_CROSSYEAR_CORE_HDBSCAN_V1_SYNTHETIC_EXACTNESS_AUDIT'
+          assert p['absolute_tolerance_frozen_pre_gmn']==1e-12
+          assert p['k']==10
+          assert p['min_cluster_size']==10
+          assert len(p['fixtures'])==5
+          assert all(f['status']=='PASS' for f in p['fixtures'])
+          for key in ('scientific_data_accessed','gmn_accessed','sonotaco_accessed','amos_accessed','orbittrace_target_access','maarsy_scientific_access','dms_scientific_access'):
+              assert p[key] is False, key
+          print(p['verdict'])
+          PY
+
+      - name: Preserve exact audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_crossyear_core_hdbscan_v1/PROTOCOL.md \
+            orbittrace_crossyear_core_hdbscan_v1/reference.py \
+            orbittrace_crossyear_core_hdbscan_v1/audit_candidate.py \
+            orbittrace_crossyear_core_hdbscan_v1/audit_exactness.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            output/CROSSYEAR_CORE_HDBSCAN_V1_SYNTHETIC_AUDIT.json \
+            > output/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-crossyear-core-hdbscan-v1-synthetic-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
