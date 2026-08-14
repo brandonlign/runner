@@ -11,6 +11,7 @@ on:
       - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_REPAIR.md'
       - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_DISCOVERY_REPAIR.md'
       - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_SINGLE_QUOTE_REPAIR.md'
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_COLUMN_DISCOVERY_REPAIR.md'
       - '.github/workflows/orbittrace_recurrent_eom_efn_tap_schema_preaccess_v1.yml'
   workflow_dispatch:
 
@@ -34,7 +35,7 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/SOURCE_PIN_REPAIR.md)" = 'c8efc8cddadf17562795700155f1796f2cc90b83'
           test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/VIZIER_SCHEMA_FREEZE.md)" = '62cc76281f4d4bbeaef9ffe6a028338d7cd3473c'
-          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py)" = 'ee4080d3ee542f54b068d6ba6657ca63d73f4f84'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py)" = 'ff67ef388b782996ea1f6ab79f8d4e455f243656'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
           python -m py_compile orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py
           echo PASS_EFN_PREACCESS_SOURCE_PINS
@@ -50,7 +51,8 @@ jobs:
           assert r['verdict']=='PASS_RECURRENT_EOM_EFN_TAP_SCHEMA_PREACCESS_AUDIT'
           assert r['catalogue']=='J/A+A/667/A157'
           assert r['canonical_table_name']=='J/A+A/667/A157/catalog'
-          assert r['tap_schema_normalized_table_name']=='J/A+A/667/A157/catalog'
+          assert r['tap_schema_tables_normalized_table_name']=='J/A+A/667/A157/catalog'
+          assert r['tap_schema_columns_normalized_table_name']=='J/A+A/667/A157/catalog'
           assert r['obs_time_separate_column_present'] is False
           assert set(r['required_columns'])=={'Code','Obs.date','Lsun','Lgeo-Lsun','Bgeo','Vgeo','Shower'}
           assert r['query_classes']==['TAP_SCHEMA.tables','TAP_SCHEMA.columns']
@@ -60,7 +62,7 @@ jobs:
           assert r['efn_shower_labels_accessed'] is False
           for k in ('target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access','orbittrace_target_access'):
               assert r[k] is False
-          print(r['verdict'], r['tap_schema_raw_table_name'])
+          print(r['verdict'], r['tap_schema_tables_raw_table_name'], r['tap_schema_columns_raw_table_names'])
           PY
 
       - name: Preserve metadata-only provenance
@@ -75,6 +77,7 @@ jobs:
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_REPAIR.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_DISCOVERY_REPAIR.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_SINGLE_QUOTE_REPAIR.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_COLUMN_DISCOVERY_REPAIR.md \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/tap_schema_audit.py \
             orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/TAP_SCHEMA_AUDIT.json \
             > orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/tap_schema_source_output_sha256.txt 2>/dev/null || true
