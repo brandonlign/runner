@@ -33,7 +33,6 @@ def require(ok: bool, msg: str) -> None:
 
 
 def query_csv() -> bytes:
-    # The only live event query this program can issue is the frozen blind-index projection.
     require(QUERY == 'SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"', "Stage-1 ADQL changed")
     forbidden = ("Lgeo-Lsun", "Bgeo", "Vgeo", "Shower", "Object", "RAgeo", "DEgeo", "Vinf")
     require(all(x not in QUERY for x in forbidden), "Stage-1 query contains forbidden scientific column")
@@ -64,11 +63,10 @@ def parse_year(value: str) -> int:
 def canonical_solar_longitude(value: str, code: str) -> tuple[float, bool]:
     raw = float(value)
     require(math.isfinite(raw), f"nonfinite EFN Lsun for {code}")
-    require(0.0 <= raw <= 360.0, f"EFN Lsun outside frozen representational domain [0,360] for {code}")
     canonical = raw % 360.0
-    wrapped_exact_360 = raw == 360.0
     require(0.0 <= canonical < 360.0, f"canonical EFN Lsun outside [0,360) for {code}")
-    return canonical, wrapped_exact_360
+    required_modulo_wrap = not (0.0 <= raw < 360.0)
+    return canonical, required_modulo_wrap
 
 
 def main() -> int:
@@ -81,7 +79,7 @@ def main() -> int:
     retained: dict[int, list[str]] = {2017: [], 2018: []}
     total_by_year = {2017: 0, 2018: 0}
     excluded_by_year = {2017: 0, 2018: 0}
-    wrapped_360_by_year = {2017: 0, 2018: 0}
+    modulo_wrapped_by_year = {2017: 0, 2018: 0}
     seen: set[str] = set()
     row_count = 0
 
@@ -93,9 +91,9 @@ def main() -> int:
         seen.add(code)
         year = parse_year(row["Obs_date"])
         total_by_year[year] += 1
-        sol, wrapped_exact_360 = canonical_solar_longitude(row["Lsun"], code)
-        if wrapped_exact_360:
-            wrapped_360_by_year[year] += 1
+        sol, required_modulo_wrap = canonical_solar_longitude(row["Lsun"], code)
+        if required_modulo_wrap:
+            modulo_wrapped_by_year[year] += 1
         if BLIND[0] <= sol <= BLIND[1]:
             excluded_by_year[year] += 1
         else:
@@ -139,9 +137,9 @@ def main() -> int:
             "2019_start": SEC_2019,
         },
         "solar_longitude_normalization": SOLAR_LONGITUDE_NORMALIZATION,
-        "raw_solar_longitude_allowed_domain_inclusive": [0.0, 360.0],
-        "exact_360_wrapped_to_zero_by_year": {str(y): wrapped_360_by_year[y] for y in YEARS},
-        "exact_360_wrapped_to_zero_total": int(sum(wrapped_360_by_year.values())),
+        "raw_solar_longitude_required_finite_only": True,
+        "modulo_wrapped_rows_by_year": {str(y): modulo_wrapped_by_year[y] for y in YEARS},
+        "modulo_wrapped_rows_total": int(sum(modulo_wrapped_by_year.values())),
         "blind_exclusion": [20.0, 55.0],
         "blind_exclusion_applied_after_modulo_normalization": True,
         "raw_response_persisted": False,
@@ -166,7 +164,7 @@ def main() -> int:
         "blind_index_response_sha256": raw_sha,
         "obs_date_encoding": DATE_ENCODING,
         "solar_longitude_normalization": SOLAR_LONGITUDE_NORMALIZATION,
-        "exact_360_wrapped_to_zero_by_year": result["exact_360_wrapped_to_zero_by_year"],
+        "modulo_wrapped_rows_by_year": result["modulo_wrapped_rows_by_year"],
     }, sort_keys=True))
     return 0
 
