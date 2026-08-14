@@ -1,0 +1,40 @@
+name: OrbitTrace MSSWG interface structure audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-msswg-interface-structure-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_msswg_interface_structure_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install structure-audit runtime and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'requests==2.32.5' 'beautifulsoup4==4.12.3'
+          test "$(git hash-object orbittrace_msswg_interface_structure_audit_v1/PROTOCOL.md)" = '12aa86062ccbaa1e6b11588b3a7c0238d6aeb52e'
+          test "$(git hash-object orbittrace_msswg_interface_structure_audit_v1/audit_interface.py)" = '89ebaa76392550864ef30150853f503073abdb85'
+          python -m py_compile orbittrace_msswg_interface_structure_audit_v1/audit_interface.py
+      - name: Run sole official-page structure request
+        run: |
+          set -euo pipefail
+          python orbittrace_msswg_interface_structure_audit_v1/audit_interface.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-msswg-interface-structure-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
