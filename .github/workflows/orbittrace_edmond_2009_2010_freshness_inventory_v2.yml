@@ -1,4 +1,4 @@
-# Metadata-only rerun after semantic-neutral Git regex repair.
+# Metadata-only rerun after semantic-neutral targeted Actions enumeration repair.
 name: OrbitTrace EDMOND 2009/2010 freshness inventory v2
 
 on:
@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git hash-object orbittrace_edmond_2009_2010_freshness_audit_v2/PROTOCOL.md)" = '779a08351093520cb66ea1d70cb09db448d3c5eb'
-          test "$(git hash-object orbittrace_edmond_2009_2010_freshness_audit_v2/audit_inventory.py)" = '6fa7343793bd08a9cd2cda50736f0cda329f9893'
+          test "$(git hash-object orbittrace_edmond_2009_2010_freshness_audit_v2/audit_inventory.py)" = '96fb8c9b2a0faa23e4797e87ecaf508afc04b9cd'
           python -m py_compile orbittrace_edmond_2009_2010_freshness_audit_v2/audit_inventory.py
 
       - name: Fetch repository heads only for history inventory
@@ -68,6 +68,7 @@ jobs:
           assert p['historical_edmond_logs_downloaded'] is False
           for key in ('target_information_access','target_region_events_accessed','sonotaco_scientific_access','amos_scientific_access','efn_scientific_access','maarsy_scientific_access','dms_scientific_access'):
               assert p[key] is False, key
+          assert p['actions']['enumeration_strategy']=='UNION_OF_ALL_EDMOND_NAMED_WORKFLOW_RUNS_AND_ALL_EDMOND_BRANCH_RUNS'
           assert p['actions']['known_failed_metadata_run_present'] is True
           print(p['verdict'])
           print('exposure_candidates', len(p['exposure_candidates']))

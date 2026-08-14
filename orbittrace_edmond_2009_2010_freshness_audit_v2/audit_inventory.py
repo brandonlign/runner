@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import urllib.parse
 import urllib.request
 
 
@@ -93,8 +94,8 @@ def git_inventory() -> dict:
                 }
             )
 
-    # Also inspect every historical file path with EDMOND in its name, at the newest
-    # version reachable from each relevant commit. This catches separated year/url lines.
+    # Also inspect every historical file path with EDMOND in its name, at every
+    # reachable historical version. This catches separated year/url lines.
     edmond_paths = sorted(p for p in paths if "edmond" in p.lower())
     file_evidence = []
     for p in edmond_paths:
@@ -120,61 +121,121 @@ def git_inventory() -> dict:
     }
 
 
-def actions_inventory() -> dict:
-    # Run metadata only. Do not download logs or artifacts here.
-    matches = []
-    page = 1
-    total_seen = 0
-    while True:
-        data = github_json(f"actions/runs?per_page=100&page={page}")
-        runs = data.get("workflow_runs", [])
-        if not runs:
-            break
-        total_seen += len(runs)
+def _paged_items(path_prefix: str, key: str, *, max_pages: int = 1000) -> tuple[list[dict], int]:
+    items: list[dict] = []
+    records_seen = 0
+    for page in range(1, max_pages + 1):
+        sep = "&" if "?" in path_prefix else "?"
+        data = github_json(f"{path_prefix}{sep}per_page=100&page={page}")
+        batch = list(data.get(key, []))
+        records_seen += len(batch)
+        items.extend(batch)
+        if len(batch) < 100:
+            return items, records_seen
+    raise RuntimeError(f"GitHub metadata pagination exceeded safety cap for {path_prefix}")
+
+
+def _origin_branch_names(git: dict) -> list[str]:
+    prefix = "refs/remotes/origin/"
+    out = set()
+    for row in git["refs"]:
+        ref = str(row["ref"])
+        if ref.startswith(prefix):
+            branch = ref[len(prefix):]
+            if "edmond" in branch.lower():
+                out.add(branch)
+    return sorted(out)
+
+
+def actions_inventory(git: dict) -> dict:
+    # The repository has tens of thousands of Actions runs. Scanning a generic
+    # first-N window cannot prove the frozen universe. Instead enumerate the exact
+    # union specified by the protocol:
+    #   (a) every workflow whose name/path contains EDMOND, across all its runs;
+    #   (b) every run on every reachable branch whose name contains EDMOND.
+    # The GitHub API supports both queries directly. Deduplicate by run ID.
+    workflows, workflow_records_seen = _paged_items("actions/workflows", "workflows")
+    edmond_workflows = [
+        {
+            "id": int(w["id"]),
+            "name": str(w.get("name") or ""),
+            "path": str(w.get("path") or ""),
+            "state": str(w.get("state") or ""),
+        }
+        for w in workflows
+        if "edmond" in (str(w.get("name") or "") + " " + str(w.get("path") or "")).lower()
+    ]
+    edmond_branches = _origin_branch_names(git)
+
+    runs_by_id: dict[int, dict] = {}
+    run_records_seen = 0
+    query_receipts = []
+
+    for workflow in sorted(edmond_workflows, key=lambda x: x["id"]):
+        path = f"actions/workflows/{workflow['id']}/runs"
+        runs, seen = _paged_items(path, "workflow_runs")
+        run_records_seen += seen
+        query_receipts.append({"kind": "workflow", "workflow_id": workflow["id"], "records_seen": seen})
         for r in runs:
-            name = str(r.get("name") or "")
-            branch = str(r.get("head_branch") or "")
-            path = str(r.get("path") or "")
-            hay = " ".join((name, branch, path)).lower()
-            if "edmond" not in hay:
-                continue
-            artifacts_data = github_json(f"actions/runs/{int(r['id'])}/artifacts?per_page=100")
-            artifacts = [
-                {
-                    "id": int(a["id"]),
-                    "name": str(a.get("name") or ""),
-                    "expired": bool(a.get("expired")),
-                    "created_at": a.get("created_at"),
-                    "size_in_bytes": int(a.get("size_in_bytes") or 0),
-                }
-                for a in artifacts_data.get("artifacts", [])
-            ]
-            exact_hint = any(y in hay for y in TARGET_YEARS) or any(any(y in a["name"] for y in TARGET_YEARS) for a in artifacts)
-            matches.append(
-                {
-                    "run_id": int(r["id"]),
-                    "name": name,
-                    "head_branch": branch,
-                    "path": path,
-                    "event": r.get("event"),
-                    "status": r.get("status"),
-                    "conclusion": r.get("conclusion"),
-                    "created_at": r.get("created_at"),
-                    "updated_at": r.get("updated_at"),
-                    "head_sha": r.get("head_sha"),
-                    "artifacts": artifacts,
-                    "exact_2009_2010_hint": exact_hint,
-                }
-            )
-        if len(runs) < 100:
-            break
-        page += 1
-        if page > 100:
-            raise RuntimeError("Actions pagination exceeded safety cap")
+            runs_by_id[int(r["id"])] = r
+
+    for branch in edmond_branches:
+        encoded = urllib.parse.quote(branch, safe="")
+        path = f"actions/runs?branch={encoded}"
+        runs, seen = _paged_items(path, "workflow_runs")
+        run_records_seen += seen
+        query_receipts.append({"kind": "branch", "branch": branch, "records_seen": seen})
+        for r in runs:
+            runs_by_id[int(r["id"])] = r
+
+    matches = []
+    for rid in sorted(runs_by_id):
+        r = runs_by_id[rid]
+        name = str(r.get("name") or "")
+        branch = str(r.get("head_branch") or "")
+        path = str(r.get("path") or "")
+        hay = " ".join((name, branch, path)).lower()
+        # Fail closed if a targeted API query ever returns a record that is outside
+        # the frozen name/path/branch union.
+        if "edmond" not in hay:
+            raise RuntimeError(f"targeted Actions query returned out-of-universe run {rid}")
+        artifacts_data = github_json(f"actions/runs/{rid}/artifacts?per_page=100")
+        artifacts = [
+            {
+                "id": int(a["id"]),
+                "name": str(a.get("name") or ""),
+                "expired": bool(a.get("expired")),
+                "created_at": a.get("created_at"),
+                "size_in_bytes": int(a.get("size_in_bytes") or 0),
+            }
+            for a in artifacts_data.get("artifacts", [])
+        ]
+        exact_hint = any(y in hay for y in TARGET_YEARS) or any(any(y in a["name"] for y in TARGET_YEARS) for a in artifacts)
+        matches.append(
+            {
+                "run_id": rid,
+                "name": name,
+                "head_branch": branch,
+                "path": path,
+                "event": r.get("event"),
+                "status": r.get("status"),
+                "conclusion": r.get("conclusion"),
+                "created_at": r.get("created_at"),
+                "updated_at": r.get("updated_at"),
+                "head_sha": r.get("head_sha"),
+                "artifacts": artifacts,
+                "exact_2009_2010_hint": exact_hint,
+            }
+        )
 
     return {
-        "total_actions_runs_scanned": total_seen,
-        "edmond_related_runs": sorted(matches, key=lambda x: x["run_id"]),
+        "enumeration_strategy": "UNION_OF_ALL_EDMOND_NAMED_WORKFLOW_RUNS_AND_ALL_EDMOND_BRANCH_RUNS",
+        "workflow_metadata_records_scanned": workflow_records_seen,
+        "edmond_workflows": sorted(edmond_workflows, key=lambda x: x["id"]),
+        "edmond_branches": edmond_branches,
+        "targeted_run_metadata_records_scanned_including_query_overlap": run_records_seen,
+        "query_receipts": query_receipts,
+        "edmond_related_runs": matches,
         "known_failed_metadata_run_present": any(x["run_id"] == KNOWN_FAILED_METADATA_RUN for x in matches),
     }
 
@@ -212,7 +273,7 @@ def exposure_candidates(git: dict, actions: dict) -> list[dict]:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     git = git_inventory()
-    actions = actions_inventory()
+    actions = actions_inventory(git)
     candidates = exposure_candidates(git, actions)
 
     verdict = (
@@ -248,7 +309,9 @@ def main() -> None:
         "edmond_touching_commit_count": git["edmond_touching_commit_count"],
         "exact_year_commit_evidence_count": len(git["exact_year_commit_evidence"]),
         "exact_year_file_evidence_count": len(git["exact_year_file_evidence"]),
-        "actions_runs_scanned": actions["total_actions_runs_scanned"],
+        "workflow_metadata_records_scanned": actions["workflow_metadata_records_scanned"],
+        "edmond_workflows": len(actions["edmond_workflows"]),
+        "edmond_branches": len(actions["edmond_branches"]),
         "edmond_related_actions_runs": len(actions["edmond_related_runs"]),
         "exposure_candidate_count": len(candidates),
     }, indent=2, sort_keys=True))
