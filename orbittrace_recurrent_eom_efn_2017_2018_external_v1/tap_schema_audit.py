@@ -64,7 +64,7 @@ def main() -> int:
     )
     column_query = (
         "SELECT column_name, datatype, unit, description FROM TAP_SCHEMA.columns "
-        "WHERE table_name = 'J/A+A/667/A157/catalog' ORDER BY column_index"
+        "WHERE table_name = 'J/A+A/667/A157/catalog' ORDER BY column_name"
     )
     table_rows = rows(post_adql(table_query))
     column_rows = rows(post_adql(column_query))
