@@ -19,7 +19,11 @@ RETURNED_COLUMNS = ["Code", "Obs_date", "Lsun"]
 YEARS = (2017, 2018)
 BLIND = (20.0, 55.0)
 QUERY = 'SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"'
-YEAR_RE = re.compile(r"^(2017|2018)(?:-|$)")
+INTEGER_RE = re.compile(r"^[0-9]+$")
+DATE_ENCODING = "VIZIER_SEC_PER_2000"
+SEC_2017 = 536544000
+SEC_2018 = 568080000
+SEC_2019 = 599616000
 
 
 def require(ok: bool, msg: str) -> None:
@@ -47,9 +51,13 @@ def query_csv() -> bytes:
 
 def parse_year(value: str) -> int:
     s = str(value).strip()
-    m = YEAR_RE.match(s)
-    require(m is not None, f"unexpected Obs.date year encoding: {s!r}")
-    return int(m.group(1))
+    require(bool(INTEGER_RE.fullmatch(s)), f"unexpected Obs.date sec/2000 encoding: {s!r}")
+    seconds = int(s)
+    if SEC_2017 <= seconds < SEC_2018:
+        return 2017
+    if SEC_2018 <= seconds < SEC_2019:
+        return 2018
+    raise RuntimeError(f"Obs.date sec/2000 outside frozen 2017/2018 domain: {seconds}")
 
 
 def main() -> int:
@@ -111,6 +119,12 @@ def main() -> int:
         "selected_columns": QUERY_COLUMNS,
         "returned_columns": RETURNED_COLUMNS,
         "vizier_returned_header_alias": {"Obs_date": "Obs.date"},
+        "obs_date_encoding": DATE_ENCODING,
+        "obs_date_year_boundaries_sec_per_2000": {
+            "2017_start": SEC_2017,
+            "2018_start": SEC_2018,
+            "2019_start": SEC_2019,
+        },
         "blind_exclusion": [20.0, 55.0],
         "raw_response_persisted": False,
         "geometry_returned": False,
@@ -131,6 +145,7 @@ def main() -> int:
         "retained_rows_by_year": retained_counts,
         "retained_ids_sha256": retained_sha,
         "blind_index_response_sha256": raw_sha,
+        "obs_date_encoding": DATE_ENCODING,
     }, sort_keys=True))
     return 0
 
