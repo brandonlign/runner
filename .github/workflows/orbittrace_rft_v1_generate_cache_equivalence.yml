@@ -1,0 +1,57 @@
+name: OrbitTrace RFT v1 generate cache equivalence
+
+on:
+  push:
+    branches: [agent/orbittrace-rft-v1-generate-cache-equivalence]
+    paths: ['.github/workflows/orbittrace_rft_v1_generate_cache_equivalence.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 9abdc2c80679b648c25aee33e03b1e3557613fdc
+          path: engineering-head
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+          test "$(git hash-object orbittrace_rft_v1_generate_cache_equivalence/PROTOCOL.md)" = '6fb6e71901a27fdb7eec464e3900490e767f0670'
+          test "$(git hash-object orbittrace_rft_v1_generate_cache_equivalence/audit.py)" = '39ba07bd0e6ee38e77460b7127265d965f1e0e3c'
+          test "$(git hash-object orbittrace_recurrent_flow_tube_v1/run_development.py)" = 'a5d5371f0c30a9c57ee4d8756ea41f454cd86301'
+          test "$(git -C engineering-head hash-object orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py)" = '2a599c6e8247eb819a1090591d586526eda6c0c1'
+          mkdir -p output
+      - name: Run synthetic semantic equivalence audit
+        run: |
+          set -euo pipefail
+          python orbittrace_rft_v1_generate_cache_equivalence/audit.py \
+            --frozen-source orbittrace_recurrent_flow_tube_v1/run_development.py \
+            --cached-runner engineering-head/orbittrace_recurrent_flow_tube_v1_engineering/run_development_cached.py \
+            --output output
+      - name: Enforce exact equivalence
+        run: |
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RFT_V1_CACHED_GENERATE_EQUIVALENCE.json'))
+          assert r['verdict']=='PASS_RFT_V1_CACHED_GENERATE_SEMANTIC_EQUIVALENCE'
+          assert all(v['exact'] for v in r['modes'].values()) and len(r['modes'])==4
+          assert r['catalogue_access'] is False and r['labels_access'] is False and r['scientific_endpoint_computed'] is False
+          print(r['verdict'],r['modes'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-rft-v1-generate-cache-equivalence
+          path: output
+          if-no-files-found: error
+          retention-days: 90
