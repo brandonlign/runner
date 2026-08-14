@@ -1,0 +1,42 @@
+name: OrbitTrace MSSWG zero-data freshness audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-msswg-zero-data-freshness-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_msswg_zero_data_freshness_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch all remote branches and tags for complete reachable history
+        run: |
+          set -euo pipefail
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*' --tags --prune
+      - name: Verify frozen audit sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_msswg_zero_data_freshness_audit_v1/PROTOCOL.md)" = '2d4835ad6c181c734637848b6fc83a6aa77b4aec'
+          test "$(git hash-object orbittrace_msswg_zero_data_freshness_audit_v1/audit_history.py)" = 'da1adaf1ec9fe9d84abd40954fefde9347287d7a'
+          python -m py_compile orbittrace_msswg_zero_data_freshness_audit_v1/audit_history.py
+      - name: Run zero-network history audit
+        run: |
+          set -euo pipefail
+          python orbittrace_msswg_zero_data_freshness_audit_v1/audit_history.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-msswg-zero-data-freshness-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
