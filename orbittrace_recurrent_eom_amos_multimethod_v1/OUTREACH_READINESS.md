@@ -2,7 +2,7 @@
 
 **Status: POSITIVE acquisition readiness; scientific result: NONE.**
 
-This record contains only current public project/contact metadata. It does not access AMOS event-level values, shower labels, uncertainties, orbit elements, the protected OrbitTrace target region, MAARSY, or DMS.
+This record contains only current public project/contact/publication metadata. It does not access AMOS event-level values, shower labels, uncertainties, orbit elements, the protected OrbitTrace target region, MAARSY, or DMS.
 
 ## Current official contact verification
 
@@ -10,7 +10,7 @@ Checked 2026-08-14 against current Comenius University / AMOS pages:
 
 - AMOS lists **prof. RNDr. Juraj Tóth, PhD.** as project lead / principal investigator.
 - Current official project/contact email: **Juraj.Toth@fmph.uniba.sk**.
-- The current AMOS English project page states that a pair of stations detects roughly **5,000–8,000 common meteors per year**, depending on station separation and observing conditions. This is sufficient scale to make the frozen 2023/2024 complete-sample request scientifically meaningful if the reduced trajectory fields can be provided.
+- The current AMOS project material states that paired stations yield a substantial common-meteor population, sufficient scale to make the frozen 2023/2024 complete-sample request scientifically meaningful if the reduced trajectory fields can be provided.
 
 Official metadata sources checked:
 
@@ -19,6 +19,18 @@ Official metadata sources checked:
 - https://fmph.uniba.sk/daa/
 
 No event list, trajectory table, shower catalogue, downloadable event asset, or scientific row was opened during this verification.
+
+## 2026 AMOS network publication update
+
+A current AMOS methods/network paper is now published in Icarus:
+
+Tóth et al. (2026), **“AMOS global meteor network: Instrumentation, procedures, accuracy validation and results,”** Icarus 454, 117086, DOI `10.1016/j.icarus.2026.117086`.
+
+The publication describes the current global AMOS network and its reduction pipeline for meteor detection, astrometry, photometry, multi-station trajectory determination, geocentric quantities, and heliocentric orbit determination. This independently supports the technical feasibility of the already-frozen Stage-2 request for retained-event geocentric radiant and geocentric speed; it does not alter the requested fields or protocol.
+
+A 2026-08-14 public-availability recheck across the current AMOS/Comenius pages, the current paper/indexed publication record, and public catalogue searches did **not identify a documented bulk 2023/2024 complete reduced-trajectory export** satisfying the frozen three-stage contract. This is a narrow availability finding, not a claim that no institutional/private export exists.
+
+No AMOS event row was opened during this publication/availability recheck.
 
 ## Frozen outreach payload
 
