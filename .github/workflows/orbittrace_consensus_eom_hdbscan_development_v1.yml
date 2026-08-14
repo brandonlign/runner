@@ -1,0 +1,178 @@
+name: OrbitTrace consensus-EOM HDBSCAN GMN development v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-consensus-eom-hdbscan-v1
+    paths:
+      - 'orbittrace_consensus_eom_hdbscan_v1/DEVELOPMENT_ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  development:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-consensus-eom-hdbscan-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact runtime and verify frozen consensus-EOM science
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/v3 input/v8 input/ranker output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          test "$(git hash-object orbittrace_consensus_eom_hdbscan_v1/PROTOCOL.md)" = '6a2650585a8d92356581d75316f2c92a33b80471'
+          test "$(git hash-object orbittrace_consensus_eom_hdbscan_v1/consensus_eom.py)" = 'cef79d99bded4f93dfce6a930703b5493fd72fb6'
+          test "$(git hash-object orbittrace_consensus_eom_hdbscan_v1/run_development.py)" = '2365953433039f4f9643df60a06e591434fee074'
+          test "$(git hash-object orbittrace_consensus_eom_hdbscan_v1/IDENTITY_AUDIT_FREEZE.json)" = '78857f910f3acb00ce66e1b8088e0269f3a06225'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile \
+            orbittrace_consensus_eom_hdbscan_v1/consensus_eom.py \
+            orbittrace_consensus_eom_hdbscan_v1/run_development.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            /tmp/run_wavelet_catalogue_v3_development.py
+          python - <<'PY'
+          import json
+          f=json.load(open('orbittrace_consensus_eom_hdbscan_v1/IDENTITY_AUDIT_FREEZE.json'))
+          assert f['verdict']=='PASS_CONSENSUS_EOM_HDBSCAN_V1_ZERO_TRUTH_IDENTITY_AUDIT'
+          assert f['binding_run']==31842939253
+          assert f['binding_artifact']==9234896145
+          assert f['binding_artifact_digest']=='sha256:b7e6729ad1c8d99112fbc8334ae0e8b5e59001e8c5e35456fd7f006fd0c4d152'
+          assert f['gmn_catalogue_accessed'] is False and f['scientific_labels_accessed'] is False
+          assert f['sonotaco_accessed'] is False and f['efn_accessed'] is False
+          print('PASS_CONSENSUS_EOM_ZERO_TRUTH_AUTHORIZATION')
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - name: Verify exact recurrent-parent GMN runtime utility
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify exact recurrent-parent runtime-support artifact
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Run first binding consensus-EOM GMN development outcome
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_consensus_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce binding gate and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/CONSENSUS_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json'))
+          p=json.load(open('output/CONSENSUS_EOM_HDBSCAN_V1_PRELABEL.json'))
+          assert r['verdict'] in {'PASS_CONSENSUS_EOM_HDBSCAN_V1_GMN_DEVELOPMENT','FAIL_CONSENSUS_EOM_HDBSCAN_V1_GMN_DEVELOPMENT'}
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_DEVELOPMENT_ONLY'
+          assert r['parent_method']=='RECURRENT_EOM_HDBSCAN_V1'
+          assert r['successor_method']=='CONSENSUS_EOM_HDBSCAN_V1'
+          assert r['events_total']==738682 and r['events_by_year']=={'2022':315024,'2023':423658}
+          assert p['events_total']==738682 and p['events_by_year']=={'2022':315024,'2023':423658}
+          assert p['truth_evaluated_when_written'] is False
+          assert p['recurrent_parent_partition_sha256']==p['recurrent_parent_custom_labeller_partition_sha256']
+          assert r['ranking_changed_from_recurrent_parent'] is False
+          assert r['post_result_parameter_search'] is False
+          assert r['blind_exclusion']==[20.0,55.0] and p['blind_exclusion']==[20.0,55.0]
+          for x in (r,p):
+              assert x['target_information_access'] is False
+              assert x['target_region_events_accessed'] is False
+              assert x['sonotaco_2013_2014_access'] is False
+              assert x['efn_access'] is False
+              assert x['maarsy_scientific_access'] is False
+              assert x['dms_scientific_access'] is False
+          print(r['verdict'], 'mechanism_active=',r['mechanism_active'], 'parent_candidates=',r['parent_candidate_count'], 'successor_candidates=',r['successor_candidate_count'])
+          PY
+
+      - name: Preserve binding provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_consensus_eom_hdbscan_v1/PROTOCOL.md \
+            orbittrace_consensus_eom_hdbscan_v1/consensus_eom.py \
+            orbittrace_consensus_eom_hdbscan_v1/IDENTITY_AUDIT_FREEZE.json \
+            orbittrace_consensus_eom_hdbscan_v1/run_development.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            output/CONSENSUS_EOM_HDBSCAN_V1_PRELABEL.json \
+            output/CONSENSUS_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-consensus-eom-hdbscan-v1-gmn-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
