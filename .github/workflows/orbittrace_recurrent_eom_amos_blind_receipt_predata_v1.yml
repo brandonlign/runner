@@ -1,0 +1,87 @@
+name: OrbitTrace recurrent-EOM AMOS blind receipt pre-data v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-amos-2023-2024-predata-v1
+    paths:
+      - 'orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py'
+      - 'orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py'
+      - '.github/workflows/orbittrace_recurrent_eom_amos_blind_receipt_predata_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen science boundary and exact blind receipt bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/PROTOCOL.md)" = '6cc45ef9e0b7b7cf1bf71f22361b64d537977f4f'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py)" = '9fed803aa09f03f779610eaff5304251bbf21020'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py)" = '9331c3c01a0f9e78f46a9a7e512427c0863bcdde'
+          python -m py_compile \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py
+          HELP="$(python orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py --help)"
+          printf '%s\n' "$HELP" | grep -q -- '--index'
+          printf '%s\n' "$HELP" | grep -q -- '--year'
+          printf '%s\n' "$HELP" | grep -q -- '--output'
+          ! printf '%s\n' "$HELP" | grep -Eqi 'geometry|radiant|velocity|label|orbit'
+          echo PASS_RECURRENT_EOM_AMOS_EXACT_BLIND_RECEIPT_SOURCE
+
+      - name: Audit inclusive boundaries and fail-closed index handling using synthetic rows only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py
+          python - <<'PY'
+          import json
+          p='orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/BLIND_RECEIPT_SYNTHETIC_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_RECURRENT_EOM_AMOS_BLIND_RECEIPT_SYNTHETIC_AUDIT'
+          assert r['synthetic_only'] is True
+          assert r['years_tested']==[2023,2024]
+          assert r['protected_interval_inclusive']==[20.0,55.0]
+          assert r['boundary_20_excluded'] is True and r['boundary_55_excluded'] is True
+          assert r['wrong_year_fails_closed'] is True
+          assert r['duplicate_id_fails_closed'] is True
+          assert r['extra_column_fails_closed'] is True
+          assert r['amos_event_rows_accessed'] is False
+          assert r['amos_geometry_accessed'] is False
+          assert r['amos_labels_accessed'] is False
+          for k in ('target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access','orbittrace_target_access'):
+              assert r[k] is False
+          print(r['verdict'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p orbittrace_recurrent_eom_amos_2023_2024_external_v1/output
+          sha256sum \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py \
+            orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/BLIND_RECEIPT_SYNTHETIC_AUDIT.json \
+            > orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/blind_receipt_source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/blind_receipt_execution_commit.txt
+          python --version > orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/blind_receipt_python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-amos-blind-receipt-predata-v1
+          path: orbittrace_recurrent_eom_amos_2023_2024_external_v1/output
+          if-no-files-found: error
+          retention-days: 90
