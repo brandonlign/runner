@@ -1,0 +1,43 @@
+name: OrbitTrace recurrent-EOM GMN 2020-2021 transfer source audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-gmn-2020-2021-retrospective-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_gmn_2020_2021_transfer_source_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify frozen source-only transport and generate exact runner
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_recurrent_eom_gmn_2020_2021_retrospective_v1/PROTOCOL.md)" = '9b61a065678c070c141df74fa48277892841fffa'
+          test "$(git hash-object orbittrace_recurrent_eom_gmn_2020_2021_retrospective_v1/make_transfer.py)" = '5c40725851372cb096a15b45985a9dbaf2321b3d'
+          mkdir -p output
+          python orbittrace_recurrent_eom_gmn_2020_2021_retrospective_v1/make_transfer.py \
+            --source orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --output output/run_transfer.py | tee output/transfer_source_audit.txt
+          python -m py_compile output/run_transfer.py
+          git hash-object output/run_transfer.py > output/transfer_git_blob.txt
+          sha256sum output/run_transfer.py > output/transfer_sha256.txt
+          echo 'catalogue_access=false' >> output/transfer_source_audit.txt
+          echo 'shower_label_access=false' >> output/transfer_source_audit.txt
+          echo 'target_information_access=false' >> output/transfer_source_audit.txt
+          echo 'maarsy_scientific_access=false' >> output/transfer_source_audit.txt
+          echo 'dms_scientific_access=false' >> output/transfer_source_audit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-gmn-2020-2021-transfer-source-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
