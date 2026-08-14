@@ -69,7 +69,9 @@ def git_inventory() -> dict:
         refs.append({"ref": ref, "sha": sha})
 
     # Commits whose patches mention EDMOND; inspect both commit metadata and patch.
-    commits_raw = sh("git", "log", "--all", "--format=%H", "-G", "(?i)edmond")
+    # Git's -G uses POSIX regex syntax and does not accept Python-style (?i).
+    # --regexp-ignore-case is the semantic-neutral case-insensitive equivalent.
+    commits_raw = sh("git", "log", "--all", "--regexp-ignore-case", "--format=%H", "-G", "edmond")
     commit_ids = sorted(set(x.strip() for x in commits_raw.splitlines() if x.strip()))
     exact_year_commits = []
     paths = set()
