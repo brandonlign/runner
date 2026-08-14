@@ -1,0 +1,61 @@
+name: OrbitTrace NASA ASFN WGN publication audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-nasa-asfn-wgn-publication-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_nasa_asfn_wgn_publication_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify frozen publication-audit sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_nasa_asfn_wgn_publication_audit_v1/PROTOCOL.md)" = 'a3b43cd58cb0d9dc6cef60f50d6c554b85dc0824'
+          test "$(git hash-object orbittrace_nasa_asfn_wgn_publication_audit_v1/extract_publication.py)" = '2d4b7c45f8420306180ec6ca8a9f9037e56bd055'
+          python -m py_compile orbittrace_nasa_asfn_wgn_publication_audit_v1/extract_publication.py
+      - name: Download exact official IMO WGN 2020 archive only
+        run: |
+          set -euo pipefail
+          curl --fail --location --max-time 60 --user-agent 'OrbitTrace-WGN-Publication-Audit/1.0' \
+            'https://www.imo.net/files/wgn/WGN%202020.zip' -o WGN_2020.zip
+          mkdir -p output wgn
+          sha256sum WGN_2020.zip | tee output/WGN_2020_ZIP_SHA256.txt
+          unzip -l WGN_2020.zip > output/WGN_2020_ZIP_LISTING.txt
+          unzip -q WGN_2020.zip -d wgn
+      - name: Extract fixed primary-publication availability contexts
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils
+          python orbittrace_nasa_asfn_wgn_publication_audit_v1/extract_publication.py
+      - name: Preserve explicit firewall record
+        run: |
+          set -euo pipefail
+          cat > output/FIREWALL.txt <<'EOF'
+          wgn_publication_access=true
+          asfn_event_data_access=false
+          asfn_bulk_catalogue_access=false
+          fireballs_site_access=false
+          discovered_links_followed=false
+          target_information_access=false
+          target_region_events_accessed=false
+          maarsy_scientific_access=false
+          dms_scientific_access=false
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-nasa-asfn-wgn-publication-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
