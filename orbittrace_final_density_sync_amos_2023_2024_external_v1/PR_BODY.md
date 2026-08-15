@@ -4,101 +4,96 @@ Pre-data engineering package for the **single one-shot AMOS 2023/2024 final exte
 
 The selected final method is exact PR #1263 density-synchronous recurrent-EOM HDBSCAN v1, binding head `182f07ade6bb5d4be2c80b88df9216bb2d6eee2d`. This PR does **not** reopen methodology search, access AMOS scientific data, or send the provider request.
 
+## Current execution authority
+
+Future AMOS execution is governed only by:
+
+- `EXECUTION_FREEZE_V3_EXACT_LABEL.json`
+- Git blob `beed71cac547973b198b6ed16e319ebe42051583`
+- SHA-256 `cfa94e7bfad096693f1370142a7f28a65a0ee5e311806a3f634203a45ae111d3`
+- exact postfreeze evaluator blob `c45e4739ea68639945b13de54f6e24dc9d870ba3`.
+
+Independent seal:
+
+- `EXECUTION_FREEZE_V3_EXACT_LABEL_SEAL.json`
+- Git blob `9b8a2763974c4bcaf7afc8dc1072febc65e5c83a`
+- audit run `31866299250`
+- artifact `9242102571`
+- digest `sha256:a55baf7b5fe703cb8dc0cf4dc02cd77cbcaf7d1745487b9647cb2fcdab440844`
+- result SHA-256 `f0905dc03f1a36463e5047e3c5168268ae054efa06ad62cacc1d90240a6ea892`
+- verdict `PASS_FINAL_DENSITY_SYNC_AMOS_EXECUTION_FREEZE_V3_EXACT_LABEL_AUDIT`.
+
+Older execution-freeze files remain preserved historical engineering provenance only and must not be used for future AMOS execution.
+
 ## Scientific contract
 
-The final AMOS protocol was frozen before implementation/data access. It fits exactly one pooled HDBSCAN hierarchy to retained AMOS 2023+2024 GEO6 geometry and freezes three complete candidate outputs before truth:
+The final AMOS protocol fits exactly one pooled HDBSCAN hierarchy to retained AMOS 2023+2024 GEO6 geometry and freezes three complete candidate outputs before truth:
 
 1. ordinary HDBSCAN EOM — primary external baseline;
 2. exact recurrent-EOM — locked predecessor comparator;
 3. exact #1263 density-synchronous recurrent-EOM — sole final method.
 
-The primary final method must satisfy the frozen no-regression/strict-improvement gate versus ordinary HDBSCAN and no-regression gate versus recurrent-EOM. Strict incremental @100 improvement over recurrent-EOM is reported separately because #1265 showed the GMN +1 recovery gain was perturbation-sensitive.
+The primary final method must satisfy the frozen no-regression/strict-improvement gate versus ordinary HDBSCAN and no-regression gate versus recurrent-EOM. Strict incremental @100 improvement over recurrent-EOM is reported separately.
 
 If the final method fails AMOS, external generalization is not established. No method switch, AMOS rerun, threshold/gate rescue, or replacement external survey is authorized.
 
 ## Protected-data design
 
-Provider transfer is frozen into three stages:
+- Stage 1 exact blind index: `event_id,utc_time,solar_longitude_deg`.
+- Remove `[20.0,55.0]` **inclusively** before any retained geometry/truth may be opened.
+- Stage 2 retained geometry only: `event_id,ra_j2000_deg,dec_j2000_deg,vg_km_s`.
+- Stage 3 retained `event_id,shower_association` only after all three candidate orders are persisted and hash-frozen.
+- Exact uppercase `SPORADIC` is the sole no-association sentinel.
+- Surrounding association-label whitespace and ambiguous no-association aliases fail closed rather than being normalized.
+- Optional Stage 2B uncertainty/convergence/q/e fields remain isolated to the already-frozen literature-comparator supplement and cannot enter the primary final method.
 
-- Stage 1: `event_id,utc_time,solar_longitude_deg` only;
-- inclusive removal of `[20.0,55.0]` before any geometry/truth;
-- Stage 2 retained geometry only: `event_id,ra_j2000_deg,dec_j2000_deg,vg_km_s`;
-- Stage 3 retained `event_id,shower_association` only after all three candidate orders are frozen and hash-bound.
+## 🟢 Binding current-evaluator zero-data evidence
 
-Optional Stage 2B uncertainty/convergence/q/e fields are isolated to the previously frozen literature comparator supplement and cannot enter the primary final-method generator.
+### Exact source/full-pipeline/adversarial/label transport
 
-## 🟢 Positive engineering — complete zero-data audit chain
+Run `31866127514`, head `98ac9b430e511f2b05951470984bc485ee2cfb04`, artifact `9242054017`, digest `sha256:e05d8948f1aada319ce251dc649fad9aca7e13df1c6ef084df12fda898e6b742`.
 
-### Three-method source + full synthetic pipeline
+Result SHA-256 values:
 
-- run `31864904536`
-- artifact `9241708894`
-- digest `sha256:6e4e970c7d11c1f3fe2ef14891a8684f1022a222f38ac7e584d967751922750b`
-- source result SHA `88ffcbcf23addbe7e91d0ade4ae502eca4c221a535fc430b7dc972f263a20b9a`
-- pipeline result SHA `4824a43b9dfeeef8cace5bdc72484cd33b9b332b06784a263bcc861dfe398833`
-- verdicts:
-  - `PASS_FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V1`
-  - `PASS_FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT_V1`
+- source/firewall `63d53aff1a056e6be67347f6adc3ba453c9851833b3ebc2a56ec380318a2e439`;
+- full pipeline `d354d042a4dc057bae89aa46df2d684292fedb05badcdbcffe8e50bba7fe73c9`;
+- adversarial hardening `0de496d2f3b42111f39759c51c96063128b23eb063571174d96c42400d5bbe25`;
+- exact label transport `fff8d9777e83acbf1940a94429bee6ee2809721c5e946a3c3cfa2207ad060427`.
 
-Proved one pooled fit, ordinary-partition identity, shared hierarchy, recurrent/density-sync annual reconstruction, deterministic pretruth, truth isolation, exact pretruth-hash binding, fail-closed incomplete labels, and no method switching. The synthetic fixture produced a valid FAIL scientific token, proving PASS is not hard-coded.
+The current evaluator rejects 12 forged pretruth payloads before label opening, passes all 15 hardening assertions, preserves valid mixed-case shower codes exactly, rejects ambiguous no-association aliases/whitespace, and treats a legitimate empty candidate catalogue as a scientific FAIL state rather than a retryable technical error.
 
-### Optional comparator isolation
+### Comparator isolation
 
-- run `31865012724`
-- artifact `9241733611`
-- digest `sha256:db48f22626bcde80c798c7333fc318421b4d0245ea2bae5539f311aed4163249`
-- result SHA `5a8e9e978f1e51454b465b13a98bd6b09d97655480763ae4d85970da0889e567`
-- verdict `PASS_FINAL_DENSITY_SYNC_AMOS_COMPARATOR_ISOLATION_AUDIT_V1`
+Run `31865012724`, artifact `9241733611`, PASS. Optional uncertainty/convergence/q/e fields cannot enter the primary final-method generator or alter its primary sample.
 
-Proved optional uncertainty/convergence/q/e fields cannot enter the primary #1263 generator and cannot change the primary sample.
+### Transport reuse
 
-### Blind receipt + canonical transport reuse
+Run `31865140271`, artifact `9241774418`, PASS. Re-proved exact inclusive 20.0°/55.0° exclusion, fail-closed blind-index errors, exact J2000→GEO6 mapping, and protected/non-retained geometry rejection.
 
-- run `31865140271`
-- artifact `9241774418`
-- digest `sha256:eb1b9471fd74e7ea28525ad7deba026b87940d540ba7ebd027636b4eb83baf52`
-- result SHA `01871ec6ae5975d7adec17aaef17a0d3cb42a2fbbb3cdcf6c6c75c0461a9e0c9`
-- verdict `PASS_FINAL_DENSITY_SYNC_AMOS_TRANSPORT_REUSE_AUDIT_V1`
+### Freeze integrity
 
-Re-proved exact 20.0°/55.0° inclusive exclusion, fail-closed blind-index errors, exact J2000→GEO6 mapping, and protected/non-retained geometry rejection on the historical audited transport bytes.
+Run `31866299250` independently re-downloaded the current-evaluator, comparator, and transport artifacts and recomputed every binding result hash in the authoritative freeze. PASS.
 
-### Independent execution-freeze rehydration
+A redundant zero-data run `31866241969` / artifact `9242093082` independently reproduced the same four current-evaluator result SHA-256 values. It is confirmation only, not another scientific chance.
 
-Immutable freeze:
-- blob `84e85d69b2fcbf1dcdeeeaf0568c026c50548bd7`
-- SHA-256 `9af0d330bc20c0a2cff367532d069a9b9630fab025e7c980900c5a0a7d9065d5`
+## Preserved engineering no-results
 
-Audit:
-- run `31865241958`
-- artifact `9241800054`
-- digest `sha256:ffcdf114ac9ac25bf5e2b60458ffe002f205beb69b92a41620d8d3f95a81ee3a`
-- result SHA `795a7557fd721242ed5c7acac6e894d0c62a657e6f525f3975509c36ad529949`
-- verdict `PASS_FINAL_DENSITY_SYNC_AMOS_EXECUTION_FREEZE_AUDIT_V1`
+- `31865615689` — static source-audit false positive before synthetic pipeline execution.
+- `31866079514` — stale source-pin failure after exact-label hardening, before evidence rehydration.
 
-This audit independently re-downloaded the three previous artifacts by exact run ID and recomputed all binding result hashes recorded in the freeze.
+Neither is an AMOS scientific outcome.
 
-## 🟡 Scientific status — no AMOS result
-
-At this PR state:
+## 🟡 Scientific status — NO AMOS RESULT
 
 - provider request: `READY_NOT_SENT`;
 - provider request sent: false;
-- AMOS data received: false;
-- AMOS event rows opened: false;
-- AMOS geometry opened: false;
-- AMOS labels opened: false;
+- AMOS provider transfer received: false;
+- AMOS event rows / geometry / shower associations accessed: false;
 - AMOS scientific execution started: false;
-- SonotaCo/ASFN/EFN accessed by this pipeline: false;
 - protected target data / OrbitTrace target info / MAARSY / DMS accessed: false.
 
-The exact staged request is ready in `DATA_REQUEST_READY_FINAL_NOT_SENT.md`, but sending remains a separate owner-authorized action.
+The exact staged request is ready in `DATA_REQUEST_READY_FINAL_NOT_SENT.md`, but sending remains a separate owner-authorized action. `SCIENTIFIC_EXECUTION_RUNBOOK.md` defines the mechanical one-shot execution if a compliant transfer is later obtained.
 
 ## Relationship to old AMOS work
 
-PR #1244 remains preserved as the old unexecuted recurrent-EOM AMOS protocol and audited transport provenance. Its scientific endpoint must not be run in addition to this one. Exact method-agnostic receipt/adapter sources were reused only by immutable source pins and rerun synthetic audits.
-
-PR #1248's literature supplement remains optional and isolated. Missing optional fields never alter the primary final test.
-
-## Branch-diff hygiene
-
-This branch starts exactly from #1267 head `d46864d375ece59bc3d3862e2c25f17b9ea91388`. It modifies no historical method/result source. All changes are confined to the new final-AMOS pre-data package and its zero-data audit workflows.
+PR #1244 remains historical/audited infrastructure provenance only. Its scientific recurrent-EOM endpoint must **not** be executed as a second chance. PR #1248's literature supplement remains optional and isolated; missing optional fields never alter the primary final test.
