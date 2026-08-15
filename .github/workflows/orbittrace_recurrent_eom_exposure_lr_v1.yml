@@ -65,9 +65,12 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_exposure_lr_v1/audit_synthetic.py)" = '9f7fc75ecbb4d99200aaef2c32acc03c1d7496d1'
           test "$(git hash-object orbittrace_recurrent_eom_exposure_lr_v1/run_development.py)" = '649403c547d6854b26bbd772076974b80eea77b9'
 
-          # Engineering-only repair frozen after first activation stopped before prelabel/result.
+          # Both engineering-only repairs were frozen after technical no-results
+          # that produced no successor prelabel/result and no scientific verdict.
           test "$(git hash-object orbittrace_recurrent_eom_exposure_lr_v1/STABILITY_COPY_REPAIR_FREEZE.md)" = 'c74fcaa1c1eb625abec1e5891fe85bbee8778236'
           test "$(git hash-object orbittrace_recurrent_eom_exposure_lr_v1/run_stability_copy_repair.py)" = '7d2f157fc91b990e76c85348ec54a7f5eb129c72'
+          test "$(git hash-object orbittrace_recurrent_eom_exposure_lr_v1/LABEL_MAP_REPAIR_FREEZE.md)" = 'fe2780347e24b571ed5493f757c343ca0506668c'
+          test "$(git hash-object orbittrace_recurrent_eom_exposure_lr_v1/run_label_map_repair.py)" = '67ef787801cd73d18bebdd0324d477ca5befb072'
 
           python -m py_compile \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
@@ -75,7 +78,8 @@ jobs:
             orbittrace_recurrent_eom_exposure_lr_v1/exposure_lr.py \
             orbittrace_recurrent_eom_exposure_lr_v1/audit_synthetic.py \
             orbittrace_recurrent_eom_exposure_lr_v1/run_development.py \
-            orbittrace_recurrent_eom_exposure_lr_v1/run_stability_copy_repair.py
+            orbittrace_recurrent_eom_exposure_lr_v1/run_stability_copy_repair.py \
+            orbittrace_recurrent_eom_exposure_lr_v1/run_label_map_repair.py
 
       - name: Run zero-truth exposure-likelihood audit
         env:
@@ -125,12 +129,12 @@ jobs:
           test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json | cut -d' ' -f1)" = 'e304f6660697ed27a7e2e546ba2b9f2ecdb43f923745cb7424a3781ad55b9ad1'
           test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = '433c641f57122b244b9476f5cbcb5e6f82956d9467270a9f24945600a32d2106'
 
-      - name: Run binding exposure-likelihood clean retry
+      - name: Run binding exposure-likelihood label-map clean retry
         env:
           PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_recurrent_eom_exposure_lr_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_recurrent_eom_exposure_lr_v1/run_stability_copy_repair.py \
+          python -u orbittrace_recurrent_eom_exposure_lr_v1/run_label_map_repair.py \
             --frozen-runner orbittrace_recurrent_eom_exposure_lr_v1/run_development.py \
             --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             --parent-prelabel-json input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json \
@@ -179,6 +183,8 @@ jobs:
             orbittrace_recurrent_eom_exposure_lr_v1/run_development.py \
             orbittrace_recurrent_eom_exposure_lr_v1/STABILITY_COPY_REPAIR_FREEZE.md \
             orbittrace_recurrent_eom_exposure_lr_v1/run_stability_copy_repair.py \
+            orbittrace_recurrent_eom_exposure_lr_v1/LABEL_MAP_REPAIR_FREEZE.md \
+            orbittrace_recurrent_eom_exposure_lr_v1/run_label_map_repair.py \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
             orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             input/ranker/run_urc_union_ranker.py \
