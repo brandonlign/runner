@@ -1,0 +1,1 @@
+Activate the first binding target-excluded GMN 2022+2023 development outcome for the exact frozen log-density synchronous EOM v1 method. The +5 total recovered@100 gate and all no-regression gates are fixed. SonotaCo, ASFN, EFN, AMOS, OrbitTrace target data, MAARSY, and DMS remain inaccessible.
