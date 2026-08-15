@@ -1,0 +1,1 @@
+Activate the frozen full-GMN Valsecchi D_N dual-cover feasibility run. This stage may build and persist the complete physical candidate catalogue but may not evaluate, iterate, serialize, or inspect hidden shower truth.
