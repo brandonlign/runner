@@ -46,9 +46,10 @@ jobs:
           test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_FREEZE.md)" = '62a6474933cecc1871449d89d59055b18ad3e802'
           test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_V3_FREEZE.md)" = '78d8ab5d657b1348f449e7af73a944c3f9acc9b1'
           test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py)" = 'b76d7c53ab238cd45f12027947f2098a770ba7b6'
-          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py)" = 'bb2a1ba553fb57e573e85df39ccad1b69fe3b541'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py)" = 'c45e4739ea68639945b13de54f6e24dc9d870ba3'
           test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py)" = '734cc257347d6f68ce0d67f5adf874ae89e6d6d7'
           test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py)" = '31daaf1101bd100968829a3797b39dc856ae2a7c'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_label_transport_exactness_v3.py)" = 'b16778cd10cbbb7704a4ee007a14030b97e07500'
           test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py)" = '2f9dc0495d80e1fa0c577fcbb4fec2b4dd33aecf'
 
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
@@ -65,6 +66,7 @@ jobs:
             orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
             orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py \
             orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_label_transport_exactness_v3.py \
             orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py
 
       - name: Run corrected AST-aware source/firewall audit v3
@@ -106,6 +108,20 @@ jobs:
             --work output/hardening-work-v3 \
             --output output/hardening-audit-v3
 
+      - name: Run v3 exact label-transport audit
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output/label-audit-v3 output/label-work-v3
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_label_transport_exactness_v3.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --pretruth output/synthetic-work-v3/pre1/FINAL_DENSITY_SYNC_AMOS_2023_2024_PRETRUTH.json \
+            --labels-2023 output/synthetic-work-v3/labels_2023.csv \
+            --labels-2024 output/synthetic-work-v3/labels_2024.csv \
+            --work output/label-work-v3 \
+            --output output/label-audit-v3
+
       - name: Enforce binding v3 zero-data audit schema
         run: |
           set -euo pipefail
@@ -114,9 +130,11 @@ jobs:
           s=json.load(open('output/source-audit-v3/FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V3.json'))
           p=json.load(open('output/pipeline-audit-v3/FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT.json'))
           h=json.load(open('output/hardening-audit-v3/FINAL_DENSITY_SYNC_AMOS_EVALUATOR_HARDENING_AUDIT_V3.json'))
+          l=json.load(open('output/label-audit-v3/FINAL_DENSITY_SYNC_AMOS_LABEL_TRANSPORT_EXACTNESS_AUDIT_V3.json'))
           assert s['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V3'
           assert p['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT_V1'
           assert h['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_EVALUATOR_HARDENING_AUDIT_V3'
+          assert l['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_LABEL_TRANSPORT_EXACTNESS_AUDIT_V3'
           assert s['forbidden_detection']=='AST_EXACT_IMPORTS_AND_CALL_TARGETS'
           assert s['empty_candidate_lists_structurally_allowed'] is True
           assert s['exact_sporadic_sentinel_enforced'] is True
@@ -125,8 +143,13 @@ jobs:
           assert h['assertion_count']==15
           assert all(h['assertions'].values())
           assert h['scientific_method_or_gate_changed'] is False
+          assert l['exact_sporadic_accepted'] is True
+          assert l['exact_nonbackground_shower_code_preserved'] is True
+          assert l['ambiguous_aliases_all_rejected'] is True
+          assert l['surrounding_whitespace_rejected_not_normalized'] is True
+          assert l['scientific_method_or_gate_changed'] is False
           assert all(p['tests'].values())
-          for obj in (s,p,h):
+          for obj in (s,p,h,l):
               for k in ('scientific_data_accessed','gmn_accessed','sonotaco_accessed','amos_accessed','asfn_accessed','efn_accessed','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
                   assert obj[k] is False, (k,obj[k])
           print('PASS_FINAL_DENSITY_SYNC_AMOS_BINDING_ZERO_DATA_AUDIT_V3')
@@ -146,6 +169,7 @@ jobs:
             orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
             orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py \
             orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_label_transport_exactness_v3.py \
             > output/provenance-v3/source_sha256.txt
           python --version > output/provenance-v3/python_version.txt
           python -m pip freeze > output/provenance-v3/environment.txt
