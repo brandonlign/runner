@@ -356,7 +356,9 @@ def load_labels(path: Path, expected_ids: list[str], year: int) -> dict[str, str
         require(r.fieldnames == LABEL_HEADER, f"wrong AMOS label header for {year}")
         for row in r:
             eid = str(row["event_id"]).strip()
-            label = str(row["shower_association"]).strip()
+            raw_label = str(row["shower_association"])
+            label = raw_label.strip()
+            require(raw_label == label, f"association label contains surrounding whitespace for retained AMOS event {eid}")
             require(eid and eid in expected and eid not in out, f"invalid/duplicate AMOS label ID for {year}: {eid!r}")
             out[eid] = validate_association_label(label, eid)
     require(set(out) == expected, f"AMOS label map for {year} must cover every retained ID exactly")
