@@ -50,6 +50,7 @@ jobs:
           test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
           test "$(git hash-object orbittrace_density_sync_global_whitened_geo6_v1/PROTOCOL.md)" = '2b1519fe12b17c11a24c6ba930d727206f28f1fa'
           test "$(git hash-object orbittrace_density_sync_global_whitened_geo6_v1/AUDIT_FIXTURE_REPAIR.md)" = '77e29d9998da3b1ea410a589207ce91d4b6ee002'
+          test "$(git hash-object orbittrace_density_sync_global_whitened_geo6_v1/RUNTIME_PATH_REPAIR.md)" = 'c012daaa24345365a9542ad1370cf29eca742a10'
           test "$(git hash-object orbittrace_density_sync_global_whitened_geo6_v1/whitening.py)" = 'c33058f631cb4a28e7a4bc35bfa9f12bf5edff50'
           test "$(git hash-object orbittrace_density_sync_global_whitened_geo6_v1/audit_synthetic.py)" = '2b9c9827badaf9ee84c859103e202943658372c3'
           test "$(git hash-object orbittrace_density_sync_global_whitened_geo6_v1/run_development.py)" = '786298ed3ae1768572bb355081fc49f10405a578'
@@ -90,7 +91,7 @@ jobs:
           test "$(sha256sum input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = 'ca6aeed2b82739003ea5d39b59e869df876de2962164344a938fe4935ea38711'
       - name: Run first scientific whitening outcome
         env:
-          PYTHONPATH: input/ranker:input/v3:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:orbittrace_density_sync_global_whitened_geo6_v1:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+          PYTHONPATH: input/ranker:input/v3:.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:orbittrace_density_sync_global_whitened_geo6_v1:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           python -u orbittrace_density_sync_global_whitened_geo6_v1/run_with_parent_import.py \
             --parent-result-json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json \
