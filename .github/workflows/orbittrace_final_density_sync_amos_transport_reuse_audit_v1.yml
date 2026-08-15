@@ -1,0 +1,147 @@
+name: OrbitTrace final density-sync AMOS transport reuse audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+    paths:
+      - 'orbittrace_final_density_sync_amos_2023_2024_external_v1/TRANSPORT_AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  transport-reuse:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 1fb8f68b84bc200545a23cb5a216baa7e0fa0f09
+          path: amos-infra
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify transport bytes
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py)" = '9fed803aa09f03f779610eaff5304251bbf21020'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py)" = '9331c3c01a0f9e78f46a9a7e512427c0863bcdde'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py)" = '612ad23af6e11ac2155282258e3d1429fbe00d67'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py)" = '9a0fb05f94d6a28cd95f97d864e76400056273b0'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/selftest.py)" = 'd0ff80a520bf1861f935dd83afaa313fe56a9986'
+
+      - name: Rerun exact blind-receipt boundary selftest
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1
+        run: |
+          set -euo pipefail
+          rm -rf amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/output
+          python -u amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py
+          python - <<'PY'
+          import json
+          p='amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/BLIND_RECEIPT_SYNTHETIC_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_RECURRENT_EOM_AMOS_BLIND_RECEIPT_SYNTHETIC_AUDIT'
+          assert r['synthetic_only'] is True
+          assert r['protected_interval_inclusive']==[20.0,55.0]
+          assert r['boundary_20_excluded'] is True and r['boundary_55_excluded'] is True
+          assert r['wrong_year_fails_closed'] is True
+          assert r['duplicate_id_fails_closed'] is True
+          assert r['extra_column_fails_closed'] is True
+          PY
+
+      - name: Rerun exact canonical-adapter GEO6 selftest
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1
+        run: |
+          set -euo pipefail
+          python -u amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/selftest.py
+          python - <<'PY'
+          import json
+          p='amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/PRE_DATA_MAPPING_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_RECURRENT_EOM_AMOS_2023_2024_PRE_DATA_MAPPING_AUDIT'
+          assert r['synthetic_only'] is True
+          assert r['geo6_exact_array_identity'] is True
+          assert r['protected_geometry_fail_closed'] is True
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+
+      - name: Emit final-branch transport reuse audit record
+        run: |
+          set -euo pipefail
+          mkdir -p output/transport-reuse
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          b=Path('amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/BLIND_RECEIPT_SYNTHETIC_AUDIT.json')
+          m=Path('amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/output/PRE_DATA_MAPPING_AUDIT.json')
+          def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          out={
+            'schema':'FINAL_DENSITY_SYNC_AMOS_TRANSPORT_REUSE_AUDIT_V1',
+            'verdict':'PASS_FINAL_DENSITY_SYNC_AMOS_TRANSPORT_REUSE_AUDIT_V1',
+            'blind_receipt_result_sha256':sha(b),
+            'mapping_result_sha256':sha(m),
+            'blind_receipt_blob':'9fed803aa09f03f779610eaff5304251bbf21020',
+            'adapter_transform_blob':'612ad23af6e11ac2155282258e3d1429fbe00d67',
+            'adapter_blob':'9a0fb05f94d6a28cd95f97d864e76400056273b0',
+            'boundary_20_excluded':True,
+            'boundary_55_excluded':True,
+            'geo6_exact_array_identity':True,
+            'protected_geometry_fail_closed':True,
+            'synthetic_only':True,
+            'scientific_data_accessed':False,
+            'gmn_accessed':False,
+            'sonotaco_accessed':False,
+            'amos_accessed':False,
+            'asfn_accessed':False,
+            'efn_accessed':False,
+            'target_information_access':False,
+            'target_region_events_accessed':False,
+            'maarsy_scientific_access':False,
+            'dms_scientific_access':False,
+          }
+          Path('output/transport-reuse/FINAL_DENSITY_SYNC_AMOS_TRANSPORT_REUSE_AUDIT.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve transport audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/provenance
+          git rev-parse HEAD > output/provenance/execution_commit.txt
+          sha256sum \
+            amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py \
+            amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt_selftest.py \
+            amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py \
+            amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py \
+            amos-infra/orbittrace_recurrent_eom_amos_2023_2024_external_v1/selftest.py \
+            > output/provenance/source_sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-final-density-sync-amos-transport-reuse-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
