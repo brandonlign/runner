@@ -1,7 +1,7 @@
-# Activate stratified-core HDBSCAN v1 zero-truth engineering audit — retry 1
+# Activate stratified-core HDBSCAN v1 zero-truth engineering audit — retry 2
 
-Audit 1 failed only because its hand-written duplicate-neighbor expected distance was off by one; the implementation had already matched brute force bit-for-bit. `AUDIT1_NO_RESULT.md` preserves that no-result.
+Retries 1–2 before this activation remain preserved as engineering no-results. The scientific method remains frozen: balanced `k_year=5` per-year core support, exact-self exclusion with duplicate-other inclusion, `core_strat=max(d_2022,d_2023)`, unchanged HDBSCAN settings, and unchanged recurrent-EOM extraction/ranking.
 
-This retry authorizes only the corrected synthetic assertion. The frozen balanced 5+5 core-distance definition and HDBSCAN injection code are unchanged.
+The only newly authorized change is the already-documented Boruvka initialization-equivalence repair in `INJECTION_INITIALIZATION_REPAIR.md`: recreate HDBSCAN 0.8.43's omitted first-pass candidate state after injected ordinary/stratified core distances so the public injected-core route can be required to reproduce standard forced `boruvka_kdtree` HDBSCAN exactly under ordinary cores.
 
-No GMN catalogue/truth, SonotaCo, EFN, OrbitTrace target information/events, protected target-region data, MAARSY, or DMS access is authorized.
+This activation authorizes **synthetic zero-truth audit only**. It does not authorize GMN scientific execution unless the audit passes every frozen equivalence/core-mechanics assertion. No GMN catalogue/truth, SonotaCo, EFN, ASFN, AMOS, OrbitTrace target information/events, protected `[20°,55°]` target-region data, MAARSY, or DMS access is authorized by this retry.
