@@ -46,7 +46,11 @@ jobs:
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
           cp frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
           test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/PROTOCOL.md)" = '0087c417e36b77c93daf869921219c7487f770ac'
           test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/sporadic_analogue_eom.py)" = 'd5e4e3192b5566c545ec4c14a2728a01d974011c'
           test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/run_development.py)" = '4fc3f4eb7c5c85951e49d813be4f598ef137667d'
@@ -54,7 +58,7 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
           test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
-          python -m py_compile orbittrace_sporadic_analogue_eom_v1/audit_weighted_accounting.py
+          python -m py_compile orbittrace_sporadic_analogue_eom_v1/audit_weighted_accounting.py input/v3/multi_anchor_energy_v3.py input/v3/wavelet_episode_comparator.py
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-sporadic-analogue-eom-v1-exact-runtime-retry
