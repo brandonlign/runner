@@ -1,0 +1,184 @@
+name: OrbitTrace final density-sync AMOS execution freeze audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+    paths:
+      - 'orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_FREEZE_AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  freeze-integrity:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify immutable current source identities
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_FREEZE.json)" = '84e85d69b2fcbf1dcdeeeaf0568c026c50548bd7'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md)" = '1ddb4bae33a1ae8a6224cbc4abcba5dda70cf993'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/INFRASTRUCTURE_REUSE_FREEZE.md)" = 'bf374af6978d9b72f3f26210f32c5973066c2431'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/DATA_REQUEST_READY_FINAL_NOT_SENT.md)" = '4f17e3e5a22b791fd3b4a33d338c5964dbc1a29a'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py)" = 'b76d7c53ab238cd45f12027947f2098a770ba7b6'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py)" = '513a626d056a76029eb1522e19bdb99f973f8bb7'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data.py)" = '437f0db09b34add9893be918de4b4ddd93470bbb'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py)" = '2f9dc0495d80e1fa0c577fcbb4fec2b4dd33aecf'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_comparator_isolation_zero_data.py)" = '313c3dfcf808c8464ff71bd197fb51387e98c3c6'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py | cut -d' ' -f1)" = 'c4ef4a804a1b51c4d2581f0451d71b8e6c308d01b58a8810723c711e2bcc1291'
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py | cut -d' ' -f1)" = 'b4bc46bec4884fb5dc1c5e9ccc7a8861a59fca47ccb13b8e8602472690aafa42'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-density-sync-amos-predata-audit-v1
+          path: input/main-audit
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31864904536
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-density-sync-amos-comparator-isolation-audit-v1
+          path: input/comparator-audit
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31865012724
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-density-sync-amos-transport-reuse-audit-v1
+          path: input/transport-audit
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31865140271
+
+      - name: Verify freeze semantics and every binding audit result hash
+        run: |
+          set -euo pipefail
+          mkdir -p output/freeze-audit
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+
+          freeze_path=Path('orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_FREEZE.json')
+          f=json.loads(freeze_path.read_text())
+          def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          def req(x,m):
+              if not x: raise RuntimeError(m)
+
+          req(f['schema']=='FINAL_DENSITY_SYNC_AMOS_2023_2024_EXECUTION_FREEZE_V1','freeze schema')
+          req(f['scientific_status']=='PRE_AMOS_NO_DATA','freeze scientific status')
+          req(f['scientific_role']=='PRISTINE_FINAL_EXTERNAL_AMOS_2023_2024_TEST_ONLY','freeze role')
+          req(f['selected_final_method']=='density_synchronous_recurrent_eom_hdbscan_v1_pr1263','final method')
+          req(f['method_selection']['closure_pr']==1267,'closure PR')
+          req(f['method_selection']['final_method_pr']==1263,'final method PR')
+          req(f['method_selection']['final_method_binding_head']=='182f07ade6bb5d4be2c80b88df9216bb2d6eee2d','final method head')
+          req(f['method_selection']['further_gmn_method_search_authorized'] is False,'GMN closure')
+          req(f['method_selection']['post_amos_method_switch_authorized'] is False,'post AMOS switch')
+          req(f['method_selection']['replacement_external_survey_authorized'] is False,'replacement survey')
+          req(f['final_protocol']['years']==[2023,2024],'years')
+          req(f['final_protocol']['blind_exclusion_inclusive']==[20.0,55.0],'blind interval')
+          req(f['final_protocol']['one_shot'] is True,'one shot')
+
+          req(f['provider_request']['status']=='READY_NOT_SENT','request status')
+          req(f['provider_request']['sent'] is False,'request sent flag')
+          req(f['provider_request']['sending_authorized_by_this_freeze'] is False,'request authorization')
+          req(f['scientific_execution_authorization']['amos_provider_data_received'] is False,'AMOS received')
+          req(f['scientific_execution_authorization']['amos_event_rows_accessed'] is False,'AMOS event access')
+          req(f['scientific_execution_authorization']['amos_geometry_accessed'] is False,'AMOS geometry access')
+          req(f['scientific_execution_authorization']['amos_labels_accessed'] is False,'AMOS label access')
+          req(f['scientific_execution_authorization']['scientific_execution_started'] is False,'scientific execution')
+          req(f['scientific_execution_authorization']['first_technically_valid_amos_endpoint_binding'] is True,'binding endpoint')
+          req(f['scientific_execution_authorization']['amos_specific_rescue_authorized'] is False,'AMOS rescue')
+          req(f['scientific_execution_authorization']['amos_rerun_after_valid_endpoint_authorized'] is False,'AMOS rerun')
+
+          main_source='input/main-audit/source-audit/FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT.json'
+          main_pipeline='input/main-audit/pipeline-audit/FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT.json'
+          comparator='input/comparator-audit/comparator-isolation/FINAL_DENSITY_SYNC_AMOS_COMPARATOR_ISOLATION_AUDIT.json'
+          transport='input/transport-audit/transport-reuse/FINAL_DENSITY_SYNC_AMOS_TRANSPORT_REUSE_AUDIT.json'
+          req(sha(main_source)==f['binding_zero_data_audits']['main_pipeline']['source_audit_result_sha256'],'main source result hash')
+          req(sha(main_pipeline)==f['binding_zero_data_audits']['main_pipeline']['pipeline_audit_result_sha256'],'main pipeline result hash')
+          req(sha(comparator)==f['binding_zero_data_audits']['comparator_isolation']['result_sha256'],'comparator result hash')
+          req(sha(transport)==f['binding_zero_data_audits']['transport_reuse']['result_sha256'],'transport result hash')
+
+          s=json.load(open(main_source)); p=json.load(open(main_pipeline)); c=json.load(open(comparator)); t=json.load(open(transport))
+          req(s['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V1','source verdict')
+          req(p['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT_V1','pipeline verdict')
+          req(c['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_COMPARATOR_ISOLATION_AUDIT_V1','comparator verdict')
+          req(t['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_TRANSPORT_REUSE_AUDIT_V1','transport verdict')
+          req(t['boundary_20_excluded'] is True and t['boundary_55_excluded'] is True,'inclusive protected boundaries')
+          req(t['geo6_exact_array_identity'] is True and t['protected_geometry_fail_closed'] is True,'transport mapping')
+          req(c['primary_generator_accepts_comparator_supplement'] is False,'comparator primary input')
+          req(c['comparator_only_fields_enter_primary_generator'] is False,'comparator field isolation')
+          req(s['generator_truth_input_surface'] is False,'generator truth surface')
+          req(s['evaluator_hierarchy_recomputation_surface'] is False,'evaluator recomputation')
+          req(all(p['tests'].values()),'pipeline tests')
+
+          for obj in (s,p,c,t):
+              for k in ('scientific_data_accessed','gmn_accessed','sonotaco_accessed','amos_accessed','asfn_accessed','efn_accessed','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+                  if k in obj: req(obj[k] is False,f'{k} in {obj.get("schema")}')
+
+          for k in ('target_information_access','target_region_events_accessed','orbittrace_target_access','sonotaco_access','asfn_access','efn_access','maarsy_scientific_access','dms_scientific_access'):
+              req(f['firewall'][k] is False,'freeze firewall '+k)
+
+          out={
+              'schema':'FINAL_DENSITY_SYNC_AMOS_EXECUTION_FREEZE_AUDIT_V1',
+              'verdict':'PASS_FINAL_DENSITY_SYNC_AMOS_EXECUTION_FREEZE_AUDIT_V1',
+              'execution_freeze_git_blob':'84e85d69b2fcbf1dcdeeeaf0568c026c50548bd7',
+              'execution_freeze_sha256':sha(freeze_path),
+              'binding_audits_rehydrated_and_verified':True,
+              'scientific_status':'PRE_AMOS_NO_DATA',
+              'provider_request_sent':False,
+              'amos_scientific_data_accessed':False,
+              'final_method_locked':True,
+              'one_shot_external_test_locked':True,
+              'no_rescue_locked':True,
+              'target_information_access':False,
+              'target_region_events_accessed':False,
+              'maarsy_scientific_access':False,
+              'dms_scientific_access':False
+          }
+          Path('output/freeze-audit/FINAL_DENSITY_SYNC_AMOS_EXECUTION_FREEZE_AUDIT.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve freeze audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/provenance
+          git rev-parse HEAD > output/provenance/execution_commit.txt
+          git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_FREEZE.json > output/provenance/execution_freeze_git_blob.txt
+          sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_FREEZE.json > output/provenance/execution_freeze_sha256.txt
+          sha256sum \
+            input/main-audit/source-audit/FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT.json \
+            input/main-audit/pipeline-audit/FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT.json \
+            input/comparator-audit/comparator-isolation/FINAL_DENSITY_SYNC_AMOS_COMPARATOR_ISOLATION_AUDIT.json \
+            input/transport-audit/transport-reuse/FINAL_DENSITY_SYNC_AMOS_TRANSPORT_REUSE_AUDIT.json \
+            > output/provenance/rehydrated_result_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-final-density-sync-amos-execution-freeze-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
