@@ -1,0 +1,186 @@
+name: OrbitTrace DN dual-cover v1 full-GMN pretruth
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-dn-dual-cover-v1
+    paths:
+      - 'orbittrace_dn_dual_cover_v1/PRETRUTH_ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  feasibility-pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact runtime and verify frozen bytes
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/v3 input/v8 input/ranker input/parent output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          cp frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/PROTOCOL.md)" = '26e16fcc2cf9d31246a440c7b86660b85d09a73f'
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/dn_dual_cover.py)" = 'ab8d08773cc4dfdc614e5e8766067a4dc9909f06'
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/audit_synthetic.py)" = '307c439a2dcec9554927fa1e64f0efa66e715217'
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/run_feasibility_pretruth.py)" = '47c0338d3969e3796fedac241ac208e613c1be01'
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/PRETRUTH_EXECUTION_FREEZE.json)" = 'c7cf242743c8144fd28269d9ce578d04dbb9feaa'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          python -m py_compile orbittrace_dn_dual_cover_v1/*.py orbittrace_recurrent_eom_hdbscan_v1/*.py orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py input/v3/*.py
+          python - <<'PY'
+          import json
+          f=json.load(open('orbittrace_dn_dual_cover_v1/PRETRUTH_EXECUTION_FREEZE.json'))
+          assert f['method']=='VALSECCHI_DN_DUAL_COVER_HDBSCAN_V1'
+          assert f['stage']=='FULL_GMN_PRETRUTH_FEASIBILITY_ONLY'
+          assert f['zero_data_audit']['run_id']==31907476378
+          assert f['zero_data_audit']['artifact_id']==9252741036
+          assert f['zero_data_audit']['artifact_digest']=='sha256:9c737d219f2cb2afe69492a6d8afc6a9d14ce9c4962ad1d2fbb8eab8ecaa1917'
+          assert f['zero_data_audit']['verdict']=='PASS_DN_DUAL_COVER_V1_SYNTHETIC_AUDIT'
+          assert f['parent']['binding_run']==31852836840 and f['parent']['candidate_count']==2094
+          assert f['parent']['recovered_at_100_total']==179
+          assert f['cover_rows_expected']==1477364 and f['physical_events_expected']==738682
+          assert f['hidden_truth_evaluation_authorized'] is False
+          assert f['hidden_truth_iteration_authorized'] is False
+          for k in ['sonotaco_access','asfn_access','efn_access','amos_access','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access']:
+              assert f[k] is False, (k,f[k])
+          print('PASS_DN_PRETRUTH_EXECUTION_FREEZE')
+          PY
+
+      - name: Re-run exact zero-data DN identity audit
+        env:
+          PYTHONPATH: orbittrace_dn_dual_cover_v1
+        run: |
+          set -euo pipefail
+          python -u orbittrace_dn_dual_cover_v1/audit_synthetic.py | tee output/DN_SYNTHETIC_RECHECK.log
+          grep -q PASS_DN_DUAL_COVER_V1_SYNTHETIC_AUDIT output/DN_SYNTHETIC_RECHECK.log
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-v1-gmn-import-repair-retry
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31852836840
+      - name: Verify exact frozen parent artifacts
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json | cut -d' ' -f1)" = 'efce0617a738a0372ec5b007fb87b46912accd8419f0f768829c4c0cb7d62993'
+          test "$(sha256sum input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = 'ca6aeed2b82739003ea5d39b59e869df876de2962164344a938fe4935ea38711'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify frozen GMN runtime utility
+        run: test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Verify frozen runtime-support artifact
+        run: test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Build full DN hierarchy and freeze physical candidates without truth
+        env:
+          PYTHONPATH: input/ranker:input/v3:orbittrace_dn_dual_cover_v1:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_dn_dual_cover_v1/run_feasibility_pretruth.py \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --parent-prelabel-json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json \
+            --parent-result-json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce pretruth-only feasibility contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/DN_DUAL_COVER_V1_PRETRUTH_FEASIBILITY.json'))
+          assert r['verdict']=='PASS_DN_DUAL_COVER_V1_PRETRUTH_FEASIBILITY'
+          assert r['scientific_role']=='PRETRUTH_GEOMETRY_AND_CANDIDATE_CONSTRUCTION_ONLY'
+          assert r['physical_event_count']==738682
+          assert r['events_by_year']=={'2022':315024,'2023':423658}
+          assert r['cover_row_count']==1477364 and r['cover_dimension']==6
+          assert r['parent_candidate_count']==2094
+          assert r['physical_candidate_count']>0
+          assert r['mechanism_active'] is True
+          assert r['hidden_truth_evaluated'] is False
+          assert r['hidden_truth_iterated'] is False
+          assert r['hidden_truth_serialized'] is False
+          assert r['fold_audit']['physical_candidate_count']==r['physical_candidate_count']
+          assert len(r['candidates'])==r['physical_candidate_count']
+          assert all(c['member_count']>=10 for c in r['candidates'])
+          assert all(len(c['event_ids'])==len(set(c['event_ids'])) for c in r['candidates'])
+          assert len({tuple(c['event_ids']) for c in r['candidates']})==len(r['candidates'])
+          assert r['blind_exclusion']==[20.0,55.0]
+          for k in ['target_information_access','target_region_events_accessed','sonotaco_2013_2014_access','asfn_access','efn_access','amos_access','maarsy_scientific_access','dms_scientific_access']:
+              assert r[k] is False, (k,r[k])
+          print(r['verdict'], 'candidates=',r['physical_candidate_count'], 'fold=',r['fold_audit'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum orbittrace_dn_dual_cover_v1/PROTOCOL.md orbittrace_dn_dual_cover_v1/dn_dual_cover.py orbittrace_dn_dual_cover_v1/audit_synthetic.py orbittrace_dn_dual_cover_v1/run_feasibility_pretruth.py orbittrace_dn_dual_cover_v1/PRETRUTH_EXECUTION_FREEZE.json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json input/ranker/run_urc_union_ranker.py input/v8/pooled_year_centroid_v8_development.json output/DN_DUAL_COVER_V1_PRETRUTH_FEASIBILITY.json > output/provenance_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-dn-dual-cover-v1-pretruth-feasibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90
