@@ -1,0 +1,111 @@
+name: OrbitTrace final density-sync AMOS comparator isolation audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+    paths:
+      - 'orbittrace_final_density_sync_amos_2023_2024_external_v1/COMPARATOR_AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  comparator-isolation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ce201147d4bb0f3ab92abe1b270a4bdca856f0fd
+          path: amos-multimethod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify exact frozen comparator contract and current primary generator
+        run: |
+          set -euo pipefail
+          test "$(git -C amos-multimethod hash-object orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py)" = 'c54ced9b495a5c1aba01208d1fd21b66c690e683'
+          test "$(git -C amos-multimethod hash-object orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py)" = 'f0be2faa24e1cf524662e2599116aec26cc52eaf'
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py | cut -d' ' -f1)" = 'c4ef4a804a1b51c4d2581f0451d71b8e6c308d01b58a8810723c711e2bcc1291'
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_comparator_isolation_zero_data.py | cut -d' ' -f1)" = 'f306fdb1cfa25fff5179af600abcd915ffa0ca46ef55561d28f275322835cbd2'
+          python -m py_compile \
+            amos-multimethod/orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py \
+            amos-multimethod/orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_comparator_isolation_zero_data.py
+
+      - name: Rerun exact frozen comparator supplement selftest
+        env:
+          PYTHONPATH: amos-multimethod
+        run: |
+          set -euo pipefail
+          rm -f amos_multimethod_predata_contract_selftest.json
+          python -u amos-multimethod/orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py
+          python - <<'PY'
+          import json
+          r=json.load(open('amos_multimethod_predata_contract_selftest.json'))
+          assert r['verdict']=='PASS_AMOS_MULTIMETHOD_PREDATA_CONTRACT_SELFTEST_V1'
+          assert r['synthetic_only'] is True
+          assert r['amos_data_accessed'] is False
+          assert r['amos_truth_accessed'] is False
+          assert r['comparator_only_fields_entered_recurrent_eom'] is False
+          PY
+
+      - name: Prove optional fields cannot enter final primary generator
+        run: |
+          set -euo pipefail
+          rm -rf output/comparator-isolation
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_comparator_isolation_zero_data.py \
+            --generator orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            --old-contract amos-multimethod/orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py \
+            --old-selftest amos-multimethod/orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py \
+            --old-selftest-result amos_multimethod_predata_contract_selftest.json \
+            --output output/comparator-isolation
+
+      - name: Enforce zero-data comparator audit schema
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/comparator-isolation/FINAL_DENSITY_SYNC_AMOS_COMPARATOR_ISOLATION_AUDIT.json'))
+          assert r['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_COMPARATOR_ISOLATION_AUDIT_V1'
+          assert r['synthetic_only'] is True
+          assert r['primary_generator_accepts_comparator_supplement'] is False
+          assert r['comparator_only_fields_enter_primary_generator'] is False
+          assert r['old_pairwise_projection_is_six_field_geometry_only'] is True
+          for k in ('scientific_data_accessed','gmn_accessed','sonotaco_accessed','amos_accessed','asfn_accessed','efn_accessed','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False, (k,r[k])
+          print('PASS_FINAL_DENSITY_SYNC_AMOS_COMPARATOR_ISOLATION_ZERO_DATA_GATE')
+          PY
+
+      - name: Preserve comparator audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/provenance
+          git rev-parse HEAD > output/provenance/execution_commit.txt
+          sha256sum \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_comparator_isolation_zero_data.py \
+            amos-multimethod/orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract.py \
+            amos-multimethod/orbittrace_recurrent_eom_amos_multimethod_v1/predata_contract_selftest.py \
+            amos_multimethod_predata_contract_selftest.json \
+            > output/provenance/source_output_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-final-density-sync-amos-comparator-isolation-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
