@@ -20,6 +20,7 @@ PRIMARY_PASS = "PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_AMOS_2023_2024_FINAL_E
 PRIMARY_FAIL = "FAIL_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_AMOS_2023_2024_FINAL_EXTERNAL_VALIDATION"
 INCREMENT_PASS = "PASS_DENSITY_SYNCHRONY_INCREMENT_OVER_RECURRENT_EOM_AMOS"
 INCREMENT_NO = "NO_DEMONSTRATED_DENSITY_SYNCHRONY_INCREMENT_OVER_RECURRENT_EOM_AMOS"
+MIN_CLUSTER_SIZE = 10
 
 EXPECTED_HDBSCAN = {
     "representation": "GEO6",
@@ -43,6 +44,88 @@ EXPECTED_SOURCE_PINS = {
     "final_protocol_git_blob": "1ddb4bae33a1ae8a6224cbc4abcba5dda70cf993",
 }
 
+EXPECTED_PRETRUTH_KEYS = {
+    "scientific_role",
+    "phase",
+    "selected_final_method",
+    "years",
+    "blind_exclusion",
+    "events_total",
+    "events_by_year",
+    "event_ids_by_year",
+    "canonical_input_sha256",
+    "geo6_sha256",
+    "condensed_tree_sha256",
+    "condensed_tree_rows",
+    "ordinary_stability_sha256",
+    "recurrent_annual_eom_sha256",
+    "recurrent_quality_sha256",
+    "density_sync_parent_annual_sha256",
+    "density_sync_reconstructed_annual_sha256",
+    "density_sync_annual_reconstruction_max_abs_error",
+    "density_sync_quality_sha256",
+    "recurrent_annual_eom",
+    "density_sync_reconstructed_annual_eom",
+    "ordinary_selected_nodes",
+    "recurrent_selected_nodes",
+    "density_sync_selected_nodes",
+    "ordinary_candidates",
+    "recurrent_candidates",
+    "density_sync_candidates",
+    "ordinary_order_sha256",
+    "recurrent_order_sha256",
+    "density_sync_order_sha256",
+    "ordinary_membership_sha256",
+    "recurrent_membership_sha256",
+    "density_sync_membership_sha256",
+    "mechanism_active",
+    "frozen_hdbscan",
+    "source_pins",
+    "labels_accessed",
+    "amos_shower_associations_accessed",
+    "amos_orbit_elements_accessed",
+    "sonotaco_access",
+    "asfn_access",
+    "efn_access",
+    "target_information_access",
+    "target_region_events_accessed",
+    "maarsy_scientific_access",
+    "dms_scientific_access",
+    "orbittrace_target_access",
+    "amos_post_result_parameter_search",
+}
+
+CANDIDATE_SCHEMAS = {
+    "ordinary": {
+        "family_id", "node_id", "event_ids", "member_count", "ordinary_stability"
+    },
+    "recurrent": {
+        "family_id", "node_id", "event_ids", "member_count", "ordinary_stability", "recurrent_stability"
+    },
+    "density_sync": {
+        "family_id", "node_id", "event_ids", "member_count", "ordinary_stability", "synchronous_stability"
+    },
+}
+
+FAMILY_PREFIX = {
+    "ordinary": "HDBEOM",
+    "recurrent": "REOM1",
+    "density_sync": "DSEOM1",
+}
+
+NO_ASSOCIATION_ALIASES = {
+    "NONE",
+    "NULL",
+    "NA",
+    "N/A",
+    "UNKNOWN",
+    "UNASSIGNED",
+    "NO_SHOWER",
+    "NO SHOWER",
+    "0",
+    "-",
+}
+
 
 def require(ok: bool, msg: str) -> None:
     if not ok:
@@ -51,6 +134,10 @@ def require(ok: bool, msg: str) -> None:
 
 def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def member_hash(prefix: str, members: list[str]) -> str:
+    return hashlib.sha256((prefix + "|" + "|".join(members)).encode()).hexdigest()[:20]
 
 
 def order_sha(candidates: list[dict[str, Any]]) -> str:
@@ -73,6 +160,30 @@ def require_sha256_text(value: Any, name: str) -> str:
     return text
 
 
+def expected_sort_key(name: str, row: dict[str, Any]) -> tuple[Any, ...]:
+    if name == "ordinary":
+        return (
+            -float(row["ordinary_stability"]),
+            -int(row["member_count"]),
+            str(row["family_id"]),
+        )
+    if name == "recurrent":
+        return (
+            -float(row["recurrent_stability"]),
+            -float(row["ordinary_stability"]),
+            -int(row["member_count"]),
+            str(row["family_id"]),
+        )
+    if name == "density_sync":
+        return (
+            -float(row["synchronous_stability"]),
+            -float(row["ordinary_stability"]),
+            -int(row["member_count"]),
+            str(row["family_id"]),
+        )
+    raise RuntimeError(f"unknown candidate method {name}")
+
+
 def validate_candidate_order(
     name: str,
     candidates_raw: Any,
@@ -81,7 +192,7 @@ def validate_candidate_order(
     expected_membership_sha: Any,
     pooled_ids: set[str],
 ) -> list[dict[str, Any]]:
-    require(isinstance(candidates_raw, list) and candidates_raw, f"{name} candidate list empty/non-list")
+    require(isinstance(candidates_raw, list), f"{name} candidate payload is not a list")
     require(isinstance(selected_nodes_raw, list), f"{name} selected-node list missing/non-list")
     selected_nodes = [int(x) for x in selected_nodes_raw]
     require(len(selected_nodes) == len(set(selected_nodes)), f"{name} selected-node list contains duplicates")
@@ -91,27 +202,35 @@ def validate_candidate_order(
     family_ids: set[str] = set()
     candidate_nodes: set[int] = set()
     assigned_events: set[str] = set()
+    schema = CANDIDATE_SCHEMAS[name]
+    prefix = FAMILY_PREFIX[name]
+
     for i, raw in enumerate(candidates_raw):
         require(isinstance(raw, dict), f"{name} candidate {i} is not an object")
-        require("family_id" in raw and "node_id" in raw and "event_ids" in raw and "member_count" in raw, f"{name} candidate {i} missing identity fields")
+        require(set(raw) == schema, f"{name} candidate {i} has unexpected schema")
         family_id = str(raw["family_id"])
         require(family_id and family_id not in family_ids, f"{name} duplicate/blank family ID: {family_id!r}")
         family_ids.add(family_id)
+
         node = int(raw["node_id"])
         require(node not in candidate_nodes, f"{name} duplicate candidate node {node}")
         candidate_nodes.add(node)
+
         ids = [str(x) for x in raw["event_ids"]]
         require(ids and ids == sorted(ids), f"{name} candidate {family_id} member IDs not deterministic sorted order")
         require(len(ids) == len(set(ids)), f"{name} candidate {family_id} contains duplicate event IDs")
         require(int(raw["member_count"]) == len(ids), f"{name} candidate {family_id} member_count mismatch")
+        require(len(ids) >= MIN_CLUSTER_SIZE, f"{name} candidate {family_id} below frozen minimum cluster size")
+        require(family_id == member_hash(prefix, ids), f"{name} candidate deterministic family ID mismatch")
+
         unknown = set(ids) - pooled_ids
         require(not unknown, f"{name} candidate {family_id} contains non-retained event IDs: {sorted(unknown)[:3]}")
         overlap = assigned_events.intersection(ids)
         require(not overlap, f"{name} flat candidate memberships overlap: {sorted(overlap)[:3]}")
         assigned_events.update(ids)
-        for score_key in ("ordinary_stability", "recurrent_stability", "synchronous_stability"):
-            if score_key in raw:
-                require(math.isfinite(float(raw[score_key])), f"{name} candidate {family_id} non-finite {score_key}")
+
+        for score_key in schema.intersection({"ordinary_stability", "recurrent_stability", "synchronous_stability"}):
+            require(math.isfinite(float(raw[score_key])), f"{name} candidate {family_id} non-finite {score_key}")
         out.append(dict(raw))
 
     require(candidate_nodes == set(selected_nodes), f"{name} candidate node universe differs from selected-node tuple")
@@ -119,10 +238,17 @@ def validate_candidate_order(
     expected_membership = require_sha256_text(expected_membership_sha, f"{name}_membership_sha256")
     require(order_sha(out) == expected_order, f"{name} candidate order hash mismatch")
     require(membership_sha(out) == expected_membership, f"{name} candidate membership hash mismatch")
+
+    expected_sorted = sorted(out, key=lambda row: expected_sort_key(name, row))
+    require(
+        [str(x["family_id"]) for x in out] == [str(x["family_id"]) for x in expected_sorted],
+        f"{name} candidate order inconsistent with frozen score/tie sort",
+    )
     return out
 
 
 def validate_pretruth(pre: dict[str, Any]) -> tuple[dict[int, list[str]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    require(isinstance(pre, dict) and set(pre) == EXPECTED_PRETRUTH_KEYS, "unexpected top-level pretruth schema")
     require(pre["scientific_role"] == SCIENTIFIC_ROLE and pre["phase"] == "PRETRUTH_FROZEN", "wrong pretruth role/phase")
     require(pre["selected_final_method"] == SELECTED_FINAL_METHOD, "selected final method changed")
     require(pre["years"] == [2023, 2024] and pre["blind_exclusion"] == [20.0, 55.0], "year/blind freeze changed")
@@ -133,13 +259,17 @@ def validate_pretruth(pre: dict[str, Any]) -> tuple[dict[int, list[str]], list[d
     for k in ("sonotaco_access", "asfn_access", "efn_access", "target_information_access", "target_region_events_accessed", "maarsy_scientific_access", "dms_scientific_access", "orbittrace_target_access", "amos_post_result_parameter_search"):
         require(pre[k] is False, f"firewall flag violated in pretruth: {k}")
 
-    require(isinstance(pre["events_by_year"], dict), "events_by_year missing/non-object")
-    require(isinstance(pre["event_ids_by_year"], dict), "event_ids_by_year missing/non-object")
+    require(isinstance(pre["events_by_year"], dict) and set(pre["events_by_year"]) == {"2023", "2024"}, "events_by_year schema changed")
+    require(isinstance(pre["event_ids_by_year"], dict) and set(pre["event_ids_by_year"]) == {"2023", "2024"}, "event_ids_by_year schema changed")
+    require(isinstance(pre["canonical_input_sha256"], dict) and set(pre["canonical_input_sha256"]) == {"2023", "2024"}, "canonical input hash schema changed")
+    for year in ("2023", "2024"):
+        require_sha256_text(pre["canonical_input_sha256"][year], f"canonical_input_sha256[{year}]")
+
     ids_by_year: dict[int, list[str]] = {}
     pooled_ids: set[str] = set()
     for y in YEARS:
         ids = [str(x) for x in pre["event_ids_by_year"][str(y)]]
-        require(ids and ids == sorted(ids), f"retained event IDs for {y} are not deterministic sorted order")
+        require(ids and ids == sorted(ids), f"retained event IDs for {y} are empty or not deterministic sorted order")
         require(len(ids) == len(set(ids)), f"duplicate retained event ID within {y}")
         require(int(pre["events_by_year"][str(y)]) == len(ids), f"events_by_year count mismatch for {y}")
         overlap = pooled_ids.intersection(ids)
@@ -147,6 +277,7 @@ def validate_pretruth(pre: dict[str, Any]) -> tuple[dict[int, list[str]], list[d
         pooled_ids.update(ids)
         ids_by_year[y] = ids
     require(int(pre["events_total"]) == len(pooled_ids), "events_total does not match retained-ID universe")
+    require(int(pre["condensed_tree_rows"]) >= 0, "invalid condensed-tree row count")
 
     for k in ("geo6_sha256", "condensed_tree_sha256", "ordinary_stability_sha256", "recurrent_annual_eom_sha256", "recurrent_quality_sha256", "density_sync_parent_annual_sha256", "density_sync_reconstructed_annual_sha256", "density_sync_quality_sha256"):
         require_sha256_text(pre[k], k)
@@ -155,7 +286,7 @@ def validate_pretruth(pre: dict[str, Any]) -> tuple[dict[int, list[str]], list[d
     recurrent_annual = pre["recurrent_annual_eom"]
     reconstructed = pre["density_sync_reconstructed_annual_eom"]
     require(isinstance(recurrent_annual, dict) and isinstance(reconstructed, dict), "annual EOM maps missing/non-object")
-    require(set(recurrent_annual) == set(reconstructed) and recurrent_annual, "annual EOM node universes differ/empty")
+    require(set(recurrent_annual) == set(reconstructed), "annual EOM node universes differ")
     require(mapping_sha(recurrent_annual) == pre["recurrent_annual_eom_sha256"], "stored recurrent annual EOM hash mismatch")
     require(mapping_sha(reconstructed) == pre["density_sync_reconstructed_annual_sha256"], "stored reconstructed annual EOM hash mismatch")
     reconstruction_max = 0.0
@@ -163,11 +294,12 @@ def validate_pretruth(pre: dict[str, Any]) -> tuple[dict[int, list[str]], list[d
         expected = [float(x) for x in recurrent_annual[node]]
         got = [float(x) for x in reconstructed[node]]
         require(len(expected) == len(got) == 2, f"annual EOM pair shape changed at node {node}")
-        for a, b in zip(expected, got):
-            require(math.isfinite(a) and math.isfinite(b), f"non-finite annual EOM at node {node}")
-            require(math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-12), f"annual EOM reconstruction mismatch at node {node}")
-            reconstruction_max = max(reconstruction_max, abs(a - b))
+        for aa, bb in zip(expected, got):
+            require(math.isfinite(aa) and math.isfinite(bb), f"non-finite annual EOM at node {node}")
+            require(math.isclose(aa, bb, rel_tol=1e-12, abs_tol=1e-12), f"annual EOM reconstruction mismatch at node {node}")
+            reconstruction_max = max(reconstruction_max, abs(aa - bb))
     require(reconstruction_max <= 1e-12, "annual EOM reconstruction exceeds frozen tolerance")
+    require(math.isfinite(float(pre["density_sync_annual_reconstruction_max_abs_error"])), "stored reconstruction maximum is non-finite")
     require(math.isclose(float(pre["density_sync_annual_reconstruction_max_abs_error"]), reconstruction_max, rel_tol=1e-12, abs_tol=1e-15), "stored reconstruction maximum mismatch")
 
     ordinary_candidates = validate_candidate_order(
@@ -200,9 +332,20 @@ def validate_pretruth(pre: dict[str, Any]) -> tuple[dict[int, list[str]], list[d
         "recurrent_vs_density_sync": bool(pre["recurrent_selected_nodes"] != pre["density_sync_selected_nodes"] or pre["recurrent_order_sha256"] != pre["density_sync_order_sha256"]),
         "ordinary_vs_density_sync": bool(pre["ordinary_selected_nodes"] != pre["density_sync_selected_nodes"] or pre["ordinary_order_sha256"] != pre["density_sync_order_sha256"]),
     }
+    require(isinstance(pre["mechanism_active"], dict) and set(pre["mechanism_active"]) == set(mechanism_expected), "mechanism-active schema changed")
     require(pre["mechanism_active"] == mechanism_expected, "stored mechanism-active flags do not match selected nodes/orders")
 
     return ids_by_year, ordinary_candidates, recurrent_candidates, sync_candidates
+
+
+def validate_association_label(label: str, eid: str) -> str:
+    require(label, f"blank shower association for retained AMOS event {eid}; use explicit SPORADIC")
+    upper = label.upper()
+    if upper == "SPORADIC":
+        require(label == "SPORADIC", f"noncanonical SPORADIC sentinel for retained AMOS event {eid}")
+        return label
+    require(upper not in NO_ASSOCIATION_ALIASES, f"ambiguous no-association sentinel for retained AMOS event {eid}: {label!r}; use explicit SPORADIC")
+    return label
 
 
 def load_labels(path: Path, expected_ids: list[str], year: int) -> dict[str, str]:
@@ -215,8 +358,7 @@ def load_labels(path: Path, expected_ids: list[str], year: int) -> dict[str, str
             eid = str(row["event_id"]).strip()
             label = str(row["shower_association"]).strip()
             require(eid and eid in expected and eid not in out, f"invalid/duplicate AMOS label ID for {year}: {eid!r}")
-            require(label, f"blank shower association for retained AMOS event {eid}; use explicit SPORADIC")
-            out[eid] = label
+            out[eid] = validate_association_label(label, eid)
     require(set(out) == expected, f"AMOS label map for {year} must cover every retained ID exactly")
     return out
 
