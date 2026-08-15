@@ -1,0 +1,66 @@
+name: OrbitTrace survey-null calibrated persistence v1 synthetic
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-null-calibrated-persistence-v1
+    paths:
+      - 'orbittrace_null_calibrated_persistence_v1/AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  synthetic-zero-data:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          test "$(git hash-object orbittrace_null_calibrated_persistence_v1/PROTOCOL.md)" = '4c90c09f472a08a6dedb230df8141d5fd1460d0b'
+          test "$(git hash-object orbittrace_null_calibrated_persistence_v1/null_calibration.py)" = '7937cda056fcd84f94bc347b153457cc0e500861'
+          test "$(git hash-object orbittrace_null_calibrated_persistence_v1/audit_synthetic.py)" = '472b10dda5c7500473ddbe69162bf14246b184ee'
+          test "$(git hash-object orbittrace_null_calibrated_persistence_v1/run_development.py)" = '6f5ffefd03a21a4b923aeff2d17547a9bfc91653'
+          python -m py_compile orbittrace_null_calibrated_persistence_v1/*.py
+      - name: Run zero-data audit
+        env:
+          PYTHONPATH: orbittrace_null_calibrated_persistence_v1
+        run: |
+          set -euo pipefail
+          rm -rf output
+          python -u orbittrace_null_calibrated_persistence_v1/audit_synthetic.py
+          python - <<'PY'
+          import json
+          r=json.load(open('output/NULL_CALIBRATED_PERSISTENCE_V1_SYNTHETIC_AUDIT.json'))
+          assert r['verdict']=='PASS_NULL_CALIBRATED_PERSISTENCE_V1_SYNTHETIC_AUDIT'
+          assert r['null_replicates']==16
+          assert all(r['tests'].values())
+          for k in ['scientific_data_access','gmn_access','sonotaco_access','asfn_access','efn_access','amos_access','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access']:
+              assert r[k] is False, (k,r[k])
+          print(r['verdict'])
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_null_calibrated_persistence_v1/PROTOCOL.md orbittrace_null_calibrated_persistence_v1/null_calibration.py orbittrace_null_calibrated_persistence_v1/audit_synthetic.py orbittrace_null_calibrated_persistence_v1/run_development.py output/NULL_CALIBRATED_PERSISTENCE_V1_SYNTHETIC_AUDIT.json > output/provenance_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-null-calibrated-persistence-v1-synthetic
+          path: output
+          if-no-files-found: error
+          retention-days: 90
