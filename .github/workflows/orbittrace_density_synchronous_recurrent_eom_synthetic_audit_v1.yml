@@ -1,0 +1,100 @@
+name: OrbitTrace density-synchronous recurrent-EOM synthetic audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-density-synchronous-recurrent-eom-v1
+    paths:
+      - 'orbittrace_density_synchronous_recurrent_eom_v1/**'
+      - '.github/workflows/orbittrace_density_synchronous_recurrent_eom_synthetic_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  synthetic-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-density-synchronous-recurrent-eom-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact parent numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+
+      - name: Verify pre-outcome source pins
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/PROTOCOL.md)" = '1187cbba37372c834bdbbf7eb05b1f7c31f8dcf9'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/audit_synthetic.py)" = '07d50a2a37921debd04cd4af8e0022bf3d617948'
+          python -m py_compile \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/audit_synthetic.py
+
+      - name: Run zero-truth synthetic audit
+        env:
+          PYTHONPATH: orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output
+          python -u orbittrace_density_synchronous_recurrent_eom_v1/audit_synthetic.py
+
+      - name: Enforce synthetic audit firewall and verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p='output/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_SYNTHETIC_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_SYNTHETIC_AUDIT'
+          for k in [
+              'scientific_data_access','gmn_access','sonotaco_access','efn_access','asfn_access','amos_access',
+              'maarsy_scientific_access','dms_scientific_access','target_information_access','target_region_events_accessed'
+          ]:
+              assert r[k] is False, (k,r[k])
+          assert all(r['tests'].values())
+          assert abs(r['fixtures']['identical_curve']['synchronous']-2.5)<1e-12
+          assert abs(r['fixtures']['crossing_curve']['parent_recurrent_min']-2.5)<1e-12
+          assert abs(r['fixtures']['crossing_curve']['synchronous']-2.25)<1e-12
+          print('PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_SYNTHETIC_AUDIT_WORKFLOW')
+          PY
+
+      - name: Preserve audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
+          git hash-object orbittrace_density_synchronous_recurrent_eom_v1/PROTOCOL.md > output/protocol_blob.txt
+          git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py > output/kernel_blob.txt
+          git hash-object orbittrace_density_synchronous_recurrent_eom_v1/audit_synthetic.py > output/audit_blob.txt
+          git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py > output/parent_recurrent_eom_blob.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-synthetic-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
