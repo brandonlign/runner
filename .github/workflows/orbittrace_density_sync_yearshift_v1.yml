@@ -44,6 +44,8 @@ jobs:
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
           mkdir -p input/v3 input/v8 input/ranker input/parent output
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
           test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
           cp frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
           rm -f /tmp/run_wavelet_catalogue_v3_development.py
@@ -51,10 +53,11 @@ jobs:
           test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
           test "$(git hash-object orbittrace_density_sync_yearshift_v1/PROTOCOL.md)" = 'a3c88c2ea02ab3dba3686b3e47c44f51b303ff8e'
+          test "$(git hash-object orbittrace_density_sync_yearshift_v1/RUNTIME_IMPORT_REPAIR.md)" = 'b7214c47435f0b930351abd285bd49af1cf0e607'
           test "$(git hash-object orbittrace_density_sync_yearshift_v1/yearshift.py)" = '49bee407bac9964397fd6c25cef6f77bceecf2b4'
           test "$(git hash-object orbittrace_density_sync_yearshift_v1/audit_synthetic.py)" = 'ff6a93e74202616c940da88dccd0c5b9f4d81883'
           test "$(git hash-object orbittrace_density_sync_yearshift_v1/run_development.py)" = '8ab4041fc21555d1a14015615c876994f133a7e6'
-          python -m py_compile orbittrace_density_sync_yearshift_v1/*.py orbittrace_recurrent_eom_hdbscan_v1/run_development.py
+          python -m py_compile input/v3/multi_anchor_energy_v3.py input/v3/wavelet_episode_comparator.py orbittrace_density_sync_yearshift_v1/*.py orbittrace_recurrent_eom_hdbscan_v1/run_development.py
 
       - name: Run zero-truth year-shift audit
         env:
@@ -97,7 +100,7 @@ jobs:
           test "$(sha256sum input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json | cut -d' ' -f1)" = 'efce0617a738a0372ec5b007fb87b46912accd8419f0f768829c4c0cb7d62993'
           test "$(sha256sum input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = 'ca6aeed2b82739003ea5d39b59e869df876de2962164344a938fe4935ea38711'
 
-      - name: Run first binding year-shift GMN outcome
+      - name: Run first technically valid binding year-shift GMN outcome
         env:
           PYTHONPATH: input/ranker:input/v3:.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_sync_yearshift_v1:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
@@ -140,7 +143,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_density_sync_yearshift_v1/PROTOCOL.md orbittrace_density_sync_yearshift_v1/yearshift.py orbittrace_density_sync_yearshift_v1/audit_synthetic.py orbittrace_density_sync_yearshift_v1/run_development.py input/ranker/run_urc_union_ranker.py input/v8/pooled_year_centroid_v8_development.json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json output/YEARSHIFT_SYNTHETIC_AUDIT.json output/DENSITY_SYNC_YEARSHIFT_V1_PRELABEL.json output/DENSITY_SYNC_YEARSHIFT_V1_GMN_DEVELOPMENT.json > output/provenance_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_density_sync_yearshift_v1/PROTOCOL.md orbittrace_density_sync_yearshift_v1/RUNTIME_IMPORT_REPAIR.md orbittrace_density_sync_yearshift_v1/yearshift.py orbittrace_density_sync_yearshift_v1/audit_synthetic.py orbittrace_density_sync_yearshift_v1/run_development.py input/v3/multi_anchor_energy_v3.py input/v3/wavelet_episode_comparator.py input/ranker/run_urc_union_ranker.py input/v8/pooled_year_centroid_v8_development.json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json output/YEARSHIFT_SYNTHETIC_AUDIT.json output/DENSITY_SYNC_YEARSHIFT_V1_PRELABEL.json output/DENSITY_SYNC_YEARSHIFT_V1_GMN_DEVELOPMENT.json > output/provenance_sha256.txt 2>/dev/null || true
           git rev-parse HEAD > output/execution_commit.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
