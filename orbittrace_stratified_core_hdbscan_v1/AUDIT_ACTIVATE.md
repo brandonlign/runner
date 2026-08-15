@@ -1,7 +1,7 @@
-# Activate stratified-core HDBSCAN v1 zero-truth engineering audit — retry 2
+# Activate stratified-core HDBSCAN v1 zero-truth engineering audit — retry 3
 
-Retries 1–2 before this activation remain preserved as engineering no-results. The scientific method remains frozen: balanced `k_year=5` per-year core support, exact-self exclusion with duplicate-other inclusion, `core_strat=max(d_2022,d_2023)`, unchanged HDBSCAN settings, and unchanged recurrent-EOM extraction/ranking.
+Prior synthetic-audit attempts remain preserved as engineering no-results. Run `31861166198` stopped before the audit executed because the workflow carried a stale expected blob for `INJECTION_INITIALIZATION_REPAIR.md`; `AUDIT3_NO_RESULT.md` records that failure.
 
-The only newly authorized change is the already-documented Boruvka initialization-equivalence repair in `INJECTION_INITIALIZATION_REPAIR.md`: recreate HDBSCAN 0.8.43's omitted first-pass candidate state after injected ordinary/stratified core distances so the public injected-core route can be required to reproduce standard forced `boruvka_kdtree` HDBSCAN exactly under ordinary cores.
+The only repair since that no-result is the workflow provenance pin: it now expects the branch's actual existing repair-document blob `3e399024a0687311a8de44b7899109fbf4eeb7e0`. `PROTOCOL.md`, `stratified_core.py`, `audit_injection.py`, recurrent-EOM source, the balanced `k_year=5` core definition, HDBSCAN settings, extraction/ranking, evaluator, and gate are unchanged.
 
-This activation authorizes **synthetic zero-truth audit only**. It does not authorize GMN scientific execution unless the audit passes every frozen equivalence/core-mechanics assertion. No GMN catalogue/truth, SonotaCo, EFN, ASFN, AMOS, OrbitTrace target information/events, protected `[20°,55°]` target-region data, MAARSY, or DMS access is authorized by this retry.
+This activation authorizes **synthetic zero-truth audit only**. It does not authorize GMN scientific execution unless every frozen injection/core-equivalence assertion passes. No GMN catalogue/truth, SonotaCo, EFN, ASFN, AMOS, OrbitTrace target information/events, protected `[20°,55°]` target-region data, MAARSY, or DMS access is authorized by this retry.
