@@ -184,7 +184,14 @@ def main() -> int:
     req(sum(int(e["year"]) == 2023 for e in events) == 423658, "2023 accessible event count changed")
     req(len({str(e["id"]) for e in events}) == len(events), "duplicate pooled accessible event IDs")
     req(all(not (BLIND[0] <= float(e["sol"]) <= BLIND[1]) for e in events), "protected region survived parser")
-    event_by_id = {str(e["id"]): e for e in events}
+
+    # Engineering-only identity alias required by the exact frozen v3 episode
+    # interface. Parent `lon`/`lat` are already sun-centered radiant longitude
+    # and ecliptic latitude; no values or units are changed here.
+    scoring_events = [dict(e, sun_lon=float(e["lon"]), ecl_lat=float(e["lat"])) for e in events]
+    req(all(float(e["sun_lon"]) == float(e["lon"]) for e in scoring_events), "sun-longitude alias changed values")
+    req(all(float(e["ecl_lat"]) == float(e["lat"]) for e in scoring_events), "ecliptic-latitude alias changed values")
+    event_by_id = {str(e["id"]): e for e in scoring_events}
 
     binding_member_ids = [str(eid) for row in binding_candidates for eid in row["event_ids"]]
     req(all(eid in event_by_id for eid in binding_member_ids), "binding candidate contains inaccessible/missing GMN event")
