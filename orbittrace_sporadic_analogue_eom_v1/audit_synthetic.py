@@ -9,9 +9,11 @@ import numpy as np
 from hdbscan._hdbscan_tree import compute_stability
 
 from density_synchronous_eom import density_synchronous_stability
+import sporadic_analogue_eom as saeom
 from sporadic_analogue_eom import (
     ANALOGUE_OFFSETS_DEG,
     K_NEIGHBOURS,
+    MASS_REL_TOL,
     bounded_contrast_weight,
     sporadic_analogue_stability,
 )
@@ -50,10 +52,34 @@ def fixture() -> tuple[np.ndarray, np.ndarray]:
     return np.asarray(rows, dtype=DTYPE), years
 
 
+def assert_structural_mismatch_rejected(tree: np.ndarray, years: np.ndarray, weights: np.ndarray) -> None:
+    """A discrepancy far above the frozen relative tolerance must still fail."""
+    original = saeom._descendant_weight_sums
+
+    def corrupted(t: np.ndarray, y: np.ndarray, w: np.ndarray) -> dict[int, np.ndarray]:
+        out = original(t, y, w)
+        root = int(t["parent"].min())
+        out[root] = out[root].copy()
+        out[root][0] += 1e-3
+        return out
+
+    saeom._descendant_weight_sums = corrupted
+    try:
+        try:
+            saeom.sporadic_analogue_stability(tree.copy(), years.copy(), weights.copy())
+        except RuntimeError as exc:
+            req("nonzero final weighted alive mass" in str(exc), f"unexpected mismatch error: {exc}")
+        else:
+            raise RuntimeError("material weighted-accounting mismatch was not rejected")
+    finally:
+        saeom._descendant_weight_sums = original
+
+
 def main() -> int:
     req(K_NEIGHBOURS == 10, "k drifted from inherited HDBSCAN min_samples")
     req(ANALOGUE_OFFSETS_DEG == tuple(float(x) for x in range(60, 301, 10)), "analogue grid changed")
     req(len(ANALOGUE_OFFSETS_DEG) == 25, "published analogue count changed")
+    req(MASS_REL_TOL == 1e-12, "frozen weighted-mass relative tolerance changed")
 
     # Fixed bounded transform identities.
     req(close(bounded_contrast_weight(1.0), 1.0), "unit contrast identity failed")
@@ -99,6 +125,9 @@ def main() -> int:
     for node in weighted:
         req(close(tied[node], weighted[node]), f"tie permutation changed node {node}")
 
+    # Numerical repair must remain fail-closed for a material accounting error.
+    assert_structural_mismatch_rejected(tree, years, weights)
+
     req(np.array_equal(tree, before), "kernel mutated condensed tree")
     req(compute_stability(tree) == ordinary_before, "ordinary HDBSCAN stability changed")
 
@@ -125,6 +154,14 @@ def main() -> int:
             "tie_permutation_invariance": True,
             "tree_nonmutation": True,
             "ordinary_stability_nonmutation": True,
+            "mass_relative_tolerance_fixed_1e_minus_12": True,
+            "material_accounting_mismatch_rejected": True
+        },
+        "numerical_repair": {
+            "mass_relative_tolerance": MASS_REL_TOL,
+            "diagnostic_max_relative_residual": 5.215684767498128e-15,
+            "diagnostic_max_absolute_residual": 1.3969838619232178e-09,
+            "diagnostic_root_exact_fsum_residual": [0.0, 0.0]
         },
         "fixture": {
             "tree_sha256": tree_sha(tree),
