@@ -1,0 +1,286 @@
+name: OrbitTrace density-sync global FOSC exclusion margin v1 GMN Gate A
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-density-sync-fosc-margin-v1
+    paths:
+      - 'orbittrace_density_sync_fosc_margin_v1/GMN_GATE_A_ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  binding-gmn-gate-a:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-density-sync-fosc-margin-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact parent runtime and verify frozen successor bytes
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/v3 input/v8 input/ranker input/audits/theorem input/audits/wrapper output
+
+          test "$(git hash-object orbittrace_density_sync_fosc_margin_v1/THEORY_REPAIR_FREEZE.md)" = '41bb237fdbb195cdb7dc159f91b348bb91d41457'
+          test "$(git hash-object orbittrace_density_sync_fosc_margin_v1/PROTOCOL.md)" = '88409670230013c58b293b8e0fcf12feca66abbe'
+          test "$(git hash-object orbittrace_density_sync_fosc_margin_v1/fosc_margin.py)" = 'd4639b70124eecae33b61bee7c05f9ae54cbab48'
+          test "$(git hash-object orbittrace_density_sync_fosc_margin_v1/run_gmn.py)" = 'b123ce8082428ea1565e564c01bb5a9246eb3f93'
+          test "$(git hash-object orbittrace_density_sync_fosc_margin_v1/EXECUTION_FREEZE.json)" = 'bc2246c9c9f9e575bd4f9c10368d2c61f33af816'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile \
+            orbittrace_density_sync_fosc_margin_v1/fosc_margin.py \
+            orbittrace_density_sync_fosc_margin_v1/run_gmn.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/run_development.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-sync-global-fosc-exclusion-margin-v1-synthetic-audit
+          path: input/audits/theorem
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31863083687
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-sync-global-fosc-margin-v1-zero-data-wrapper-audit
+          path: input/audits/wrapper
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31863211276
+
+      - name: Pre-access authorize one binding Gate A endpoint
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+
+          freeze=json.load(open('orbittrace_density_sync_fosc_margin_v1/EXECUTION_FREEZE.json'))
+          assert freeze['schema']=='DENSITY_SYNC_GLOBAL_FOSC_EXCLUSION_MARGIN_V1_EXECUTION_FREEZE'
+          assert freeze['scientific_status']=='PRE_FIRST_TECHNICALLY_VALID_GMN_GATE_A_OUTCOME'
+          assert freeze['direct_parent']['binding_head']=='182f07ade6bb5d4be2c80b88df9216bb2d6eee2d'
+          assert freeze['direct_parent']['condensed_tree_sha256']=='f708b61d925f7b14f999a88b3ce2ff106a6417624a9d02b48174a8d64ad0ec25'
+          assert freeze['direct_parent']['ordered_membership_sha256']=='e8f374ad03e7072463118ee6440a54d96d11e3aab17202cfe336f866530224f2'
+          assert freeze['direct_parent']['candidate_count']==2094
+          assert freeze['successor']['protocol_blob']=='88409670230013c58b293b8e0fcf12feca66abbe'
+          assert freeze['successor']['global_margin_kernel_blob']=='d4639b70124eecae33b61bee7c05f9ae54cbab48'
+          assert freeze['successor']['gmn_wrapper_blob']=='b123ce8082428ea1565e564c01bb5a9246eb3f93'
+          assert freeze['successor']['parameter_count_added']==0
+          assert freeze['successor']['membership_change_allowed'] is False
+          assert freeze['gate_a']['first_technically_valid_outcome_binding'] is True
+          assert freeze['gate_a']['failure_permanently_closes_v1'] is True
+          assert freeze['gate_b_if_gate_a_passes']['sonotaco_requires_gate_a_and_gate_b_pass'] is True
+          assert freeze['governance']['sonotaco_access_authorized_for_gate_a'] is False
+          assert freeze['governance']['amos_access_authorized'] is False
+          assert freeze['governance']['no_result_informed_variant'] is True
+
+          theorem=json.load(open('input/audits/theorem/DENSITY_SYNC_FOSC_MARGIN_V1_SYNTHETIC_AUDIT.json'))
+          assert theorem['verdict']=='PASS_DENSITY_SYNC_FOSC_MARGIN_V1_SYNTHETIC_AUDIT'
+          assert theorem['repair_of_run']==31862832013
+          assert theorem['synthetic_only'] is True
+          assert all(theorem['tests'].values())
+          assert theorem['global_exclusion_margins']==theorem['bruteforce_global_losses']=={'11':1.0,'15':1.0,'16':1.0}
+
+          wrapper=json.load(open('input/audits/wrapper/DENSITY_SYNC_FOSC_MARGIN_V1_ZERO_DATA_WRAPPER_AUDIT.json'))
+          assert wrapper['verdict']=='PASS_DENSITY_SYNC_FOSC_MARGIN_V1_ZERO_DATA_WRAPPER_AUDIT'
+          assert wrapper['exact_parent_module_bound'] is True
+          assert wrapper['exact_density_sync_kernel_bound'] is True
+          assert wrapper['exact_candidate_builder_bound'] is True
+          assert wrapper['exact_evaluator_bound'] is True
+          assert wrapper['binding_tree_pin_present'] is True
+          assert wrapper['binding_order_pin_present'] is True
+          assert wrapper['candidate_universe_pin_present'] is True
+          assert wrapper['global_exclusion_kernel_only'] is True
+          assert wrapper['scientific_runner_main_called'] is False
+          assert wrapper['catalogue_parser_called'] is False
+          assert wrapper['hdbscan_fit_called'] is False
+          assert wrapper['scientific_metrics_called'] is False
+
+          for obj in (theorem,wrapper):
+              for k in ('target_information_access','target_region_events_accessed','gmn_catalogue_accessed','scientific_labels_accessed','sonotaco_accessed','amos_accessed','asfn_accessed','efn_accessed','maarsy_scientific_access','dms_scientific_access'):
+                  assert obj[k] is False, (k,obj[k])
+          print('PASS_DENSITY_SYNC_GLOBAL_FOSC_MARGIN_V1_PRE_GMN_GATE_A_AUTHORIZATION')
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify immutable GMN runtime-support inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Run first and binding target-excluded GMN Gate A endpoint
+        env:
+          PYTHONPATH: orbittrace_density_sync_fosc_margin_v1:orbittrace_density_synchronous_recurrent_eom_v1:orbittrace_recurrent_eom_hdbscan_v1:input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          rm -rf output/*
+          python -u orbittrace_density_sync_fosc_margin_v1/run_gmn.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce binding Gate A schema, exact parent reproduction, and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json
+
+          r=json.load(open('output/DENSITY_SYNC_FOSC_MARGIN_V1_GMN_DEVELOPMENT.json'))
+          p=json.load(open('output/DENSITY_SYNC_FOSC_MARGIN_V1_PRELABEL.json'))
+          internal=json.load(open('output/INTERNAL_EXACT_PARENT_RUNNER_RESULT.json'))
+
+          assert r['verdict'] in {
+              'PASS_DENSITY_SYNC_FOSC_MARGIN_V1_GMN_DEVELOPMENT',
+              'FAIL_DENSITY_SYNC_FOSC_MARGIN_V1_GMN_DEVELOPMENT'
+          }
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_TRAIN_DEVELOPMENT_ONLY'
+          assert r['direct_parent']=='DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PR1263'
+          assert r['condensed_tree_sha256']=='f708b61d925f7b14f999a88b3ce2ff106a6417624a9d02b48174a8d64ad0ec25'
+          assert p['condensed_tree_sha256']==r['condensed_tree_sha256']
+          assert r['parent_candidate_count']==r['successor_candidate_count']==2094
+          assert p['parent_candidate_count']==p['successor_candidate_count']==2094
+          assert r['parent_ordered_membership_sha256']=='e8f374ad03e7072463118ee6440a54d96d11e3aab17202cfe336f866530224f2'
+          assert p['parent_ordered_membership_sha256']==r['parent_ordered_membership_sha256']
+          assert p['candidate_membership_multiset_sha256']==r['candidate_membership_multiset_sha256']
+          assert len(p['parent_candidates'])==len(p['successor_candidates'])==2094
+          assert p['global_fosc_optimum']==r['global_fosc_optimum']
+          assert len(p['global_fosc_exclusion_margin'])==2094
+          assert len(p['global_fosc_forced_optimum'])==2094
+          assert p['margin_summary']['zero_count']+p['margin_summary']['positive_count']==2094
+          assert r['sole_successor_change']=='rank_exact_pr1263_selected_candidates_by_global_forced_exclusion_fosc_objective_loss'
+          assert internal['events_by_year']=={'2022':315024,'2023':423658}
+          assert internal['blind_exclusion']==[20.0,55.0]
+
+          expected={
+              '2022': {'recovered_at_50':45,'recovered_at_100':89,'top100_dominant_precision':0.7873334042799703,'mrr':0.022505373166085363,'fragmentation_median_top500':1.0},
+              '2023': {'recovered_at_50':46,'recovered_at_100':90,'top100_dominant_precision':0.7898245986099988,'mrr':0.02203028490649908,'fragmentation_median_top500':1.0},
+          }
+          for year,e in expected.items():
+              got=r['parent_metrics'][year]
+              for k,v in e.items():
+                  assert got[k]==v, (year,k,got[k],v)
+
+          pre_sha=hashlib.sha256(open('output/DENSITY_SYNC_FOSC_MARGIN_V1_PRELABEL.json','rb').read()).hexdigest()
+          assert pre_sha==r['prelabel_sha256']
+          passed=(r['verdict']=='PASS_DENSITY_SYNC_FOSC_MARGIN_V1_GMN_DEVELOPMENT')
+          assert r['gate_b_robustness_eligible'] is passed
+          assert r['sonotaco_validation_eligible'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+
+          for x in (r,p,internal):
+              for k in ('target_information_access','target_region_events_accessed','sonotaco_2013_2014_access','amos_access','asfn_access','efn_access','maarsy_scientific_access','dms_scientific_access'):
+                  if k in x:
+                      assert x[k] is False, (k,x[k])
+
+          print(json.dumps({
+              'verdict':r['verdict'],
+              'mechanism_active':r['mechanism_active'],
+              'strict_100':r['strict_recovered_at_100_improvement_some_year'],
+              'global_fosc_optimum':r['global_fosc_optimum'],
+              'parent_order_sha':r['parent_ordered_membership_sha256'],
+              'successor_order_sha':r['successor_ordered_membership_sha256'],
+              'margin_summary':p['margin_summary'],
+              'parent':{y:{k:v for k,v in m.items() if k!='first_rank_by_label'} for y,m in r['parent_metrics'].items()},
+              'successor':{y:{k:v for k,v in m.items() if k!='first_rank_by_label'} for y,m in r['successor_metrics'].items()},
+              'annual_gates':r['annual_gates'],
+              'gate_b_eligible':r['gate_b_robustness_eligible'],
+          },indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve binding Gate A provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum \
+            orbittrace_density_sync_fosc_margin_v1/THEORY_REPAIR_FREEZE.md \
+            orbittrace_density_sync_fosc_margin_v1/PROTOCOL.md \
+            orbittrace_density_sync_fosc_margin_v1/fosc_margin.py \
+            orbittrace_density_sync_fosc_margin_v1/run_gmn.py \
+            orbittrace_density_sync_fosc_margin_v1/EXECUTION_FREEZE.json \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/run_development.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            input/audits/theorem/DENSITY_SYNC_FOSC_MARGIN_V1_SYNTHETIC_AUDIT.json \
+            input/audits/wrapper/DENSITY_SYNC_FOSC_MARGIN_V1_ZERO_DATA_WRAPPER_AUDIT.json \
+            output/DENSITY_SYNC_FOSC_MARGIN_V1_PRELABEL.json \
+            output/DENSITY_SYNC_FOSC_MARGIN_V1_GMN_DEVELOPMENT.json \
+            output/INTERNAL_EXACT_PARENT_RUNNER_PRELABEL.json \
+            output/INTERNAL_EXACT_PARENT_RUNNER_RESULT.json \
+            > output/source_output_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-density-sync-global-fosc-margin-v1-gmn-gate-a
+          path: output
+          if-no-files-found: error
+          retention-days: 90
