@@ -1,0 +1,223 @@
+name: OrbitTrace density-sync GMN train robustness CV v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-density-sync-gmn-train-cv-v1
+    paths:
+      - '.github/workflows/orbittrace_density_sync_gmn_train_cv_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  fold:
+    strategy:
+      fail-fast: false
+      matrix:
+        fold: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-density-sync-gmn-train-cv-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Verify frozen science and install exact runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/v3 input/v8 input/ranker output
+
+          test "$(git hash-object orbittrace_density_sync_gmn_train_cv_v1/PROTOCOL.md)" = 'b8d2a4f30506de6c7ee93783f5823e1e02402bf3'
+          test "$(git hash-object orbittrace_density_sync_gmn_train_cv_v1/run_fold.py)" = 'e2c01f53f44567f98ab4c7474b7911f3959c1b76'
+          test "$(git hash-object orbittrace_density_sync_gmn_train_cv_v1/aggregate.py)" = 'cfb921ad74eb477a0b98912ff9477811b783ac14'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+          python -m py_compile \
+            orbittrace_density_sync_gmn_train_cv_v1/run_fold.py \
+            orbittrace_density_sync_gmn_train_cv_v1/aggregate.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py
+
+          python - <<'PY'
+          import hashlib, json
+          f=json.load(open('orbittrace_density_sync_gmn_train_cv_v1/EXECUTION_FREEZE.json'))
+          assert f['schema']=='ORBITTRACE_DENSITY_SYNC_GMN_TRAIN_CV_V1_EXECUTION_FREEZE'
+          assert f['scientific_status']=='PRE_FIRST_CV_OUTCOME'
+          assert f['fold_count']==10
+          assert f['train_years']==[2022,2023]
+          assert f['blind_exclusion_inclusive']==[20.0,55.0]
+          assert f['sonotaco_validation_access'] is False
+          assert f['amos_final_test_access'] is False
+          assert f['target_information_access'] is False
+          assert f['target_region_events_accessed'] is False
+          # Zero-data deterministic fold sanity.
+          def b(s): return int.from_bytes(hashlib.sha256(s.encode()).digest()[:8],'big')%10
+          vals=[b(f'synthetic-{i}') for i in range(1000)]
+          assert all(0<=x<10 for x in vals)
+          assert len(set(vals))==10
+          PY
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify immutable GMN runtime-support inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Run frozen fold ${{ matrix.fold }}
+        env:
+          PYTHONPATH: orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_density_sync_gmn_train_cv_v1/run_fold.py \
+            --fold '${{ matrix.fold }}' \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --champion-runner orbittrace_density_synchronous_recurrent_eom_v1/run_development.py \
+            --output output
+
+      - name: Enforce fold firewall
+        run: |
+          set -euo pipefail
+          F='${{ matrix.fold }}' python - <<'PY'
+          import json, os
+          f=int(os.environ['F'])
+          r=json.load(open(f'output/DENSITY_SYNC_GMN_TRAIN_CV_V1_FOLD_{f}.json'))
+          p=json.load(open(f'output/DENSITY_SYNC_GMN_TRAIN_CV_V1_FOLD_{f}_PRELABEL.json'))
+          assert r['fold']==f and p['fold']==f
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_TRAIN_ROBUSTNESS_ONLY'
+          assert p['scientific_role']=='PRELABEL_DENSITY_SYNC_GMN_TRAIN_CV_V1'
+          assert r['blind_exclusion']==[20.0,55.0] and p['blind_exclusion']==[20.0,55.0]
+          for x in (r,p):
+              for k in ['target_information_access','target_region_events_accessed','sonotaco_2013_2014_access','amos_2023_2024_access','asfn_access','efn_access','maarsy_scientific_access','dms_scientific_access']:
+                  assert x[k] is False, (k,x[k])
+          assert sum(p['events_removed_by_year'].values())==p['events_removed']
+          assert sum(p['events_retained_by_year'].values())==p['events_retained']
+          PY
+
+      - name: Preserve fold provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_density_sync_gmn_train_cv_v1/PROTOCOL.md orbittrace_density_sync_gmn_train_cv_v1/run_fold.py orbittrace_density_sync_gmn_train_cv_v1/aggregate.py orbittrace_density_sync_gmn_train_cv_v1/EXECUTION_FREEZE.json orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py orbittrace_recurrent_eom_hdbscan_v1/run_development.py orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py orbittrace_density_synchronous_recurrent_eom_v1/run_development.py > output/source_sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-density-sync-gmn-train-cv-v1-fold-${{ matrix.fold }}
+          path: output
+          if-no-files-found: error
+
+  aggregate:
+    needs: fold
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-density-sync-gmn-train-cv-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install aggregate runtime
+        run: python -m pip install 'numpy==2.1.3'
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-density-sync-gmn-train-cv-v1-fold-*
+          path: input/folds
+          merge-multiple: false
+
+      - name: Aggregate frozen robustness criterion
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_density_sync_gmn_train_cv_v1/aggregate.py --input-root input/folds --output output
+
+      - name: Enforce aggregate firewall and schema
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/DENSITY_SYNC_GMN_TRAIN_CV_V1_AGGREGATE.json'))
+          assert r['verdict'] in {'PASS_DENSITY_SYNC_GMN_TRAIN_CV_V1','FAIL_DENSITY_SYNC_GMN_TRAIN_CV_V1'}
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_TRAIN_ROBUSTNESS_AGGREGATE_ONLY'
+          assert r['fold_count']==10 and r['year_fold_panel_count']==20
+          assert r['blind_exclusion']==[20.0,55.0]
+          for k in ['target_information_access','target_region_events_accessed','sonotaco_2013_2014_access','amos_2023_2024_access','asfn_access','efn_access','maarsy_scientific_access','dms_scientific_access']:
+              assert r[k] is False, (k,r[k])
+          print(json.dumps({'verdict':r['verdict'],'active_folds':r['active_folds'],'aggregate':r['aggregate'],'gates':r['gates']},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve aggregate provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_density_sync_gmn_train_cv_v1/PROTOCOL.md orbittrace_density_sync_gmn_train_cv_v1/run_fold.py orbittrace_density_sync_gmn_train_cv_v1/aggregate.py orbittrace_density_sync_gmn_train_cv_v1/EXECUTION_FREEZE.json > output/source_sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-density-sync-gmn-train-cv-v1-aggregate
+          path: output
+          if-no-files-found: error
