@@ -42,7 +42,12 @@ def main() -> int:
     ordinary = compute_stability(tree)
     synchronous, annual_parent, annual_reconstructed = density_synchronous_stability(tree, y)
     req(set(int(k) for k in synchronous) == set(int(k) for k in ordinary), "density-sync node universe differs from hierarchy stability universe")
-    req(annual_parent == annual_reconstructed, "density-sync annual reconstruction changed")
+    req(set(annual_parent) == set(annual_reconstructed), "density-sync annual node universe changed")
+    for node in annual_parent:
+        req(
+            bool(np.allclose(np.asarray(annual_parent[node]), np.asarray(annual_reconstructed[node]), rtol=1e-12, atol=1e-12)),
+            f"density-sync annual reconstruction changed for node {node}",
+        )
     labels = reom.eom_labels(tree, synchronous)
     nodes = reom.selected_eom_nodes(tree, synchronous)
     req(len(nodes) == len(set(int(x) for x in labels if int(x) >= 0)), "selected-node/label mapping failed")
