@@ -1,18 +1,60 @@
-# OrbitTrace current closed-mechanism ledger — 2026-08-14
+# OrbitTrace current closed-mechanism ledger — 2026-08-15
 
 **Role: evidence/navigation only. No scientific data access, method change, rerun, threshold change, or rescue authorization.**
 
 Purpose: prevent future methodology sessions from rediscovering already-tested mechanisms under new names. This ledger is subordinate to the original frozen protocols/results; if any summary here conflicts with a binding artifact, the binding artifact controls.
 
-## Current promoted development parent
+## Current full-GMN development champion
 
-**recurrent-EOM HDBSCAN v1** remains the promoted methodology parent.
+**Density-synchronous recurrent-EOM HDBSCAN v1** — PR `#1263` — is the current full-GMN development champion.
+
+Binding target-excluded GMN 2022/2023 run `31852836840`, artifact `9238142199`, digest `sha256:918992863d019baf3bbb5eadd83ecaa32cabea3d9bd7d9d43735b26474e8ed60`.
+
+Exact full-data comparison against promoted recurrent-EOM:
+
+- 2022: @50 `45->45`, @100 `89->89`, precision `0.7856486013->0.7873334043`, MRR `0.0224982696->0.0225053732`;
+- 2023: @50 `46->46`, @100 `89->90`, precision `0.7867680237->0.7898245986`, MRR `0.0220239289->0.0220302849`;
+- fragmentation `1.0->1.0` in both years;
+- candidate count `2,097->2,094`.
+
+Exact verdict: `PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT`.
+
+The sole scientific change is the parameter-free density-synchronous node objective
+
+`S_sync(C)=integral min(A_2022^C(lambda),A_2023^C(lambda)) d lambda`
+
+on the same pooled HDBSCAN hierarchy. It rewards annual recurrence at the same density scales rather than merely comparable annual integrated EOM totals.
+
+This is a **development** promotion only, not external validation.
+
+### Robustness limitation — PR #1265
+
+A separately preregistered deterministic 10-fold training-perturbation diagnostic was negative. Binding run `31859724335`, artifact `9240223128`, digest `sha256:75b38fca14d7542f4efa5cb230fa9f2cbb08fead480a80159e8dca50d834e6de`.
+
+Exact verdict: `FAIL_DENSITY_SYNC_GMN_TRAIN_CV_V1`.
+
+Across the 20 year-fold panels:
+
+- total recovered@50 `910->910`;
+- total recovered@100 `1761->1761` — no strict improvement;
+- mean top-100 precision `0.7781536639->0.7786466016`;
+- mean MRR `0.02304596725->0.02308159925`;
+- median fragmentation `1.0->1.0`;
+- mechanism active in all 10 folds.
+
+Fold 0 improved @100 by +1 in each year, fold 6 regressed by -1 in each year, and all other fold-year panels tied. Therefore #1263's full-data PASS remains binding, but its strict @100 superiority is sample-sensitive and must not be described as robust.
+
+## Prior promoted parent retained for provenance
+
+**recurrent-EOM HDBSCAN v1** remains the direct parent of #1263, not the current champion.
 
 - target-excluded GMN 2022/2023 development: PASS, run `31827903547`;
 - exposed SonotaCo 2013/2014 v31/literature benchmark: 4/4 PASS, run `31829200215`;
-- exact promoted implementation blob: `30ac3fa3bc47910370df528fcf3ae8ecb6277b47`.
+- exact promoted implementation blob: `30ac3fa3bc47910370df528fcf3ae8ecb6277b47`;
+- pristine NASA ASFN 2018/2019 validation subsequently failed;
+- EFN 2017/2018 was mechanism-inactive before label opening.
 
-It is the strongest demonstrated **development** method in the current lineage, not a universally validated method. NASA ASFN 2018/2019 pristine cross-survey validation subsequently failed; EFN 2017/2018 was mechanism-inactive before label opening.
+The SonotaCo and ASFN results belong to recurrent-EOM v1 and must not be transferred to #1263.
 
 ## Closed successors after recurrent-EOM promotion
 
@@ -22,7 +64,9 @@ PR `#1247`, binding run `31843289411`.
 
 Mechanism active, but regressed frozen recovered@100, top-100 precision, and MRR in both years, plus recovered@50 in 2023.
 
-Do not rescue with alternate consensus weights/combiners/thresholds.
+This already tests a componentwise multi-objective FOSC/EOM extraction over the annual stability vector. Therefore generic vector-EOM, Pareto-EOM, lexicographic annual-EOM, or componentwise consensus extraction is not a fresh mechanism class unless a genuinely different independent architecture is established.
+
+Do not rescue with alternate consensus weights/combiners/thresholds/tie rules.
 
 ### Cross-year-core HDBSCAN v1 — CLOSED NEGATIVE
 
@@ -58,12 +102,29 @@ No raw/ECDF blend, alternate percentile/tie rule, year weighting, subset applica
 
 PR `#1259`, binding run `31851330153`, artifact `9237680835`.
 
-Parameter-free pooled empirical solar-phase intensity equalization was mechanism-active (2,097 -> 2,014 candidates) but regressed core metrics:
+Parameter-free pooled empirical solar-phase intensity equalization was mechanism-active (`2,097->2,014` candidates) but regressed core metrics:
 
 - 2022 @50 `45->42`, @100 `89->81`, precision `0.78565->0.75019`;
 - 2023 @50 `46->42`, @100 `89->82`, precision `0.78677->0.75802`.
 
 No partial equalization, raw/equalized blend, smoothing/binning, alternate CDF origin/tie rule, per-year warp, or fusion rescue.
+
+### Density-synchronous stratified-core HDBSCAN v1 — CLOSED NEGATIVE
+
+PR `#1266`, binding run `31861760176`, artifact `9240971435`, digest `sha256:21663ae010be00117fc659d14a74b6360a5f342745a13707e640cb08d464b431`.
+
+Direct successor to #1263. Sole change: balanced annual `5+5` HDBSCAN core radius `max(d5_2022,d5_2023)` before unchanged density-synchronous extraction.
+
+Mechanism active but too aggressive: candidate count `2,094->1,706` (-388, -18.53%).
+
+- 2022 @50 `45->44`, @100 `89->81`, precision `0.7873334043->0.7628887349`, MRR `0.0225053732->0.0229505931`;
+- 2023 @50 `46->44`, @100 `90->78`, precision `0.7898245986->0.7637124161`, MRR `0.0220302849->0.0231845086`.
+
+Exact verdict: `FAIL_DENSITY_SYNC_STRATIFIED_CORE_V1_GMN_DEVELOPMENT`.
+
+The higher MRR does not rescue the decisive recovery/precision regressions. No alternate annual k, soft/max/mean/quantile core combination, pooled-core blend, partial stratification, score blend, or reranking rescue is authorized.
+
+This closes the obvious hard annual-balance core-distance lane.
 
 ## Older mechanisms that may look untried but are already closed / disfavored
 
@@ -79,7 +140,7 @@ Exact reciprocal-nearest cross-year component matching under fixed radius 1.5 pr
 - plain persistence recovered@100: `48`;
 - qualified known showers: `109`.
 
-Therefore generic “mutual-nearest / reciprocal-neighbor recurrence” is not a fresh mechanism class.
+Therefore generic mutual-nearest / reciprocal-neighbor recurrence is not a fresh mechanism class.
 
 ### GMN thinning / subsample family stability — DIAGNOSTIC CLOSED
 
@@ -110,7 +171,7 @@ Only 2/5 frozen numerical gates passed: recovered@50 `32` (<35), recovered@100 `
 
 ## External-validation state — not successor lanes
 
-### NASA ASFN 2018/2019 — PRISTINE NEGATIVE
+### NASA ASFN 2018/2019 — historical pristine negative for recurrent-EOM v1
 
 PR `#1257`, binding run `31850437866`, artifact `9237338312`.
 
@@ -118,29 +179,47 @@ PR `#1257`, binding run `31850437866`, artifact `9237338312`.
 
 Exact verdict: `FAIL_RECURRENT_EOM_HDBSCAN_V1_ASFN_2018_2019_PRISTINE_VALIDATION`.
 
-ASFN may not be used to design a rescue successor.
+ASFN may not be used to design a rescue successor, and its result does not automatically transfer to #1263.
 
-### EFN 2017/2018 — NEUTRAL PRETRUTH
+### EFN 2017/2018 — NEUTRAL PRETRUTH / retired diagnostic
 
 PR `#1254`. On 782 retained events, vanilla/recurrent each selected the same 8 nodes. PASS was impossible before labels, so EFN shower labels remain unopened. EFN geometry/hierarchy is nevertheless exposed and cannot serve as pristine validation for a newly designed successor.
 
-### AMOS 2023/2024 — STILL PRISTINE / ACQUISITION BLOCKED
+### SonotaCo 2013/2014 — permanent exposed validation panel
 
-PRs `#1244`, `#1248`, `#1253`.
+Under PR `#1264`, SonotaCo 2013/2014 is explicitly **EXPOSED DEVELOPMENT ONLY**, never pristine external validation. Future successors may reach it only after passing a pre-frozen GMN train gate. #1263 does not receive a retroactive SonotaCo benchmark because its original protocol explicitly prohibited one.
 
-Primary recurrent-EOM-vs-vanilla external protocol and optional multi-method comparator benchmark are frozen and zero-data audited. Current public-data recheck found no discoverable compliant complete 2023/2024 reduced-trajectory release. Exact staged provider request is ready but unsent.
+### AMOS 2023/2024 — final one-shot external test / acquisition blocked
 
-Do not substitute alternate AMOS years, selected case-study/spectral/fireball samples, or reconstructed quantities.
+Under PR `#1264`, untouched AMOS 2023/2024 is the permanent final test after methodology selection closes. Existing recurrent-EOM AMOS protocol work remains historically preserved; no scientific event-level AMOS data have been accessed. Current public-data recheck found no discoverable compliant complete 2023/2024 reduced-trajectory release. Exact staged provider request is ready but unsent.
+
+Do not substitute alternate AMOS years, selected case-study/spectral/fireball samples, or reconstructed quantities. If the eventual final AMOS test fails, external generalization is not established and no replacement-survey hunt is authorized.
+
+## Permanent evaluation structure
+
+PR `#1264` freezes:
+
+1. TRAIN / DEVELOPMENT: target-excluded GMN 2022+2023;
+2. VALIDATION: SonotaCo 2013+2014, explicitly exposed development-only;
+3. FINAL TEST / EXTERNAL VALIDATION: untouched AMOS 2023+2024, one-shot after methodology selection closes.
+
+GMN 2024/2025 and other exposed GMN years may not be retroactively relabeled as pristine holdouts.
 
 ## Method-development rule going forward
 
 Before creating any new successor:
 
 1. search this ledger and the live repo for the mechanism class and synonyms;
-2. reject any proposal that is merely a prohibited rescue of a closed lane;
-3. require an independent physical/statistical/literature motivation that does not depend on ASFN/EFN outcomes;
-4. freeze the exact mechanism and promotion gate before the first valid GMN endpoint;
-5. compare directly against promoted recurrent-EOM on permanent target-excluded GMN 2022/2023;
-6. preserve any technically valid failure permanently.
+2. reject anything that is merely a prohibited rescue of a closed lane;
+3. require an independent physical/statistical/literature motivation that does not depend on prior outcomes;
+4. start from #1263 unless there is a documented reason not to;
+5. freeze exact scientific architecture, implementation and gate before the first technically valid GMN endpoint;
+6. compare directly against #1263 on permanent target-excluded GMN 2022/2023;
+7. if GMN fails, close permanently and do not access SonotaCo;
+8. if GMN passes, freeze the prospective SonotaCo validation before access;
+9. preserve every technically valid failure exactly;
+10. do not create version sequences merely by changing k, weights, blends, thresholds, score transforms, tie rules or related hyperparameters after seeing outcomes.
+
+Given #1263's modest full-data gain and negative perturbation robustness result, a future successor should ideally produce a structurally clearer gain rather than another one-family rank swap. Absence of such a genuinely distinct architecture is a valid reason to stop expanding methodology rather than overfit the development panel.
 
 The protected `[20°,55°]` target region, OrbitTrace target information/events, MAARSY, and DMS remain inaccessible.
