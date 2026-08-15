@@ -1,0 +1,105 @@
+name: OrbitTrace density-sync stratified-core v1 zero-truth audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-density-sync-stratified-core-v1
+    paths:
+      - 'orbittrace_density_sync_stratified_core_v1/AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: 'orbittrace_density_sync_stratified_core_v1:orbittrace_density_synchronous_recurrent_eom_v1:orbittrace_recurrent_eom_hdbscan_v1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  zero-truth-composition:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-density-sync-stratified-core-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact runtime and verify frozen source composition
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          test "$(git hash-object orbittrace_density_sync_stratified_core_v1/PROTOCOL.md)" = 'ab856dc94108906de7c6d47110b2f7e068aafc16'
+          test "$(git hash-object orbittrace_density_sync_stratified_core_v1/stratified_core.py)" = 'ce22a6c762829b03184e136cd43cc0b821763e0c'
+          test "$(git hash-object orbittrace_density_sync_stratified_core_v1/run_development.py)" = '5f227584ea597f1195d0cd548e495de5b76dcee5'
+          test "$(git hash-object orbittrace_density_sync_stratified_core_v1/audit_composition.py)" = '92b7e2a868110577c6833a1ccdbe1dfb3ad80a13'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile \
+            orbittrace_density_sync_stratified_core_v1/stratified_core.py \
+            orbittrace_density_sync_stratified_core_v1/run_development.py \
+            orbittrace_density_sync_stratified_core_v1/audit_composition.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py
+          python - <<'PY'
+          p='orbittrace_density_sync_stratified_core_v1/run_development.py'
+          s=open(p).read()
+          assert 'strict_recovered_at_100_improvement_some_year' in s
+          assert 'balanced_annual_5_plus_5_stratified_core_before_unchanged_density_synchronous_extraction' in s
+          assert 'stratified_core_distances(X, years)' in s
+          assert 'density_synchronous_stability(parent_tree, years)' in s
+          assert 'density_synchronous_stability(successor_tree, years)' in s
+          assert 'member_hash("DSEOM1", members)' in s
+          assert 'SonotaCo' not in s and 'AMOS' not in s
+          print('PASS_DENSITY_SYNC_STRATIFIED_CORE_V1_FROZEN_SOURCE_PINS')
+          PY
+      - name: Run synthetic composition audit only
+        run: |
+          set -euo pipefail
+          rm -rf orbittrace_density_sync_stratified_core_v1/output
+          python -u orbittrace_density_sync_stratified_core_v1/audit_composition.py
+          python - <<'PY'
+          import json
+          p='orbittrace_density_sync_stratified_core_v1/output/DENSITY_SYNC_STRATIFIED_CORE_V1_ZERO_TRUTH_COMPOSITION_AUDIT.json'
+          r=json.load(open(p))
+          assert r['verdict']=='PASS_DENSITY_SYNC_STRATIFIED_CORE_V1_ZERO_TRUTH_COMPOSITION_AUDIT'
+          assert r['synthetic_only'] is True
+          assert r['balanced_k_year']==5 and r['parent_min_samples']==10 and r['min_cluster_size']==10
+          assert r['core_is_pointwise_annual_max'] is True
+          assert r['hierarchy_constructed'] is True and r['density_synchronous_scoring_constructed'] is True
+          assert r['prior_injection_equivalence_pass_run']==31861223877
+          for k in ('gmn_catalogue_accessed','scientific_labels_accessed','target_information_access','target_region_events_accessed','sonotaco_accessed','efn_accessed','asfn_accessed','amos_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False, k
+          print(r['verdict'])
+          PY
+      - name: Preserve audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p orbittrace_density_sync_stratified_core_v1/output
+          sha256sum \
+            orbittrace_density_sync_stratified_core_v1/PROTOCOL.md \
+            orbittrace_density_sync_stratified_core_v1/stratified_core.py \
+            orbittrace_density_sync_stratified_core_v1/run_development.py \
+            orbittrace_density_sync_stratified_core_v1/audit_composition.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            orbittrace_density_sync_stratified_core_v1/output/DENSITY_SYNC_STRATIFIED_CORE_V1_ZERO_TRUTH_COMPOSITION_AUDIT.json \
+            > orbittrace_density_sync_stratified_core_v1/output/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > orbittrace_density_sync_stratified_core_v1/output/execution_commit.txt
+          python --version > orbittrace_density_sync_stratified_core_v1/output/python_version.txt
+          python -m pip freeze > orbittrace_density_sync_stratified_core_v1/output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-density-sync-stratified-core-v1-zero-truth-audit
+          path: orbittrace_density_sync_stratified_core_v1/output
+          if-no-files-found: error
+          retention-days: 90
