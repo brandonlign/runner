@@ -1,1 +1,3 @@
 Activate the pretruth engineering-only accounting diagnostic on the frozen weight array. No successor score, pretruth, truth evaluation, or scientific result is authorized.
+
+Retrigger after workflow registration; no scientific change.
