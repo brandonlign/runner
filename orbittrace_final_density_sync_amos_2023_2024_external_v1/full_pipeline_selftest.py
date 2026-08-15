@@ -58,6 +58,7 @@ def make_provider_files(root: Path, year: int) -> tuple[Path, Path, dict[str, st
             geometry_rows.append([eid, f"{ra:.9f}", f"{dec:.9f}", f"{vg:.9f}"])
             labels[eid] = label
             n += 1
+    # Retained synthetic background points.
     for j in range(16):
         eid = f"{year}-BG-{j:03d}"
         sol = 70.0 + j * 17.0
@@ -70,6 +71,7 @@ def make_provider_files(root: Path, year: int) -> tuple[Path, Path, dict[str, st
         geometry_rows.append([eid, f"{ra:.9f}", f"{dec:.9f}", f"{vg:.9f}"])
         labels[eid] = "SPORADIC"
         n += 1
+    # Stage-1 protected row: present in blind index, deliberately absent from geometry/labels.
     protected = f"{year}-PROTECTED-SYN"
     index_rows.append([protected, f"{year}-08-01T00:00:00Z", "30.000000000"])
 
@@ -160,6 +162,7 @@ def main() -> int:
     require(result["candidate_generation_recomputed_after_labels"] is False, "candidate recomputation flag changed")
     require(result["final_method_switched_after_labels"] is False, "final method switch flag changed")
 
+    # Label coverage must fail closed after pretruth, not trigger candidate regeneration.
     bad = a.work / "labels_2024_missing.csv"
     rows = sorted(all_labels[2024].items())[:-1]
     write_csv(bad, ["event_id", "shower_association"], [[eid, lab] for eid, lab in rows])
