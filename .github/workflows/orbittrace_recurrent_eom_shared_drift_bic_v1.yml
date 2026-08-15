@@ -59,18 +59,24 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
 
-          # Protocol predates all successor implementation bytes.
+          # Original scientific protocol/implementation remain byte-identical.
           test "$(git hash-object orbittrace_recurrent_eom_shared_drift_bic_v1/PROTOCOL.md)" = 'f8774a8cc34557822146816d61680b40c855487d'
           test "$(git hash-object orbittrace_recurrent_eom_shared_drift_bic_v1/shared_drift_bic.py)" = 'b35b68649b94bcc26ef806690bc5a780266ffdf3'
           test "$(git hash-object orbittrace_recurrent_eom_shared_drift_bic_v1/audit_synthetic.py)" = 'e877e0920fa82ab7d330648478fe431fd58e6409'
           test "$(git hash-object orbittrace_recurrent_eom_shared_drift_bic_v1/run_development.py)" = 'bc03d41a6b6442c589bbb6f219ee7b7c8feb2bd7'
+
+          # Engineering-only repair was frozen after the first activation stopped
+          # before successor prelabel/result creation.
+          test "$(git hash-object orbittrace_recurrent_eom_shared_drift_bic_v1/FIELD_ALIAS_REPAIR_FREEZE.md)" = 'd566f9e4405ebd0ed7b882e349d565ee5eb6ee2c'
+          test "$(git hash-object orbittrace_recurrent_eom_shared_drift_bic_v1/run_field_alias_repair.py)" = 'c2b54b78df400061cc6a717115d19a75d15da386'
 
           python -m py_compile \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
             orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             orbittrace_recurrent_eom_shared_drift_bic_v1/shared_drift_bic.py \
             orbittrace_recurrent_eom_shared_drift_bic_v1/audit_synthetic.py \
-            orbittrace_recurrent_eom_shared_drift_bic_v1/run_development.py
+            orbittrace_recurrent_eom_shared_drift_bic_v1/run_development.py \
+            orbittrace_recurrent_eom_shared_drift_bic_v1/run_field_alias_repair.py
 
       - name: Run zero-truth shared-drift BIC audit
         env:
@@ -120,12 +126,13 @@ jobs:
           test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json | cut -d' ' -f1)" = 'e304f6660697ed27a7e2e546ba2b9f2ecdb43f923745cb7424a3781ad55b9ad1'
           test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = '433c641f57122b244b9476f5cbcb5e6f82956d9467270a9f24945600a32d2106'
 
-      - name: Run first binding shared-drift BIC GMN outcome
+      - name: Run binding shared-drift BIC clean retry
         env:
           PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_recurrent_eom_shared_drift_bic_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_recurrent_eom_shared_drift_bic_v1/run_development.py \
+          python -u orbittrace_recurrent_eom_shared_drift_bic_v1/run_field_alias_repair.py \
+            --frozen-runner orbittrace_recurrent_eom_shared_drift_bic_v1/run_development.py \
             --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             --parent-prelabel-json input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json \
             --parent-result-json input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json \
@@ -171,6 +178,8 @@ jobs:
             orbittrace_recurrent_eom_shared_drift_bic_v1/shared_drift_bic.py \
             orbittrace_recurrent_eom_shared_drift_bic_v1/audit_synthetic.py \
             orbittrace_recurrent_eom_shared_drift_bic_v1/run_development.py \
+            orbittrace_recurrent_eom_shared_drift_bic_v1/FIELD_ALIAS_REPAIR_FREEZE.md \
+            orbittrace_recurrent_eom_shared_drift_bic_v1/run_field_alias_repair.py \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
             orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             input/ranker/run_urc_union_ranker.py \
