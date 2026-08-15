@@ -1,0 +1,67 @@
+name: OrbitTrace DN dual-cover v1 synthetic audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-dn-dual-cover-v1
+    paths:
+      - 'orbittrace_dn_dual_cover_v1/AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  synthetic-zero-data:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/PROTOCOL.md)" = '26e16fcc2cf9d31246a440c7b86660b85d09a73f'
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/dn_dual_cover.py)" = 'ab8d08773cc4dfdc614e5e8766067a4dc9909f06'
+          test "$(git hash-object orbittrace_dn_dual_cover_v1/audit_synthetic.py)" = '307c439a2dcec9554927fa1e64f0efa66e715217'
+          python -m py_compile orbittrace_dn_dual_cover_v1/*.py
+      - name: Run exact zero-data DN audit
+        env:
+          PYTHONPATH: orbittrace_dn_dual_cover_v1
+        run: |
+          set -euo pipefail
+          rm -rf output
+          python -u orbittrace_dn_dual_cover_v1/audit_synthetic.py
+          python - <<'PY'
+          import json
+          r=json.load(open('output/DN_DUAL_COVER_V1_SYNTHETIC_AUDIT.json'))
+          assert r['verdict']=='PASS_DN_DUAL_COVER_V1_SYNTHETIC_AUDIT'
+          assert r['weights']=={'w1':1.0,'w2':1.0,'w3':1.0}
+          assert r['earth_speed_km_s']==29.7
+          assert r['random_pair_sheet_comparisons']>1000
+          assert all(r['tests'].values())
+          for k in ['scientific_data_access','gmn_access','sonotaco_access','asfn_access','efn_access','amos_access','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access']:
+              assert r[k] is False, (k,r[k])
+          print(r['verdict'])
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_dn_dual_cover_v1/PROTOCOL.md orbittrace_dn_dual_cover_v1/dn_dual_cover.py orbittrace_dn_dual_cover_v1/audit_synthetic.py output/DN_DUAL_COVER_V1_SYNTHETIC_AUDIT.json > output/provenance_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-dn-dual-cover-v1-synthetic
+          path: output
+          if-no-files-found: error
+          retention-days: 90
