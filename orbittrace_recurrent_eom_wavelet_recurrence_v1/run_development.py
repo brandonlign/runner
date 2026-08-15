@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+import exact_v3_accelerator as accel
 from wavelet_recurrence import candidate_wavelet_recurrence
 
 YEARS = (2022, 2023)
@@ -52,7 +53,7 @@ def membership_universe(rows: list[dict[str, Any]]) -> set[tuple[str, ...]]:
 def make_successor(
     binding_candidates: list[dict[str, Any]],
     event_by_id: dict[str, dict[str, Any]],
-    v3: Any,
+    v3_runtime: Any,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     out: list[dict[str, Any]] = []
     scores: list[float] = []
@@ -71,7 +72,7 @@ def make_successor(
         except KeyError as exc:
             raise RuntimeError(f"binding candidate event missing from accessible GMN rows: {exc.args[0]}") from exc
 
-        stat = candidate_wavelet_recurrence(rows, v3)
+        stat = candidate_wavelet_recurrence(rows, v3_runtime)
         score = float(stat.recurrence_score)
         req(np.isfinite(score) and score >= 0.0, f"invalid wavelet recurrence score at candidate {ordinal}")
 
@@ -148,6 +149,11 @@ def main() -> int:
     req(float(v3.TRUNCATION_RADIUS) == 4.0, "v3 truncation changed")
     req(float(v3.KERNEL_DIMENSION) == 3.0, "v3 kernel dimension changed")
     req(int(v3.TOP_ANCHORS) == 4, "v3 anchor count changed")
+    req(float(accel.ANGULAR_PROBE_DEG) == float(v3.ANGULAR_PROBE_DEG), "accelerator angular scale changed")
+    req(float(accel.SPEED_PROBE_FRACTION) == float(v3.SPEED_PROBE_FRACTION), "accelerator speed scale changed")
+    req(float(accel.TRUNCATION_RADIUS) == float(v3.TRUNCATION_RADIUS), "accelerator truncation changed")
+    req(float(accel.KERNEL_DIMENSION) == float(v3.KERNEL_DIMENSION), "accelerator kernel dimension changed")
+    req(int(accel.TOP_ANCHORS) == int(v3.TOP_ANCHORS), "accelerator anchor count changed")
 
     binding_prelabel = json.loads(a.parent_prelabel_json.read_text())
     req(binding_prelabel["scientific_role"] == "PRELABEL_FROZEN_RECURRENT_EOM_HDBSCAN_V1",
@@ -185,9 +191,6 @@ def main() -> int:
     req(len({str(e["id"]) for e in events}) == len(events), "duplicate pooled accessible event IDs")
     req(all(not (BLIND[0] <= float(e["sol"]) <= BLIND[1]) for e in events), "protected region survived parser")
 
-    # Engineering-only identity alias required by the exact frozen v3 episode
-    # interface. Parent `lon`/`lat` are already sun-centered radiant longitude
-    # and ecliptic latitude; no values or units are changed here.
     scoring_events = [dict(e, sun_lon=float(e["lon"]), ecl_lat=float(e["lat"])) for e in events]
     req(all(float(e["sun_lon"]) == float(e["lon"]) for e in scoring_events), "sun-longitude alias changed values")
     req(all(float(e["ecl_lat"]) == float(e["lat"]) for e in scoring_events), "ecliptic-latitude alias changed values")
@@ -196,7 +199,7 @@ def main() -> int:
     binding_member_ids = [str(eid) for row in binding_candidates for eid in row["event_ids"]]
     req(all(eid in event_by_id for eid in binding_member_ids), "binding candidate contains inaccessible/missing GMN event")
 
-    successor_candidates, score_summary = make_successor(binding_candidates, event_by_id, v3)
+    successor_candidates, score_summary = make_successor(binding_candidates, event_by_id, accel)
     req(len(successor_candidates) == 2097, "rank-only successor candidate count changed")
     req(membership_universe(successor_candidates) == membership_universe(binding_candidates),
         "rank-only successor changed recurrent membership universe")
@@ -225,7 +228,6 @@ def main() -> int:
     prelabel_path.write_text(json.dumps(prelabel, indent=2, sort_keys=True, allow_nan=False) + "\n")
     prelabel_sha = sha(prelabel_path)
 
-    # Truth is inspected only after the full successor order has been persisted.
     binding_result = json.loads(a.parent_result_json.read_text())
     req(binding_result["verdict"] == "PASS_RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT",
         "wrong binding recurrent parent result")
