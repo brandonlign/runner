@@ -27,7 +27,9 @@ def main() -> int:
     d0 = np.linalg.norm(z[:200, None, :] - z[None, :200, :], axis=2)
     ds = np.linalg.norm(zs[:200, None, :] - zs[None, :200, :], axis=2)
 
-    singular = np.column_stack([x[:, :5], x[:, 0] + x[:, 1]])
+    # Exact zero-variance sixth coordinate tests the literal fail-closed branch
+    # without relying on numerical detection of approximate linear dependence.
+    singular = np.column_stack([x[:, :5], np.ones(len(x), dtype=np.float64)])
     singular_failed = False
     try:
         fit_whitener(singular)
@@ -44,7 +46,7 @@ def main() -> int:
         "nonidentity_transform": not np.allclose(fit.matrix, np.eye(DIM), rtol=0.0, atol=1e-12),
         "axis_rescaling_distance_invariance": float(np.max(np.abs(d0 - ds))) < 1e-10,
         "scaled_covariance_identity": errs <= COV_TOL,
-        "singular_covariance_fails_closed": singular_failed,
+        "exact_zero_variance_covariance_fails_closed": singular_failed,
     }
     passed = all(tests.values())
     print(json.dumps({
