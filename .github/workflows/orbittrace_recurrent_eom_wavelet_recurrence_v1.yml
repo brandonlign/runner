@@ -47,9 +47,25 @@ jobs:
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
           mkdir -p input/v3 input/v8 input/ranker input/parent-binding output
 
+          # Restore the exact two promoted-v8 wavelet runtime modules. The first
+          # activation stopped before catalogue access because Brown's frozen
+          # module was not on the runtime path.
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          cp frozen-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+          test "$(git hash-object input/v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+
+          # Restore the exact promoted-v8 decoded catalogue runtime required by
+          # the frozen GMN loader. This changes no scientific source or data.
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
 
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
@@ -61,6 +77,7 @@ jobs:
 
           python -m py_compile \
             input/v3/multi_anchor_energy_v3.py \
+            input/v3/wavelet_episode_comparator.py \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
             orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             orbittrace_recurrent_eom_wavelet_recurrence_v1/wavelet_recurrence.py \
@@ -115,9 +132,9 @@ jobs:
           test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json | cut -d' ' -f1)" = 'e304f6660697ed27a7e2e546ba2b9f2ecdb43f923745cb7424a3781ad55b9ad1'
           test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = '433c641f57122b244b9476f5cbcb5e6f82956d9467270a9f24945600a32d2106'
 
-      - name: Run first binding wavelet-recurrence GMN outcome
+      - name: Run first technically valid binding wavelet-recurrence GMN outcome
         env:
-          PYTHONPATH: input/ranker:input/v3:.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_recurrent_eom_wavelet_recurrence_v1:frozen-v8
+          PYTHONPATH: input/ranker:input/v3:.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_recurrent_eom_wavelet_recurrence_v1:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
           python -u orbittrace_recurrent_eom_wavelet_recurrence_v1/run_development.py \
@@ -170,6 +187,8 @@ jobs:
             orbittrace_recurrent_eom_wavelet_recurrence_v1/audit_synthetic.py \
             orbittrace_recurrent_eom_wavelet_recurrence_v1/run_development.py \
             input/v3/multi_anchor_energy_v3.py \
+            input/v3/wavelet_episode_comparator.py \
+            /tmp/run_wavelet_catalogue_v3_development.py \
             orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
             orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             input/ranker/run_urc_union_ranker.py \
