@@ -66,7 +66,11 @@ def partition(labels:np.ndarray)->tuple[tuple[int,...],...]:
     return tuple(sorted(tuple(np.flatnonzero(labels==lab).tolist()) for lab in sorted(int(x) for x in np.unique(labels) if int(x)>=0)))
 
 def fid(route:str,method:str,members:tuple[str,...])->str:
-    return hashlib.sha256((f"SNT-DIRECT1|{route}|{method}|"+"|".join(members)).encode()).hexdigest()[:20]
+    if method=="recurrent":
+        payload=f"SNT-REOM1|{route}|"+"|".join(members)
+    else:
+        payload="DSEOM1|"+"|".join(members)
+    return hashlib.sha256(payload.encode()).hexdigest()[:20]
 
 def extract(route:str,method:str,events:list[dict[str,Any]],tree:np.ndarray,ordinary:dict[float,float],quality:dict[float,float])->dict[str,Any]:
     labels=eom_labels(tree,quality); nodes=selected_eom_nodes(tree,quality)
