@@ -1,0 +1,132 @@
+name: OrbitTrace final density-sync AMOS predata audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+    paths:
+      - 'orbittrace_final_density_sync_amos_2023_2024_external_v1/PREDATA_AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  predata-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 1fb8f68b84bc200545a23cb5a216baa7e0fa0f09
+          path: amos-infra
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify frozen upstream/source identities
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md)" = '1ddb4bae33a1ae8a6224cbc4abcba5dda70cf993'
+
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py)" = '9fed803aa09f03f779610eaff5304251bbf21020'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py)" = '612ad23af6e11ac2155282258e3d1429fbe00d67'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py)" = '9a0fb05f94d6a28cd95f97d864e76400056273b0'
+
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py | cut -d' ' -f1)" = 'c4ef4a804a1b51c4d2581f0451d71b8e6c308d01b58a8810723c711e2bcc1291'
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py | cut -d' ' -f1)" = 'b4bc46bec4884fb5dc1c5e9ccc7a8861a59fca47ccb13b8e8602472690aafa42'
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data.py | cut -d' ' -f1)" = '22dd27e82523f62b98c449f2a469294c68b6c5151acd0794ec9681d50e3ef801'
+          test "$(sha256sum orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py | cut -d' ' -f1)" = 'b47209f7fd95daf710e51bc018bd7d688bb6e8cb5a973f1e90572751b29a86ef'
+
+          python -m py_compile \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py
+
+      - name: Run zero-data source/firewall audit
+        run: |
+          set -euo pipefail
+          rm -rf output/source-audit
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data.py \
+            --generator orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --protocol orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md \
+            --output output/source-audit
+
+      - name: Run synthetic full-pipeline audit
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output/pipeline-audit output/synthetic-work
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py \
+            --generator orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --amos-infra amos-infra \
+            --work output/synthetic-work \
+            --output output/pipeline-audit
+
+      - name: Enforce zero-scientific-data audit schema
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          s=json.load(open('output/source-audit/FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT.json'))
+          p=json.load(open('output/pipeline-audit/FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT.json'))
+          assert s['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V1'
+          assert p['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT_V1'
+          assert p['synthetic_only'] is True
+          assert all(p['tests'].values())
+          for obj in (s,p):
+              for k in ('scientific_data_accessed','gmn_accessed','sonotaco_accessed','amos_accessed','asfn_accessed','efn_accessed','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+                  assert obj[k] is False, (k,obj[k])
+          print('PASS_FINAL_DENSITY_SYNC_AMOS_ZERO_DATA_AUDIT_GATE')
+          PY
+
+      - name: Preserve audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/provenance
+          git rev-parse HEAD > output/provenance/execution_commit.txt
+          sha256sum \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/INFRASTRUCTURE_REUSE_FREEZE.md \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py \
+            > output/provenance/source_sha256.txt
+          python --version > output/provenance/python_version.txt
+          python -m pip freeze > output/provenance/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-final-density-sync-amos-predata-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
