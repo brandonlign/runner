@@ -1,0 +1,159 @@
+name: OrbitTrace final density-sync AMOS predata audit v3
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+    paths:
+      - 'orbittrace_final_density_sync_amos_2023_2024_external_v1/PREDATA_AUDIT_V3_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  predata-audit-v3:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 1fb8f68b84bc200545a23cb5a216baa7e0fa0f09
+          path: amos-infra
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify v3 frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md)" = '1ddb4bae33a1ae8a6224cbc4abcba5dda70cf993'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_FREEZE.md)" = '62a6474933cecc1871449d89d59055b18ad3e802'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_V3_FREEZE.md)" = '78d8ab5d657b1348f449e7af73a944c3f9acc9b1'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py)" = 'b76d7c53ab238cd45f12027947f2098a770ba7b6'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py)" = 'bb2a1ba553fb57e573e85df39ccad1b69fe3b541'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py)" = '734cc257347d6f68ce0d67f5adf874ae89e6d6d7'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py)" = '31daaf1101bd100968829a3797b39dc856ae2a7c'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py)" = '2f9dc0495d80e1fa0c577fcbb4fec2b4dd33aecf'
+
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/blind_receipt.py)" = '9fed803aa09f03f779610eaff5304251bbf21020'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py)" = '612ad23af6e11ac2155282258e3d1429fbe00d67'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py)" = '9a0fb05f94d6a28cd95f97d864e76400056273b0'
+
+          python -m py_compile \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py
+
+      - name: Run corrected AST-aware source/firewall audit v3
+        run: |
+          set -euo pipefail
+          rm -rf output/source-audit-v3
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py \
+            --generator orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --protocol orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md \
+            --hardening-v1-freeze orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_FREEZE.md \
+            --hardening-v3-freeze orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_V3_FREEZE.md \
+            --output output/source-audit-v3
+
+      - name: Run valid synthetic full pipeline under v3 evaluator
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output/pipeline-audit-v3 output/synthetic-work-v3
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py \
+            --generator orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --amos-infra amos-infra \
+            --work output/synthetic-work-v3 \
+            --output output/pipeline-audit-v3
+
+      - name: Run v3 adversarial pretruth and sentinel audit
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output/hardening-audit-v3 output/hardening-work-v3
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --valid-pretruth output/synthetic-work-v3/pre1/FINAL_DENSITY_SYNC_AMOS_2023_2024_PRETRUTH.json \
+            --labels-2023 output/synthetic-work-v3/labels_2023.csv \
+            --labels-2024 output/synthetic-work-v3/labels_2024.csv \
+            --work output/hardening-work-v3 \
+            --output output/hardening-audit-v3
+
+      - name: Enforce binding v3 zero-data audit schema
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          s=json.load(open('output/source-audit-v3/FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V3.json'))
+          p=json.load(open('output/pipeline-audit-v3/FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT.json'))
+          h=json.load(open('output/hardening-audit-v3/FINAL_DENSITY_SYNC_AMOS_EVALUATOR_HARDENING_AUDIT_V3.json'))
+          assert s['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V3'
+          assert p['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT_V1'
+          assert h['verdict']=='PASS_FINAL_DENSITY_SYNC_AMOS_EVALUATOR_HARDENING_AUDIT_V3'
+          assert s['forbidden_detection']=='AST_EXACT_IMPORTS_AND_CALL_TARGETS'
+          assert s['empty_candidate_lists_structurally_allowed'] is True
+          assert s['exact_sporadic_sentinel_enforced'] is True
+          assert h['pretruth_tamper_test_count']==12
+          assert h['all_pretruth_tampers_rejected_before_labels'] is True
+          assert h['assertion_count']==15
+          assert all(h['assertions'].values())
+          assert h['scientific_method_or_gate_changed'] is False
+          assert all(p['tests'].values())
+          for obj in (s,p,h):
+              for k in ('scientific_data_accessed','gmn_accessed','sonotaco_accessed','amos_accessed','asfn_accessed','efn_accessed','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+                  assert obj[k] is False, (k,obj[k])
+          print('PASS_FINAL_DENSITY_SYNC_AMOS_BINDING_ZERO_DATA_AUDIT_V3')
+          PY
+
+      - name: Preserve v3 audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/provenance-v3
+          git rev-parse HEAD > output/provenance-v3/execution_commit.txt
+          sha256sum \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_FREEZE.md \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_V3_FREEZE.md \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py \
+            > output/provenance-v3/source_sha256.txt
+          python --version > output/provenance-v3/python_version.txt
+          python -m pip freeze > output/provenance-v3/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-final-density-sync-amos-predata-hardened-audit-v3
+          path: output
+          if-no-files-found: error
+          retention-days: 90
