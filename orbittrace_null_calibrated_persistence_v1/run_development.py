@@ -11,7 +11,6 @@ from typing import Any
 
 import hdbscan
 import numpy as np
-from hdbscan._hdbscan_tree import compute_stability
 
 import recurrent_eom as reom
 from density_synchronous_eom import density_synchronous_stability
@@ -27,6 +26,8 @@ MIN_CLUSTER_SIZE = 10
 MIN_SAMPLES = 10
 EXPECTED_PARENT_COUNT = 2094
 REQUIRED_TOTAL_AT100_GAIN = 5
+PARENT_PRELABEL_SHA256 = "efce0617a738a0372ec5b007fb87b46912accd8419f0f768829c4c0cb7d62993"
+PARENT_RESULT_SHA256 = "ca6aeed2b82739003ea5d39b59e869df876de2962164344a938fe4935ea38711"
 EXPECTED_PARENT = {
     "2022": {
         "recovered_at_50": 45,
@@ -71,35 +72,38 @@ def ordered_membership_sha(candidates: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
-def sync_candidates_from_labels(
-    labels: np.ndarray,
-    selected_nodes: tuple[int, ...],
-    events: list[dict[str, Any]],
-    ordinary: dict[float, float],
-    synchronous: dict[float, float],
-    parent_runner: Any,
-) -> list[dict[str, Any]]:
-    positive_labels = sorted(int(x) for x in np.unique(labels) if int(x) >= 0)
-    req(positive_labels == list(range(len(selected_nodes))), "compact labels no longer map contiguously to selected nodes")
+def validate_parent_candidates(rows: Any, accessible_ids: set[str] | None = None) -> list[dict[str, Any]]:
+    req(isinstance(rows, list), "frozen parent candidates are not a list")
+    req(len(rows) == EXPECTED_PARENT_COUNT, f"frozen parent candidate count changed: {len(rows)}")
     out: list[dict[str, Any]] = []
-    for lab, node in enumerate(selected_nodes):
-        idx = np.flatnonzero(labels == lab)
-        members = tuple(sorted(str(events[int(i)]["id"]) for i in idx))
-        req(len(members) >= MIN_CLUSTER_SIZE, f"selected cluster below frozen minimum: node={node}")
+    seen_families: set[str] = set()
+    for i, raw in enumerate(rows):
+        req(isinstance(raw, dict), f"parent candidate {i} is not an object")
+        for key in ("family_id", "event_ids", "member_count", "synchronous_stability", "ordinary_stability"):
+            req(key in raw, f"parent candidate {i} missing {key}")
+        family_id = str(raw["family_id"])
+        req(family_id not in seen_families, f"duplicate frozen parent family ID {family_id}")
+        seen_families.add(family_id)
+        ids = [str(x) for x in raw["event_ids"]]
+        req(ids == sorted(ids), f"parent candidate {family_id} event IDs are not frozen-sorted")
+        req(len(ids) == len(set(ids)), f"parent candidate {family_id} repeats an event ID")
+        req(int(raw["member_count"]) == len(ids), f"parent candidate {family_id} member count mismatch")
+        req(len(ids) >= MIN_CLUSTER_SIZE, f"parent candidate {family_id} below frozen minimum")
+        s = float(raw["synchronous_stability"])
+        o = float(raw["ordinary_stability"])
+        req(np.isfinite(s) and s >= 0.0, f"parent candidate {family_id} has invalid synchronous stability")
+        req(np.isfinite(o) and o >= 0.0, f"parent candidate {family_id} has invalid ordinary stability")
+        if accessible_ids is not None:
+            missing = [eid for eid in ids if eid not in accessible_ids]
+            req(not missing, f"parent candidate {family_id} contains IDs outside accessible GMN: {missing[:3]}")
         out.append({
-            "family_id": parent_runner.member_hash("DSEOM1", members),
-            "node_id": int(node),
-            "event_ids": list(members),
-            "member_count": len(members),
-            "synchronous_stability": float(synchronous[float(node)]),
-            "ordinary_stability": float(ordinary[float(node)]),
+            "family_id": family_id,
+            "node_id": int(raw["node_id"]) if "node_id" in raw else None,
+            "event_ids": ids,
+            "member_count": len(ids),
+            "synchronous_stability": s,
+            "ordinary_stability": o,
         })
-    out.sort(key=lambda f: (
-        -f["synchronous_stability"],
-        -f["ordinary_stability"],
-        -f["member_count"],
-        f["family_id"],
-    ))
     return out
 
 
@@ -120,16 +124,20 @@ def null_rows_from_labels(
     return rows
 
 
-def verify_parent_metrics(metrics: dict[str, dict[str, Any]]) -> None:
+def verify_parent_metrics(metrics: dict[str, dict[str, Any]], frozen_result: dict[str, Any]) -> None:
+    req(frozen_result.get("verdict") == "PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT", "frozen #1263 result verdict changed")
+    req(int(frozen_result.get("successor_candidate_count", -1)) == EXPECTED_PARENT_COUNT, "frozen #1263 result candidate count changed")
+    frozen_metrics = frozen_result.get("successor_metrics")
+    req(isinstance(frozen_metrics, dict), "frozen #1263 result lacks successor metrics")
     for year, expected in EXPECTED_PARENT.items():
         got = metrics[year]
+        archived = frozen_metrics[year]
         for key in ("recovered_at_50", "recovered_at_100"):
             req(int(got[key]) == int(expected[key]), f"#1263 parent {year} {key} changed: {got[key]} != {expected[key]}")
+            req(int(got[key]) == int(archived[key]), f"reevaluated parent {year} {key} differs from frozen result")
         for key in ("top100_dominant_precision", "mrr", "fragmentation_median_top500"):
-            req(
-                bool(np.isclose(float(got[key]), float(expected[key]), rtol=0.0, atol=1e-15)),
-                f"#1263 parent {year} {key} changed: {got[key]} != {expected[key]}",
-            )
+            req(bool(np.isclose(float(got[key]), float(expected[key]), rtol=0.0, atol=1e-15)), f"#1263 parent {year} {key} changed: {got[key]} != {expected[key]}")
+            req(bool(np.isclose(float(got[key]), float(archived[key]), rtol=0.0, atol=1e-15)), f"reevaluated parent {year} {key} differs from frozen result")
 
 
 def fit_hdbscan(X: np.ndarray) -> hdbscan.HDBSCAN:
@@ -147,6 +155,8 @@ def fit_hdbscan(X: np.ndarray) -> hdbscan.HDBSCAN:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--parent-runner", type=Path, required=True)
+    p.add_argument("--parent-prelabel-json", type=Path, required=True)
+    p.add_argument("--parent-result-json", type=Path, required=True)
     p.add_argument("--quality-source", type=Path, required=True)
     p.add_argument("--support-source-parts", type=Path, required=True)
     p.add_argument("--candidate-payload", type=Path, required=True)
@@ -164,6 +174,20 @@ def main() -> int:
     req(parent_runner.MIN_SAMPLES == MIN_SAMPLES, "parent min_samples changed")
     req(sha(a.quality_source) == parent_runner.QUALITY_SHA, "frozen GMN runtime utility source changed")
     req(sha(a.v8_result_json) == parent_runner.V8_RESULT_SHA, "frozen GMN support artifact changed")
+    req(sha(a.parent_prelabel_json) == PARENT_PRELABEL_SHA256, "exact #1263 parent prelabel hash changed")
+    req(sha(a.parent_result_json) == PARENT_RESULT_SHA256, "exact #1263 parent result hash changed")
+
+    parent_prelabel = json.loads(a.parent_prelabel_json.read_text())
+    parent_result = json.loads(a.parent_result_json.read_text())
+    req(parent_prelabel.get("scientific_role") == "PRELABEL_FROZEN_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1", "wrong #1263 parent prelabel role")
+    req(int(parent_prelabel.get("successor_candidate_count", -1)) == EXPECTED_PARENT_COUNT, "wrong #1263 parent prelabel candidate count")
+    req(parent_prelabel.get("blind_exclusion") == [20.0, 55.0], "#1263 parent prelabel blind interval changed")
+    for obj in (parent_prelabel, parent_result):
+        for key in ("target_information_access", "target_region_events_accessed", "sonotaco_2013_2014_access", "asfn_access", "efn_access", "amos_access", "maarsy_scientific_access", "dms_scientific_access"):
+            req(obj.get(key) is False, f"frozen parent artifact firewall changed: {key}")
+    parent_candidates_archived = validate_parent_candidates(parent_prelabel.get("successor_candidates"))
+    parent_order_sha = ordered_membership_sha(parent_candidates_archived)
+    req(parent_order_sha == str(parent_prelabel.get("successor_ordered_membership_sha256")), "frozen #1263 parent order hash does not self-verify")
 
     qmod = parent_runner.load_module(a.quality_source, "ncp_frozen_gmn_utility")
     qmod.v1.mult.YEARS = YEARS
@@ -196,24 +220,13 @@ def main() -> int:
     sols = np.asarray([e["sol"] for e in events], dtype=float)
     req(int(np.sum(years == 2022)) == 315024, "accessible 2022 event count changed")
     req(int(np.sum(years == 2023)) == 423658, "accessible 2023 event count changed")
+    accessible_ids = {str(e["id"]) for e in events}
+    parent_candidates = validate_parent_candidates(parent_candidates_archived, accessible_ids)
+    req(ordered_membership_sha(parent_candidates) == parent_order_sha, "frozen parent order changed after accessible-ID verification")
 
-    # Real-data parent catalogue: exact #1263 density-synchronous recurrent-EOM.
-    model = fit_hdbscan(X)
-    tree = model.condensed_tree_._raw_tree
-    real_tree_sha = tree_sha(tree)
-    ordinary = compute_stability(tree)
-    synchronous, _annual, _reconstructed = density_synchronous_stability(tree, years)
-    parent_labels = reom.eom_labels(tree, synchronous)
-    parent_nodes = reom.selected_eom_nodes(tree, synchronous)
-    parent_candidates = sync_candidates_from_labels(
-        parent_labels, parent_nodes, events, ordinary, synchronous, parent_runner
-    )
-    req(len(parent_candidates) == EXPECTED_PARENT_COUNT, f"#1263 parent candidate count changed: {len(parent_candidates)}")
-    parent_order_sha = ordered_membership_sha(parent_candidates)
-    del model, tree, ordinary, synchronous, parent_labels, parent_nodes
-    gc.collect()
-
-    # Survey-preserving coherence-destroying null ensemble. No truth is touched.
+    # Survey-preserving coherence-destroying null ensemble. The real parent
+    # catalogue is not recomputed: exact #1263 binding memberships/stabilities
+    # are rehydrated above from the pinned prelabel artifact.
     null_replicates: list[list[tuple[int, float]]] = []
     null_reports: list[dict[str, Any]] = []
     for rep in range(NULL_REPLICATES):
@@ -232,10 +245,7 @@ def main() -> int:
             "condensed_tree_sha256": tree_sha(null_tree),
             "max_member_count": max(int(n) for n, _s in rows),
             "max_synchronous_stability": max(float(s) for _n, s in rows),
-            "candidates": [
-                {"member_count": int(n), "synchronous_stability": float(s)}
-                for n, s in rows
-            ],
+            "candidates": [{"member_count": int(n), "synchronous_stability": float(s)} for n, s in rows],
         })
         print(json.dumps({
             "null_replicate": rep,
@@ -246,39 +256,33 @@ def main() -> int:
         del Xnull, null_model, null_tree, null_sync, null_labels, null_nodes, rows
         gc.collect()
 
-    # Reconstruct the exact real parent catalogue once more from the unchanged
-    # real matrix so the successor prelabel contains complete memberships.
-    model2 = fit_hdbscan(X)
-    tree2 = model2.condensed_tree_._raw_tree
-    req(tree_sha(tree2) == real_tree_sha, "real HDBSCAN hierarchy changed across exact refit")
-    ordinary2 = compute_stability(tree2)
-    sync2, _annual2, _reconstructed2 = density_synchronous_stability(tree2, years)
-    labels2 = reom.eom_labels(tree2, sync2)
-    nodes2 = reom.selected_eom_nodes(tree2, sync2)
-    parent_candidates2 = sync_candidates_from_labels(labels2, nodes2, events, ordinary2, sync2, parent_runner)
-    req(ordered_membership_sha(parent_candidates2) == parent_order_sha, "real #1263 parent order changed across exact refit")
-
-    successor_candidates = calibrate_candidates(parent_candidates2, null_replicates)
+    successor_candidates = calibrate_candidates(parent_candidates, null_replicates)
     successor_order_sha = ordered_membership_sha(successor_candidates)
     mechanism_active = bool(successor_order_sha != parent_order_sha)
+    parent_universe = {tuple(c["event_ids"]) for c in parent_candidates}
+    successor_universe = {tuple(c["event_ids"]) for c in successor_candidates}
+    req(parent_universe == successor_universe, "null calibration changed real candidate memberships")
 
     prelabel = {
         "scientific_role": "PRELABEL_FROZEN_SURVEY_NULL_CALIBRATED_PERSISTENCE_V1",
         "events_total": len(events),
         "events_by_year": {str(y): int(np.sum(years == y)) for y in YEARS},
-        "real_condensed_tree_sha256": real_tree_sha,
-        "parent_candidate_count": len(parent_candidates2),
+        "parent_source": {
+            "binding_run": 31852836840,
+            "artifact": 9238142199,
+            "prelabel_sha256": PARENT_PRELABEL_SHA256,
+            "result_sha256": PARENT_RESULT_SHA256,
+        },
+        "parent_candidate_count": len(parent_candidates),
         "successor_candidate_count": len(successor_candidates),
         "parent_ordered_membership_sha256": parent_order_sha,
         "successor_ordered_membership_sha256": successor_order_sha,
-        "membership_universe_identical": bool(
-            {tuple(c["event_ids"]) for c in parent_candidates2} == {tuple(c["event_ids"]) for c in successor_candidates}
-        ),
+        "membership_universe_identical": True,
         "mechanism_active": mechanism_active,
         "null_replicates": NULL_REPLICATES,
         "null_candidate_counts": [len(x) for x in null_replicates],
         "required_total_recovered_at_100_gain": REQUIRED_TOTAL_AT100_GAIN,
-        "parent_candidates": parent_candidates2,
+        "parent_candidates": parent_candidates,
         "successor_candidates": successor_candidates,
         "null_evidence": null_reports,
         "blind_exclusion": list(BLIND),
@@ -292,33 +296,26 @@ def main() -> int:
         "dms_scientific_access": False,
         "truth_evaluated_when_written": False,
     }
-    req(prelabel["membership_universe_identical"] is True, "null calibration changed real candidate memberships")
     prelabel_path = a.output / "NULL_CALIBRATED_PERSISTENCE_V1_PRELABEL.json"
     prelabel_path.write_text(json.dumps(prelabel, indent=2, sort_keys=True, allow_nan=False) + "\n")
     prelabel_sha = sha(prelabel_path)
 
     # Hidden known-shower labels are first used here, after the complete null
-    # ensemble and real successor order are persisted above.
+    # ensemble and successor order are persisted above.
     hidden = hidden_sealed
     ids_by_year = {y: {e["id"] for e in events if e["year"] == y} for y in YEARS}
     req(all(eid in ids_by_year[2022] or eid in ids_by_year[2023] for eid in hidden), "label outside accessible pooled IDs")
-    parent_metrics = {str(y): parent_runner.metrics(parent_candidates2, hidden, ids_by_year[y]) for y in YEARS}
-    verify_parent_metrics(parent_metrics)
+    parent_metrics = {str(y): parent_runner.metrics(parent_candidates, hidden, ids_by_year[y]) for y in YEARS}
+    verify_parent_metrics(parent_metrics, parent_result)
     successor_metrics = {str(y): parent_runner.metrics(successor_candidates, hidden, ids_by_year[y]) for y in YEARS}
-    annual_gates = {
-        str(y): parent_runner.annual_gate(parent_metrics[str(y)], successor_metrics[str(y)]) for y in YEARS
-    }
+    annual_gates = {str(y): parent_runner.annual_gate(parent_metrics[str(y)], successor_metrics[str(y)]) for y in YEARS}
     parent_total = sum(int(parent_metrics[str(y)]["recovered_at_100"]) for y in YEARS)
     successor_total = sum(int(successor_metrics[str(y)]["recovered_at_100"]) for y in YEARS)
     req(parent_total == 179, f"#1263 parent total changed: {parent_total}")
     total_gain = successor_total - parent_total
     strong_gain = bool(total_gain >= REQUIRED_TOTAL_AT100_GAIN)
     passed = bool(mechanism_active and strong_gain and all(all(g.values()) for g in annual_gates.values()))
-    verdict = (
-        "PASS_NULL_CALIBRATED_PERSISTENCE_V1_GMN_DEVELOPMENT"
-        if passed else
-        "FAIL_NULL_CALIBRATED_PERSISTENCE_V1_GMN_DEVELOPMENT"
-    )
+    verdict = "PASS_NULL_CALIBRATED_PERSISTENCE_V1_GMN_DEVELOPMENT" if passed else "FAIL_NULL_CALIBRATED_PERSISTENCE_V1_GMN_DEVELOPMENT"
 
     result = {
         "verdict": verdict,
@@ -326,7 +323,8 @@ def main() -> int:
         "prelabel_sha256": prelabel_sha,
         "events_total": len(events),
         "events_by_year": {str(y): len(ids_by_year[y]) for y in YEARS},
-        "parent_candidate_count": len(parent_candidates2),
+        "parent_source": prelabel["parent_source"],
+        "parent_candidate_count": len(parent_candidates),
         "successor_candidate_count": len(successor_candidates),
         "membership_universe_identical": True,
         "parent_ordered_membership_sha256": parent_order_sha,
