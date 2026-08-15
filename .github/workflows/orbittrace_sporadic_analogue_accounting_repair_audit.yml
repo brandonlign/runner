@@ -1,0 +1,97 @@
+name: OrbitTrace sporadic-analogue accounting repair audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-sporadic-analogue-eom-v1
+    paths:
+      - 'orbittrace_sporadic_analogue_eom_v1/ACCOUNTING_REPAIR_AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  repair-zero-data-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sporadic-analogue-eom-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact numerical runtime and verify frozen repair
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/PROTOCOL.md)" = '0087c417e36b77c93daf869921219c7487f770ac'
+          test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/sporadic_analogue_eom.py)" = '7584899f16761fd45e2e59bfe6fbea24bf3fbcd0'
+          test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/audit_synthetic.py)" = '8f98588446ab3f89e024c884b55f3a528f124af6'
+          test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/run_development.py)" = '4fc3f4eb7c5c85951e49d813be4f598ef137667d'
+          test "$(git hash-object orbittrace_sporadic_analogue_eom_v1/ACCOUNTING_TOLERANCE_REPAIR_FREEZE.json)" = 'd8c968704f97348bbc73e9a5afc7671821e3582c'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          python -m py_compile orbittrace_sporadic_analogue_eom_v1/*.py orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py
+          python - <<'PY'
+          import json
+          f=json.load(open('orbittrace_sporadic_analogue_eom_v1/ACCOUNTING_TOLERANCE_REPAIR_FREEZE.json'))
+          assert f['scientific_method_changed'] is False
+          assert f['evidence']['diagnostic_run']==31912992900
+          assert f['evidence']['diagnostic_artifact']==9254224406
+          assert f['evidence']['diagnostic_verdict']=='PASS_WEIGHTED_ACCOUNTING_NUMERICAL_RESIDUAL_ONLY'
+          assert f['evidence']['successor_score_computed'] is False
+          assert f['evidence']['hidden_truth_accessed'] is False
+          assert f['frozen_repair']['relative_mass_tolerance']==1e-12
+          assert f['frozen_repair']['hard_gmn_gain_gate_unchanged']==5
+          assert f['post_result_parameter_search'] is False
+          assert f['post_result_scientific_rescue_authorized'] is False
+          print('PASS_ACCOUNTING_REPAIR_FREEZE')
+          PY
+      - name: Run repaired zero-data synthetic audit
+        env:
+          PYTHONPATH: orbittrace_sporadic_analogue_eom_v1:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:.
+        run: |
+          set -euo pipefail
+          rm -rf output
+          python -u orbittrace_sporadic_analogue_eom_v1/audit_synthetic.py | tee audit.log
+          grep -q PASS_SPORADIC_ANALOGUE_EOM_V1_SYNTHETIC_AUDIT audit.log
+      - name: Enforce repaired-audit invariants and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/SPORADIC_ANALOGUE_EOM_V1_SYNTHETIC_AUDIT.json'))
+          assert r['verdict']=='PASS_SPORADIC_ANALOGUE_EOM_V1_SYNTHETIC_AUDIT'
+          assert r['tests']['neutral_weight_exact_champion_identity'] is True
+          assert r['tests']['mass_relative_tolerance_fixed_1e_minus_12'] is True
+          assert r['tests']['material_accounting_mismatch_rejected'] is True
+          assert r['numerical_repair']['mass_relative_tolerance']==1e-12
+          assert r['numerical_repair']['diagnostic_max_relative_residual']==5.215684767498128e-15
+          for k in ['scientific_data_access','gmn_access','sonotaco_access','asfn_access','efn_access','amos_access','maarsy_scientific_access','dms_scientific_access','target_information_access','target_region_events_accessed']:
+              assert r[k] is False, (k,r[k])
+          print('PASS_ACCOUNTING_REPAIR_ZERO_DATA_AUDIT')
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_sporadic_analogue_eom_v1/PROTOCOL.md orbittrace_sporadic_analogue_eom_v1/sporadic_analogue_eom.py orbittrace_sporadic_analogue_eom_v1/audit_synthetic.py orbittrace_sporadic_analogue_eom_v1/ACCOUNTING_TOLERANCE_REPAIR_FREEZE.json output/SPORADIC_ANALOGUE_EOM_V1_SYNTHETIC_AUDIT.json > output/provenance_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sporadic-analogue-accounting-repair-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
