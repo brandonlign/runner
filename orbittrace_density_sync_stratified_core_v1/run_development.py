@@ -92,7 +92,6 @@ def sync_candidates(
         members = tuple(sorted(str(events[int(i)]["id"]) for i in idx))
         req(len(members) >= MIN_CLUSTER_SIZE, f"selected cluster below frozen minimum: node={node}")
         out.append({
-            # Keep the exact #1263 content-derived tie breaker; method identity must not alter equal-score ordering.
             "family_id": base_runner.member_hash("DSEOM1", members),
             "node_id": int(node),
             "event_ids": list(members),
@@ -147,7 +146,7 @@ def core_summary(core: np.ndarray, annual: dict[str, np.ndarray]) -> dict[str, A
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--parent-runner", type=Path, required=True)
+    p.add_argument("--base-runner", type=Path, required=True)
     p.add_argument("--quality-source", type=Path, required=True)
     p.add_argument("--support-source-parts", type=Path, required=True)
     p.add_argument("--candidate-payload", type=Path, required=True)
@@ -158,10 +157,12 @@ def main() -> int:
     a = p.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
 
-    base = load_module(a.parent_runner, "density_sync_stratified_frozen_parent_runner")
-    req(tuple(base.YEARS) == YEARS, "parent year domain changed")
-    req(tuple(float(x) for x in base.BLIND) == BLIND, "parent blind interval changed")
-    req(int(base.MIN_CLUSTER_SIZE) == MIN_CLUSTER_SIZE and int(base.MIN_SAMPLES) == MIN_SAMPLES, "parent HDBSCAN size parameters changed")
+    # Load the frozen recurrent-EOM utility runner only for parsing, GEO6, metrics and gate helpers.
+    # #1263 itself is reconstructed below from the unchanged ordinary hierarchy + exact density-sync kernel.
+    base = load_module(a.base_runner, "density_sync_stratified_frozen_recurrent_utility")
+    req(tuple(base.YEARS) == YEARS, "base utility year domain changed")
+    req(tuple(float(x) for x in base.BLIND) == BLIND, "base utility blind interval changed")
+    req(int(base.MIN_CLUSTER_SIZE) == MIN_CLUSTER_SIZE and int(base.MIN_SAMPLES) == MIN_SAMPLES, "base utility HDBSCAN size parameters changed")
     req(sha(a.quality_source) == base.QUALITY_SHA, "frozen GMN runtime utility source changed")
     req(sha(a.v8_result_json) == base.V8_RESULT_SHA, "frozen GMN support artifact changed")
 
