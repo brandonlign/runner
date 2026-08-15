@@ -1,0 +1,177 @@
+name: OrbitTrace #1263 direct SonotaCo benchmark v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-density-sync-sonotaco-direct-benchmark-v1
+    paths:
+      - '.github/workflows/orbittrace_density_sync_sonotaco_direct_benchmark_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  direct-benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-density-sync-sonotaco-direct-benchmark-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify frozen method/benchmark bytes
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/rows input/truth input/v31 input/recurrent output
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+          test "$(git hash-object orbittrace_density_sync_sonotaco_direct_benchmark_v1/PROTOCOL.md)" = 'f4b3d3ca6bb4e49b9cfe32f844ee9e58aee3985c'
+          test "$(git hash-object orbittrace_density_sync_sonotaco_direct_benchmark_v1/run_benchmark.py)" = '342a7b9307a6dbca72c6043aefce2ecd0346cde5'
+          python -m py_compile \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_density_sync_sonotaco_direct_benchmark_v1/run_benchmark.py
+          echo PASS_FROZEN_DIRECT_BENCHMARK_SOURCE_PINS
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Verify exact label-free SonotaCo rows
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/rows/label_free_preparation_manifest.json | cut -d' ' -f1)" = '0a24077f352ddba91c5fea2a102f996d6bea154b1bc769235a4dd916850dba2b'
+          test "$(sha256sum input/rows/sugar_2013.json | cut -d' ' -f1)" = '47fb0b700fbf710c7b061eead343016bd8d182756eb0c7f406507c5739e4c4f8'
+          test "$(sha256sum input/rows/sugar_2014.json | cut -d' ' -f1)" = 'bc83c113e9a14b1c6e1ef460ca9a40e05df77f3a449fec6064f8910add04c912'
+          test "$(sha256sum input/rows/hdbscan_2013.json | cut -d' ' -f1)" = '2433b556d4a859580ef5431d2307ef34c8fa4c15d42841a2ec7b0c11e5f1f158'
+          test "$(sha256sum input/rows/hdbscan_2014.json | cut -d' ' -f1)" = '206692292b2ca252777e40c13c367880740d8e2576d27615f7ea94b7790e3f55'
+
+      - name: Freeze recurrent and #1263 candidates before truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_density_sync_sonotaco_direct_benchmark_v1/run_benchmark.py pretruth \
+            --rows-root input/rows --output output
+          sha256sum output/DENSITY_SYNC_SONOTACO_DIRECT_PRETRUTH.json > output/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/DENSITY_SYNC_SONOTACO_DIRECT_PRETRUTH.json'))
+          assert p['truth_accessed'] is False
+          assert p['v31_accessed'] is False
+          assert p['historical_recurrent_result_accessed'] is False
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['amos_access'] is False
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          print('PRETRUTH_FROZEN', {r:(p['routes'][r]['recurrent']['candidate_count'],p['routes'][r]['density_sync']['candidate_count'],p['routes'][r]['mechanism_active_vs_recurrent']) for r in ('sugar','hdbscan')})
+          PY
+
+      # Only after both complete candidate catalogues are frozen do truth and controls become available.
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v31-local-geometry-margin-oof-development-v1
+          path: input/v31
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31509767311
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/recurrent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+
+      - name: Verify exact established controls
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v31/result/V31_LOCAL_GEOMETRY_OOF_RESULT.json | cut -d' ' -f1)" = 'f69555d443f453fd40a769da09b2bbec8bf62cd4a932cd84278bb23305b5ac8e'
+          test "$(sha256sum input/recurrent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json | cut -d' ' -f1)" = 'c2395a86be5ba8a8b801210ac6e64b97c446e724991207aef85062ee00b89f12'
+
+      - name: Evaluate direct head-to-head
+        run: |
+          set -euo pipefail
+          python -u orbittrace_density_sync_sonotaco_direct_benchmark_v1/run_benchmark.py evaluate \
+            --pretruth output/DENSITY_SYNC_SONOTACO_DIRECT_PRETRUTH.json \
+            --truth-root input/truth \
+            --v31-result input/v31/result/V31_LOCAL_GEOMETRY_OOF_RESULT.json \
+            --recurrent-result input/recurrent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json \
+            --output output
+
+      - name: Enforce binding direct-benchmark verdict and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/DENSITY_SYNC_SONOTACO_DIRECT_BENCHMARK_V1.json'))
+          assert r['verdict'] in {
+            'PASS_DENSITY_SYNC_SONOTACO_DIRECT_BENCHMARK_V1',
+            'NEUTRAL_DENSITY_SYNC_SONOTACO_DIRECT_BENCHMARK_V1',
+            'FAIL_DENSITY_SYNC_SONOTACO_DIRECT_BENCHMARK_V1'}
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_VALIDATION_BENCHMARK'
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['target_information_access'] is False
+          assert r['target_region_events_accessed'] is False
+          assert r['amos_access'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['post_result_parameter_search'] is False
+          print(r['verdict'])
+          for p in r['panels']:
+            print(p['comparator'],p['year'],'REC',p['recurrent_eom']['macro_f1'],p['recurrent_eom']['recovered_f1_gt_0_5'],'DSYNC',p['density_sync']['macro_f1'],p['density_sync']['recovered_f1_gt_0_5'],'DELTA',p['macro_f1_delta_vs_recurrent'],p['recovered_delta_vs_recurrent'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_density_sync_sonotaco_direct_benchmark_v1/PROTOCOL.md \
+            orbittrace_density_sync_sonotaco_direct_benchmark_v1/run_benchmark.py \
+            input/rows/label_free_preparation_manifest.json \
+            output/DENSITY_SYNC_SONOTACO_DIRECT_PRETRUTH.json \
+            input/recurrent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json \
+            input/v31/result/V31_LOCAL_GEOMETRY_OOF_RESULT.json \
+            output/DENSITY_SYNC_SONOTACO_DIRECT_BENCHMARK_V1.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-density-sync-sonotaco-direct-benchmark-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
