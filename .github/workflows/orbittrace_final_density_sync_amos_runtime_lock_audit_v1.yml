@@ -1,0 +1,199 @@
+name: OrbitTrace final density-sync AMOS runtime lock audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+    paths:
+      - 'orbittrace_final_density_sync_amos_2023_2024_external_v1/RUNTIME_LOCK_AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  runtime-lock-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-final-density-sync-amos-2023-2024-predata-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 1fb8f68b84bc200545a23cb5a216baa7e0fa0f09
+          path: amos-infra
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.15'
+
+      - name: Verify runtime lock and immutable scientific bytes
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/requirements-amos-final.txt)" = '153e96877e860e7c0d3ad0e961f44861f619cc66'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/PYTHON_RUNTIME.txt)" = 'd8292d992d92d92c184209f9bbc655c93693b3bf'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_RUNTIME_REQUIREMENT.md)" = '3786e0a9af6e5e99af12b9a061713d206fb73ddc'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_FREEZE_V3_EXACT_LABEL.json)" = 'beed71cac547973b198b6ed16e319ebe42051583'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_FREEZE_V3_EXACT_LABEL_SEAL.json)" = '9b8a2763974c4bcaf7afc8dc1072febc65e5c83a'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md)" = '1ddb4bae33a1ae8a6224cbc4abcba5dda70cf993'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py)" = 'b76d7c53ab238cd45f12027947f2098a770ba7b6'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py)" = 'c45e4739ea68639945b13de54f6e24dc9d870ba3'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py)" = '734cc257347d6f68ce0d67f5adf874ae89e6d6d7'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py)" = '31daaf1101bd100968829a3797b39dc856ae2a7c'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_label_transport_exactness_v3.py)" = 'b16778cd10cbbb7704a4ee007a14030b97e07500'
+          test "$(git hash-object orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py)" = '2f9dc0495d80e1fa0c577fcbb4fec2b4dd33aecf'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/transform.py)" = '612ad23af6e11ac2155282258e3d1429fbe00d67'
+          test "$(git -C amos-infra hash-object orbittrace_recurrent_eom_amos_2023_2024_external_v1/adapter/adapt.py)" = '9a0fb05f94d6a28cd95f97d864e76400056273b0'
+
+      - name: Install only the exact audited numerical stack
+        run: |
+          set -euo pipefail
+          python --version
+          test "$(python -c 'import sys; print(".".join(map(str,sys.version_info[:3])))')" = "$(cat orbittrace_final_density_sync_amos_2023_2024_external_v1/PYTHON_RUNTIME.txt)"
+          python -m pip install --upgrade pip
+          python -m pip install -r orbittrace_final_density_sync_amos_2023_2024_external_v1/requirements-amos-final.txt
+          python - <<'PY'
+          from importlib.metadata import version
+          expected={
+            'numpy':'2.1.3',
+            'scipy':'1.14.1',
+            'scikit-learn':'1.7.1',
+            'hdbscan':'0.8.43',
+            'joblib':'1.5.3',
+            'threadpoolctl':'3.6.0',
+          }
+          for name,want in expected.items():
+              got=version(name)
+              assert got==want,(name,got,want)
+          print('PASS_EXACT_AMOS_RUNTIME_LOCK')
+          PY
+
+      - name: Run source firewall under the runtime lock
+        run: |
+          set -euo pipefail
+          rm -rf output/runtime-source
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_source_zero_data_v3_ast.py \
+            --generator orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --protocol orbittrace_final_density_sync_amos_2023_2024_external_v1/PROTOCOL.md \
+            --hardening-v1-freeze orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_FREEZE.md \
+            --hardening-v3-freeze orbittrace_final_density_sync_amos_2023_2024_external_v1/EVALUATOR_HARDENING_V3_FREEZE.md \
+            --output output/runtime-source
+
+      - name: Run full synthetic pipeline under the runtime lock
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output/runtime-pipeline output/runtime-work
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/full_pipeline_selftest.py \
+            --generator orbittrace_final_density_sync_amos_2023_2024_external_v1/generate_pretruth.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --amos-infra amos-infra \
+            --work output/runtime-work \
+            --output output/runtime-pipeline
+
+      - name: Run adversarial pretruth audit under the runtime lock
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output/runtime-hardening output/runtime-hardening-work
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_evaluator_hardening_v3.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --valid-pretruth output/runtime-work/pre1/FINAL_DENSITY_SYNC_AMOS_2023_2024_PRETRUTH.json \
+            --labels-2023 output/runtime-work/labels_2023.csv \
+            --labels-2024 output/runtime-work/labels_2024.csv \
+            --work output/runtime-hardening-work \
+            --output output/runtime-hardening
+
+      - name: Run exact label-transport audit under the runtime lock
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1
+        run: |
+          set -euo pipefail
+          rm -rf output/runtime-label output/runtime-label-work
+          python -u orbittrace_final_density_sync_amos_2023_2024_external_v1/audit_label_transport_exactness_v3.py \
+            --evaluator orbittrace_final_density_sync_amos_2023_2024_external_v1/evaluate_labels.py \
+            --pretruth output/runtime-work/pre1/FINAL_DENSITY_SYNC_AMOS_2023_2024_PRETRUTH.json \
+            --labels-2023 output/runtime-work/labels_2023.csv \
+            --labels-2024 output/runtime-work/labels_2024.csv \
+            --work output/runtime-label-work \
+            --output output/runtime-label
+
+      - name: Require exact reproduction of binding current-evaluator audit hashes
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,sys
+          from importlib.metadata import version
+          from pathlib import Path
+          def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          expected={
+            'source':('output/runtime-source/FINAL_DENSITY_SYNC_AMOS_PREDATA_SOURCE_AUDIT_V3.json','63d53aff1a056e6be67347f6adc3ba453c9851833b3ebc2a56ec380318a2e439'),
+            'pipeline':('output/runtime-pipeline/FINAL_DENSITY_SYNC_AMOS_FULL_PIPELINE_SYNTHETIC_AUDIT.json','d354d042a4dc057bae89aa46df2d684292fedb05badcdbcffe8e50bba7fe73c9'),
+            'hardening':('output/runtime-hardening/FINAL_DENSITY_SYNC_AMOS_EVALUATOR_HARDENING_AUDIT_V3.json','0de496d2f3b42111f39759c51c96063128b23eb063571174d96c42400d5bbe25'),
+            'label':('output/runtime-label/FINAL_DENSITY_SYNC_AMOS_LABEL_TRANSPORT_EXACTNESS_AUDIT_V3.json','fff8d9777e83acbf1940a94429bee6ee2809721c5e946a3c3cfa2207ad060427'),
+          }
+          for name,(path,want) in expected.items():
+              got=sha(path)
+              assert got==want,(name,got,want)
+          out={
+            'schema':'FINAL_DENSITY_SYNC_AMOS_RUNTIME_LOCK_AUDIT_V1',
+            'verdict':'PASS_FINAL_DENSITY_SYNC_AMOS_RUNTIME_LOCK_AUDIT_V1',
+            'python_version':'.'.join(map(str,sys.version_info[:3])),
+            'packages':{x:version(x) for x in ('numpy','scipy','scikit-learn','hdbscan','joblib','threadpoolctl')},
+            'binding_result_hashes_reproduced':{k:v[1] for k,v in expected.items()},
+            'current_evaluator_git_blob':'c45e4739ea68639945b13de54f6e24dc9d870ba3',
+            'authoritative_execution_freeze_git_blob':'beed71cac547973b198b6ed16e319ebe42051583',
+            'scientific_method_or_gate_changed':False,
+            'scientific_data_accessed':False,
+            'gmn_accessed':False,
+            'sonotaco_accessed':False,
+            'amos_accessed':False,
+            'asfn_accessed':False,
+            'efn_accessed':False,
+            'target_information_access':False,
+            'target_region_events_accessed':False,
+            'maarsy_scientific_access':False,
+            'dms_scientific_access':False,
+          }
+          Path('output/FINAL_DENSITY_SYNC_AMOS_RUNTIME_LOCK_AUDIT.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve runtime-lock audit provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/runtime-provenance
+          git rev-parse HEAD > output/runtime-provenance/execution_commit.txt
+          python --version > output/runtime-provenance/python_version.txt 2>&1
+          python -m pip freeze > output/runtime-provenance/environment.txt
+          sha256sum \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/requirements-amos-final.txt \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/PYTHON_RUNTIME.txt \
+            orbittrace_final_density_sync_amos_2023_2024_external_v1/EXECUTION_RUNTIME_REQUIREMENT.md \
+            output/FINAL_DENSITY_SYNC_AMOS_RUNTIME_LOCK_AUDIT.json \
+            > output/runtime-provenance/source_output_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-final-density-sync-amos-runtime-lock-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
