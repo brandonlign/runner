@@ -1,0 +1,224 @@
+name: OrbitTrace density-synchronous recurrent-EOM GMN development v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-density-synchronous-recurrent-eom-v1
+    paths:
+      - '.github/workflows/orbittrace_density_synchronous_recurrent_eom_gmn_development_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  development:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-density-synchronous-recurrent-eom-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact promoted-parent runtime and verify frozen successor bytes
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/v3 input/v8 input/ranker input/audits/synthetic input/audits/source output
+
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/PROTOCOL.md)" = '1187cbba37372c834bdbbf7eb05b1f7c31f8dcf9'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/run_development.py)" = '157813ca331165180a6d20aa71bfc78d5984396f'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/EXECUTION_FREEZE.json)" = '620fa5185ff331e8d3befd4395370df5e35fec83'
+          python -m py_compile \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/run_development.py
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-synthetic-audit-v1
+          path: input/audits/synthetic
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31852283069
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-source-audit-v1
+          path: input/audits/source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31852419659
+
+      - name: Pre-access authorize exact audit evidence and execution freeze
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          freeze=json.load(open('orbittrace_density_synchronous_recurrent_eom_v1/EXECUTION_FREEZE.json'))
+          assert freeze['schema']=='DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_EXECUTION_FREEZE'
+          assert freeze['scientific_status']=='PRE_GMN_OUTCOME'
+          assert freeze['parent_commit']=='e3ad80dd4d685b32917af9e2e6d76cb2b76857d4'
+          assert freeze['protocol_blob']=='1187cbba37372c834bdbbf7eb05b1f7c31f8dcf9'
+          assert freeze['density_synchronous_kernel_blob']=='587a304f451e41b9503272f1783a6c6ebb295000'
+          assert freeze['development_runner_blob']=='157813ca331165180a6d20aa71bfc78d5984396f'
+          assert freeze['synthetic_audit']['run_id']==31852283069
+          assert freeze['synthetic_audit']['artifact_id']==9237881295
+          assert freeze['synthetic_audit']['artifact_digest']=='sha256:78df55464e8c203cb177c11f8b0f511de44f05bf777640960ee14d4ebe213277'
+          assert freeze['source_firewall_audit']['run_id']==31852419659
+          assert freeze['source_firewall_audit']['artifact_id']==9237919496
+          assert freeze['source_firewall_audit']['artifact_digest']=='sha256:e3fa6d5f924ecf0c8b473623bfa92f14b5edec749a845ec4ad95a382fd2e420e'
+          assert freeze['external_scientific_access_authorized'] is False
+          assert freeze['sonotaco_contingency_preregistered'] is False
+          for k in ['target_information_access','target_region_events_accessed','efn_access','asfn_access','amos_access','maarsy_scientific_access','dms_scientific_access']:
+              assert freeze[k] is False
+
+          syn=json.load(open('input/audits/synthetic/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_SYNTHETIC_AUDIT.json'))
+          assert syn['verdict']=='PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_SYNTHETIC_AUDIT'
+          assert all(syn['tests'].values())
+          for k in ['scientific_data_access','gmn_access','sonotaco_access','efn_access','asfn_access','amos_access','maarsy_scientific_access','dms_scientific_access','target_information_access','target_region_events_accessed']:
+              assert syn[k] is False
+
+          src=json.load(open('input/audits/source/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_SOURCE_FIREWALL_AUDIT.json'))
+          assert src['verdict']=='PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_SOURCE_FIREWALL_AUDIT'
+          assert all(src['checks'].values())
+          for k in ['scientific_data_access','gmn_access','sonotaco_access','efn_access','asfn_access','amos_access','maarsy_scientific_access','dms_scientific_access','target_information_access','target_region_events_accessed']:
+              assert src[k] is False
+          print('PASS_DENSITY_SYNCHRONOUS_PREACCESS_AUTHORIZER')
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify immutable GMN runtime-support inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Run sole binding density-synchronous recurrent-EOM GMN endpoint
+        env:
+          PYTHONPATH: orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_density_synchronous_recurrent_eom_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce binding schema and scientific firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json'))
+          p=json.load(open('output/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json'))
+          assert r['verdict'] in {
+              'PASS_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT',
+              'FAIL_DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT'
+          }
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_DEVELOPMENT_ONLY'
+          assert r['events_by_year']=={'2022':315024,'2023':423658}
+          assert p['events_by_year']=={'2022':315024,'2023':423658}
+          assert r['parent_candidate_count']==2097
+          assert p['parent_candidate_count']==2097
+          assert r['sole_successor_objective']=='integral_min_normalized_annual_alive_mass_over_lambda'
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert p['blind_exclusion']==[20.0,55.0]
+          for x in (r,p):
+              for k in ['target_information_access','target_region_events_accessed','sonotaco_2013_2014_access','efn_access','asfn_access','amos_access','maarsy_scientific_access','dms_scientific_access']:
+                  assert x[k] is False, (k,x[k])
+          # A scientific FAIL is a valid endpoint; do not turn it into a CI failure.
+          print(json.dumps({
+              'verdict':r['verdict'],
+              'mechanism_active':r['mechanism_active'],
+              'parent_candidate_count':r['parent_candidate_count'],
+              'successor_candidate_count':r['successor_candidate_count'],
+              'strict_100':r['strict_recovered_at_100_improvement_some_year'],
+              'parent':{y:{k:v for k,v in m.items() if k!='first_rank_by_label'} for y,m in r['parent_metrics'].items()},
+              'successor':{y:{k:v for k,v in m.items() if k!='first_rank_by_label'} for y,m in r['successor_metrics'].items()},
+              'annual_gates':r['annual_gates'],
+          },indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve binding provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum \
+            orbittrace_density_synchronous_recurrent_eom_v1/PROTOCOL.md \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/run_development.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/EXECUTION_FREEZE.json \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            output/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json \
+            output/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json \
+            > output/binding_provenance_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-v1-gmn-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
