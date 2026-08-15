@@ -11,6 +11,7 @@ import recurrent_eom as parent
 K_NEIGHBOURS = 10
 ANALOGUE_OFFSETS_DEG = tuple(float(x) for x in range(60, 301, 10))
 TOL = 1e-12
+MASS_REL_TOL = 1e-12
 
 
 def bounded_contrast_weight(contrast: np.ndarray | float) -> np.ndarray | float:
@@ -202,6 +203,8 @@ def sporadic_analogue_stability(
         if p not in desc or p not in births:
             raise RuntimeError(f"missing node bookkeeping for {p}")
         alive = np.asarray(desc[p], dtype=np.float64).copy()
+        initial_alive = alive.copy()
+        mass_tol = MASS_REL_TOL * max(1.0, float(np.max(np.abs(initial_alive))))
         previous = float(births[p])
         integral = 0.0
         rows = sorted(rows_by_parent[p], key=lambda x: (x[0], x[1]))
@@ -226,14 +229,18 @@ def sporadic_analogue_stability(
                     departure += desc[child]
                 j += 1
             alive -= departure
-            if np.any(alive < -TOL):
-                raise RuntimeError(f"negative weighted alive mass for node {p}")
-            alive[np.abs(alive) <= TOL] = 0.0
+            if np.any(alive < -mass_tol):
+                raise RuntimeError(
+                    f"negative weighted alive mass for node {p}: {alive.tolist()} below tolerance {mass_tol}"
+                )
+            alive[np.abs(alive) <= mass_tol] = 0.0
             previous = lam
             i = j
 
-        if np.any(np.abs(alive) > 1e-9):
-            raise RuntimeError(f"nonzero final weighted alive mass for node {p}: {alive.tolist()}")
+        if np.any(np.abs(alive) > mass_tol):
+            raise RuntimeError(
+                f"nonzero final weighted alive mass for node {p}: {alive.tolist()} above tolerance {mass_tol}"
+            )
         if integral < -TOL or not np.isfinite(integral):
             raise RuntimeError(f"invalid analogue stability for node {p}: {integral}")
         score[float(p)] = float(max(integral, 0.0))
