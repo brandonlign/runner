@@ -1,0 +1,163 @@
+name: OrbitTrace significance-pruned topomodal v1
+on:
+  push:
+    branches: [agent/orbittrace-significance-pruned-topomodal-v1]
+    paths: ['.github/workflows/orbittrace_significance_pruned_topomodal_v1.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  significance-pruned:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 312b1b718ae105813de242355142a74e7d377d65
+          path: frozen-intrinsic
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and audit frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/v3 input/v8 input/ranker input/structural output
+          test "$(git hash-object orbittrace_significance_pruned_topomodal_v1/PROTOCOL.md)" = 'bf84a48a2f204f7a68f7903257ff3b8d757122a1'
+          test "$(git hash-object orbittrace_significance_pruned_topomodal_v1/generate_prelabel.py)" = 'ffce9584a37b16bd6af0eb87147d895dd05c4a69'
+          test "$(git hash-object orbittrace_significance_pruned_topomodal_v1/evaluate_prelabel.py)" = '00d9dfa851e3fe44a27a288b4ee79a29d20dc3fe'
+          test "$(git hash-object orbittrace_significance_pruned_topomodal_sonotaco_v1/PROTOCOL.md)" = '70c8c643e1feb4a4a5fcf2daeda1c9df44b4a20c'
+          test "$(git hash-object orbittrace_rankdensity_topomodal_v1/generate_prelabel.py)" = '189e50ed27e0e62ce275a41f6a46baf1f2c48baa'
+          test "$(git -C frozen-intrinsic hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
+          test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_significance_pruned_topomodal_v1/generate_prelabel.py orbittrace_significance_pruned_topomodal_v1/evaluate_prelabel.py
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-hierarchy-scale-v1
+          path: input/structural
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31955621864
+      - name: Verify frozen inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py|cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json|cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/structural/TOPOMODAL_HIERARCHY_SCALE_V1.json|cut -d' ' -f1)" = 'e8cf7d92e96db9a1c99578f6efc63baf1534b94ab975e94f789fa6bc4a718497'
+      - name: Generate immutable significance-pruned prelabel
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_significance_pruned_topomodal_v1/generate_prelabel.py \
+            --rankdensity-generator orbittrace_rankdensity_topomodal_v1/generate_prelabel.py \
+            --intrinsic-runner frozen-intrinsic/orbittrace_topomodal_sparse_recovery_v1/run_development.py \
+            --structural-runner orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            --structural-result-json input/structural/TOPOMODAL_HIERARCHY_SCALE_V1.json \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+      - name: Seal prelabel before truth
+        run: |
+          set -euo pipefail
+          sha256sum output/SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL.json|cut -d' ' -f1 > output/prelabel_sha256.txt
+          python - <<'PY'
+          import hashlib,json
+          raw=open('output/SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL.json','rb').read(); d=hashlib.sha256(raw).hexdigest(); assert d==open('output/prelabel_sha256.txt').read().strip(); p=json.loads(raw)
+          assert p['schema']=='ORBITTRACE_SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL' and p['scientific_role']=='PRELABEL_SIGNIFICANCE_PRUNED_TOPOMODAL_V1'
+          c=p['configuration']; assert c['density']=='GEO6_third_nearest_other_empirical_rank_q' and c['graph']=='exact_1284_physical_radius_1' and c['hierarchy']=='gudhi_3.12_manual_topomato_significance_simplified_flat_partition'
+          assert c['null']=='permute_q_over_fixed_graph' and c['B']==199 and c['alpha']==0.05 and c['null_statistic']=='maximum_finite_mode_prominence' and c['tau_rule']=='10th_largest_of_199_null_maxima_strict_survival' and c['min_candidate_support']==4
+          assert len(p['subsets'])==8 and p['blind_exclusion']==[20.0,55.0] and p['target_information_access'] is False and p['target_region_events_accessed'] is False and p['shower_truth_used'] is False
+          assert set(p['cross_scale']['gates'])=={'pooled_fine_to_coarse_mean_best_jaccard_strictly_greater','strict_bucket_wins_at_least_3_of_4'}
+          for s in p['subsets']:
+            assert len(s['null_max_prominences'])==199
+            assert abs(s['successor_summary']['tau']-sorted(s['null_max_prominences'],reverse=True)[9])<=1e-15
+            assert [r['rank'] for r in s['successor_candidates']]==list(range(1,len(s['successor_candidates'])+1))
+            for r in s['successor_candidates']:
+              if not r['is_root_survivor']:
+                assert r['finite_prominence']>s['successor_summary']['tau'] and r['p_fwer']<=0.05
+          print('immutable_prelabel_sha256',d)
+          print('candidate_budget_shortage',p['candidate_budget_shortage_any_panel'])
+          print('structural_gates',p['cross_scale']['gates'])
+          PY
+      - name: Evaluate sealed prelabel
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_significance_pruned_topomodal_v1/evaluate_prelabel.py \
+            --intrinsic-runner frozen-intrinsic/orbittrace_topomodal_sparse_recovery_v1/run_development.py \
+            --prelabel output/SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL.json \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+      - name: Enforce result contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          d=hashlib.sha256(open('output/SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL.json','rb').read()).hexdigest(); r=json.load(open('output/SIGNIFICANCE_PRUNED_TOPOMODAL_V1.json'))
+          assert r['prelabel_sha256']==d and r['verdict'] in {'PASS_SIGNIFICANCE_PRUNED_TOPOMODAL_V1','FAIL_SIGNIFICANCE_PRUNED_TOPOMODAL_V1'} and len(r['gates'])==13
+          assert r['blind_exclusion']==[20.0,55.0] and r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          print(r['verdict']); print(json.dumps({'candidate_budget_shortage':r['candidate_budget_shortage_any_panel'],'cross_scale':r['cross_scale'],'scales':r['scale_aggregates'],'gates':r['gates']},indent=2,sort_keys=True))
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_significance_pruned_topomodal_v1/PROTOCOL.md orbittrace_significance_pruned_topomodal_v1/generate_prelabel.py orbittrace_significance_pruned_topomodal_v1/evaluate_prelabel.py orbittrace_significance_pruned_topomodal_sonotaco_v1/PROTOCOL.md output/SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL.json output/SIGNIFICANCE_PRUNED_TOPOMODAL_V1.json > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-significance-pruned-topomodal-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
