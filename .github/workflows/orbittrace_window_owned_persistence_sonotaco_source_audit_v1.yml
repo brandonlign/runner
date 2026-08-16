@@ -1,0 +1,52 @@
+name: OrbitTrace window-owned persistence SonotaCo source audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-window-owned-persistence-sonotaco-transfer-v1
+    paths:
+      - '.github/workflows/orbittrace_window_owned_persistence_sonotaco_source_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 113b951b1ae9f9f9759f5833eb08aecc47cdf4aa
+          path: frozen-sonotaco-benchmark
+      - uses: actions/checkout@v4
+        with:
+          repository: LuisScoccola/persistable
+          ref: 7eb75b2e8d2fe5a18e49248aa7d1c97f829415be
+          path: persistable-upstream
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact source identities and importability
+        run: |
+          set -euo pipefail
+          test "$(git -C persistable-upstream rev-parse HEAD)" = '7eb75b2e8d2fe5a18e49248aa7d1c97f829415be'
+          test "$(git hash-object orbittrace_window_owned_persistence_sonotaco_transfer_v1/PROTOCOL.md)" = 'd257c8ddbaa6f0a49e9608e7f183de2db32960e7'
+          test "$(git hash-object orbittrace_window_owned_persistence_sonotaco_transfer_v1/run_transfer.py)" = '404436937fecfe5cd5ade62377ef0a9b6cbe3f87'
+          test "$(git hash-object orbittrace_window_owned_persistence_ranking_v1/run_development.py)" = '559484853651c4ab157ce221993222fa55ee1075'
+          test "$(git -C frozen-sonotaco-benchmark hash-object orbittrace_density_sync_sonotaco_direct_benchmark_v1/run_benchmark.py)" = '342a7b9307a6dbca72c6043aefce2ecd0346cde5'
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          python -m pip install ./persistable-upstream
+          python -m py_compile orbittrace_window_owned_persistence_ranking_v1/run_development.py orbittrace_window_owned_persistence_sonotaco_transfer_v1/run_transfer.py
+          PYTHONPATH=".:frozen-sonotaco-benchmark" python - <<'PY'
+          import importlib.util
+          import orbittrace_window_owned_persistence_sonotaco_transfer_v1.run_transfer as t
+          assert t.BENCHMARK_SOURCE_BLOB=='342a7b9307a6dbca72c6043aefce2ecd0346cde5'
+          spec=importlib.util.spec_from_file_location('frozen_bench','frozen-sonotaco-benchmark/orbittrace_density_sync_sonotaco_direct_benchmark_v1/run_benchmark.py')
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          assert tuple(m.PANELS)==(('sugar',2013),('sugar',2014),('hdbscan',2013),('hdbscan',2014))
+          assert [m.V31[x]['budget'] for x in m.PANELS]==[34,46,11,9]
+          print('PASS_WINDOW_OWNED_PERSISTENCE_SONOTACO_SOURCE_AUDIT_V1')
+          PY
