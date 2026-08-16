@@ -1,0 +1,1 @@
+Activate exactly one binding target-excluded GMN 2022/2023 independent-year HDBSCAN EOM plus reciprocal nearest-GEO6-centroid pairing endpoint under the frozen protocol. Require total recovered@100 >=184 with every frozen annual/precision/MRR/fragmentation gate. No post-result matching, ranking, geometry, or HDBSCAN tuning is authorized.
