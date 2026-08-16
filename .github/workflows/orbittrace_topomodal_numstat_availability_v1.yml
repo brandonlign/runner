@@ -30,10 +30,17 @@ jobs:
           set -euo pipefail
           mkdir -p output
           python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.23.5'
           python -m pip install 'gmn-python-api==0.0.13'
+          test "$(python - <<'PY'
+          import numpy
+          print(numpy.__version__)
+          PY
+          )" = '1.23.5'
           test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/PROTOCOL.md)" = 'b636b0bde53f4b0f00424a1cdea4352f7b3d2ba0'
           test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_1.md)" = 'ea9fcb8591ed1ada09ad649e1dceff5a6447462d'
           test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_2.md)" = 'dd8b3c4b463a0c7fd1811b97b8cecf1f4b9956c7'
+          test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_3.md)" = '6b6371e67d6c410bf7067456e9752a062d411c30'
           test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/audit.py)" = 'd2cd353e78624cf3cbf31babdcde14f0e7c1b0dc'
           test "$(git hash-object orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md)" = 'ea5d862268fc2c69d37b8b4c10db187fe31cdd5a'
           test "$(git hash-object orbittrace_station_weighted_topomodal_scale_v1/run_diagnostic.py)" = '24b4970981dcff677d66fc230d5998e7e51ed5f2'
@@ -71,7 +78,7 @@ jobs:
           set +e
           mkdir -p output
           git rev-parse HEAD > output/execution_commit.txt
-          sha256sum orbittrace_topomodal_numstat_availability_v1/PROTOCOL.md orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_1.md orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_2.md orbittrace_topomodal_numstat_availability_v1/audit.py orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md orbittrace_station_weighted_topomodal_scale_v1/run_diagnostic.py output/TOPOMODAL_NUMSTAT_AVAILABILITY_V1.json output/audited_union_numstat_mapping.json > output/source_output_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_topomodal_numstat_availability_v1/PROTOCOL.md orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_1.md orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_2.md orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_3.md orbittrace_topomodal_numstat_availability_v1/audit.py orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md orbittrace_station_weighted_topomodal_scale_v1/run_diagnostic.py output/TOPOMODAL_NUMSTAT_AVAILABILITY_V1.json output/audited_union_numstat_mapping.json > output/source_output_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
 
