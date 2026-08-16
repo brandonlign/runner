@@ -27,33 +27,53 @@ jobs:
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
 
-      - name: Extract calibration mechanics by AST without loading any catalogue
+      - name: Extract exact calibration and Mondrian factory mechanics without catalogue access
         run: |
           set -euo pipefail
           python - <<'PY'
-          import ast, json
+          import ast, base64, gzip, hashlib, json
           from pathlib import Path
 
-          path=Path('/tmp/run_wavelet_catalogue_v3_development.py')
-          text=path.read_text()
-          tree=ast.parse(text)
-          funcs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
-          target=funcs['calibrate_year']
+          development_text=Path('/tmp/run_wavelet_catalogue_v3_development.py').read_text()
+          development_tree=ast.parse(development_text)
+          funcs={n.name:n for n in development_tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          calibrate=funcs['calibrate_year']
 
-          # Follow only direct same-module helper calls one hop from calibrate_year.
-          calls=sorted({n.func.id for n in ast.walk(target) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name)})
-          local_helpers=[name for name in calls if name in funcs and name!='calibrate_year']
+          parts=sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
+          assert [p.name for p in parts]==[f'part{i:02d}.b64' for i in range(4)]
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          scorer_bytes=gzip.decompress(base64.b64decode(encoded,validate=True))
+          scorer_text=scorer_bytes.decode('utf-8')
+          scorer_sha=hashlib.sha256(scorer_bytes).hexdigest()
+          scorer_tree=ast.parse(scorer_text)
+          scorer_funcs={n.name:n for n in scorer_tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          classes={n.name:n for n in scorer_tree.body if isinstance(n,ast.ClassDef)}
+          factory=classes['MondrianWindowFactory']
+          methods={n.name:n for n in factory.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          make=methods['make']
+          method_calls=sorted({
+              n.func.attr for n in ast.walk(make)
+              if isinstance(n,ast.Call)
+              and isinstance(n.func,ast.Attribute)
+              and isinstance(n.func.value,ast.Name)
+              and n.func.value.id=='self'
+              and n.func.attr in methods
+          })
+          method_names=[]
+          for name in ['__init__','make',*method_calls]:
+              if name in methods and name not in method_names:
+                  method_names.append(name)
 
           report={
-            'source_sha256':'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51',
+            'development_source_sha256':'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51',
+            'scorer_source_sha256':scorer_sha,
             'scientific_data_access':False,
             'catalogue_loader_called':False,
             'target_information_access':False,
-            'calibrate_year_arguments':[a.arg for a in target.args.args],
-            'direct_calls':calls,
-            'direct_local_helpers':local_helpers,
-            'calibrate_year_source':ast.get_source_segment(text,target),
-            'helper_sources':{name:ast.get_source_segment(text,funcs[name]) for name in local_helpers},
+            'calibrate_year_source':ast.get_source_segment(development_text,calibrate),
+            'mondrian_factory_method_names':method_names,
+            'mondrian_factory_methods':{name:ast.get_source_segment(scorer_text,methods[name]) for name in method_names},
+            'stable_seed_source':ast.get_source_segment(scorer_text,scorer_funcs['stable_seed']),
           }
           Path('output/null_mechanism_source_audit.json').write_text(json.dumps(report,indent=2,sort_keys=True))
           print(json.dumps(report,indent=2,sort_keys=True))
