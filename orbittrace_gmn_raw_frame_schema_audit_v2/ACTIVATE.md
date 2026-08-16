@@ -1,0 +1,1 @@
+Activate the column-names-only preprojection schema audit. Do not serialize raw cells, event values, label values, target information, or external scientific data.
