@@ -1,0 +1,1 @@
+Activate the target-excluded GMN 2022/2023 orbital-field coverage audit. Serialize only aggregate coverage counts, never event values or known-shower label values.
