@@ -15,7 +15,8 @@ from typing import Any
 import numpy as np
 from scipy.spatial import cKDTree
 
-DOCKER_IMAGE = "tiagopeixoto/graph-tool:release-2.98"
+DOCKER_IMAGE = "tiagopeixoto/graph-tool@sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7"
+EXPECTED_GRAPH_TOOL_BUILD_PREFIX = "2.99dev (commit c049a734"
 METHOD = "ORBITTRACE_PHYSICAL_ROOT_PPMDL_SCALE_V1"
 MIN_SUPPORT = 4
 
@@ -144,7 +145,9 @@ def main() -> int:
             part_raw = out.read_bytes()
             part = json.loads(part_raw)
             req(part["schema"] == "ORBITTRACE_PHYSICAL_ROOT_PPMDL_PARTITION_V1", "wrong partition schema")
-            req(str(part["graph_tool_version"]).startswith("2.98"), "graph-tool version changed")
+            req(str(part["graph_tool_version"]).startswith(EXPECTED_GRAPH_TOOL_BUILD_PREFIX), "graph-tool release image build changed")
+            req(part["graph_tool_release_image_digest"] == "sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7", "graph-tool image digest changed")
+            req(part["engineering_repair"] == "repair1_release_2_98_image_reports_2_99dev_c049a734", "repair identity changed")
             req(int(part["events_total"]) == len(ids), "partition event count changed")
             req(int(part["edge_count"]) == len(edges), "partition edge count changed")
             req(bool(part["truth_access"]) is False, "partition accessed truth")
@@ -154,10 +157,11 @@ def main() -> int:
         candidates: list[frozenset[str]] = []
         rows = []
         seen: set[tuple[str, ...]] = set()
+        idset = set(ids)
         for r in part["candidates"]:
             mids = tuple(sorted(str(x) for x in r["member_ids"]))
             req(len(mids) >= MIN_SUPPORT and len(set(mids)) == len(mids), "invalid support-4 partition candidate")
-            req(set(mids).issubset(set(ids)), "partition emitted foreign event")
+            req(set(mids).issubset(idset), "partition emitted foreign event")
             if mids in seen:
                 continue
             seen.add(mids)
@@ -173,6 +177,8 @@ def main() -> int:
             "graph_edge_count": len(edges),
             "graph_sha256": graph_sha,
             "graph_tool_version": str(part["graph_tool_version"]),
+            "graph_tool_release_image_digest": part["graph_tool_release_image_digest"],
+            "engineering_repair": part["engineering_repair"],
             "model": str(part["model"]),
             "largest_candidate_count": int(counts[0]) if counts else 0,
             "largest_candidate_fraction": float(counts[0] / len(ids)) if counts else 0.0,
@@ -180,8 +186,6 @@ def main() -> int:
         }
         return candidates, summary
 
-    # Replace only #1284 candidate extraction. Parser, physical embedding,
-    # recurrent comparator, nested subsets, Jaccard metric, and gate remain exact.
     base.topomodal_candidates = ppmdl_candidates
 
     old_argv = sys.argv[:]
@@ -208,7 +212,6 @@ def main() -> int:
     req(d["scientific_role"] == "ZERO_LABEL_STRUCTURAL_DIAGNOSTIC_ONLY", "base scientific role changed")
     req(d["shower_truth_used"] is False and d["target_information_access"] is False, "firewall changed")
 
-    # Rename only method-facing fields; numerical gate semantics are inherited exactly.
     for row in d["fits"]:
         row["ppmdl"] = row.pop("topomodal")
     for pair in d["nested_pairs"]:
@@ -231,7 +234,10 @@ def main() -> int:
         "physical_embedding": "exact_1284_5deg_solar_4deg_radiant_10pct_logspeed",
         "graph": "exact_simple_undirected_radius_1_physical_graph",
         "outer_boundary": "exact_physical_connected_components",
-        "model": "graph_tool_2.98_PPBlockState_minimize_blockmodel_dl_defaults",
+        "model": "graph_tool_release_2_98_image_digest_PPBlockState_minimize_blockmodel_dl_defaults",
+        "graph_tool_release_image_digest": "sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7",
+        "graph_tool_reported_build_prefix": EXPECTED_GRAPH_TOOL_BUILD_PREFIX,
+        "engineering_repair": "repair1_release_2_98_image_reports_2_99dev_c049a734",
         "degree_corrected": True,
         "community_count": "Bayesian_description_length_selected",
         "min_candidate_support": MIN_SUPPORT,
