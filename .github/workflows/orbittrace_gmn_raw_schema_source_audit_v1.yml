@@ -1,0 +1,65 @@
+name: OrbitTrace GMN raw-schema source audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-sporadic-analogue-eom-v1
+    paths:
+      - 'orbittrace_gmn_raw_schema_source_audit_v1/ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sporadic-analogue-eom-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact frozen source parts
+        run: |
+          set -euo pipefail
+          test "$(git hash-object frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts/part00.b64)" = '03b08d315b1ae48ad987a9d5f0be30aebc06e650'
+          test "$(git hash-object frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts/part01.b64)" = '6776c946bf369183bf26df8e7979aa1223cf79be'
+          test "$(git hash-object frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts/part02.b64)" = '9c07caf75c87f597866ac8aa8257f71d35d36ad8'
+          test "$(git hash-object frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts/part03.b64)" = '823cc50e785395aa5fa69382c762a74ee61a8d7e'
+          python -m py_compile orbittrace_gmn_raw_schema_source_audit_v1/audit.py
+          mkdir -p output
+      - name: Inspect frozen parser source only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_raw_schema_source_audit_v1/audit.py \
+            --parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --output output
+      - name: Enforce zero-data role
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/GMN_RAW_SCHEMA_SOURCE_AUDIT_V1.json'))
+          assert r['verdict']=='PASS_GMN_RAW_SCHEMA_SOURCE_AUDIT_V1'
+          assert r['scientific_role']=='ZERO_DATA_FROZEN_SOURCE_ONLY'
+          for k in ['catalogue_data_accessed','event_values_accessed','known_shower_labels_accessed','target_information_access','target_region_events_accessed','external_scientific_access']:
+              assert r[k] is False
+          print(r['verdict'])
+          print('relevant literals:', ', '.join(r['relevant_string_literals']))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-gmn-raw-schema-source-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
