@@ -1,0 +1,1 @@
+Activate the frozen label-free structural Stage 0 for balanced cross-year local graph v1. No known-shower labels, target information, threshold tuning, graph tuning, or scientific rescue is authorized.
