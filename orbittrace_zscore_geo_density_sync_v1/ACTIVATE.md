@@ -1,0 +1,1 @@
+Activate the single frozen GMN endpoint for Z-score GEO density-synchronous recurrent-EOM v1. The sole scientific change is component-wise unlabeled pooled target-excluded Z-score normalization of GEO6 before HDBSCAN. No alternative scaling, per-year scaling, covariance whitening, feature weighting, parameter search, target access, or post-result rescue is authorized.
