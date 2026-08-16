@@ -41,11 +41,14 @@ jobs:
           mkdir -p input/v3 input/v8 input/ranker input/structural output
           test "$(git hash-object orbittrace_bivariate_density_component_persistence_v1/PROTOCOL.md)" = '5fab9fee2cf868b98ac50dc16db1580977ae9a12'
           test "$(git hash-object orbittrace_bivariate_density_component_persistence_v1/generate_prelabel.py)" = '1f35236a23241bfa955e1cb1eae6386ae832d9ee'
+          test "$(git hash-object orbittrace_bivariate_density_component_persistence_v1/generate_prelabel_repair1.py)" = 'e5169cf547c16f9b71206b492945091245bdd6af'
+          test "$(git hash-object orbittrace_bivariate_density_component_persistence_v1/ENGINEERING_REPAIR_1.md)" = '6b9a1eaa2845f6bf9ae05941531891437eb68f94'
           test "$(git hash-object orbittrace_bivariate_density_component_persistence_v1/evaluate_prelabel.py)" = 'd341eb97b30d8e70a948d38693e7a10893ec6d2e'
           test "$(git hash-object orbittrace_bivariate_density_component_persistence_sonotaco_v1/PROTOCOL.md)" = 'd8e2b2af2f9f48a7ef70ce3fc1338ba21f1921c2'
           test "$(git -C frozen-intrinsic hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
+          test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
-          python -m py_compile orbittrace_bivariate_density_component_persistence_v1/generate_prelabel.py orbittrace_bivariate_density_component_persistence_v1/evaluate_prelabel.py frozen-intrinsic/orbittrace_topomodal_sparse_recovery_v1/run_development.py
+          python -m py_compile orbittrace_bivariate_density_component_persistence_v1/generate_prelabel.py orbittrace_bivariate_density_component_persistence_v1/generate_prelabel_repair1.py orbittrace_bivariate_density_component_persistence_v1/evaluate_prelabel.py
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
@@ -78,13 +81,15 @@ jobs:
           test "$(sha256sum input/ranker/run_urc_union_ranker.py|cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
           test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json|cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
           test "$(sha256sum input/structural/TOPOMODAL_HIERARCHY_SCALE_V1.json|cut -d' ' -f1)" = 'e8cf7d92e96db9a1c99578f6efc63baf1534b94ab975e94f789fa6bc4a718497'
-      - name: Generate immutable bivariate prelabel
+      - name: Generate immutable bivariate prelabel with dual parent audit
         env:
           PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_bivariate_density_component_persistence_v1/generate_prelabel.py \
+          python -u orbittrace_bivariate_density_component_persistence_v1/generate_prelabel_repair1.py \
+            --base-generator orbittrace_bivariate_density_component_persistence_v1/generate_prelabel.py \
             --intrinsic-runner frozen-intrinsic/orbittrace_topomodal_sparse_recovery_v1/run_development.py \
+            --structural-runner orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
             --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
             --quality-source input/ranker/run_urc_union_ranker.py \
             --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
@@ -101,12 +106,12 @@ jobs:
           python - <<'PY'
           import hashlib,json
           raw=open('output/BIVARIATE_DENSITY_COMPONENT_PERSISTENCE_V1_PRELABEL.json','rb').read(); d=hashlib.sha256(raw).hexdigest(); assert d==open('output/prelabel_sha256.txt').read().strip(); p=json.loads(raw)
-          assert p['scientific_role']=='PRELABEL_BIVARIATE_DENSITY_COMPONENT_PERSISTENCE_V1' and len(p['subsets'])==8
+          assert p['scientific_role']=='PRELABEL_BIVARIATE_DENSITY_COMPONENT_PERSISTENCE_V1' and p['engineering_repair']=='repair1_dual_historical_recurrent_membership_audit' and len(p['subsets'])==8
           c=p['configuration']; assert c['graph']=='exact_radius_1_physical_embedding_1284' and c['annual_coordinates']=='radius_year_counts_over_annual_totals_no_scalarization' and c['filtration']=='all_integer_count_threshold_pairs' and c['candidate']=='every_exact_connected_component_membership_support_ge_4' and c['score']=='support_cells_over_N22_times_N23' and c['ranking']=='support_area_desc_then_family_hash_asc'
           assert p['blind_exclusion']==[20.0,55.0] and p['target_information_access'] is False and p['target_region_events_accessed'] is False and p['shower_truth_used'] is False
           brute=0
           for s in p['subsets']:
-            assert s['candidate_budget_sufficient'] is True
+            assert s['candidate_budget_sufficient'] is True and s['recurrent_dual_implementation_membership_exact'] is True
             cand=s['successor_candidates']; par=s['recurrent_candidates']; assert len(cand)>=len(par) and int(s['equal_budget_k'])==len(par)>0
             assert [int(r['rank']) for r in cand]==list(range(1,len(cand)+1)); assert [r['family_id'] for r in cand]==[r['family_id'] for r in sorted(cand,key=lambda r:(-float(r['support_area']),str(r['family_hash'])))]
             sm=s['successor_summary']; assert sm['year_axis_transpose_exact'] is True; assert int(sm['exact_threshold_cell_count'])==(int(sm['a_max_count'])+1)*(int(sm['b_max_count'])+1)
@@ -144,7 +149,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_bivariate_density_component_persistence_v1/PROTOCOL.md orbittrace_bivariate_density_component_persistence_v1/generate_prelabel.py orbittrace_bivariate_density_component_persistence_v1/evaluate_prelabel.py orbittrace_bivariate_density_component_persistence_sonotaco_v1/PROTOCOL.md frozen-intrinsic/orbittrace_topomodal_sparse_recovery_v1/run_development.py output/BIVARIATE_DENSITY_COMPONENT_PERSISTENCE_V1_PRELABEL.json output/BIVARIATE_DENSITY_COMPONENT_PERSISTENCE_V1.json > output/source_input_output_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_bivariate_density_component_persistence_v1/PROTOCOL.md orbittrace_bivariate_density_component_persistence_v1/ENGINEERING_REPAIR_1.md orbittrace_bivariate_density_component_persistence_v1/generate_prelabel.py orbittrace_bivariate_density_component_persistence_v1/generate_prelabel_repair1.py orbittrace_bivariate_density_component_persistence_v1/evaluate_prelabel.py orbittrace_bivariate_density_component_persistence_sonotaco_v1/PROTOCOL.md frozen-intrinsic/orbittrace_topomodal_sparse_recovery_v1/run_development.py output/BIVARIATE_DENSITY_COMPONENT_PERSISTENCE_V1_PRELABEL.json output/BIVARIATE_DENSITY_COMPONENT_PERSISTENCE_V1.json > output/source_input_output_sha256.txt 2>/dev/null || true
           git rev-parse HEAD > output/execution_commit.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
