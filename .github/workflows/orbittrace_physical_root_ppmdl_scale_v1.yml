@@ -18,6 +18,7 @@ env:
   OPENBLAS_NUM_THREADS: '1'
   MKL_NUM_THREADS: '1'
   NUMEXPR_NUM_THREADS: '1'
+  GRAPH_TOOL_IMAGE: 'tiagopeixoto/graph-tool@sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7'
 
 jobs:
   diagnostic:
@@ -61,20 +62,25 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
           test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
           test "$(git hash-object orbittrace_physical_root_ppmdl_scale_v1/PROTOCOL.md)" = '4c44850699f29a173ba5aeead90884e4794a1ba5'
-          test "$(git hash-object orbittrace_physical_root_ppmdl_scale_v1/pp_partition.py)" = '34d8f67581aeeacd7064161ca01a02788e25485f'
-          test "$(git hash-object orbittrace_physical_root_ppmdl_scale_v1/run_diagnostic.py)" = '41129ea9e30882ebc7e65e9218d6b29817e06888'
-          python -m py_compile orbittrace_physical_root_ppmdl_scale_v1/run_diagnostic.py
+          test "$(git hash-object orbittrace_physical_root_ppmdl_scale_v1/ENGINEERING_REPAIR_1.md)" = '43f05490ae1be7d96dc5db0e3b6720814ff83454'
+          test "$(git hash-object orbittrace_physical_root_ppmdl_scale_v1/pp_partition.py)" = '9975dcfcac47d22d4f4288f0135b2d155adcc22e'
+          test "$(git hash-object orbittrace_physical_root_ppmdl_scale_v1/run_diagnostic.py)" = 'afd57080d1ee79f9d7bd39ec3b85b3472e69a133'
+          python -m py_compile orbittrace_physical_root_ppmdl_scale_v1/pp_partition.py orbittrace_physical_root_ppmdl_scale_v1/run_diagnostic.py
 
-      - name: Freeze graph-tool execution image before data
+      - name: Freeze exact graph-tool image bytes before data
         run: |
           set -euo pipefail
-          docker pull tiagopeixoto/graph-tool:release-2.98
-          docker image inspect tiagopeixoto/graph-tool:release-2.98 --format '{{json .RepoDigests}}' | tee output/graph_tool_image_rep_digests.json
-          docker run --rm tiagopeixoto/graph-tool:release-2.98 python3 - <<'PY' | tee output/graph_tool_version.txt
+          docker pull "$GRAPH_TOOL_IMAGE"
+          got="$(docker image inspect "$GRAPH_TOOL_IMAGE" --format '{{index .RepoDigests 0}}')"
+          test "$got" = 'tiagopeixoto/graph-tool@sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7'
+          printf '%s\n' "$got" | tee output/graph_tool_image_digest.txt
+          docker run --rm -i "$GRAPH_TOOL_IMAGE" python3 - <<'PY' | tee output/graph_tool_version.txt
           import graph_tool
-          print(graph_tool.__version__)
-          assert str(graph_tool.__version__).startswith('2.98')
+          v=str(graph_tool.__version__)
+          print(v)
+          assert v.startswith('2.99dev (commit c049a734'), v
           PY
+          grep -q '^2.99dev (commit c049a734' output/graph_tool_version.txt
 
       - uses: actions/download-artifact@v4
         with:
@@ -102,7 +108,7 @@ jobs:
           set -euo pipefail
           test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
 
-      - name: Run first complete zero-label planted-partition diagnostic
+      - name: Run first technically valid zero-label planted-partition diagnostic
         env:
           PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
@@ -124,17 +130,27 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          from pathlib import Path
           r=json.load(open('output/PHYSICAL_ROOT_PPMDL_SCALE_V1.json'))
           assert r['schema']=='ORBITTRACE_PHYSICAL_ROOT_PPMDL_SCALE_V1'
           assert r['scientific_role']=='ZERO_LABEL_STRUCTURAL_DIAGNOSTIC_ONLY'
           assert r['interpretation'] in {'SUPPORTS_PHYSICAL_ROOT_PPMDL_CROSS_SCALE_COHERENCE','REFUTES_PHYSICAL_ROOT_PPMDL_CROSS_SCALE_COHERENCE'}
-          assert r['configuration']['physical_embedding']=='exact_1284_5deg_solar_4deg_radiant_10pct_logspeed'
-          assert r['configuration']['graph']=='exact_simple_undirected_radius_1_physical_graph'
-          assert r['configuration']['model']=='graph_tool_2.98_PPBlockState_minimize_blockmodel_dl_defaults'
-          assert r['configuration']['degree_corrected'] is True
-          assert r['configuration']['min_candidate_support']==4
+          c=r['configuration']
+          assert c['physical_embedding']=='exact_1284_5deg_solar_4deg_radiant_10pct_logspeed'
+          assert c['graph']=='exact_simple_undirected_radius_1_physical_graph'
+          assert c['model']=='graph_tool_release_2_98_image_digest_PPBlockState_minimize_blockmodel_dl_defaults'
+          assert c['graph_tool_release_image_digest']=='sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7'
+          assert c['graph_tool_reported_build_prefix']=='2.99dev (commit c049a734'
+          assert c['engineering_repair']=='repair1_release_2_98_image_reports_2_99dev_c049a734'
+          assert c['degree_corrected'] is True and c['min_candidate_support']==4
           assert len(r['fits'])==8 and len(r['nested_pairs'])==4
-          assert len(list(__import__('pathlib').Path('output/ppmdl_partitions').glob('partition_d*_b*.json')))==8
+          parts=sorted(Path('output/ppmdl_partitions').glob('partition_d*_b*.json'))
+          assert len(parts)==8
+          for p in parts:
+            d=json.load(open(p))
+            assert d['graph_tool_release_image_digest']=='sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7'
+            assert str(d['graph_tool_version']).startswith('2.99dev (commit c049a734')
+            assert d['truth_access'] is False
           assert r['blind_exclusion']==[20.0,55.0]
           assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
           assert r['shower_truth_used'] is False and r['sonotaco_2013_2014_access'] is False
@@ -151,6 +167,7 @@ jobs:
           set +e
           sha256sum \
             orbittrace_physical_root_ppmdl_scale_v1/PROTOCOL.md \
+            orbittrace_physical_root_ppmdl_scale_v1/ENGINEERING_REPAIR_1.md \
             orbittrace_physical_root_ppmdl_scale_v1/pp_partition.py \
             orbittrace_physical_root_ppmdl_scale_v1/run_diagnostic.py \
             orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
@@ -162,7 +179,7 @@ jobs:
           git rev-parse HEAD > output/execution_commit.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
-          docker image inspect tiagopeixoto/graph-tool:release-2.98 --format '{{json .RepoDigests}}' > output/graph_tool_image_rep_digests_final.json 2>/dev/null || true
+          docker image inspect "$GRAPH_TOOL_IMAGE" --format '{{index .RepoDigests 0}}' > output/graph_tool_image_digest_final.txt 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()
