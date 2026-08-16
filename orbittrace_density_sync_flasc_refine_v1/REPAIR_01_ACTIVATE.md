@@ -1,0 +1,1 @@
+Activate exactly one repaired binding target-excluded GMN 2022/2023 density-sync FLASC selective refinement endpoint under the frozen v1 protocol and TECHNICAL_REPAIR_01. The scientific method and +5/no-regression gate are unchanged. No post-result parameter or architecture rescue is authorized.
