@@ -1,0 +1,164 @@
+name: OrbitTrace fold-persistence rank v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-fold-persistence-rank-v1
+    paths:
+      - 'orbittrace_fold_persistence_rank_v1/ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  binding-gmn:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fold-persistence-rank-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify frozen science
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'charset-normalizer==3.5.0'
+          mkdir -p input/v3 input/v8 input/ranker input/winner input/folds output
+          test "$(git hash-object orbittrace_fold_persistence_rank_v1/PROTOCOL.md)" = 'd1ff1a5f2f008e6d4a549ee19c575a28b1db8780'
+          test "$(git hash-object orbittrace_fold_persistence_rank_v1/run_development.py)" = 'cfdb712fa258bc605b2324da044c695f3ff371e9'
+          test "$(git hash-object orbittrace_density_sync_gmn_train_cv_v1/PROTOCOL.md)" = 'b8d2a4f30506de6c7ee93783f5823e1e02402bf3'
+          test "$(git hash-object orbittrace_density_sync_gmn_train_cv_v1/run_fold.py)" = 'e2c01f53f44567f98ab4c7474b7911f3959c1b76'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_fold_persistence_rank_v1/run_development.py
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-v1-gmn-import-repair-retry
+          path: input/winner
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31852836840
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-density-sync-gmn-train-cv-v1-fold-*
+          path: input/folds
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31859724335
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify exact frozen inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/winner/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json | cut -d' ' -f1)" = 'efce0617a738a0372ec5b007fb87b46912accd8419f0f768829c4c0cb7d62993'
+          test "$(sha256sum input/winner/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = 'ca6aeed2b82739003ea5d39b59e869df876de2962164344a938fe4935ea38711'
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(find input/folds -name 'DENSITY_SYNC_GMN_TRAIN_CV_V1_FOLD_*_PRELABEL.json' | wc -l)" -eq 10
+          test "$(find input/folds -name 'DENSITY_SYNC_GMN_TRAIN_CV_V1_FOLD_[0-9].json' | wc -l)" -eq 10
+
+      - name: Run one binding fold-persistence rank endpoint
+        env:
+          PYTHONPATH: orbittrace_recurrent_eom_hdbscan_v1:input/ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8:.
+        run: |
+          set -euo pipefail
+          python -u -m orbittrace_fold_persistence_rank_v1.run_development \
+            --winner-prelabel-json input/winner/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json \
+            --winner-result-json input/winner/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json \
+            --fold-root input/folds \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce fixed +5 gate and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('output/FOLD_PERSISTENCE_RANK_V1_PRELABEL.json'))
+          r=json.load(open('output/FOLD_PERSISTENCE_RANK_V1_GMN_DEVELOPMENT.json'))
+          assert p['scientific_role']=='PRELABEL_FROZEN_FOLD_PERSISTENCE_RANK_V1'
+          assert p['perturbation_source_run']==31859724335
+          assert p['n_folds']==10 and len(p['fold_manifest'])==10
+          assert p['candidate_count']==r['candidate_count']==2094
+          assert p['candidate_memberships_unchanged'] is True
+          assert p['catalogue_loaded_before_order_freeze'] is False
+          assert p['known_shower_labels_indexed'] is False
+          assert p['winner_ordered_membership_sha256']=='e8f374ad03e7072463118ee6440a54d96d11e3aab17202cfe336f866530224f2'
+          assert p['successor_ordered_membership_sha256'] != p['winner_ordered_membership_sha256']
+          assert p['winner_unordered_candidate_multiset_sha256']==p['successor_unordered_candidate_multiset_sha256']
+          assert r['baseline_total_recovered_at_100']==179
+          assert r['required_total_recovered_at_100']==184 and r['required_gain']==5
+          assert r['verdict'] in {'PASS_FOLD_PERSISTENCE_RANK_V1_GMN_DEVELOPMENT','FAIL_FOLD_PERSISTENCE_RANK_V1_GMN_DEVELOPMENT'}
+          for x in (p,r):
+              for k in ['target_information_access','target_region_events_accessed','sonotaco_2013_2014_access','amos_access','asfn_access','efn_access','maarsy_scientific_access','dms_scientific_access']:
+                  assert x[k] is False, (k,x[k])
+          if r['verdict'].startswith('PASS_'):
+              assert r['successor_total_recovered_at_100'] >= 184
+              assert all(r['structural_gates'].values())
+              assert all(all(g.values()) for g in r['annual_gates'].values())
+          print(r['verdict'], 'total=',r['successor_total_recovered_at_100'], 'gain=',r['recovered_at_100_gain'], 'persistence=',r['persistence_summary'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_fold_persistence_rank_v1/PROTOCOL.md orbittrace_fold_persistence_rank_v1/run_development.py input/winner/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json input/winner/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_GMN_DEVELOPMENT.json output/FOLD_PERSISTENCE_RANK_V1_PRELABEL.json output/FOLD_PERSISTENCE_RANK_V1_GMN_DEVELOPMENT.json > output/provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-fold-persistence-rank-v1-gmn
+          path: output
+          if-no-files-found: error
+          retention-days: 90
