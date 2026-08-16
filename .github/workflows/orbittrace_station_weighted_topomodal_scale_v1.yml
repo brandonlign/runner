@@ -1,0 +1,178 @@
+name: OrbitTrace station-weighted topomodal scale v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-station-weighted-topomodal-scale-v1
+    paths:
+      - '.github/workflows/orbittrace_station_weighted_topomodal_scale_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install and audit frozen scientific sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/v3 input/v8 input/ranker input/numstat output
+
+          test "$(git hash-object orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md)" = 'ea5d862268fc2c69d37b8b4c10db187fe31cdd5a'
+          test "$(git hash-object orbittrace_station_weighted_topomodal_scale_v1/run_diagnostic.py)" = '24b4970981dcff677d66fc230d5998e7e51ed5f2'
+          test "$(git hash-object orbittrace_station_weighted_topomodal_recovery_v1/PROTOCOL.md)" = '4521f76928617cef538f126560d0507a80b6a51d'
+          test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/RESULT.md)" = 'ed5a5ad432bddf4946801dbaf138cce0c22df42e'
+          test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_station_weighted_topomodal_scale_v1/run_diagnostic.py
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-numstat-availability-v1
+          path: input/numstat
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31972929547
+
+      - name: Verify immutable inputs and activation contract
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/numstat/EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1.json | cut -d' ' -f1)" = '3ed5c33216d7d1cf2cbc703da088b3a86132e50532fb996cfe475d7f6052d7f8'
+          test "$(sha256sum input/numstat/audited_union_numstat_mapping.json | cut -d' ' -f1)" = '92f6ce1961b0e8642f6bdd1cc455b07785ed8224c8f8f3d467d69fac2b82921c'
+          python - <<'PY'
+          import json,hashlib
+          r=json.load(open('input/numstat/TOPOMODAL_NUMSTAT_AVAILABILITY_V1.json'))
+          assert r['verdict']=='PASS_TOPOMODAL_NUMSTAT_AVAILABILITY_V1'
+          assert r['audited_mapping_sha256']=='92f6ce1961b0e8642f6bdd1cc455b07785ed8224c8f8f3d467d69fac2b82921c'
+          assert r['universe_manifest_sha256']=='3ed5c33216d7d1cf2cbc703da088b3a86132e50532fb996cfe475d7f6052d7f8'
+          assert all(v['all_events_usable'] is True and v['complete_fraction']==1.0 for v in r['subset_stats'].values())
+          assert r['target_information_access'] is False and r['shower_truth_parsed'] is False
+          m=json.load(open('input/numstat/audited_union_numstat_mapping.json'))
+          assert len(m)==23080 and all(isinstance(v,int) and not isinstance(v,bool) and v>=2 for v in m.values())
+          print('PASS_IMMUTABLE_NUMSTAT_ACTIVATION')
+          PY
+
+      - name: Run first zero-label station-weighted topomodal diagnostic
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_station_weighted_topomodal_scale_v1/run_diagnostic.py \
+            --base-runner orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            --numstat-mapping input/numstat/audited_union_numstat_mapping.json \
+            --availability-result input/numstat/TOPOMODAL_NUMSTAT_AVAILABILITY_V1.json \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce frozen structural contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/STATION_WEIGHTED_TOPOMODAL_SCALE_V1.json'))
+          assert r['schema']=='ORBITTRACE_STATION_WEIGHTED_TOPOMODAL_SCALE_V1'
+          assert r['scientific_role']=='ZERO_LABEL_STRUCTURAL_DIAGNOSTIC_ONLY'
+          assert r['interpretation'] in {'SUPPORTS_STATION_WEIGHTED_TOPOMODAL_CROSS_SCALE_COHERENCE','REFUTES_STATION_WEIGHTED_TOPOMODAL_CROSS_SCALE_COHERENCE'}
+          assert len(r['fits'])==8 and len(r['nested_pairs'])==4
+          c=r['configuration']
+          assert c['density']=='sum_num_stat_in_radius_neighborhood_over_total_subset_num_stat'
+          assert c['station_weight']=='exact_integer_num_stat_no_transform_no_cap_no_imputation'
+          assert c['min_candidate_support']==4
+          assert r['availability_mapping_sha256']=='92f6ce1961b0e8642f6bdd1cc455b07785ed8224c8f8f3d467d69fac2b82921c'
+          assert r['station_identity_accessed'] is False and r['station_geography_accessed'] is False
+          assert r['shower_truth_used'] is False and r['target_information_access'] is False
+          assert r['sonotaco_2013_2014_access'] is False and r['asfn_event_level_access'] is False and r['efn_event_level_access'] is False
+          assert r['amos_scientific_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print(r['interpretation'])
+          print(json.dumps(r['summary'],indent=2,sort_keys=True))
+          print(json.dumps([{'d':x['denominator'],'b':x['bucket'],'n':x['events_total'],'candidates':x['station_weighted_topomodal']['candidate_count'],'station_support_mean':x['station_weighted_topomodal']['station_support_mean_per_event']} for x in r['fits']],indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve exact provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md \
+            orbittrace_station_weighted_topomodal_scale_v1/run_diagnostic.py \
+            orbittrace_station_weighted_topomodal_recovery_v1/PROTOCOL.md \
+            orbittrace_topomodal_numstat_availability_v1/RESULT.md \
+            orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            input/numstat/EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1.json \
+            input/numstat/TOPOMODAL_NUMSTAT_AVAILABILITY_V1.json \
+            input/numstat/audited_union_numstat_mapping.json \
+            output/STATION_WEIGHTED_TOPOMODAL_SCALE_V1.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-station-weighted-topomodal-scale-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
