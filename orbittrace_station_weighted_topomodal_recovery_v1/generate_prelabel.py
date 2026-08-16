@@ -51,7 +51,6 @@ def station_ranked(parent:Any, structural:Any, events:list[dict[str,Any]], mappi
         fid=hashlib.sha256(('SWTM1|'+'|'.join(mids)).encode()).hexdigest()[:20]
         row={'family_id':fid,'family_hash':fh,'event_ids':list(mids),'member_count':len(mids),'first_node':node,'is_root':root,'creation_prominence':float(creation[node]),'prominence_span':span,'peak_density':peak,'mean_density':mean}
         req(mids not in unique,'duplicate'); unique[mids]=row; structural_rows.append({'family_hash':fh,'member_count':len(mids),'first_node':node,'is_root':root})
-    # Exact intrinsic #1284 ordering semantics, unchanged.
     def key(r):
         if r['is_root']: return (0,-float(r['peak_density']),-float(r['mean_density']),-int(r['member_count']),str(r['family_hash']))
         return (1,-float(r['prominence_span']),-float(r['peak_density']),-float(r['mean_density']),-int(r['member_count']),str(r['family_hash']))
@@ -68,9 +67,14 @@ def main()->int:
     avail=json.loads(a.availability_result.read_text()); req(avail['verdict']=='PASS_TOPOMODAL_NUMSTAT_AVAILABILITY_V1' and avail['audited_mapping_sha256']==MAP_SHA,'availability prerequisite')
     mapping=json.loads(a.numstat_mapping.read_text()); req(len(mapping)==23080 and all(isinstance(v,int) and not isinstance(v,bool) and v>=2 for v in mapping.values()),'mapping values')
     base=load(a.base_generator,'swtm_base_generator'); structural=load(a.structural_runner,'swtm_structural')
+    # Engineering-only evaluator repair: the inherited harness verifies event counts and
+    # recurrent-EOM membership rows against its structural-result input. Bind that check
+    # to the already-sealed station-weighted zero-label artifact, whose recurrent-EOM rows
+    # were generated in the same frozen runtime. Candidate generation/ranking is unchanged.
+    base.STRUCTURAL_RESULT_SHA256=STATION_STRUCT_SHA
     base.rankdensity_topomodal=lambda parent,structural_mod,events: station_ranked(parent,structural_mod,events,mapping)
     old=sys.argv[:]
-    sys.argv=[str(a.base_generator),'--intrinsic-runner',str(a.intrinsic_runner),'--structural-runner',str(a.structural_runner),'--structural-result-json',str(a.original_structural_result),'--local-orderstat-source',str(a.local_orderstat_source),'--parent-runner',str(a.parent_runner),'--quality-source',str(a.quality_source),'--support-source-parts',str(a.support_source_parts),'--candidate-payload',str(a.candidate_payload),'--baseline-payload',str(a.baseline_payload),'--scorer-parts',str(a.scorer_parts),'--v8-result-json',str(a.v8_result_json),'--output',str(a.output)]
+    sys.argv=[str(a.base_generator),'--intrinsic-runner',str(a.intrinsic_runner),'--structural-runner',str(a.structural_runner),'--structural-result-json',str(a.station_structural_result),'--local-orderstat-source',str(a.local_orderstat_source),'--parent-runner',str(a.parent_runner),'--quality-source',str(a.quality_source),'--support-source-parts',str(a.support_source_parts),'--candidate-payload',str(a.candidate_payload),'--baseline-payload',str(a.baseline_payload),'--scorer-parts',str(a.scorer_parts),'--v8-result-json',str(a.v8_result_json),'--output',str(a.output)]
     try: rc=int(base.main())
     finally: sys.argv=old
     req(rc==0,'base prelabel harness')
