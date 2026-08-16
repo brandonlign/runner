@@ -1,0 +1,97 @@
+name: OrbitTrace topomodal orbit availability v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-topomodal-orbital-frechet-v1
+    paths:
+      - '.github/workflows/orbittrace_topomodal_orbit_availability_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  availability:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install exact reader and audit frozen sources
+        run: |
+          set -euo pipefail
+          mkdir -p input/manifest output
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==1.23.5'
+          python -m pip install 'gmn-python-api==0.0.13'
+          test "$(git hash-object orbittrace_topomodal_orbital_frechet_v1/PROTOCOL.md)" = '08bd4640d4f10360a69cb5fc9be0a1804b4b72f6'
+          test "$(git hash-object orbittrace_topomodal_orbit_availability_v1/audit.py)" = '9f321789593302fe5059a3211b28481adbaeab62'
+          python -m py_compile orbittrace_topomodal_orbit_availability_v1/audit.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-numstat-availability-v1
+          path: input/manifest
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31972929547
+      - name: Verify immutable exact-1284 manifest
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/manifest/EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1.json | cut -d' ' -f1)" = '3ed5c33216d7d1cf2cbc703da088b3a86132e50532fb996cfe475d7f6052d7f8'
+          python - <<'PY'
+          import json
+          p=json.load(open('input/manifest/EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1.json'))
+          assert p['schema']=='ORBITTRACE_EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1'
+          assert p['years']==[2022,2023] and p['blind_exclusion']==[20.0,55.0]
+          assert p['num_stat_accessed'] is False and p['shower_label_accessed'] is False
+          assert len(p['audited_union_ids'])==23080 and len(p['source_sha256'])==24
+          print('PASS_IMMUTABLE_1284_ORBIT_AVAILABILITY_MANIFEST')
+          PY
+      - name: Run zero-label orbit availability audit
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_orbit_availability_v1/audit.py \
+            --universe-manifest input/manifest/EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1.json \
+            --output output
+      - name: Enforce frozen availability contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          r=json.load(open('output/TOPOMODAL_ORBIT_AVAILABILITY_V1.json'))
+          assert r['schema']=='ORBITTRACE_TOPOMODAL_ORBIT_AVAILABILITY_V1'
+          assert r['verdict'] in {'PASS_TOPOMODAL_ORBIT_AVAILABILITY_V1','FAIL_TOPOMODAL_ORBIT_AVAILABILITY_V1'}
+          assert r['activation_requires_complete_fraction']==1.0
+          assert r['expected_subset_counts']=={'d128_b0':5567,'d128_b1':5840,'d128_b2':5857,'d128_b3':5816,'d1024_b0':677,'d1024_b1':739,'d1024_b2':736,'d1024_b3':766}
+          assert r['fields_parsed']==['unique_trajectory_identifier','sol_lon_deg','e','q_au','i_deg','peri_deg','node_deg']
+          for k in ('iau_number_parsed','iau_code_parsed','shower_truth_parsed','target_information_access','target_region_orbit_emitted_or_used','candidate_ranking_computed','d_sh_computed','sonotaco_scientific_access','asfn_event_level_access','efn_event_level_access','amos_scientific_access','maarsy_scientific_access','dms_scientific_access','post_result_parameter_search'):
+              assert r[k] is False,k
+          assert r['orbit_fields_parsed_only_for_manifest_ids'] is True
+          assert r['universe_manifest_sha256']=='3ed5c33216d7d1cf2cbc703da088b3a86132e50532fb996cfe475d7f6052d7f8'
+          raw=open('output/audited_union_orbit_mapping.json','rb').read(); assert hashlib.sha256(raw).hexdigest()==r['orbit_mapping_sha256']
+          assert len(r['monthly_raw_sha256'])==24
+          print(r['verdict']); print(json.dumps({'year_stats':r['year_stats'],'subset_stats':r['subset_stats'],'orbit_mapping_sha256':r['orbit_mapping_sha256']},indent=2,sort_keys=True))
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_topomodal_orbital_frechet_v1/PROTOCOL.md orbittrace_topomodal_orbit_availability_v1/audit.py input/manifest/EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1.json output/TOPOMODAL_ORBIT_AVAILABILITY_V1.json output/audited_union_orbit_mapping.json > output/source_input_output_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-topomodal-orbit-availability-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
