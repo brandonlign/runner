@@ -59,8 +59,8 @@ def member_hash(members: frozenset[str]) -> str:
 
 def physical_embedding(events: list[dict[str, Any]]) -> np.ndarray:
     sol = np.radians(np.asarray([float(e["sol"]) for e in events], dtype=float))
-    lon = np.radians(np.asarray([float(e["sun_lon"]) for e in events], dtype=float))
-    lat = np.radians(np.asarray([float(e["ecl_lat"]) for e in events], dtype=float))
+    lon = np.radians(np.asarray([float(e["lon"]) for e in events], dtype=float))
+    lat = np.radians(np.asarray([float(e["lat"]) for e in events], dtype=float))
     vg = np.asarray([float(e["vg"]) for e in events], dtype=float)
     req(np.all(np.isfinite(vg)) and np.all(vg > 0.0), "invalid speed")
     clat = np.cos(lat)
