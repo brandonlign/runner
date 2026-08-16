@@ -27,33 +27,26 @@ jobs:
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
 
-      - name: Extract calibration, catalogue split, and Mondrian mechanics without catalogue access
+      - name: Extract calibration-event split and Mondrian mechanics without catalogue access
         run: |
           set -euo pipefail
           python - <<'PY'
           import ast, base64, gzip, hashlib, json
           from pathlib import Path
 
+          def decode_parts(directory):
+              parts=sorted(Path(directory).glob('part*.b64'))
+              encoded=''.join(''.join(p.read_text().split()) for p in parts)
+              raw=gzip.decompress(base64.b64decode(encoded,validate=True))
+              return raw.decode('utf-8'), hashlib.sha256(raw).hexdigest(), [p.name for p in parts]
+
           development_text=Path('/tmp/run_wavelet_catalogue_v3_development.py').read_text()
           development_tree=ast.parse(development_text)
           funcs={n.name:n for n in development_tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
           calibrate=funcs['calibrate_year']
 
-          # Extract every function that directly mentions scan/calibration construction so the
-          # split semantics can be reviewed without importing or calling the catalogue runtime.
-          split_funcs={}
-          for name,node in funcs.items():
-              src=ast.get_source_segment(development_text,node) or ''
-              low=src.lower()
-              if ('calibration' in low or 'calibrate' in low) and ('scan' in low or 'catalog' in low or 'load_' in low):
-                  split_funcs[name]=src
-
-          parts=sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
-          assert [p.name for p in parts]==[f'part{i:02d}.b64' for i in range(4)]
-          encoded=''.join(''.join(p.read_text().split()) for p in parts)
-          scorer_bytes=gzip.decompress(base64.b64decode(encoded,validate=True))
-          scorer_text=scorer_bytes.decode('utf-8')
-          scorer_sha=hashlib.sha256(scorer_bytes).hexdigest()
+          scorer_text,scorer_sha,scorer_parts=decode_parts('mondrian_clique_development/source_parts_v2')
+          assert scorer_parts==[f'part{i:02d}.b64' for i in range(4)]
           scorer_tree=ast.parse(scorer_text)
           scorer_funcs={n.name:n for n in scorer_tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
           classes={n.name:n for n in scorer_tree.body if isinstance(n,ast.ClassDef)}
@@ -62,10 +55,8 @@ jobs:
           make=methods['make']
           method_calls=sorted({
               n.func.attr for n in ast.walk(make)
-              if isinstance(n,ast.Call)
-              and isinstance(n.func,ast.Attribute)
-              and isinstance(n.func.value,ast.Name)
-              and n.func.value.id=='self'
+              if isinstance(n,ast.Call) and isinstance(n.func,ast.Attribute)
+              and isinstance(n.func.value,ast.Name) and n.func.value.id=='self'
               and n.func.attr in methods
           })
           method_names=[]
@@ -73,15 +64,25 @@ jobs:
               if name in methods and name not in method_names:
                   method_names.append(name)
 
+          support_text,support_sha,support_parts=decode_parts('orbittrace_fixed4_support_wrapper_development/source_parts')
+          support_tree=ast.parse(support_text)
+          support_funcs={n.name:n for n in support_tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          parse=support_funcs['parse_catalogue']
+          direct_calls=sorted({n.func.id for n in ast.walk(parse) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name)})
+          helper_names=[name for name in direct_calls if name in support_funcs and name!='parse_catalogue']
+
           report={
             'development_source_sha256':'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51',
+            'support_source_sha256':support_sha,
+            'support_part_names':support_parts,
             'scorer_source_sha256':scorer_sha,
             'scientific_data_access':False,
             'catalogue_loader_called':False,
             'target_information_access':False,
+            'parse_catalogue_source':ast.get_source_segment(support_text,parse),
+            'parse_catalogue_direct_helpers':helper_names,
+            'parse_catalogue_helper_sources':{name:ast.get_source_segment(support_text,support_funcs[name]) for name in helper_names},
             'calibrate_year_source':ast.get_source_segment(development_text,calibrate),
-            'scan_calibration_split_sources':split_funcs,
-            'mondrian_factory_method_names':method_names,
             'mondrian_factory_methods':{name:ast.get_source_segment(scorer_text,methods[name]) for name in method_names},
             'stable_seed_source':ast.get_source_segment(scorer_text,scorer_funcs['stable_seed']),
           }
