@@ -1,0 +1,1 @@
+Activate the sol-longitude-first target-excluded GMN 2022/2023 orbital coverage audit. Orbital fields may be indexed only for rows already outside the closed 20–55 degree interval.
