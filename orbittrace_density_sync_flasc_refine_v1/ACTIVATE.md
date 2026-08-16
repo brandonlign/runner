@@ -1,0 +1,1 @@
+Activate exactly one binding target-excluded GMN 2022/2023 density-sync FLASC selective parent-to-branches refinement endpoint under the frozen v1 protocol. No post-result core/full switch, two-sided branch labeling, branch-size/persistence tuning, parent+branch union, branch quota, score blend, reranking rescue, geometry change, or HDBSCAN tuning is authorized.
