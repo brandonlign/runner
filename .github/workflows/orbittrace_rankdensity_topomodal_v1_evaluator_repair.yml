@@ -1,0 +1,172 @@
+name: OrbitTrace rank-density topomodal v1 evaluator repair
+on:
+  push:
+    branches: [agent/orbittrace-rankdensity-topomodal-v1]
+    paths: ['.github/workflows/orbittrace_rankdensity_topomodal_v1_evaluator_repair.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  evaluator-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 312b1b718ae105813de242355142a74e7d377d65
+          path: frozen-intrinsic
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and audit evaluator-only sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/v3 input/v8 input/ranker sealed output
+          test "$(git hash-object orbittrace_rankdensity_topomodal_v1/EVALUATOR_REPAIR_1.md)" = 'dbf9077d9da960d364b8f4bc9611f9de93c3eb61'
+          test "$(git hash-object orbittrace_rankdensity_topomodal_v1/evaluate_prelabel.py)" = 'b6f25f04e6e81b874ff02b9d89eac96708fa6d34'
+          test "$(git hash-object orbittrace_rankdensity_topomodal_v1/generate_prelabel.py)" = '189e50ed27e0e62ce275a41f6a46baf1f2c48baa'
+          test "$(git hash-object orbittrace_rankdensity_topomodal_sonotaco_v1/PROTOCOL.md)" = 'ceae3295131bd6faae984602d2dc2893a0bf09c5'
+          test "$(git -C frozen-intrinsic hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_rankdensity_topomodal_v1/evaluate_prelabel.py
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-rankdensity-topomodal-v1
+          path: sealed
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31968130661
+      - name: Verify immutable sealed prelabel
+        run: |
+          set -euo pipefail
+          test -f sealed/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json
+          test "$(sha256sum sealed/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json|cut -d' ' -f1)" = 'b6bf31e9add2b9c2e220ccb91d0778859abe86505731d6a0f071ed9eb7c13533'
+          python - <<'PY'
+          import json
+          p=json.load(open('sealed/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json'))
+          assert p['schema']=='ORBITTRACE_RANKDENSITY_TOPOMODAL_V1_PRELABEL'
+          assert p['scientific_role']=='PRELABEL_RANKDENSITY_TOPOMODAL_V1'
+          assert p['configuration']['density']=='GEO6_third_nearest_other_empirical_rank_q'
+          assert p['configuration']['graph']=='exact_1284_physical_radius_1'
+          assert p['configuration']['hierarchy']=='complete_gudhi_3.12_manual_topomato'
+          assert p['configuration']['min_candidate_support']==4
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['target_information_access'] is False and p['target_region_events_accessed'] is False and p['shower_truth_used'] is False
+          assert p['candidate_budget_shortage_any_panel'] is False
+          assert len(p['subsets'])==8
+          assert all(s['candidate_budget_sufficient'] is True for s in p['subsets'])
+          assert p['cross_scale']['gates']=={
+            'pooled_fine_to_coarse_mean_best_jaccard_strictly_greater': True,
+            'strict_bucket_wins_at_least_3_of_4': True,
+          }
+          assert abs(p['cross_scale']['successor_pooled_fine_to_coarse_mean_best_jaccard']-0.8009311013016914)<1e-15
+          assert abs(p['cross_scale']['recurrent_pooled_fine_to_coarse_mean_best_jaccard']-0.6152941107471891)<1e-15
+          assert p['cross_scale']['successor_strict_bucket_wins']==4
+          print('sealed_prelabel_verified')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Verify frozen evaluator inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py|cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json|cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+      - name: Evaluate sealed prelabel with transport-only retry
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          success=0
+          for attempt in 1 2 3 4; do
+            rm -f output/RANKDENSITY_TOPOMODAL_V1.json
+            set +e
+            python -u orbittrace_rankdensity_topomodal_v1/evaluate_prelabel.py \
+              --intrinsic-runner frozen-intrinsic/orbittrace_topomodal_sparse_recovery_v1/run_development.py \
+              --prelabel sealed/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json \
+              --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+              --quality-source input/ranker/run_urc_union_ranker.py \
+              --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+              --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+              --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+              --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+              --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+              --output output 2>&1 | tee "output/evaluator_attempt_${attempt}.log"
+            rc=${PIPESTATUS[0]}
+            set -e
+            if [ "$rc" -eq 0 ]; then
+              success=1
+              break
+            fi
+            if ! grep -Eq 'ConnectionError|RemoteDisconnected|ReadTimeout|ConnectTimeout|ConnectionResetError|ProtocolError' "output/evaluator_attempt_${attempt}.log"; then
+              echo "non-transport evaluator failure; refusing retry"
+              exit "$rc"
+            fi
+            sleep 15
+          done
+          test "$success" -eq 1
+      - name: Enforce original 12-gate result contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          pre='sealed/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json'
+          d=hashlib.sha256(open(pre,'rb').read()).hexdigest()
+          assert d=='b6bf31e9add2b9c2e220ccb91d0778859abe86505731d6a0f071ed9eb7c13533'
+          r=json.load(open('output/RANKDENSITY_TOPOMODAL_V1.json'))
+          assert r['prelabel_sha256']==d
+          assert r['verdict'] in {'PASS_RANKDENSITY_TOPOMODAL_V1','FAIL_RANKDENSITY_TOPOMODAL_V1'}
+          assert len(r['gates'])==12
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          print(r['verdict'])
+          print(json.dumps({'cross_scale':r['cross_scale'],'scales':r['scale_aggregates'],'gates':r['gates']},indent=2,sort_keys=True))
+          PY
+      - name: Preserve repair provenance
+        if: always()
+        run: |
+          set +e
+          cp sealed/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json output/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json
+          sha256sum orbittrace_rankdensity_topomodal_v1/EVALUATOR_REPAIR_1.md orbittrace_rankdensity_topomodal_v1/evaluate_prelabel.py sealed/RANKDENSITY_TOPOMODAL_V1_PRELABEL.json output/RANKDENSITY_TOPOMODAL_V1.json > output/evaluator_repair_source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/evaluator_repair_execution_commit.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-rankdensity-topomodal-v1-evaluator-repair
+          path: output
+          if-no-files-found: error
+          retention-days: 90
