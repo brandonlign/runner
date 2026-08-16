@@ -31,33 +31,39 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Reconstruct frozen support source and inspect parser only
+      - name: Reconstruct frozen support source and inspect parser without executing it
         run: |
           set -euo pipefail
           python - <<'PY'
-          import base64,gzip,inspect,importlib.util,pathlib,sys
+          import ast,base64,gzip,pathlib
           root=pathlib.Path('frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts')
           raw=''.join(p.read_text().strip() for p in sorted(root.glob('part*.b64')))
           src=gzip.decompress(base64.b64decode(raw)).decode('utf-8')
-          p=pathlib.Path('/tmp/frozen_support.py'); p.write_text(src)
-          spec=importlib.util.spec_from_file_location('frozen_support_static',p)
-          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-          names=['parse_catalogue']
+          tree=ast.parse(src)
+          funcs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          wanted=['parse_catalogue']
           seen=set()
-          while names:
-              name=names.pop(0)
-              if name in seen or not hasattr(m,name): continue
+          while wanted:
+              name=wanted.pop(0)
+              if name in seen or name not in funcs: continue
               seen.add(name)
-              obj=getattr(m,name)
-              if not callable(obj): continue
-              try: text=inspect.getsource(obj)
-              except Exception: continue
+              node=funcs[name]
+              text=ast.get_source_segment(src,node) or ''
               print(f'===== {name} =====')
               print(text)
-              for cand in ('load_source','load_sources','parse_events','parse_gmn','read_gmn','load_gmn','build_scan','filter_events','event_from_row','event_id'):
-                  if cand in text and cand not in seen: names.append(cand)
-          print('===== MODULE CONSTANTS =====')
-          for k in sorted(m.__dict__):
-              if any(x in k.upper() for x in ('BLIND','QUALITY','FILTER','SCAN')) and isinstance(m.__dict__[k],(str,int,float,bool,tuple,list)):
-                  print(k,repr(m.__dict__[k]))
+              calls=[]
+              for q in ast.walk(node):
+                  if isinstance(q,ast.Call) and isinstance(q.func,ast.Name) and q.func.id in funcs:
+                      calls.append(q.func.id)
+              for cand in calls:
+                  if cand not in seen and cand not in wanted: wanted.append(cand)
+          print('===== RELEVANT TOP-LEVEL ASSIGNMENTS =====')
+          for n in tree.body:
+              if isinstance(n,(ast.Assign,ast.AnnAssign)):
+                  names=[]
+                  targets=n.targets if isinstance(n,ast.Assign) else [n.target]
+                  for t in targets:
+                      if isinstance(t,ast.Name): names.append(t.id)
+                  if any(any(x in k.upper() for x in ('BLIND','SCAN','QUALITY','YEAR','MONTH')) for k in names):
+                      print(ast.get_source_segment(src,n))
           PY
