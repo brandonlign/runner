@@ -1,0 +1,54 @@
+name: OrbitTrace isolate 1284 prelabel for orbital v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-topomodal-orbital-frechet-recovery-v1
+    paths:
+      - '.github/workflows/orbittrace_extract_1284_prelabel_for_orbital_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  isolate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin frozen orbital protocol
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_topomodal_orbital_frechet_v1/PROTOCOL.md)" = '08bd4640d4f10360a69cb5fc9be0a1804b4b72f6'
+          mkdir -p source isolated
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-sparse-recovery-v1
+          path: source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31959926804
+      - name: Isolate only the immutable pretruth file
+        run: |
+          set -euo pipefail
+          test "$(sha256sum source/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json | cut -d' ' -f1)" = 'db608f84bf333d18d624199f2d31c27b4183ee3a75a3d930cef4b9766a19d4de'
+          cp source/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json isolated/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json
+          sha256sum isolated/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json > isolated/prelabel_sha256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('isolated/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json'))
+          assert p['schema']=='ORBITTRACE_TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL'
+          assert p['scientific_role']=='PRELABEL_TOPOMODAL_SPARSE_RECOVERY_V1'
+          assert p['shower_truth_used'] is False and p['target_information_access'] is False and p['target_region_events_accessed'] is False
+          assert p['structural_result_sha256']=='e8cf7d92e96db9a1c99578f6efc63baf1534b94ab975e94f789fa6bc4a718497'
+          assert len(p['subsets'])==8
+          print('PASS_ISOLATED_IMMUTABLE_1284_PRELABEL')
+          PY
+          rm -rf source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-1284-prelabel-isolated-for-orbital-v1
+          path: isolated
+          if-no-files-found: error
+          retention-days: 90
