@@ -1,0 +1,1 @@
+Retry the exact frozen sporadic member-denoise v1 GMN endpoint using module launch only. The prior run was a technical no-result before GMN/pretruth due self-import. No scientific method, threshold, membership rule, gate, or firewall changed.
