@@ -1,0 +1,1 @@
+Activate the frozen-source-only audit. No catalogue rows, event values, labels, target information, or external scientific data may be accessed.
