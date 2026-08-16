@@ -23,18 +23,19 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
-      - name: Install exact reader and audit frozen source
+      - name: Install compatible exact reader and audit frozen source
         run: |
           set -euo pipefail
+          mkdir -p output
           python -m pip install --upgrade pip
           python -m pip install 'gmn-python-api==0.0.13'
           test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/PROTOCOL.md)" = 'b636b0bde53f4b0f00424a1cdea4352f7b3d2ba0'
+          test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_1.md)" = 'ea9fcb8591ed1ada09ad649e1dceff5a6447462d'
           test "$(git hash-object orbittrace_topomodal_numstat_availability_v1/audit.py)" = 'd2cd353e78624cf3cbf31babdcde14f0e7c1b0dc'
           test "$(git hash-object orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md)" = 'd2101cc270e64fcc3ca3eceb84e5584e4a75b355'
           python -m py_compile orbittrace_topomodal_numstat_availability_v1/audit.py
-          mkdir -p output
 
       - name: Run frozen target-excluded monthly availability audit
         run: |
@@ -66,8 +67,9 @@ jobs:
         if: always()
         run: |
           set +e
+          mkdir -p output
           git rev-parse HEAD > output/execution_commit.txt
-          sha256sum orbittrace_topomodal_numstat_availability_v1/PROTOCOL.md orbittrace_topomodal_numstat_availability_v1/audit.py orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md output/TOPOMODAL_NUMSTAT_AVAILABILITY_V1.json output/audited_union_numstat_mapping.json > output/source_output_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_topomodal_numstat_availability_v1/PROTOCOL.md orbittrace_topomodal_numstat_availability_v1/ENGINEERING_REPAIR_1.md orbittrace_topomodal_numstat_availability_v1/audit.py orbittrace_station_weighted_topomodal_scale_v1/PROTOCOL.md output/TOPOMODAL_NUMSTAT_AVAILABILITY_V1.json output/audited_union_numstat_mapping.json > output/source_output_sha256.txt 2>/dev/null || true
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
 
@@ -78,5 +80,3 @@ jobs:
           path: output
           if-no-files-found: error
           retention-days: 90
-
-# Registration-only touch after first workflow creation; scientific sources remain pinned above.
