@@ -1,0 +1,1 @@
+Activate exactly one binding target-excluded GMN 2022/2023 ORBIT7 density-synchronous recurrent-EOM endpoint under the already-frozen protocol. No post-result orbit scaling, quality cut, HDBSCAN tuning, GEO union, reranking, or rescue is authorized.
