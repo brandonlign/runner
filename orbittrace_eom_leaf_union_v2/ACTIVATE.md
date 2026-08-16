@@ -1,0 +1,1 @@
+Activate exactly one binding target-excluded GMN 2022/2023 EOM + native-leaf density-synchronous union endpoint under the frozen v2 protocol. No post-result leaf weighting, quota, overlap threshold, size cap, score blend, reranking rescue, geometry change, HDBSCAN tuning, or alternate duplicate rule is authorized.
