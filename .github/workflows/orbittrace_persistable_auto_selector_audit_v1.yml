@@ -1,0 +1,86 @@
+name: OrbitTrace Persistable auto-selector synthetic audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-persistable-auto-selector-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_persistable_auto_selector_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  synthetic-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: LuisScoccola/persistable
+          ref: 7eb75b2e8d2fe5a18e49248aa7d1c97f829415be
+          path: persistable-upstream
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Verify frozen source and install pinned upstream
+        run: |
+          set -euo pipefail
+          test "$(git -C persistable-upstream rev-parse HEAD)" = '7eb75b2e8d2fe5a18e49248aa7d1c97f829415be'
+          test "$(git hash-object orbittrace_persistable_auto_selector_audit_v1/PROTOCOL.md)" = '2d1057db08a5d4687f37d2198ffcbe8e4135d83b'
+          test "$(git hash-object orbittrace_persistable_auto_selector_audit_v1/run_synthetic_audit.py)" = 'be1f2beef13c97125e2efe8f6fecdf961c67cbbd'
+          python -m pip install --upgrade pip
+          python -m pip install ./persistable-upstream
+          python -m py_compile orbittrace_persistable_auto_selector_audit_v1/run_synthetic_audit.py
+          mkdir -p output
+
+      - name: Run frozen synthetic selector audit
+        run: |
+          set -euo pipefail
+          python -u orbittrace_persistable_auto_selector_audit_v1/run_synthetic_audit.py
+
+      - name: Enforce frozen audit contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/PERSISTABLE_AUTO_SELECTOR_SYNTHETIC_AUDIT.json'))
+          assert r['schema']=='ORBITTRACE_PERSISTABLE_AUTO_SELECTOR_AUDIT_V1'
+          assert r['upstream_persistable_commit']=='7eb75b2e8d2fe5a18e49248aa7d1c97f829415be'
+          assert r['meteor_data_access'] is False
+          assert r['target_information_access'] is False
+          assert r['manual_parameter_selection'] is False
+          assert len(r['replicates'])==4
+          assert r['verdict'] in {'PASS_PERSISTABLE_AUTO_SELECTOR_SYNTHETIC_FEASIBILITY','FAIL_PERSISTABLE_AUTO_SELECTOR_SYNTHETIC_FEASIBILITY'}
+          print(r['verdict'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_persistable_auto_selector_audit_v1/PROTOCOL.md orbittrace_persistable_auto_selector_audit_v1/run_synthetic_audit.py output/PERSISTABLE_AUTO_SELECTOR_SYNTHETIC_AUDIT.json > output/source_output_sha256.txt 2>/dev/null || true
+          git -C persistable-upstream rev-parse HEAD > output/upstream_commit.txt
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-persistable-auto-selector-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
