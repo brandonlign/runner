@@ -12,6 +12,7 @@ import numpy as np
 
 PREFIX = "ORBITTRACE_PHYSICAL_ROOT_PPMDL_SCALE_V1|"
 MIN_SUPPORT = 4
+EXPECTED_GRAPH_TOOL_BUILD_PREFIX = "2.99dev (commit c049a734"
 
 
 def req(ok: bool, msg: str) -> None:
@@ -38,7 +39,7 @@ def main() -> int:
     a = ap.parse_args()
 
     version = str(graph_tool.__version__)
-    req(version.startswith("2.98"), f"graph-tool version changed: {version}")
+    req(version.startswith(EXPECTED_GRAPH_TOOL_BUILD_PREFIX), f"graph-tool release image build changed: {version}")
 
     p = json.loads(a.input.read_text())
     ids = [str(x) for x in p["ids"]]
@@ -119,7 +120,6 @@ def main() -> int:
             "block_sizes_desc": sorted(block_sizes, reverse=True),
         })
 
-    # Canonicalize and defensively deduplicate exact memberships.
     unique: dict[tuple[str, ...], dict] = {}
     for row in candidates:
         key = tuple(row["member_ids"])
@@ -129,6 +129,8 @@ def main() -> int:
     out = {
         "schema": "ORBITTRACE_PHYSICAL_ROOT_PPMDL_PARTITION_V1",
         "graph_tool_version": version,
+        "graph_tool_release_image_digest": "sha256:e12ed85b23e1068eec883bbffeafc7cc36ce461f88ee26e0b3ef20bfcd5508f7",
+        "engineering_repair": "repair1_release_2_98_image_reports_2_99dev_c049a734",
         "denominator": a.denominator,
         "bucket": a.bucket,
         "events_total": n,
