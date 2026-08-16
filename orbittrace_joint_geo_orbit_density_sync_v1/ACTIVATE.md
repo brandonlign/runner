@@ -1,0 +1,1 @@
+Activate exactly one binding target-excluded GMN 2022/2023 JOINT13 raw GEO6+ORBIT7 density-synchronous recurrent-EOM endpoint under the frozen protocol. No post-result view weighting, feature scaling, HDBSCAN tuning, reranking, union, or rescue is authorized.
