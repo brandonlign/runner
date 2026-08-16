@@ -1,0 +1,197 @@
+name: OrbitTrace recurrent local-BIC HDBSCAN GMN v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-local-bic-hdbscan-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_local_bic_hdbscan_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  development:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact runtime and verify frozen science
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/v3 input/v8 input/ranker input/parent-binding output
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+
+          # Protocol predates all implementation bytes and the first endpoint.
+          test "$(git hash-object orbittrace_recurrent_local_bic_hdbscan_v1/PROTOCOL.md)" = 'b5b25f9051dbe40c6a431f22e0b7ebccb55a2830'
+          test "$(git hash-object orbittrace_recurrent_local_bic_hdbscan_v1/local_bic.py)" = 'bb5aaafe4450c13b0fbad99de482923509a912b7'
+          test "$(git hash-object orbittrace_recurrent_local_bic_hdbscan_v1/audit_synthetic.py)" = '7743e8311628568b193e2c7b231a52e71ec5e3aa'
+          test "$(git hash-object orbittrace_recurrent_local_bic_hdbscan_v1/run_development.py)" = 'e3e6d4c4afede9ad402c2bda41f219821f84bf85'
+
+          python -m py_compile \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            orbittrace_recurrent_local_bic_hdbscan_v1/local_bic.py \
+            orbittrace_recurrent_local_bic_hdbscan_v1/audit_synthetic.py \
+            orbittrace_recurrent_local_bic_hdbscan_v1/run_development.py
+
+      - name: Run zero-truth local-BIC synthetic audit
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_recurrent_local_bic_hdbscan_v1
+        run: |
+          set -euo pipefail
+          python orbittrace_recurrent_local_bic_hdbscan_v1/audit_synthetic.py | tee output/RECURRENT_LOCAL_BIC_SYNTHETIC_AUDIT.json
+          grep -q 'PASS_RECURRENT_LOCAL_BIC_HDBSCAN_V1_SYNTHETIC_AUDIT' output/RECURRENT_LOCAL_BIC_SYNTHETIC_AUDIT.json
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - name: Verify frozen GMN runtime utility
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify frozen runtime-support artifact
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-hdbscan-v1-gmn-development
+          path: input/parent-binding
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31827903547
+
+      - name: Verify exact binding recurrent-EOM evidence
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json | cut -d' ' -f1)" = 'e304f6660697ed27a7e2e546ba2b9f2ecdb43f923745cb7424a3781ad55b9ad1'
+          test "$(sha256sum input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = '433c641f57122b244b9476f5cbcb5e6f82956d9467270a9f24945600a32d2106'
+
+      - name: Run first binding recurrent local-BIC GMN outcome
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:orbittrace_recurrent_local_bic_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_local_bic_hdbscan_v1/run_development.py \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --parent-prelabel-json input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json \
+            --parent-result-json input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce binding verdict and scientific firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RECURRENT_LOCAL_BIC_HDBSCAN_V1_GMN_DEVELOPMENT.json'))
+          p=json.load(open('output/RECURRENT_LOCAL_BIC_HDBSCAN_V1_PRELABEL.json'))
+          assert r['verdict'] in {
+              'PASS_RECURRENT_LOCAL_BIC_HDBSCAN_V1_GMN_DEVELOPMENT',
+              'FAIL_RECURRENT_LOCAL_BIC_HDBSCAN_V1_GMN_DEVELOPMENT',
+          }
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_DEVELOPMENT_ONLY'
+          assert p['scientific_role']=='PRELABEL_FROZEN_RECURRENT_LOCAL_BIC_HDBSCAN_V1'
+          assert r['parent_candidate_count']==p['parent_candidate_count']==2097
+          assert r['intrinsic_dimension']==p['intrinsic_dimension']==4
+          assert r['successor_min_cluster_size']==p['successor_hdbscan']['min_cluster_size']==8
+          assert r['successor_min_samples']==p['successor_hdbscan']['min_samples']==4
+          assert r['blind_exclusion']==p['blind_exclusion']==[20.0,55.0]
+          for x in (r,p):
+              assert x['target_information_access'] is False
+              assert x['target_region_events_accessed'] is False
+              assert x['sonotaco_2013_2014_access'] is False
+              assert x['amos_scientific_access'] is False
+              assert x['maarsy_scientific_access'] is False
+              assert x['dms_scientific_access'] is False
+          print(r['verdict'])
+          PY
+
+      - name: Preserve exact provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_recurrent_local_bic_hdbscan_v1/PROTOCOL.md \
+            orbittrace_recurrent_local_bic_hdbscan_v1/local_bic.py \
+            orbittrace_recurrent_local_bic_hdbscan_v1/audit_synthetic.py \
+            orbittrace_recurrent_local_bic_hdbscan_v1/run_development.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_PRELABEL.json \
+            input/parent-binding/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json \
+            output/RECURRENT_LOCAL_BIC_SYNTHETIC_AUDIT.json \
+            output/RECURRENT_LOCAL_BIC_HDBSCAN_V1_PRELABEL.json \
+            output/RECURRENT_LOCAL_BIC_HDBSCAN_V1_GMN_DEVELOPMENT.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-local-bic-hdbscan-v1-gmn-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90
