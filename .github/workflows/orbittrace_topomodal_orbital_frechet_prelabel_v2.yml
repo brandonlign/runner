@@ -1,0 +1,100 @@
+name: OrbitTrace orbital Frechet prelabel v2
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-topomodal-orbital-frechet-recovery-v1
+    paths:
+      - '.github/workflows/orbittrace_topomodal_orbital_frechet_prelabel_v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  prelabel:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin frozen pretruth code
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3'
+          mkdir -p input/source input/orbit output
+          test "$(git hash-object orbittrace_topomodal_orbital_frechet_v1/PROTOCOL.md)" = '08bd4640d4f10360a69cb5fc9be0a1804b4b72f6'
+          test "$(git hash-object orbittrace_topomodal_orbital_frechet_v1/generate_prelabel.py)" = '2b5cd3d70881bd3ed674081988be07dcfeaaa362'
+          test "$(git hash-object orbittrace_topomodal_orbital_frechet_v1/rerank_from_1284_prelabel.py)" = '42042a22d22fafcc9caf179c648b6079e06f958c'
+          ! grep -Eq 'parse_catalogue|hidden_sealed|hidden_truth|eligible_labels|metrics\(' orbittrace_topomodal_orbital_frechet_v1/rerank_from_1284_prelabel.py
+          python -m py_compile orbittrace_topomodal_orbital_frechet_v1/rerank_from_1284_prelabel.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-1284-prelabel-isolated-for-orbital-v1
+          path: input/source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31979041005
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-orbit-availability-v1
+          path: input/orbit
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31978330061
+      - name: Verify immutable pretruth inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/source/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json | cut -d' ' -f1)" = 'db608f84bf333d18d624199f2d31c27b4183ee3a75a3d930cef4b9766a19d4de'
+          test "$(sha256sum input/orbit/audited_union_orbit_mapping.json | cut -d' ' -f1)" = 'a99fdc71beb8ea78b957c0951191c66bf8c04e6ce04773952ac0c43695619f44'
+          python - <<'PY'
+          import json
+          p=json.load(open('input/source/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json'))
+          a=json.load(open('input/orbit/TOPOMODAL_ORBIT_AVAILABILITY_V1.json'))
+          assert p['schema']=='ORBITTRACE_TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL' and p['shower_truth_used'] is False
+          assert p['target_information_access'] is False and p['target_region_events_accessed'] is False and len(p['subsets'])==8
+          assert a['verdict']=='PASS_TOPOMODAL_ORBIT_AVAILABILITY_V1' and a['orbit_mapping_sha256']=='a99fdc71beb8ea78b957c0951191c66bf8c04e6ce04773952ac0c43695619f44'
+          assert a['shower_truth_parsed'] is False and a['d_sh_computed'] is False
+          print('PASS_ORBITAL_PRELABEL_V2_INPUTS')
+          PY
+      - name: Compute frozen orbital ordering only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_orbital_frechet_v1/rerank_from_1284_prelabel.py \
+            --orbital-source orbittrace_topomodal_orbital_frechet_v1/generate_prelabel.py \
+            --source-prelabel input/source/TOPOMODAL_SPARSE_RECOVERY_V1_PRELABEL.json \
+            --orbit-mapping input/orbit/audited_union_orbit_mapping.json \
+            --availability-result input/orbit/TOPOMODAL_ORBIT_AVAILABILITY_V1.json \
+            --output output
+      - name: Seal candidate order before truth
+        run: |
+          set -euo pipefail
+          sha256sum output/TOPOMODAL_ORBITAL_FRECHET_V1_PRELABEL.json | cut -d' ' -f1 > output/prelabel_sha256.txt
+          python - <<'PY'
+          import hashlib,json
+          raw=open('output/TOPOMODAL_ORBITAL_FRECHET_V1_PRELABEL.json','rb').read(); d=hashlib.sha256(raw).hexdigest(); p=json.loads(raw)
+          assert d==open('output/prelabel_sha256.txt').read().strip()
+          assert p['schema']=='ORBITTRACE_TOPOMODAL_ORBITAL_FRECHET_V1_PRELABEL'
+          assert p['source_1284_prelabel_sha256']=='db608f84bf333d18d624199f2d31c27b4183ee3a75a3d930cef4b9766a19d4de'
+          assert p['orbit_mapping_sha256']=='a99fdc71beb8ea78b957c0951191c66bf8c04e6ce04773952ac0c43695619f44'
+          assert p['candidate_budget_shortage_any_panel'] is False and len(p['subsets'])==8
+          assert p['shower_truth_used'] is False and p['shower_truth_parsed'] is False
+          assert p['target_information_access'] is False and p['target_region_events_accessed'] is False
+          print('IMMUTABLE_ORBITAL_FRECHET_PRELABEL_SHA256',d)
+          print(json.dumps({'candidate_counts':[{'d':r['denominator'],'b':r['bucket'],'successor':len(r['successor_candidates']),'parent':len(r['recurrent_candidates'])} for r in p['subsets']]},indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-topomodal-orbital-frechet-v1-prelabel-v2
+          path: |
+            output/TOPOMODAL_ORBITAL_FRECHET_V1_PRELABEL.json
+            output/prelabel_sha256.txt
+          if-no-files-found: error
+          retention-days: 90
