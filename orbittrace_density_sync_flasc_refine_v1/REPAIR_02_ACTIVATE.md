@@ -1,0 +1,1 @@
+Activate exactly one binding target-excluded GMN 2022/2023 density-sync FLASC refinement endpoint under the unchanged frozen v1 science, TECHNICAL_REPAIR_01, and TECHNICAL_REPAIR_02. No scientific parameter, architecture, gate, or firewall change is authorized.
