@@ -27,7 +27,7 @@ jobs:
           python orbittrace_wavelet_catalogue_v3/audit_development_source.py
           test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
 
-      - name: Extract exact calibration and Mondrian factory mechanics without catalogue access
+      - name: Extract calibration, catalogue split, and Mondrian mechanics without catalogue access
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -38,6 +38,15 @@ jobs:
           development_tree=ast.parse(development_text)
           funcs={n.name:n for n in development_tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
           calibrate=funcs['calibrate_year']
+
+          # Extract every function that directly mentions scan/calibration construction so the
+          # split semantics can be reviewed without importing or calling the catalogue runtime.
+          split_funcs={}
+          for name,node in funcs.items():
+              src=ast.get_source_segment(development_text,node) or ''
+              low=src.lower()
+              if ('calibration' in low or 'calibrate' in low) and ('scan' in low or 'catalog' in low or 'load_' in low):
+                  split_funcs[name]=src
 
           parts=sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))
           assert [p.name for p in parts]==[f'part{i:02d}.b64' for i in range(4)]
@@ -71,6 +80,7 @@ jobs:
             'catalogue_loader_called':False,
             'target_information_access':False,
             'calibrate_year_source':ast.get_source_segment(development_text,calibrate),
+            'scan_calibration_split_sources':split_funcs,
             'mondrian_factory_method_names':method_names,
             'mondrian_factory_methods':{name:ast.get_source_segment(scorer_text,methods[name]) for name in method_names},
             'stable_seed_source':ast.get_source_segment(scorer_text,scorer_funcs['stable_seed']),
