@@ -59,7 +59,7 @@ jobs:
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
           mkdir -p input/v3 input/v8 input/ranker input/structural input/station input/numstat output
           test "$(git hash-object orbittrace_station_weighted_topomodal_recovery_v1/PROTOCOL.md)" = '4521f76928617cef538f126560d0507a80b6a51d'
-          test "$(git hash-object orbittrace_station_weighted_topomodal_recovery_v1/generate_prelabel.py)" = 'ca698a83995f7b7cbb579a0b37bd9178bff5a8d3'
+          test "$(git hash-object orbittrace_station_weighted_topomodal_recovery_v1/generate_prelabel.py)" = '31fd8a95f1ac0b6e11a4d339db131bc3989e7711'
           test "$(git hash-object orbittrace_station_weighted_topomodal_recovery_v1/evaluate_prelabel.py)" = '93c53ce5c7b64769f665135861cf0063c21c465f'
           test "$(git -C frozen-rdtm hash-object orbittrace_rankdensity_topomodal_v1/generate_prelabel.py)" = '189e50ed27e0e62ce275a41f6a46baf1f2c48baa'
           test "$(git -C frozen-intrinsic hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
@@ -160,6 +160,7 @@ jobs:
           import hashlib,json
           raw=open('output/STATION_WEIGHTED_TOPOMODAL_RECOVERY_V1_PRELABEL.json','rb').read(); d=hashlib.sha256(raw).hexdigest(); p=json.loads(raw)
           assert d==open('output/prelabel_sha256.txt').read().strip()
+          assert d=='0367cab3bd8a11df0a603c30f82c031dc3f3f2ed9a371ff5d004d8825359f393'
           assert p['schema']=='ORBITTRACE_STATION_WEIGHTED_TOPOMODAL_RECOVERY_V1_PRELABEL'
           assert p['scientific_role']=='PRELABEL_STATION_WEIGHTED_TOPOMODAL_RECOVERY_V1'
           assert p['station_structural_result_sha256']=='a7cc8921a9431028f08c92479a001021160ee0e8cce6ed346a80d0d2510a8bb8'
