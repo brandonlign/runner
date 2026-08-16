@@ -1,0 +1,63 @@
+name: OrbitTrace num-stat scan-parser static audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-topomodal-numstat-availability-v1
+    paths:
+      - '.github/workflows/orbittrace_numstat_scan_parser_source_audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct frozen support source and inspect parser only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,gzip,inspect,importlib.util,pathlib,sys
+          root=pathlib.Path('frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts')
+          raw=''.join(p.read_text().strip() for p in sorted(root.glob('part*.b64')))
+          src=gzip.decompress(base64.b64decode(raw)).decode('utf-8')
+          p=pathlib.Path('/tmp/frozen_support.py'); p.write_text(src)
+          spec=importlib.util.spec_from_file_location('frozen_support_static',p)
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          names=['parse_catalogue']
+          seen=set()
+          while names:
+              name=names.pop(0)
+              if name in seen or not hasattr(m,name): continue
+              seen.add(name)
+              obj=getattr(m,name)
+              if not callable(obj): continue
+              try: text=inspect.getsource(obj)
+              except Exception: continue
+              print(f'===== {name} =====')
+              print(text)
+              for cand in ('load_source','load_sources','parse_events','parse_gmn','read_gmn','load_gmn','build_scan','filter_events','event_from_row','event_id'):
+                  if cand in text and cand not in seen: names.append(cand)
+          print('===== MODULE CONSTANTS =====')
+          for k in sorted(m.__dict__):
+              if any(x in k.upper() for x in ('BLIND','QUALITY','FILTER','SCAN')) and isinstance(m.__dict__[k],(str,int,float,bool,tuple,list)):
+                  print(k,repr(m.__dict__[k]))
+          PY
