@@ -1,0 +1,176 @@
+name: OrbitTrace window-owned persistence ranking v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-window-owned-persistence-ranking-v1
+    paths:
+      - '.github/workflows/orbittrace_window_owned_persistence_ranking_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  development:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/checkout@v4
+        with:
+          repository: LuisScoccola/persistable
+          ref: 7eb75b2e8d2fe5a18e49248aa7d1c97f829415be
+          path: persistable-upstream
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify frozen method sources
+        run: |
+          set -euo pipefail
+          test "$(git -C persistable-upstream rev-parse HEAD)" = '7eb75b2e8d2fe5a18e49248aa7d1c97f829415be'
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          python -m pip install ./persistable-upstream
+          mkdir -p input/v3 input/v8 input/ranker input/structural output
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_window_owned_persistence_ranking_v1/PROTOCOL.md)" = '9643c590f481c4ac38319233094ce7015e181c2b'
+          test "$(git hash-object orbittrace_window_owned_persistence_ranking_v1/run_development.py)" = '559484853651c4ab157ce221993222fa55ee1075'
+          python -m py_compile orbittrace_window_owned_persistence_ranking_v1/run_development.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-window-owned-persistence-v1
+          path: input/structural
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31955534534
+
+      - name: Verify structural PASS authorization
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/structural/WINDOW_OWNED_PERSISTENCE_V1.json | cut -d' ' -f1)" = '78a07a191e8705d2657c4c687d6db51b97d67cc9b4efb899f686c71dbe8f7bf8'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/structural/WINDOW_OWNED_PERSISTENCE_V1.json'))
+          assert r['interpretation']=='SUPPORTS_WINDOW_OWNED_PERSISTENCE_CROSS_SCALE_COHERENCE'
+          assert all(r['summary']['gate'].values())
+          assert r['target_information_access'] is False and r['shower_truth_used'] is False
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify frozen GMN runtime utility
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Verify frozen GMN support artifact
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Run first complete target-excluded recovery evaluation
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_window_owned_persistence_ranking_v1/run_development.py \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce frozen scientific contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          p='output/WINDOW_OWNED_PERSISTENCE_RANKING_V1_PRELABEL.json'
+          r=json.load(open('output/WINDOW_OWNED_PERSISTENCE_RANKING_V1_GMN_DEVELOPMENT.json'))
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_DEVELOPMENT_ONLY'
+          assert r['verdict'] in {'PASS_WINDOW_OWNED_PERSISTENCE_RANKING_V1_GMN_DEVELOPMENT','FAIL_WINDOW_OWNED_PERSISTENCE_RANKING_V1_GMN_DEVELOPMENT'}
+          assert r['prelabel_sha256']==hashlib.sha256(open(p,'rb').read()).hexdigest()
+          assert r['events_total']==738682
+          assert r['successor_candidate_count']>=100
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['sonotaco_2013_2014_access'] is False and r['asfn_event_level_access'] is False and r['efn_event_level_access'] is False
+          assert r['amos_scientific_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          print(r['verdict'])
+          print(json.dumps({'parent':r['parent_metrics'],'successor':r['successor_metrics'],'gates':r['annual_gates']},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_window_owned_persistence_ranking_v1/PROTOCOL.md \
+            orbittrace_window_owned_persistence_ranking_v1/run_development.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/structural/WINDOW_OWNED_PERSISTENCE_V1.json \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            output/WINDOW_OWNED_PERSISTENCE_RANKING_V1_PRELABEL.json \
+            output/WINDOW_OWNED_PERSISTENCE_RANKING_V1_GMN_DEVELOPMENT.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git -C persistable-upstream rev-parse HEAD > output/upstream_commit.txt
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-window-owned-persistence-ranking-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
