@@ -49,7 +49,7 @@ def h64(eid:str)->int:
 
 def main()->int:
     ap=argparse.ArgumentParser(); ap.add_argument('--output',type=Path,required=True); a=ap.parse_args(); a.output.mkdir(parents=True,exist_ok=True)
-    seen=set(); selected=[]; source_sha={}; monthly_counts={}
+    seen=set(); selected=[]; selected_month={}; source_sha={}; monthly_counts={}
     for month in MONTHS:
         print(f'[universe] fetch {month}',flush=True)
         text=dd.get_monthly_file_content_by_date(month)
@@ -66,7 +66,7 @@ def main()->int:
             if not valid: continue
             if eid in seen:
                 dup+=1; continue
-            seen.add(eid); valid_count+=1; selected.append(eid)
+            seen.add(eid); valid_count+=1; selected.append(eid); selected_month[eid]=month
         monthly_counts[month]={'raw_rows':raw,'selected_rows_after_exact_1284_validity_and_blind':valid_count,'duplicate_rows_removed':dup}
     req(len(selected)==len(set(selected)),'duplicate selected IDs')
     subsets={}
@@ -76,7 +76,8 @@ def main()->int:
             req(len(ids)==EXPECTED[(d,b)],f'exact #1284 subset mismatch d={d} b={b}: {len(ids)} != {EXPECTED[(d,b)]}')
             subsets[f'd{d}_b{b}']=ids
     union=sorted(set().union(*(set(subsets[f'd128_b{b}']) for b in range(4))))
-    manifest={'schema':'ORBITTRACE_EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1','years':[2022,2023],'blind_exclusion':[20.0,55.0],'selection':'exact_frozen_1284_scan_geometry_validity_blind_duplicate_rules','expected_counts':{f'd{d}_b{b}':EXPECTED[(d,b)] for d in (128,1024) for b in range(4)},'subsets':subsets,'audited_union_ids':union,'source_sha256':source_sha,'monthly_counts':monthly_counts,'num_stat_accessed':False,'shower_label_accessed':False,'station_identity_accessed':False,'station_geography_accessed':False,'geometry_values_emitted':False,'target_information_access':False}
+    union_month={eid:selected_month[eid] for eid in union}
+    manifest={'schema':'ORBITTRACE_EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1','years':[2022,2023],'blind_exclusion':[20.0,55.0],'selection':'exact_frozen_1284_scan_geometry_validity_blind_duplicate_rules','expected_counts':{f'd{d}_b{b}':EXPECTED[(d,b)] for d in (128,1024) for b in range(4)},'subsets':subsets,'audited_union_ids':union,'audited_union_authoritative_month':union_month,'source_sha256':source_sha,'monthly_counts':monthly_counts,'num_stat_accessed':False,'shower_label_accessed':False,'station_identity_accessed':False,'station_geography_accessed':False,'geometry_values_emitted':False,'target_information_access':False}
     raw=(json.dumps(manifest,sort_keys=True,separators=(',',':'))+'\n').encode(); sha=hashlib.sha256(raw).hexdigest(); (a.output/'EXACT_1284_SPARSE_UNIVERSE_MANIFEST_V1.json').write_bytes(raw); (a.output/'universe_manifest_sha256.txt').write_text(sha+'\n')
     print(json.dumps({'manifest_sha256':sha,'union_count':len(union),'counts':manifest['expected_counts']},indent=2,sort_keys=True))
     return 0
