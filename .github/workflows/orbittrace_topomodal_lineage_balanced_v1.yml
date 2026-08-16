@@ -36,12 +36,14 @@ jobs:
           mkdir -p input/v3 input/v8 input/ranker input/structural output
           test "$(git hash-object orbittrace_topomodal_lineage_balanced_v1/PROTOCOL.md)" = '948df181e250d7c27f39ebe5d7f386da52f33ff1'
           test "$(git hash-object orbittrace_topomodal_lineage_balanced_v1/generate_prelabel.py)" = 'a0305a5a88cfa9cf275fd121693903ac161769ff'
+          test "$(git hash-object orbittrace_topomodal_lineage_balanced_v1/generate_prelabel_repair1.py)" = 'b492453fe9329fa5f0b876ae2cfa19d5b32a8858'
+          test "$(git hash-object orbittrace_topomodal_lineage_balanced_v1/ENGINEERING_REPAIR_1.md)" = '259183411fa4c980f1ef287a561698055b14cd40'
           test "$(git hash-object orbittrace_topomodal_lineage_balanced_v1/evaluate_prelabel.py)" = 'e4b79f4c4cfa1ade64f81ef6e15d546ffdd2ce2b'
           test "$(git hash-object orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py)" = '4988997c023d9df2b504372b4290dcab379a6dcc'
           test "$(git hash-object orbittrace_topomodal_support_resolved_cut_v1/evaluate_prelabel.py)" = '5762a04fd586c2bec0310b406c2705e0e7eb3c7a'
           test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
-          python -m py_compile orbittrace_topomodal_lineage_balanced_v1/generate_prelabel.py orbittrace_topomodal_lineage_balanced_v1/evaluate_prelabel.py
+          python -m py_compile orbittrace_topomodal_lineage_balanced_v1/generate_prelabel_repair1.py orbittrace_topomodal_lineage_balanced_v1/evaluate_prelabel.py
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
           test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
@@ -79,7 +81,7 @@ jobs:
           PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
-          python -u orbittrace_topomodal_lineage_balanced_v1/generate_prelabel.py \
+          python -u orbittrace_topomodal_lineage_balanced_v1/generate_prelabel_repair1.py \
             --support-cut-runner orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py \
             --structural-runner orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
             --structural-result-json input/structural/TOPOMODAL_HIERARCHY_SCALE_V1.json \
@@ -98,6 +100,7 @@ jobs:
           import hashlib,json,math
           raw=open('output/TOPOMODAL_LINEAGE_BALANCED_V1_PRELABEL.json','rb').read(); d=hashlib.sha256(raw).hexdigest(); assert d==open('output/prelabel_sha256.txt').read().strip(); p=json.loads(raw)
           assert p['scientific_role']=='PRELABEL_TOPOMODAL_LINEAGE_BALANCED_V1' and len(p['subsets'])==8
+          assert p['engineering_repair']=='repair1_exact_graph_saddle_merge_levels'
           assert p['configuration']['candidate_universe']=='complete_exact_1284_hierarchy'
           assert p['configuration']['lineage']=='surviving_active_mode_key'
           assert p['configuration']['node_score']=='density_level_lifetime'
@@ -105,6 +108,7 @@ jobs:
           assert p['blind_exclusion']==[20.0,55.0] and p['target_information_access'] is False and p['target_region_events_accessed'] is False and p['shower_truth_used'] is False
           for s in p['subsets']:
             c=s['successor_candidates']; assert len(c)>=len(s['recurrent_candidates']); assert int(s['equal_budget_k'])==len(s['recurrent_candidates'])
+            assert s['lineage_summary']['merge_level_source']=='exact_highest_density_cross_edge_between_fixed_children'
             assert float(s['lineage_summary']['diagram_reconstruction_max_abs_error'])<=1e-12
             assert [r['rank'] for r in c]==list(range(1,len(c)+1))
             exp=sorted(c,key=lambda r:(int(r['lineage_round']),-float(r['level_lifetime']),str(r['family_hash'])))
@@ -141,7 +145,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_topomodal_lineage_balanced_v1/PROTOCOL.md orbittrace_topomodal_lineage_balanced_v1/generate_prelabel.py orbittrace_topomodal_lineage_balanced_v1/evaluate_prelabel.py output/TOPOMODAL_LINEAGE_BALANCED_V1_PRELABEL.json output/TOPOMODAL_LINEAGE_BALANCED_V1.json > output/source_input_output_sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_topomodal_lineage_balanced_v1/PROTOCOL.md orbittrace_topomodal_lineage_balanced_v1/ENGINEERING_REPAIR_1.md orbittrace_topomodal_lineage_balanced_v1/generate_prelabel.py orbittrace_topomodal_lineage_balanced_v1/generate_prelabel_repair1.py orbittrace_topomodal_lineage_balanced_v1/evaluate_prelabel.py output/TOPOMODAL_LINEAGE_BALANCED_V1_PRELABEL.json output/TOPOMODAL_LINEAGE_BALANCED_V1.json > output/source_input_output_sha256.txt 2>/dev/null || true
           git rev-parse HEAD > output/execution_commit.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
