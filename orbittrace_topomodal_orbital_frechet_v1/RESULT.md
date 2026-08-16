@@ -4,7 +4,7 @@
 
 **FAIL_TOPOMODAL_ORBITAL_FRECHET_V1**
 
-The frozen orbital ordering failed 5/10 truth gates. It retained the #1284 fine-scale recovery gain but substantially worsened MRR, and at the coarse sparse scale it also reduced qualified recovery and early recovery. The entire preregistered orbital-D ordering family is therefore closed; no result-informed substitute D function, robust dispersion statistic, size correction, root-tier change, threshold, fusion, or orbital-feature rescue is permitted.
+The frozen orbital ordering failed 4/10 truth gates and passed 6/10. It retained the #1284 fine-scale recovery gain but substantially worsened MRR, and at the coarse sparse scale it also reduced qualified recovery and early recovery. The entire preregistered orbital-D ordering family is therefore closed; no result-informed substitute D function, robust dispersion statistic, size correction, root-tier change, threshold, fusion, or orbital-feature rescue is permitted.
 
 ## Binding provenance
 
