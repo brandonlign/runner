@@ -1,0 +1,1 @@
+Activate the single frozen GMN endpoint for sporadic-coordinate recurrent-EOM v1. The only scientific change is GEO6 -> GEO7 by appending frozen seasonal-background weight minus 1. No coordinate scaling, thresholding, reranking, parameter search, target access, or post-result rescue is authorized.
