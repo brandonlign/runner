@@ -1,0 +1,1 @@
+Retry the exact frozen sporadic member-denoise v1 GMN endpoint with the exact catalogue-v3 runtime decoded. Prior attempts were technical no-results before GMN/pretruth. No scientific method, threshold, membership rule, gate, or firewall changed.
