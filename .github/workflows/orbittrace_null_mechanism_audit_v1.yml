@@ -1,0 +1,67 @@
+name: OrbitTrace source-preserving null mechanism audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-null-mechanism-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_null_mechanism_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decode and verify frozen target-free development source only
+        run: |
+          set -euo pipefail
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+      - name: Extract calibration mechanics by AST without loading any catalogue
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast, json
+          from pathlib import Path
+
+          path=Path('/tmp/run_wavelet_catalogue_v3_development.py')
+          text=path.read_text()
+          tree=ast.parse(text)
+          funcs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          target=funcs['calibrate_year']
+
+          # Follow only direct same-module helper calls one hop from calibrate_year.
+          calls=sorted({n.func.id for n in ast.walk(target) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name)})
+          local_helpers=[name for name in calls if name in funcs and name!='calibrate_year']
+
+          report={
+            'source_sha256':'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51',
+            'scientific_data_access':False,
+            'catalogue_loader_called':False,
+            'target_information_access':False,
+            'calibrate_year_arguments':[a.arg for a in target.args.args],
+            'direct_calls':calls,
+            'direct_local_helpers':local_helpers,
+            'calibrate_year_source':ast.get_source_segment(text,target),
+            'helper_sources':{name:ast.get_source_segment(text,funcs[name]) for name in local_helpers},
+          }
+          Path('output/null_mechanism_source_audit.json').write_text(json.dumps(report,indent=2,sort_keys=True))
+          print(json.dumps(report,indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-null-mechanism-source-audit-v1
+          path: output/null_mechanism_source_audit.json
+          if-no-files-found: error
+          retention-days: 90
