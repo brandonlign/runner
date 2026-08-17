@@ -1,0 +1,1 @@
+Binding result: `../ORBITTRACE_ANNUAL_DENSITY_BIFILTRATION_SCALE_V1_RESULT.md`. Zero-label run `32036777809`; candidate freeze SHA `63519bbd8a95b0bd5db0d0f5fdccbdb67b3f1dac0158529bb808f4c798170b0b`; structural result SHA `d930e9a8221cbe6b56026618f513f3f8b84143f2f43deb0a5b1ccc1ca7e4bbe7`.
