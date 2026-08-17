@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-FROZEN_PHYSCORE_SHA256 = "410a5ebe1ffdcf88f1530a2eb61f6342ca3639dd"
+FROZEN_PHYSCORE_GIT_BLOB_SHA1 = "410a5ebe1ffdcf88f1530a2eb61f6342ca3639dd"
 
 
 def require(ok: bool, message: str) -> None:
@@ -20,6 +20,11 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def git_blob_sha1(path: Path) -> str:
+    raw = path.read_bytes()
+    return hashlib.sha1(f"blob {len(raw)}\0".encode() + raw).hexdigest()
+
+
 def dump(path: Path, value: Any) -> str:
     raw = (json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
     path.write_bytes(raw)
@@ -27,7 +32,7 @@ def dump(path: Path, value: Any) -> str:
 
 
 def load_frozen(path: Path) -> Any:
-    require(sha(path) == FROZEN_PHYSCORE_SHA256, "frozen PhysCore source identity changed")
+    require(git_blob_sha1(path) == FROZEN_PHYSCORE_GIT_BLOB_SHA1, "frozen PhysCore source identity changed")
     spec = importlib.util.spec_from_file_location("frozen_physcore_hdbscan_v1", path)
     require(spec is not None and spec.loader is not None, "cannot import frozen PhysCore")
     mod = importlib.util.module_from_spec(spec)
@@ -47,6 +52,7 @@ def main() -> int:
     a.output.mkdir(parents=True, exist_ok=True)
 
     frozen = load_frozen(a.frozen_source)
+    frozen_source_sha256 = sha(a.frozen_source)
     rows = json.loads(a.rows.read_text())
     require(isinstance(rows, list) and rows, "empty rows")
     require(all(not (frozen.BLIND[0] <= float(r["sol"]) <= frozen.BLIND[1]) for r in rows), "protected row present")
@@ -107,7 +113,8 @@ def main() -> int:
             "split_components": False,
             "fallback": "parent_if_core_lt_4",
         },
-        "frozen_physcore_source_sha256": FROZEN_PHYSCORE_SHA256,
+        "frozen_physcore_source_git_blob_sha1": FROZEN_PHYSCORE_GIT_BLOB_SHA1,
+        "frozen_physcore_source_sha256": frozen_source_sha256,
         "row_json_sha256": sha(a.rows),
         "hdbscan_primary_output_sha256": sha(hp),
         "hdbscan_source_manifest_sha256": sha(hm),
@@ -127,7 +134,8 @@ def main() -> int:
         "row_json_sha256": sha(a.rows),
         "hdbscan_primary_output_sha256": sha(hp),
         "hdbscan_source_manifest_sha256": sha(hm),
-        "frozen_physcore_source_sha256": FROZEN_PHYSCORE_SHA256,
+        "frozen_physcore_source_git_blob_sha1": FROZEN_PHYSCORE_GIT_BLOB_SHA1,
+        "frozen_physcore_source_sha256": frozen_source_sha256,
         "truth_accessed": False,
         "target_information_access": False,
         "post_result_parameter_search": False,
@@ -138,6 +146,7 @@ def main() -> int:
         "year": a.year,
         "parent_families": len(families),
         "strict_refinements": sum(x["refined_member_count"] < x["parent_member_count"] for x in audits),
+        "frozen_source_sha256": frozen_source_sha256,
         "candidate_sha256": primary_sha,
         "manifest_sha256": manifest_sha,
     }, indent=2, sort_keys=True))
