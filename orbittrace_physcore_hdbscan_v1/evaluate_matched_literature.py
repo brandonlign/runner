@@ -21,7 +21,7 @@ DISPLAY = {
     "dsh": "Rudawska-Jenniskens D_SH single linkage",
 }
 EXPECTED_MAPPING_SHA256 = "f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778"
-FROZEN_PHYSCORE_SHA256 = "410a5ebe1ffdcf88f1530a2eb61f6342ca3639dd"
+FROZEN_PHYSCORE_GIT_BLOB_SHA1 = "410a5ebe1ffdcf88f1530a2eb61f6342ca3639dd"
 
 
 def require(ok: bool, message: str) -> None:
@@ -118,6 +118,7 @@ def main() -> int:
     truth_reader.COMPARATORS.add(DISPLAY["dsh"])
     csvs = {2013: a.csv_2013.read_bytes(), 2014: a.csv_2014.read_bytes()}
     panels: list[dict[str, Any]] = []
+    frozen_source_sha256s: set[str] = set()
 
     for pair in PAIRS:
         for year in YEARS:
@@ -134,10 +135,12 @@ def main() -> int:
             pc = load(pc_path)
             manifest = load(manifest_path)
             require(pc["method"] == "PhysCore-HDBSCAN v1" and pc["pair"] == pair and int(pc["year"]) == year, "wrong PhysCore panel")
-            require(pc["frozen_physcore_source_sha256"] == FROZEN_PHYSCORE_SHA256, "PhysCore source changed")
+            require(pc["frozen_physcore_source_git_blob_sha1"] == FROZEN_PHYSCORE_GIT_BLOB_SHA1, "PhysCore blob identity changed")
+            require(manifest["frozen_physcore_source_git_blob_sha1"] == FROZEN_PHYSCORE_GIT_BLOB_SHA1, "PhysCore manifest blob identity changed")
+            require(pc["frozen_physcore_source_sha256"] == manifest["frozen_physcore_source_sha256"], "PhysCore source SHA-256 mismatch")
+            frozen_source_sha256s.add(str(pc["frozen_physcore_source_sha256"]))
             require(pc["row_json_sha256"] == sha(rows_path), "PhysCore rows changed")
             require(manifest["candidate_output_sha256"] == sha(pc_path), "PhysCore candidate hash mismatch")
-            require(manifest["frozen_physcore_source_sha256"] == FROZEN_PHYSCORE_SHA256, "PhysCore manifest source changed")
             require(pc.get("truth_accessed") is False and manifest.get("truth_accessed") is False, "truth accessed during PhysCore generation")
             require(pc.get("post_result_parameter_search") is False and manifest.get("post_result_parameter_search") is False, "post-result search detected")
             if pair == "hdbscan":
@@ -186,6 +189,8 @@ def main() -> int:
             dump(a.output / f"panel_{pair}_{year}.json", panel)
             panels.append(panel)
 
+    require(len(frozen_source_sha256s) == 1, "PhysCore source bytes differ across panels")
+    frozen_source_sha256 = next(iter(frozen_source_sha256s))
     require(len(panels) == 6, "expected six evaluated panels")
     wins = sum(bool(p["physcore_win"]) for p in panels)
     verdict = "PASS_PHYSCORE_HDBSCAN_V1_MATCHED_LITERATURE" if wins == 6 else "FAIL_PHYSCORE_HDBSCAN_V1_MATCHED_LITERATURE"
@@ -199,7 +204,8 @@ def main() -> int:
         "panel_count": 6,
         "verdict": verdict,
         "panels": panels,
-        "frozen_physcore_source_sha256": FROZEN_PHYSCORE_SHA256,
+        "frozen_physcore_source_git_blob_sha1": FROZEN_PHYSCORE_GIT_BLOB_SHA1,
+        "frozen_physcore_source_sha256": frozen_source_sha256,
         "binding_literature_result_sha256": sha(a.binding_result),
         "old_literature_freeze_sha256": sha(a.old_freeze),
         "mapping_audit_sha256": EXPECTED_MAPPING_SHA256,
