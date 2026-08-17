@@ -1,0 +1,1 @@
+Several tiny metadata-only files were accidentally added while attempting to open the draft PR. They do not affect scientific code, protocol, or binding run. Clean them in one repository-maintenance commit later; do not add more.
