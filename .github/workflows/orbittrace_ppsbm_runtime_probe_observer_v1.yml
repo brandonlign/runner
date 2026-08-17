@@ -1,0 +1,26 @@
+name: OrbitTrace PP-SBM runtime probe observer v1
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-ppsbm-runtime-probe-v1]
+    paths:
+      - '.github/workflows/orbittrace_ppsbm_runtime_probe_observer_v1.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query existing runtime probe runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/workflows/orbittrace_ppsbm_runtime_probe_v1.yml/runs?branch=agent%2Forbittrace-ppsbm-runtime-probe-v1&per_page=10" \
+            --jq '.workflow_runs[] | "PPSBM_PROBE_RUN_ID=\(.id) STATUS=\(.status) CONCLUSION=\(.conclusion // "null") HEAD_SHA=\(.head_sha) CREATED=\(.created_at)"'
