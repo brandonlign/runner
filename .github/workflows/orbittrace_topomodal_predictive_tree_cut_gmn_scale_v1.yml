@@ -1,0 +1,254 @@
+name: OrbitTrace TopoModal Predictive Tree Cut v1 GMN scale generalization
+
+on:
+  push:
+    branches: [agent/orbittrace-topomodal-predictive-tree-cut-gmn-scale-v1]
+    paths:
+      - 'orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/**'
+      - '.github/workflows/orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 312b1b718ae105813de242355142a74e7d377d65
+          path: sparse-src
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact runtime and verify frozen scientific sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/v8 input/ranker input/structural output
+          test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/PROTOCOL.md)" = 'de555a1a7931d0cb161735c52d0548482cc2d935'
+          test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/run_pretruth.py)" = '5ab048e8e60c255c5f3b26d4beae942e7973850d'
+          test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py)" = 'bb72f7e238c81b0fbbbee1f447432ed82151c895'
+          test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_v1/run_pretruth.py)" = '9bc98c6430bc9ed897b8ae81d7d9814e70050a61'
+          test "$(git -C sparse-src hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/run_pretruth.py orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-hierarchy-scale-v1
+          path: input/structural
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31955621864
+
+      - name: Verify frozen GMN evidence inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/structural/TOPOMODAL_HIERARCHY_SCALE_V1.json | cut -d' ' -f1)" = 'e8cf7d92e96db9a1c99578f6efc63baf1534b94ab975e94f789fa6bc4a718497'
+
+      - name: Build and freeze all Predictive Tree Cut candidates before truth
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/run_pretruth.py \
+            --sparse-source sparse-src/orbittrace_topomodal_sparse_recovery_v1/run_development.py \
+            --selector-source orbittrace_topomodal_predictive_tree_cut_v1/run_pretruth.py \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --structural-result-json input/structural/TOPOMODAL_HIERARCHY_SCALE_V1.json \
+            --output output
+
+      - name: Enforce pretruth firewall and capacity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('output/PREDICTIVE_TREE_CUT_V1_GMN_SCALE_PRETRUTH.json'))
+          assert p['schema']=='ORBITTRACE_TOPOMODAL_PREDICTIVE_TREE_CUT_V1_GMN_SCALE_PRETRUTH'
+          assert p['scientific_role']=='PRETRUTH_TARGET_EXCLUDED_GMN_SCALE_GENERALIZATION'
+          assert len(p['subsets'])==8
+          assert p['shower_truth_used'] is False
+          assert p['target_information_access'] is False and p['target_region_events_accessed'] is False
+          assert p['sonotaco_2013_2014_access'] is False
+          for s in p['subsets']:
+              K=int(s['equal_budget_k'])
+              for y in ('2022','2023'):
+                  assert int(s['annual_predictive_tree_cut'][y]['selected_candidate_count'])>=K
+          PY
+
+      - name: Preserve pretruth provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/PROTOCOL.md orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/run_pretruth.py orbittrace_topomodal_predictive_tree_cut_v1/run_pretruth.py sparse-src/orbittrace_topomodal_sparse_recovery_v1/run_development.py orbittrace_recurrent_eom_hdbscan_v1/run_development.py input/ranker/run_urc_union_ranker.py input/v8/pooled_year_centroid_v8_development.json input/structural/TOPOMODAL_HIERARCHY_SCALE_V1.json output/PREDICTIVE_TREE_CUT_V1_GMN_SCALE_PRETRUTH.json > output/pretruth_provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-topomodal-predictive-tree-cut-v1-gmn-scale-pretruth
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 312b1b718ae105813de242355142a74e7d377d65
+          path: sparse-src
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact evaluation runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/v8 input/ranker input/pretruth output
+          test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/PROTOCOL.md)" = 'de555a1a7931d0cb161735c52d0548482cc2d935'
+          test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py)" = 'bb72f7e238c81b0fbbbee1f447432ed82151c895'
+          test "$(git -C sparse-src hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-predictive-tree-cut-v1-gmn-scale-pretruth
+          path: input/pretruth
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Evaluate immutable pretruth output against already-exposed GMN truth
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py \
+            --pretruth input/pretruth/PREDICTIVE_TREE_CUT_V1_GMN_SCALE_PRETRUTH.json \
+            --sparse-source sparse-src/orbittrace_topomodal_sparse_recovery_v1/run_development.py \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+
+      - name: Enforce binding result contract and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/PREDICTIVE_TREE_CUT_V1_GMN_SCALE_RESULT.json'))
+          assert r['verdict'] in {'PASS_TOPOMODAL_PREDICTIVE_TREE_CUT_V1_GMN_SCALE_GENERALIZATION','FAIL_TOPOMODAL_PREDICTIVE_TREE_CUT_V1_GMN_SCALE_GENERALIZATION'}
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_SCALE_GENERALIZATION_DEVELOPMENT'
+          assert len(r['panels'])==16 and set(r['scale_aggregates'])=={'128','1024'}
+          assert len(r['gates'])==10
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['amos_scientific_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['post_result_parameter_search'] is False
+          print(r['verdict'])
+          print(json.dumps({'scales':r['scale_aggregates'],'gates':r['gates']},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve result provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/PROTOCOL.md orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py input/pretruth/PREDICTIVE_TREE_CUT_V1_GMN_SCALE_PRETRUTH.json output/PREDICTIVE_TREE_CUT_V1_GMN_SCALE_RESULT.json > output/result_provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-topomodal-predictive-tree-cut-v1-gmn-scale-result
+          path: output
+          if-no-files-found: error
+          retention-days: 90
