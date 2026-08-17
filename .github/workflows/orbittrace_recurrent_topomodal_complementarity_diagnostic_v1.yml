@@ -1,0 +1,84 @@
+name: OrbitTrace recurrent-TopoModal complementarity diagnostic v1
+
+on:
+  push:
+    branches: [agent/orbittrace-recurrent-topomodal-complementarity-diagnostic-v1]
+    paths:
+      - 'orbittrace_recurrent_topomodal_complementarity_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_recurrent_topomodal_complementarity_diagnostic_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen protocol and executable blobs
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_topomodal_complementarity_diagnostic_v1/PROTOCOL.md)" = "c258ebbd60d2555843b3b35f96b79cf9928523c1"
+          test "$(git hash-object orbittrace_recurrent_topomodal_complementarity_diagnostic_v1/run_diagnostic.py)" = "f0085f4be6d1223cb59cf7d9ca94f16c9a19a3b4"
+
+      - name: Download frozen recurrent-EOM residual artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-residual-analysis-v1
+          path: input/recurrent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31994209058
+
+      - name: Download frozen TopoModal full-recoverability artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-full-recoverability-diagnostic-v1
+          path: input/topomodal
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31986497845
+
+      - name: Reproduce exact complementarity intersection
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_recurrent_topomodal_complementarity_diagnostic_v1/run_diagnostic.py \
+            --recurrent-result input/recurrent/RECURRENT_EOM_RESIDUAL_ANALYSIS_V1.json \
+            --topomodal-result input/topomodal/DIAGNOSTIC_RESULT.json \
+            --output output
+
+      - name: Enforce result firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/COMPLEMENTARITY_RESULT.json'))
+          assert r['blind_preregistration'] is False
+          assert r['method_mutation'] is False
+          assert r['new_clustering_or_candidate_generation'] is False
+          assert r['raw_truth_reparsed'] is False
+          assert r['post_result_parameter_search'] is False
+          assert r['target_information_access'] is False
+          assert r['target_region_events_accessed'] is False
+          assert r['amos_scientific_access'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['pristine_external_access'] is False
+          assert r['pooled']['recurrent_candidate_generation_failures'] == 32
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-topomodal-complementarity-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
