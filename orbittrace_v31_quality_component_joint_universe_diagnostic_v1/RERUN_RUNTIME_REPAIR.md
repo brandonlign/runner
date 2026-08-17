@@ -1,0 +1,1 @@
+Execution retrigger only after engineering/runtime repairs #1101 and #1104. This marker changes no frozen protocol, diagnostic source, graph/component identity, v31 reconstruction, joint-signal definition, selectivity gate, truth-access order, firewall, or scientific interpretation.
