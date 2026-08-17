@@ -1,0 +1,224 @@
+name: OrbitTrace PhysCore matched literature v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-physcore-literature-compare-v1
+    paths:
+      - '.github/workflows/orbittrace_physcore_matched_literature_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {pair: sugar, year: 2013}
+          - {pair: sugar, year: 2014}
+          - {pair: hdbscan, year: 2013}
+          - {pair: hdbscan, year: 2014}
+          - {pair: dsh, year: 2013}
+          - {pair: dsh, year: 2014}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact frozen HDBSCAN runtime
+        run: |
+          python -m pip install --disable-pip-version-check \
+            'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.7.1' 'hdbscan==0.8.44'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-sources-v1-retry
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - name: Recompute exact HDBSCAN parent on this matched row universe
+        env:
+          PYTHONPATH: infra
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_flagship/literature_benchmark/run_legacy_comparator_pretruth_compat.py \
+            --comparator hdbscan --year '${{ matrix.year }}' \
+            --rows 'input/prepare/${{ matrix.pair }}_${{ matrix.year }}.json' \
+            --source input/sources/hdbscan_catalogue_runner.py \
+            --output parent
+      - name: Apply byte-frozen PhysCore v1 refinement
+        run: |
+          set -euo pipefail
+          python -u orbittrace_physcore_hdbscan_v1/apply_transfer.py \
+            --pair '${{ matrix.pair }}' --year '${{ matrix.year }}' \
+            --rows 'input/prepare/${{ matrix.pair }}_${{ matrix.year }}.json' \
+            --hdbscan-dir parent \
+            --frozen-source orbittrace_physcore_hdbscan_v1/run_pretruth.py \
+            --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-physcore-literature-pretruth-${{ matrix.pair }}-${{ matrix.year }}-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact evaluation runtime
+        run: python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-pretruth-freeze-v1-r4
+          path: input/old-freeze
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984510791
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-matched-literature-result-v1-r4
+          path: input/binding
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984510791
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-physcore-literature-pretruth-sugar-2013-v1, path: input/physcore/sugar-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-physcore-literature-pretruth-sugar-2014-v1, path: input/physcore/sugar-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-physcore-literature-pretruth-hdbscan-2013-v1, path: input/physcore/hdbscan-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-physcore-literature-pretruth-hdbscan-2014-v1, path: input/physcore/hdbscan-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-physcore-literature-pretruth-dsh-2013-v1, path: input/physcore/dsh-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-physcore-literature-pretruth-dsh-2014-v1, path: input/physcore/dsh-2014}
+      - name: Freeze all six PhysCore outputs before truth access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          panels=[]
+          for pair in ('sugar','hdbscan','dsh'):
+              for year in (2013,2014):
+                  root=Path(f'input/physcore/{pair}-{year}')
+                  primary=root/'physcore_primary_output.json'
+                  manifest=root/'physcore_source_manifest.json'
+                  p=json.load(open(primary)); m=json.load(open(manifest))
+                  assert p['truth_accessed'] is False and m['truth_accessed'] is False
+                  assert p['post_result_parameter_search'] is False and m['post_result_parameter_search'] is False
+                  panels.append({
+                      'pair':pair,'year':year,
+                      'primary_sha256':hashlib.sha256(primary.read_bytes()).hexdigest(),
+                      'manifest_sha256':hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                  })
+          freeze={'schema':'ORBITTRACE_PHYSCORE_MATCHED_LITERATURE_PRETRUTH_FREEZE_V1','pretruth_outputs_frozen':True,'truth_accessed_before_freeze':False,'post_result_parameter_search':False,'panels':panels}
+          Path('input/physcore/PRETRUTH_FREEZE.json').write_text(json.dumps(freeze,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(freeze,indent=2,sort_keys=True))
+          PY
+      - name: Reacquire identical already-exposed SonotaCo archives after freeze
+        run: |
+          set -euo pipefail
+          mkdir -p input/csv input/archives
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          integrity=json.load(open('input/prepare/source_integrity.json'))
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv'),2014:('input/archives/014a.zip','_U2_20140101_S.csv')}
+          for year,(zpath,basename) in specs.items():
+              raw=Path(zpath).read_bytes()
+              assert hashlib.sha256(raw).hexdigest()==integrity['years'][str(year)]['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  matches=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==basename]
+                  assert len(matches)==1
+                  data=z.read(matches[0])
+              assert hashlib.sha256(data).hexdigest()==integrity['years'][str(year)]['member_sha256']
+              Path(f'input/csv/{year}.csv').write_bytes(data)
+          PY
+      - name: Evaluate frozen PhysCore against binding literature metrics
+        env:
+          PYTHONPATH: infra
+        run: |
+          set -euo pipefail
+          python -u orbittrace_physcore_hdbscan_v1/evaluate_matched_literature.py \
+            --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv \
+            --mapping-audit input/mapping/audit.json \
+            --prepare-dir input/prepare \
+            --old-freeze input/old-freeze/PRETRUTH_FREEZE.json \
+            --binding-result input/binding/TOPOMODAL_FLAGSHIP_MATCHED_LITERATURE_RESULT_V1.json \
+            --physcore-root input/physcore --output output
+          cp input/physcore/PRETRUTH_FREEZE.json output/PRETRUTH_FREEZE.json
+          rm -rf input/csv input/archives
+      - name: Enforce result contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/PHYSCORE_HDBSCAN_V1_MATCHED_LITERATURE_RESULT.json'))
+          assert r['panel_count']==6 and len(r['panels'])==6
+          assert r['verdict'] in {'PASS_PHYSCORE_HDBSCAN_V1_MATCHED_LITERATURE','FAIL_PHYSCORE_HDBSCAN_V1_MATCHED_LITERATURE'}
+          assert r['truth_access_before_pretruth'] is False
+          assert r['post_result_parameter_search'] is False
+          print(r['verdict'], f"{r['panel_wins']}/6")
+          for p in r['panels']:
+              print(p['pair'],p['year'],'WIN' if p['physcore_win'] else 'LOSS',p['physcore']['macro_f1'],p['literature']['macro_f1'],p['physcore']['recovered_f1_gt_0_5'],p['literature']['recovered_f1_gt_0_5'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-physcore-matched-literature-result-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
