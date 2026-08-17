@@ -1,0 +1,1 @@
+Keep `PROTOCOL.md`, `run_pretruth.py`, `evaluate_after_freeze.py`, `ENGINEERING_NOTES.md`, and repository-level `ORBITTRACE_TOPOMODAL_PREDICTIVE_TREE_CUT_V1_GMN_SCALE_RESULT.md` as the substantive record. Other tiny closure markers on this branch are redundant bookkeeping only.
