@@ -15,23 +15,20 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - name: Install graph-tool from official upstream Jammy repository
+      - name: Pull official graph-tool container and record immutable digest
         run: |
           set -euo pipefail
-          codename="$(lsb_release -s -c)"
-          test "$codename" = jammy
-          wget -q "https://downloads.skewed.de/skewed-keyring/skewed-keyring_1.3_all_${codename}.deb" -O /tmp/skewed-keyring.deb
-          sudo dpkg -i /tmp/skewed-keyring.deb
-          echo "deb [signed-by=/usr/share/keyrings/skewed-keyring.gpg] https://downloads.skewed.de/apt ${codename} main" | sudo tee /etc/apt/sources.list.d/skewed.list
-          sudo apt-get update
-          apt-cache policy python3-graph-tool
-          sudo apt-get install -y python3-graph-tool
-          dpkg-query -W -f='GRAPH_TOOL_APT_VERSION=${Version}\n' python3-graph-tool
+          docker pull tiagopeixoto/graph-tool:latest
+          digest="$(docker image inspect tiagopeixoto/graph-tool:latest --format '{{index .RepoDigests 0}}')"
+          test -n "$digest"
+          echo "GRAPH_TOOL_IMAGE_DIGEST=$digest"
+          echo "$digest" > /tmp/graph_tool_image_digest.txt
 
       - name: Verify PPBlockState API on synthetic graph
         run: |
           set -euo pipefail
-          /usr/bin/python3 - <<'PY'
+          image="$(cat /tmp/graph_tool_image_digest.txt)"
+          docker run --rm -i "$image" python3 - <<'PY'
           import json
           import numpy as np
           import graph_tool.all as gt
