@@ -1,0 +1,1 @@
+Predictive Tree Cut v1 remains a positive exposed-SonotaCo development result but is not promoted: the separately preregistered target-excluded GMN scale/generalization endpoint failed before truth metrics because its antichain output could not meet the frozen equal-budget capacity on the first coarse panel.
