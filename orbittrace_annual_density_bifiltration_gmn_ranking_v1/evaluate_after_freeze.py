@@ -19,6 +19,7 @@ QUALITY_SHA256 = "dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b9
 V8_SHA256 = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"
 BIF_PRETRUTH_SHA = "63519bbd8a95b0bd5db0d0f5fdccbdb67b3f1dac0158529bb808f4c798170b0b"
 BIF_STRUCTURAL_SHA = "d930e9a8221cbe6b56026618f513f3f8b84143f2f43deb0a5b1ccc1ca7e4bbe7"
+ORIGINAL_PRELABEL_SHA256 = "95f8a57718a30b2c7e85016d505276d72cccb9e4ac1d6eb29f13067efc73dd0c"
 
 
 def req(ok: bool, msg: str) -> None:
@@ -49,6 +50,26 @@ def dump(path: Path, obj: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def adapt_bifiltration_rows_for_metrics(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add the identity-only field required by the frozen recurrent metrics adapter.
+
+    The parent evaluator's metrics() copies family_id into an annual candidate,
+    while truth() evaluates only event_ids. The frozen bifiltration prelabel
+    stores family_hash rather than family_id, so using that immutable membership
+    hash as family_id changes no membership, ordering, budget, or truth metric.
+    """
+    adapted: list[dict[str, Any]] = []
+    for row in rows:
+        req("family_id" not in row, "unexpected family_id already present in frozen bifiltration row")
+        req("family_hash" in row and "event_ids" in row, "bifiltration row missing frozen identity/membership")
+        out = dict(row)
+        out["family_id"] = str(row["family_hash"])
+        req(out["event_ids"] == row["event_ids"], "metrics adapter changed membership")
+        adapted.append(out)
+    req(len(adapted) == len(rows), "metrics adapter changed candidate count")
+    return adapted
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prelabel", type=Path, required=True)
@@ -70,6 +91,7 @@ def main() -> int:
     req(sha256(a.v8_result_json) == V8_SHA256, "GMN support artifact changed")
 
     prelabel_sha = sha256(a.prelabel)
+    req(prelabel_sha == ORIGINAL_PRELABEL_SHA256, "endpoint prelabel changed from successful pretruth run 32037435314")
     pre = json.loads(a.prelabel.read_text())
     req(pre.get("schema") == "ORBITTRACE_ANNUAL_DENSITY_BIFILTRATION_GMN_RANKING_V1_PRELABEL", "wrong prelabel schema")
     req(pre.get("scientific_role") == "PRELABEL_TARGET_EXCLUDED_GMN_RANKING_RECOVERY", "wrong prelabel role")
@@ -110,17 +132,18 @@ def main() -> int:
             s = subsets[(denominator, bucket)]
             recurrent = list(s["recurrent_candidates"])
             bif_all = list(s["bifiltration_candidates"])
+            bif_metric_all = adapt_bifiltration_rows_for_metrics(bif_all)
             k = int(s["equal_budget_k"])
             req(len(recurrent) == k, "recurrent K changed")
             req(len(bif_all) >= k, "bif candidate list shorter than K")
-            bif_equal = bif_all[:k]
+            bif_equal = bif_metric_all[:k]
             for year in YEARS:
                 annual_ids = set(str(x) for x in s["annual_event_ids"][str(year)])
                 req(annual_ids, f"empty annual universe d={denominator} b={bucket} y={year}")
                 req(all(eid in hidden_sealed for eid in annual_ids), "annual event missing label mapping")
                 parent_m = sparse.compact_metrics(parent.metrics(recurrent, hidden_sealed, annual_ids))
                 succ_m = sparse.compact_metrics(parent.metrics(bif_equal, hidden_sealed, annual_ids))
-                full_m = sparse.compact_metrics(parent.metrics(bif_all, hidden_sealed, annual_ids))
+                full_m = sparse.compact_metrics(parent.metrics(bif_metric_all, hidden_sealed, annual_ids))
                 panel_results.append({
                     "denominator": denominator,
                     "bucket": bucket,
@@ -185,6 +208,12 @@ def main() -> int:
         "maarsy_scientific_access": False,
         "dms_scientific_access": False,
         "post_result_parameter_search": False,
+        "engineering_repair": {
+            "prior_run": 32037435314,
+            "prior_failure": "KeyError: family_id before result serialization",
+            "adapter": "family_id_equals_frozen_family_hash",
+            "scientific_candidate_change": False,
+        },
     }
     result_sha = dump(a.output / "BIFILTRATION_GMN_RANKING_V1_RESULT.json", result)
     print(json.dumps({"verdict": verdict, "prelabel_sha256": prelabel_sha, "result_sha256": result_sha, "scale_aggregates": scale_results, "gates": gates}, indent=2, sort_keys=True))
