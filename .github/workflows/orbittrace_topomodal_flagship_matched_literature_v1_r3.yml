@@ -1,0 +1,316 @@
+name: OrbitTrace TopoModal flagship matched literature v1 r3
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-topomodal-flagship-final-v1
+    paths:
+      - '.github/workflows/orbittrace_topomodal_flagship_matched_literature_v1_r3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  comparator:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {pair: sugar, year: 2013}
+          - {pair: sugar, year: 2014}
+          - {pair: hdbscan, year: 2013}
+          - {pair: hdbscan, year: 2014}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install comparator-specific frozen runtime
+        run: |
+          set -euo pipefail
+          if [ '${{ matrix.pair }}' = 'hdbscan' ]; then
+            python -m pip install --disable-pip-version-check \
+              'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.7.1' 'hdbscan==0.8.44'
+          else
+            python -m pip install --disable-pip-version-check \
+              'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          fi
+          test "$(git -C infra hash-object orbittrace_final_sonotaco_comparators_v1/pretruth_comparators.py)" = '00578445ed0957fb3708bb84fda1df6ef7b5b004'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-sources-v1-retry
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - name: Freeze exact literature output before truth
+        env:
+          PYTHONPATH: infra
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_flagship/literature_benchmark/run_legacy_comparator_pretruth_compat.py \
+            --comparator '${{ matrix.pair }}' --year '${{ matrix.year }}' \
+            --rows 'input/prepare/${{ matrix.pair }}_${{ matrix.year }}.json' \
+            --source 'input/sources/${{ matrix.pair == 'sugar' && 'sugar_uncertainty_core.py' || 'hdbscan_catalogue_runner.py' }}' \
+            --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-${{ matrix.pair }}-${{ matrix.year }}-v1-r3
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  freeze:
+    needs: comparator
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-pretruth-sugar-v1-retry
+          path: input/candidate-sugar
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-pretruth-hdbscan-v1-retry
+          path: input/candidate-hdbscan
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-pretruth-dsh-v1-retry
+          path: input/candidate-dsh
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-sugar-2013-v1-r3, path: input/sugar-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-sugar-2014-v1-r3, path: input/sugar-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3, path: input/hdbscan-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3, path: input/hdbscan-2014}
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2013-v1-r2
+          path: input/dsh-2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2014-v1-r2
+          path: input/dsh-2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - name: Hash-freeze all six method pairs before truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_flagship/literature_benchmark/freeze_pretruth.py \
+            --prepare-dir input/prepare \
+            --candidate-sugar-dir input/candidate-sugar \
+            --candidate-hdbscan-dir input/candidate-hdbscan \
+            --candidate-dsh-dir input/candidate-dsh \
+            --comparator-sugar-2013-dir input/sugar-2013 \
+            --comparator-sugar-2014-dir input/sugar-2014 \
+            --comparator-hdbscan-2013-dir input/hdbscan-2013 \
+            --comparator-hdbscan-2014-dir input/hdbscan-2014 \
+            --comparator-dsh-2013-dir input/dsh-2013 \
+            --comparator-dsh-2014-dir input/dsh-2014 --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-pretruth-freeze-v1-r3
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: freeze
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact evaluator runtime
+        run: python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-flagship-literature-pretruth-freeze-v1-r3, path: input/freeze}
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-pretruth-sugar-v1-retry
+          path: input/candidate-sugar
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-pretruth-hdbscan-v1-retry
+          path: input/candidate-hdbscan
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-pretruth-dsh-v1-retry
+          path: input/candidate-dsh
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-sugar-2013-v1-r3, path: input/sugar-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-sugar-2014-v1-r3, path: input/sugar-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3, path: input/hdbscan-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3, path: input/hdbscan-2014}
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2013-v1-r2
+          path: input/dsh-2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2014-v1-r2
+          path: input/dsh-2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Restore exact frozen evaluator and verify truth map
+        run: |
+          set -euo pipefail
+          mkdir -p input/csv input/archives input/evaluator
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          raw=gzip.decompress(base64.b64decode(''.join(Path('infra/orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64').read_text().split()),validate=True))
+          Path('input/evaluator/evaluator.py').write_bytes(raw)
+          assert hashlib.sha256(raw).hexdigest()=='cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          assert hashlib.sha256(Path('input/mapping/audit.json').read_bytes()).hexdigest()=='f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          PY
+      - name: Reacquire identical exposed archive bytes for post-freeze truth
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          integrity=json.load(open('input/prepare/source_integrity.json'))
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv'),2014:('input/archives/014a.zip','_U2_20140101_S.csv')}
+          for year,(zpath,basename) in specs.items():
+              raw=Path(zpath).read_bytes()
+              assert hashlib.sha256(raw).hexdigest()==integrity['years'][str(year)]['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  matches=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==basename]
+                  assert len(matches)==1
+                  data=z.read(matches[0])
+              assert hashlib.sha256(data).hexdigest()==integrity['years'][str(year)]['member_sha256']
+              Path(f'input/csv/{year}.csv').write_bytes(data)
+          PY
+      - name: Open frozen-row truth and evaluate all six panels
+        env:
+          PYTHONPATH: infra
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_flagship/literature_benchmark/evaluate_after_freeze.py \
+            --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv \
+            --mapping-audit input/mapping/audit.json \
+            --evaluator-source input/evaluator/evaluator.py \
+            --prepare-dir input/prepare \
+            --freeze-file input/freeze/PRETRUTH_FREEZE.json \
+            --candidate-sugar-dir input/candidate-sugar \
+            --candidate-hdbscan-dir input/candidate-hdbscan \
+            --candidate-dsh-dir input/candidate-dsh \
+            --comparator-sugar-2013-dir input/sugar-2013 \
+            --comparator-sugar-2014-dir input/sugar-2014 \
+            --comparator-hdbscan-2013-dir input/hdbscan-2013 \
+            --comparator-hdbscan-2014-dir input/hdbscan-2014 \
+            --comparator-dsh-2013-dir input/dsh-2013 \
+            --comparator-dsh-2014-dir input/dsh-2014 --output output
+          rm -rf input/csv input/archives
+      - name: Enforce binding reporting contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/TOPOMODAL_FLAGSHIP_MATCHED_LITERATURE_RESULT_V1.json'))
+          assert r['verdict'] in {'PASS_TOPOMODAL_FLAGSHIP_MATCHED_LITERATURE_V1','FAIL_TOPOMODAL_FLAGSHIP_MATCHED_LITERATURE_V1'}
+          assert r['panel_count']==6 and len(r['panels'])==6
+          assert r['truth_access_before_pretruth'] is False
+          assert r['target_information_access'] is False
+          assert r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['post_result_parameter_search'] is False
+          print(r['verdict'])
+          for p in r['panels']:
+              print(p['pair'], p['year'], 'WIN' if p['topomodal_win'] else 'LOSS',
+                    p['topomodal']['macro_f1'], p['literature']['macro_f1'],
+                    p['topomodal']['recovered_f1_gt_0_5'], p['literature']['recovered_f1_gt_0_5'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-matched-literature-result-v1-r3
+          path: output
+          if-no-files-found: error
+          retention-days: 90
