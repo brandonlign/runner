@@ -1,0 +1,121 @@
+name: OrbitTrace recurrent-EOM residual analysis v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-residual-analysis-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_residual_analysis_v1.yml'
+      - 'orbittrace_recurrent_eom_residual_analysis_v1/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  residual-analysis:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen diagnostic sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_residual_analysis_v1/PROTOCOL.md)" = '79afef28beae6885f40ca7484edba27441f14096'
+          test "$(git hash-object orbittrace_recurrent_eom_residual_analysis_v1/run_analysis.py)" = 'edf24a0ced993cf3692fc972a00e5aef189fed9f'
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+          python -m py_compile orbittrace_recurrent_eom_residual_analysis_v1/run_analysis.py
+          mkdir -p input/parent input/truth output
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Run exact residual decomposition
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_residual_analysis_v1/run_analysis.py \
+            --pretruth input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --parent-result input/parent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json \
+            --truth-root input/truth \
+            --output output/RECURRENT_EOM_RESIDUAL_ANALYSIS_V1.json
+
+      - name: Enforce binding result and firewall
+        run: |
+          set -euo pipefail
+          test "$(sha256sum output/RECURRENT_EOM_RESIDUAL_ANALYSIS_V1.json | cut -d' ' -f1)" = '19a50655a5612e6ef00e40e0eba7c1793f5bfe298c68c082baf8b35af4856078'
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RECURRENT_EOM_RESIDUAL_ANALYSIS_V1.json'))
+          assert r['verdict']=='DO_NOT_AUTHORIZE_RECURRENT_EOM_PHYSCORE_SUCCESSOR'
+          p=r['pooled_panel_diagnostic']
+          assert p['recovered']==67 and p['residual_misses']==135
+          assert p['category_counts']=={
+              'CANDIDATE_GENERATION_FAILURE':58,
+              'MEMBERSHIP_CONTAMINATION':10,
+              'RANKING_SELECTION_FAILURE':67,
+          }
+          g=r['physcore_successor_gate']
+          assert g['authorized'] is False
+          assert g['observed_membership_positive_panels']==4
+          assert abs(g['observed_membership_fraction_of_misses']-(10/135))<1e-15
+          assert r['target_information_access'] is False
+          assert r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['pristine_external_access'] is False
+          print(r['verdict'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_recurrent_eom_residual_analysis_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_residual_analysis_v1/run_analysis.py \
+            input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            input/parent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json \
+            input/truth/truth_sugar_2013.json \
+            input/truth/truth_sugar_2014.json \
+            input/truth/truth_hdbscan_2013.json \
+            input/truth/truth_hdbscan_2014.json \
+            output/RECURRENT_EOM_RESIDUAL_ANALYSIS_V1.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-residual-analysis-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
