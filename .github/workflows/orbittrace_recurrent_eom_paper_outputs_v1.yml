@@ -1,0 +1,72 @@
+name: OrbitTrace recurrent-EOM paper outputs v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_paper_outputs_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  paper-outputs:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen evidence and renderer identities
+        run: |
+          set -euo pipefail
+          test "$(git hash-object ORBITTRACE_PAPER_EVIDENCE.json)" = '6de9ce9c01df45257780c3436cae6488bca27320'
+          test "$(git hash-object paper_outputs/make_evidence_figures.py)" = '89f9d0ca4e950887faf473552b9b38b6b8cbf6bf'
+          grep -Fq '30ac3fa3bc47910370df528fcf3ae8ecb6277b47' ORBITTRACE_PAPER_EVIDENCE.json
+          echo PASS_PAPER_EVIDENCE_SOURCE_PINS
+
+      - name: Install plotting runtime
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'matplotlib==3.10.5'
+
+      - name: Generate paper figures and source tables
+        run: |
+          set -euo pipefail
+          rm -rf generated_paper_outputs
+          python paper_outputs/make_evidence_figures.py \
+            --evidence ORBITTRACE_PAPER_EVIDENCE.json \
+            --output generated_paper_outputs
+          test -s generated_paper_outputs/figure_gmn_recovery.pdf
+          test -s generated_paper_outputs/figure_gmn_recovery.png
+          test -s generated_paper_outputs/figure_sonotaco_macro_f1.pdf
+          test -s generated_paper_outputs/figure_sonotaco_macro_f1.png
+          test -s generated_paper_outputs/gmn_ordinary_vs_recurrent.csv
+          test -s generated_paper_outputs/sonotaco_recurrent_vs_v31_literature.csv
+          test -s generated_paper_outputs/README.md
+
+      - name: Preserve exact output hashes
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > generated_paper_outputs/execution_commit.txt
+          sha256sum ORBITTRACE_PAPER_EVIDENCE.json paper_outputs/make_evidence_figures.py > generated_paper_outputs/source_sha256.txt
+          sha256sum generated_paper_outputs/* > generated_paper_outputs/output_sha256.txt
+          python --version > generated_paper_outputs/python_version.txt
+          python -m pip freeze > generated_paper_outputs/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-paper-outputs-v1
+          path: generated_paper_outputs
+          if-no-files-found: error
+          retention-days: 90
