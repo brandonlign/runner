@@ -1,0 +1,128 @@
+name: OrbitTrace phase-neutral SonotaCo contingency v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-phase-neutral-density-sync-v1
+    paths:
+      - 'orbittrace_phase_neutral_density_sync_v1/ACTIVATE_SONOTACO'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: 'orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:orbittrace_phase_neutral_density_sync_v1:.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-phase-neutral-density-sync-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify frozen pre-GMN contingency source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/rows input/truth output
+          test -e orbittrace_phase_neutral_density_sync_v1/ACTIVATE_SONOTACO
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/SONOTACO_PROTOCOL.md)" = 'e61c43db33187a3e8f83950b45720aecfdeffcdf'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/run_sonotaco_contingency.py)" = '466e77b5c6149085c5dcb6c9574028aa255ab4c1'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py)" = '32d61da99319bd1c463e4b70a92654e7ddc6778e'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          python -m py_compile orbittrace_phase_neutral_density_sync_v1/run_sonotaco_contingency.py orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Freeze both route hierarchies and full orders before truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_phase_neutral_density_sync_v1/run_sonotaco_contingency.py pretruth --rows-root input/rows --output output
+          test -s output/PHASE_NEUTRAL_DENSITY_SYNC_SONOTACO_PRETRUTH_V1.json
+          sha256sum output/PHASE_NEUTRAL_DENSITY_SYNC_SONOTACO_PRETRUTH_V1.json > output/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/PHASE_NEUTRAL_DENSITY_SYNC_SONOTACO_PRETRUTH_V1.json'))
+          assert p['truth_accessed'] is False
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['amos_access'] is False
+          assert p['maarsy_scientific_access'] is False
+          assert p['dms_scientific_access'] is False
+          print('PRETRUTH_FROZEN', {r:(p['routes'][r]['champion']['candidate_count'],p['routes'][r]['successor']['candidate_count']) for r in ('sugar','hdbscan')})
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Evaluate sole frozen portability outcome
+        run: |
+          set -euo pipefail
+          python -u orbittrace_phase_neutral_density_sync_v1/run_sonotaco_contingency.py evaluate \
+            --pretruth output/PHASE_NEUTRAL_DENSITY_SYNC_SONOTACO_PRETRUTH_V1.json \
+            --truth-root input/truth \
+            --output output
+
+      - name: Enforce binding result and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/PHASE_NEUTRAL_DENSITY_SYNC_SONOTACO_V1.json'))
+          assert r['verdict'] in {'PASS_PHASE_NEUTRAL_DENSITY_SYNC_V1_SONOTACO_PORTABILITY','FAIL_PHASE_NEUTRAL_DENSITY_SYNC_V1_SONOTACO_PORTABILITY'}
+          assert len(r['panels'])==4
+          assert r['post_result_parameter_search'] is False
+          for k in ['target_information_access','target_region_events_accessed','amos_access','maarsy_scientific_access','dms_scientific_access']:
+              assert r[k] is False
+          print(r['verdict'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum \
+            orbittrace_phase_neutral_density_sync_v1/SONOTACO_PROTOCOL.md \
+            orbittrace_phase_neutral_density_sync_v1/run_sonotaco_contingency.py \
+            orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            output/PHASE_NEUTRAL_DENSITY_SYNC_SONOTACO_PRETRUTH_V1.json \
+            output/PHASE_NEUTRAL_DENSITY_SYNC_SONOTACO_V1.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-phase-neutral-density-sync-sonotaco-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
