@@ -1,0 +1,233 @@
+name: OrbitTrace PhysCore residual TopoModal v1
+on:
+  push:
+    branches: [agent/orbittrace-physcore-residual-topomodal-v1]
+    paths:
+      - '.github/workflows/orbittrace_physcore_residual_topomodal_v1.yml'
+      - 'orbittrace_physcore_residual_topomodal_v1/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install exact frozen runtime and audit science sources
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.7.1' 'hdbscan==0.8.44' 'gudhi==3.12.0'
+          test "$(git hash-object orbittrace_physcore_residual_topomodal_v1/PROTOCOL.md)" = '9ef17aa6093684906f3a0efe43c1fe10d0613886'
+          test "$(git hash-object orbittrace_physcore_residual_topomodal_v1/generate_pretruth.py)" = 'f5fbdd13156f1e89cf98beda6447ac50ab853fcd'
+          test "$(git hash-object orbittrace_physcore_residual_topomodal_v1/evaluate_after_freeze.py)" = '2376eada9489276531481b7a36a9dc1e2527460a'
+          test "$(git hash-object orbittrace_physcore_residual_topomodal_v1/frozen_topomodal.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
+          python -m py_compile orbittrace_physcore_residual_topomodal_v1/generate_pretruth.py orbittrace_physcore_residual_topomodal_v1/evaluate_after_freeze.py orbittrace_physcore_residual_topomodal_v1/frozen_topomodal.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-physcore-matched-literature-v1-pretruth
+          path: input/matched
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31988628399
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-physcore-hdbscan-v1-pretruth
+          path: input/direct
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31988198562
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - name: Generate and seal label-free residual candidate catalogues
+        run: |
+          set -euo pipefail
+          mkdir -p output/pretruth
+          python -u orbittrace_physcore_residual_topomodal_v1/generate_pretruth.py \
+            --matched-pretruth input/matched \
+            --direct-pretruth input/direct \
+            --rows input/rows \
+            --topomodal-source orbittrace_physcore_residual_topomodal_v1/frozen_topomodal.py \
+            --output output/pretruth
+      - name: Enforce structural activation before any truth job
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/pretruth/PRETRUTH_FREEZE.json'))
+          print(r['verdict'])
+          for p in r['panels']:
+              print(p['pair'],p['year'],'phys',p['physcore_family_count'],'residual_tm',p['residual_topomodal_family_count'],'total',p['successor_family_count'],'budget',p['literature_budget'],'capacity',p['capacity_ok'])
+          assert r['direct_physcore_prefix_equivalence'] is True
+          assert r['truth_accessed_before_freeze'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['verdict']=='PASS_PHYSCORE_RESIDUAL_TOPOMODAL_V1_PRETRUTH'
+          PY
+      - name: Preserve pretruth provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/pretruth/execution_commit.txt
+          python -m pip freeze > output/pretruth/environment.txt
+          sha256sum orbittrace_physcore_residual_topomodal_v1/PROTOCOL.md orbittrace_physcore_residual_topomodal_v1/generate_pretruth.py orbittrace_physcore_residual_topomodal_v1/frozen_topomodal.py output/pretruth/PRETRUTH_FREEZE.json > output/pretruth/source_input_output_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-physcore-residual-topomodal-v1-pretruth
+          path: output/pretruth
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-physcore-residual-topomodal-v1-pretruth
+          path: input/successor
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-physcore-matched-literature-v1-pretruth
+          path: input/matched
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31988628399
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-sugar-2013-v1-r3
+          path: input/comparators/sugar_2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-sugar-2014-v1-r3
+          path: input/comparators/sugar_2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2013-v1-r2
+          path: input/comparators/dsh_2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2014-v1-r2
+          path: input/comparators/dsh_2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Restore exact evaluator and exposed truth only after pretruth PASS
+        run: |
+          set -euo pipefail
+          mkdir -p input/csv input/archives input/evaluator output/result
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          raw=gzip.decompress(base64.b64decode(''.join(Path('infra/orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64').read_text().split()),validate=True))
+          Path('input/evaluator/evaluator.py').write_bytes(raw)
+          assert hashlib.sha256(raw).hexdigest()=='cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          assert hashlib.sha256(Path('input/mapping/audit.json').read_bytes()).hexdigest()=='f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          PY
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          integ=json.load(open('input/rows/source_integrity.json'))
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv'),2014:('input/archives/014a.zip','_U2_20140101_S.csv')}
+          for y,(zp,b) in specs.items():
+              raw=Path(zp).read_bytes(); assert hashlib.sha256(raw).hexdigest()==integ['years'][str(y)]['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  ms=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==b]; assert len(ms)==1; data=z.read(ms[0])
+              assert hashlib.sha256(data).hexdigest()==integ['years'][str(y)]['member_sha256']; Path(f'input/csv/{y}.csv').write_bytes(data)
+          PY
+      - name: Binding matched-literature evaluation
+        env:
+          PYTHONPATH: infra:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_physcore_residual_topomodal_v1/evaluate_after_freeze.py \
+            --csv-2013 input/csv/2013.csv \
+            --csv-2014 input/csv/2014.csv \
+            --mapping-audit input/mapping/audit.json \
+            --evaluator-source input/evaluator/evaluator.py \
+            --rows input/rows \
+            --comparators input/comparators \
+            --matched-pretruth input/matched \
+            --successor-pretruth input/successor \
+            --output output/result
+          rm -rf input/csv input/archives
+      - name: Enforce binding result contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/RESULT.json'))
+          print(r['verdict'],r['panel_wins'],'/',r['panel_count'])
+          for p in r['new_matched_literature_panels']:
+              print(p['pair'],p['year'],p['successor']['macro_f1'],p['literature']['macro_f1'],p['successor']['recovered_f1_gt_0_5'],p['literature']['recovered_f1_gt_0_5'],p['win'])
+          assert r['verdict'] in {'PASS_PHYSCORE_RESIDUAL_TOPOMODAL_V1','FAIL_PHYSCORE_RESIDUAL_TOPOMODAL_V1'}
+          assert r['truth_access_before_pretruth'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['amos_scientific_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['post_result_parameter_search'] is False
+          PY
+      - name: Preserve result provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/result/execution_commit.txt
+          python -m pip freeze > output/result/environment.txt
+          sha256sum orbittrace_physcore_residual_topomodal_v1/PROTOCOL.md orbittrace_physcore_residual_topomodal_v1/evaluate_after_freeze.py input/successor/PRETRUTH_FREEZE.json output/result/RESULT.json > output/result/source_input_output_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-physcore-residual-topomodal-v1-result
+          path: output/result
+          if-no-files-found: error
+          retention-days: 90
