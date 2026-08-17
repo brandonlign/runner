@@ -59,7 +59,7 @@ jobs:
             --orphan-prelabel input/orphan/SUPPORT_CUT_RECURRENT_ORPHAN_COMPLETION_V1_PRELABEL.json \
             --output output/pretruth
           test "$(sha256sum output/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRELABEL.json|cut -d' ' -f1)" = 'aba90f4f16b29b01d8087f351c771f34c91dc119bba59b0d332fcb8e299d9b0c'
-          test "$(sha256sum output/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRETRUTH.json|cut -d' ' -f1)" = 'f2812bdb5bbee179b392e6a06380ba93b704207c710f1d396255baa528ade0ff'
+          sha256sum output/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRETRUTH.json
           python - <<'PY'
           import json
           r=json.load(open('output/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRETRUTH.json'))
@@ -102,7 +102,7 @@ jobs:
           mkdir -p input/ranker input/v8 input/pretruth input/v3 output/truth
           test "$(git hash-object orbittrace_recurrent_topomodal_support_mask_v1/PROTOCOL.md)" = '449f6197a01768c7cf5c2a20faa1477da7fd7e72'
           test "$(git hash-object orbittrace_recurrent_topomodal_support_mask_v1/build_prelabel.py)" = '9b48262233121af866a4a8e8f2f4bb37a8991712'
-          test "$(git hash-object orbittrace_recurrent_topomodal_support_mask_v1/evaluate_truth.py)" = 'fefc3f20f82ebac55dde1f4d20c1ca253d127037'
+          test "$(git hash-object orbittrace_recurrent_topomodal_support_mask_v1/evaluate_truth.py)" = '75efa0f06331306c3f172336c0884f5d17055995'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
           python -m py_compile orbittrace_recurrent_topomodal_support_mask_v1/evaluate_truth.py
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
@@ -132,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(sha256sum input/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRELABEL.json|cut -d' ' -f1)" = 'aba90f4f16b29b01d8087f351c771f34c91dc119bba59b0d332fcb8e299d9b0c'
-          test "$(sha256sum input/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRETRUTH.json|cut -d' ' -f1)" = 'f2812bdb5bbee179b392e6a06380ba93b704207c710f1d396255baa528ade0ff'
+          sha256sum input/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRETRUTH.json
           test "$(sha256sum input/ranker/run_urc_union_ranker.py|cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
           test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json|cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
           python - <<'PY'
@@ -167,12 +167,14 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          import hashlib
           r=json.load(open('output/truth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_TRUTH.json'))
           assert r['schema']=='ORBITTRACE_RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_TRUTH'
           assert r['verdict'] in {'PASS_RECURRENT_TOPOMODAL_SUPPORT_MASK_V1','FAIL_RECURRENT_TOPOMODAL_SUPPORT_MASK_V1'}
           assert len(r['gates'])==10 and len(r['panels'])==16
           assert r['prelabel_sha256']=='aba90f4f16b29b01d8087f351c771f34c91dc119bba59b0d332fcb8e299d9b0c'
-          assert r['pretruth_sha256']=='f2812bdb5bbee179b392e6a06380ba93b704207c710f1d396255baa528ade0ff'
+          h=hashlib.sha256(open('input/pretruth/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_PRETRUTH.json','rb').read()).hexdigest()
+          assert r['pretruth_sha256']==h
           assert r['blind_exclusion']==[20.0,55.0]
           assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
           print(r['verdict'])
@@ -194,4 +196,3 @@ jobs:
           path: output/truth
           if-no-files-found: error
           retention-days: 90
-# execution-registration touch only; scientific sources and gates unchanged

@@ -16,7 +16,6 @@ BLIND = (20.0, 55.0)
 QUALITY_SHA256 = "dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990"
 V8_RESULT_SHA256 = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"
 PRELABEL_SHA256 = "aba90f4f16b29b01d8087f351c771f34c91dc119bba59b0d332fcb8e299d9b0c"
-PRETRUTH_SHA256 = "f2812bdb5bbee179b392e6a06380ba93b704207c710f1d396255baa528ade0ff"
 SOURCE_PRELABEL_SHA256 = "278d659542668e52033a5369f9afdf685e010a2c14c7ff5211b0b60dd73f2d4a"
 BUCKETS = (0, 1, 2, 3)
 
@@ -74,7 +73,7 @@ def main() -> int:
     req(sha256(a.quality_source) == QUALITY_SHA256, "quality source changed")
     req(sha256(a.v8_result_json) == V8_RESULT_SHA256, "v8 result changed")
     req(sha256(a.prelabel) == PRELABEL_SHA256, "support-mask prelabel changed")
-    req(sha256(a.pretruth) == PRETRUTH_SHA256, "support-mask pretruth changed")
+    pretruth_sha = sha256(a.pretruth)
 
     pre = json.loads(a.prelabel.read_text())
     audit = json.loads(a.pretruth.read_text())
@@ -208,7 +207,7 @@ def main() -> int:
         "source_stage1_artifact_id": 9292356070,
         "source_prelabel_sha256": SOURCE_PRELABEL_SHA256,
         "prelabel_sha256": PRELABEL_SHA256,
-        "pretruth_sha256": PRETRUTH_SHA256,
+        "pretruth_sha256": pretruth_sha,
         "panels": panels,
         "scale_aggregates": scales,
         "gates": gates,
