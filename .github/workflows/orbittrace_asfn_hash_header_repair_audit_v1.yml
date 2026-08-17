@@ -1,0 +1,96 @@
+name: OrbitTrace ASFN hash-header repair semantic audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-asfn-header-repair-audit-v1
+    paths:
+      - '.github/workflows/orbittrace_asfn_hash_header_repair_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  semantic-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact import runtime and verify frozen bytes
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          test "$(git hash-object orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/HEADER_REPAIR_AUDIT_PROTOCOL.md)" = 'ddc0199a338e50188c005acf9ec9cae2bee77852'
+          test "$(git hash-object orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_audit.py)" = '52b235930e6e243caaddff7c7e8884373ccc4313'
+          test "$(git hash-object orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/run_validation.py)" = '8f5699326758dd11cc46f9a209049a8ed61dee3a'
+          test "$(git hash-object orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_wrapper.py)" = '0e5fce5b04959ec45c42bb22ed477e48bdc31bde'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          python -m py_compile \
+            orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_audit.py \
+            orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_wrapper.py \
+            orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/run_validation.py
+
+      - name: Run synthetic-only wrapper semantic audit
+        env:
+          PYTHONPATH: .:orbittrace_recurrent_eom_hdbscan_v1
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_audit.py \
+            --runner orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/run_validation.py \
+            --wrapper orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_wrapper.py \
+            --output output
+          python - <<'PY'
+          import json
+          p=json.load(open('output/ASFN_HASH_HEADER_REPAIR_SEMANTIC_AUDIT.json'))
+          assert p['verdict']=='PASS_ASFN_HASH_HEADER_REPAIR_SEMANTIC_AUDIT'
+          assert all(p['checks'].values())
+          assert p['network_access'] is False
+          assert p['asfn_archive_access'] is False
+          assert p['asfn_event_value_access'] is False
+          assert p['asfn_shw_access'] is False
+          assert p['scientific_endpoint'] is False
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['maarsy_scientific_access'] is False
+          assert p['dms_scientific_access'] is False
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/HEADER_REPAIR_AUDIT_PROTOCOL.md \
+            orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_audit.py \
+            orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/run_validation.py \
+            orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/header_repair_wrapper.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            output/ASFN_HASH_HEADER_REPAIR_SEMANTIC_AUDIT.json \
+            > output/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-asfn-hash-header-repair-semantic-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

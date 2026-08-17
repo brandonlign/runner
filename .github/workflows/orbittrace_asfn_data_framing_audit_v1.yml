@@ -1,0 +1,45 @@
+name: OrbitTrace ASFN data framing audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-asfn-2018-2019-validation-v1
+    paths:
+      - '.github/workflows/orbittrace_asfn_data_framing_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  framing-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen audit sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/FORMAT_AUDIT_PROTOCOL.md)" = '960db109be82c8222f851be8a60f73969eaa4a80'
+          test "$(git hash-object orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/audit_framing.py)" = 'ea0998f7135fca5d3241e1c5e964fd2085f76393'
+          python -m py_compile orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/audit_framing.py
+      - name: Acquire exact frozen archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --max-time 60 --user-agent 'OrbitTrace-ASFN-Framing-Audit/1.0' \
+            'https://fireballs.ndc.nasa.gov/public_data/nasfn_2013-2019.zip' -o ASFN_2013_2019.zip
+          test "$(sha256sum ASFN_2013_2019.zip | cut -d' ' -f1)" = 'c091b0f3f87f10badbe5fa38e6c45ba818af99f1c27c2fd6a23be286074c89a4'
+      - name: Inspect first eight lines structurally only
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_recurrent_eom_asfn_2018_2019_validation_v1/audit_framing.py --archive ASFN_2013_2019.zip --output output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-asfn-data-framing-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

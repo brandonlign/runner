@@ -1,0 +1,45 @@
+name: OrbitTrace NASA ASFN readme preaccess v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-nasa-asfn-readme-preaccess-v1
+    paths:
+      - '.github/workflows/orbittrace_nasa_asfn_readme_preaccess_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preaccess:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen readme-only sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_nasa_asfn_readme_preaccess_v1/PROTOCOL.md)" = 'c8d8b5eeb78db7059ecaba8292f0fbc0f6318c44'
+          test "$(git hash-object orbittrace_nasa_asfn_readme_preaccess_v1/audit_readme.py)" = '72ef8bbd7176efd6dc93d641a58afbfa1be40efb'
+          python -m py_compile orbittrace_nasa_asfn_readme_preaccess_v1/audit_readme.py
+      - name: Download exact primary-paper archive once
+        run: |
+          set -euo pipefail
+          curl --fail --location --max-time 60 --user-agent 'OrbitTrace-ASFN-Readme-Preaccess/1.0' \
+            'https://fireballs.ndc.nasa.gov/public_data/nasfn_2013-2019.zip' -o ASFN_2013_2019.zip
+          test "$(stat -c%s ASFN_2013_2019.zip)" = '4326351'
+      - name: Inspect central directory and readme member only
+        run: |
+          set -euo pipefail
+          python orbittrace_nasa_asfn_readme_preaccess_v1/audit_readme.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-nasa-asfn-readme-preaccess-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
