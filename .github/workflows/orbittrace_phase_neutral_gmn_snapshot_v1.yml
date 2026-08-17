@@ -1,0 +1,169 @@
+name: OrbitTrace phase-neutral GMN snapshot v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-phase-neutral-density-sync-v1
+    paths:
+      - '.github/workflows/orbittrace_phase_neutral_gmn_snapshot_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-phase-neutral-density-sync-v1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact inherited parser runtime and pin snapshot source
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/v3 input/v8 input/ranker snapshot/label_free snapshot/truth output
+
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/SNAPSHOT_PROTOCOL.md)" = '487a418772850458e8c7bef360b7141bcc443aae'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/prepare_gmn_snapshot.py)" = '8050a31f2d9e2c63d739fad7d7d0e7064031795d'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_phase_neutral_density_sync_v1/prepare_gmn_snapshot.py orbittrace_recurrent_eom_hdbscan_v1/run_development.py
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify immutable parser-support inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+
+      - name: Export one method-independent current GMN snapshot
+        env:
+          PYTHONPATH: orbittrace_recurrent_eom_hdbscan_v1:input/ranker:.:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_phase_neutral_density_sync_v1/prepare_gmn_snapshot.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --label-free-output snapshot/label_free \
+            --truth-output snapshot/truth
+
+      - name: Enforce snapshot separation and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip,json,os
+          lm=json.load(open('snapshot/label_free/manifest.json'))
+          tm=json.load(open('snapshot/truth/manifest.json'))
+          assert lm['schema']=='ORBITTRACE_PHASE_NEUTRAL_GMN_LABEL_FREE_SNAPSHOT_V1'
+          assert tm['schema']=='ORBITTRACE_PHASE_NEUTRAL_GMN_SEALED_TRUTH_V1'
+          assert lm['events_total']==lm['events_by_year']['2022']+lm['events_by_year']['2023']
+          assert lm['labels_present'] is False
+          assert lm['hdbscan_fit_executed'] is False
+          assert lm['method_evaluation_executed'] is False
+          assert lm['blind_exclusion']==[20.0,55.0]
+          assert tm['blind_exclusion']==[20.0,55.0]
+          assert not os.path.exists('snapshot/label_free/gmn_truth.json.gz')
+          for obj in (lm,tm):
+              for k in ['target_information_access','target_region_events_accessed','sonotaco_access','asfn_access','efn_access','amos_access','maarsy_scientific_access','dms_scientific_access']:
+                  assert obj[k] is False, (k,obj[k])
+          print('SNAPSHOT', lm['events_by_year'], 'truth_entries=',tm['truth_entries'])
+          PY
+
+      - name: Preserve snapshot provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum \
+            orbittrace_phase_neutral_density_sync_v1/SNAPSHOT_PROTOCOL.md \
+            orbittrace_phase_neutral_density_sync_v1/prepare_gmn_snapshot.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/v8/pooled_year_centroid_v8_development.json \
+            snapshot/label_free/manifest.json \
+            snapshot/label_free/gmn_2022_rows.jsonl.gz \
+            snapshot/label_free/gmn_2023_rows.jsonl.gz \
+            snapshot/truth/manifest.json \
+            snapshot/truth/gmn_truth.json.gz \
+            > output/source_snapshot_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: orbittrace-phase-neutral-gmn-label-free-snapshot-v1
+          path: snapshot/label_free
+          if-no-files-found: error
+          retention-days: 90
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: orbittrace-phase-neutral-gmn-sealed-truth-v1
+          path: snapshot/truth
+          if-no-files-found: error
+          retention-days: 90
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-phase-neutral-gmn-snapshot-provenance-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
