@@ -1,0 +1,74 @@
+name: OrbitTrace MRR definition audit v1
+on:
+  push:
+    branches: [agent/orbittrace-mrr-definition-audit-v1]
+    paths: ['.github/workflows/orbittrace_mrr_definition_audit_v1.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit frozen sources
+        run: |
+          set -euo pipefail
+          mkdir -p input/result output
+          test "$(git hash-object orbittrace_mrr_definition_audit_v1/PROTOCOL.md)" = '31a6b78127b9081e1e610700c9ce6eedbd3525e2'
+          test "$(git hash-object orbittrace_mrr_definition_audit_v1/run_audit.py)" = '55337ba829a313a0f22e10363ac26a1e6809abeb'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_mrr_definition_audit_v1/run_audit.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-topomodal-support-mask-v1-truth
+          path: input/result
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32070872999
+      - name: Verify sealed closed endpoint
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/result/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_TRUTH.json | cut -d' ' -f1)" = '9128aa8d10c87c9e173b854d48192f3d1d33ba79af8d0a415e706db28da352f2'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/result/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_TRUTH.json'))
+          assert r['verdict']=='FAIL_RECURRENT_TOPOMODAL_SUPPORT_MASK_V1'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          PY
+      - name: Run no-new-truth metric audit
+        run: |
+          set -euo pipefail
+          python -u orbittrace_mrr_definition_audit_v1/run_audit.py \
+            --evaluator-source orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --sealed-result input/result/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_TRUTH.json \
+            --output output
+      - name: Enforce audit contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/MRR_DEFINITION_AUDIT_V1.json'))
+          assert r['schema']=='ORBITTRACE_MRR_DEFINITION_AUDIT_V1'
+          assert r['verdict'] in {'AUDIT_MRR_DEFINITION_PROBLEM_CONFIRMED','AUDIT_MRR_DEFINITION_PROBLEM_NOT_CONFIRMED'}
+          assert len(r['gates'])==10
+          assert r['retroactive_promotion_authorized'] is False
+          assert r['scientific_successor_rerun'] is False and r['new_shower_truth_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          print(r['verdict'])
+          print(json.dumps(r['scales'], indent=2, sort_keys=True))
+          PY
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_mrr_definition_audit_v1/PROTOCOL.md orbittrace_mrr_definition_audit_v1/run_audit.py orbittrace_recurrent_eom_hdbscan_v1/run_development.py input/result/RECURRENT_TOPOMODAL_SUPPORT_MASK_V1_TRUTH.json output/MRR_DEFINITION_AUDIT_V1.json > output/source_input_output_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-mrr-definition-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
