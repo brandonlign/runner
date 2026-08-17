@@ -1,0 +1,93 @@
+name: OrbitTrace TopoModal full recoverability diagnostic v1
+
+on:
+  push:
+    branches: [agent/orbittrace-topomodal-full-recoverability-diagnostic-v1]
+    paths:
+      - 'orbittrace_topomodal_full_recoverability_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_topomodal_full_recoverability_diagnostic_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-pretruth-hdbscan-v1-retry
+          path: input/candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3
+          path: input/hdbscan-2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3
+          path: input/hdbscan-2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Reacquire identical exposed archives under frozen truth boundary
+        run: |
+          set -euo pipefail
+          mkdir -p input/csv input/archives output
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          integ=json.load(open('input/prepare/source_integrity.json'))
+          for y,zp,bn in [(2013,'input/archives/013a.zip','_U2_20130101_S.csv'),(2014,'input/archives/014a.zip','_U2_20140101_S.csv')]:
+              raw=Path(zp).read_bytes(); assert hashlib.sha256(raw).hexdigest()==integ['years'][str(y)]['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  m=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==bn]; assert len(m)==1; data=z.read(m[0])
+              assert hashlib.sha256(data).hexdigest()==integ['years'][str(y)]['member_sha256']; Path(f'input/csv/{y}.csv').write_bytes(data)
+          PY
+      - name: Diagnose all already-frozen TopoModal candidates
+        env: {PYTHONPATH: infra}
+        run: |
+          python -u orbittrace_topomodal_full_recoverability_diagnostic_v1/diagnose.py \
+            --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv \
+            --mapping-audit input/mapping/audit.json --prepare-dir input/prepare \
+            --candidate-dir input/candidate --hdbscan-2013-dir input/hdbscan-2013 \
+            --hdbscan-2014-dir input/hdbscan-2014 --output output
+          rm -rf input/csv input/archives
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-topomodal-full-recoverability-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
