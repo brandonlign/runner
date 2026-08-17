@@ -1,0 +1,1 @@
+Binding failure: `RuntimeError: predictive cut capacity below recurrent budget d=128 b=0 y=2022: 24<29` in run `32035358123`. This is the preregistered structural capacity gate and permanently closes this exact lane.
