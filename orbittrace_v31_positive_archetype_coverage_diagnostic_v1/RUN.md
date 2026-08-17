@@ -1,0 +1,1 @@
+Execution authorization only for the already-frozen positive-archetype coverage diagnostic. This marker changes no scientific method, diagnostic definition, parameter, input, firewall, or evaluation rule.
