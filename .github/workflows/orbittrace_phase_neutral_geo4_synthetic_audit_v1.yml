@@ -1,0 +1,50 @@
+name: OrbitTrace phase-neutral GEO4 synthetic audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-phase-neutral-density-sync-v1
+    paths:
+      - '.github/workflows/orbittrace_phase_neutral_geo4_synthetic_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: 'orbittrace_phase_neutral_density_sync_v1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-phase-neutral-density-sync-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin frozen geometry and run zero-data audit
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          mkdir -p output
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py)" = '32d61da99319bd1c463e4b70a92654e7ddc6778e'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/audit_geometry.py)" = '82c0fb8a4016b0cca21920ea5c186632f6ed237b'
+          python -m py_compile orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py orbittrace_phase_neutral_density_sync_v1/audit_geometry.py
+          python -u orbittrace_phase_neutral_density_sync_v1/audit_geometry.py --output output
+          python - <<'PY'
+          import json
+          r=json.load(open('output/PHASE_NEUTRAL_GEO4_SYNTHETIC_AUDIT.json'))
+          assert r['verdict']=='PASS_PHASE_NEUTRAL_GEO4_SYNTHETIC_AUDIT'
+          assert all(r['tests'].values())
+          for k in ['gmn_access','truth_access','sonotaco_access','target_information_access','target_region_events_accessed','amos_access','maarsy_scientific_access','dms_scientific_access']:
+              assert r[k] is False
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-phase-neutral-geo4-synthetic-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
