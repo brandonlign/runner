@@ -1,0 +1,1 @@
+The exact Predictive Tree Cut v1 GMN scale lane is closed after binding pretruth capacity failure. Lower/adaptive budgets, alternate edge splits, salts, folds, null models, support/radius/scale changes, score transforms, DP/tie changes, blends, and scale-specific exceptions are not permitted as rescues of this endpoint.
