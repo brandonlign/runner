@@ -50,7 +50,7 @@ jobs:
           python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
-          mkdir -p input/v8 input/ranker input/structural output
+          mkdir -p input/v3 input/v8 input/ranker input/structural output
           test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/PROTOCOL.md)" = 'de555a1a7931d0cb161735c52d0548482cc2d935'
           test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/run_pretruth.py)" = '5ab048e8e60c255c5f3b26d4beae942e7973850d'
           test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py)" = 'bb72f7e238c81b0fbbbee1f447432ed82151c895'
@@ -58,6 +58,17 @@ jobs:
           test "$(git -C sparse-src hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
           python -m py_compile orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/run_pretruth.py orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
 
       - uses: actions/download-artifact@v4
         with:
@@ -92,7 +103,7 @@ jobs:
 
       - name: Build and freeze all Predictive Tree Cut candidates before truth
         env:
-          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:frozen-v8
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
           python -u orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/run_pretruth.py \
@@ -174,11 +185,22 @@ jobs:
           python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
-          mkdir -p input/v8 input/ranker input/pretruth output
+          mkdir -p input/v3 input/v8 input/ranker input/pretruth output
           test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/PROTOCOL.md)" = 'de555a1a7931d0cb161735c52d0548482cc2d935'
           test "$(git hash-object orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py)" = 'bb72f7e238c81b0fbbbee1f447432ed82151c895'
           test "$(git -C sparse-src hash-object orbittrace_topomodal_sparse_recovery_v1/run_development.py)" = '752df8212ce601227f6e9170b0fe994ba06b515d'
           test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
 
       - uses: actions/download-artifact@v4
         with:
@@ -203,7 +225,7 @@ jobs:
 
       - name: Evaluate immutable pretruth output against already-exposed GMN truth
         env:
-          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:frozen-v8
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
         run: |
           set -euo pipefail
           python -u orbittrace_topomodal_predictive_tree_cut_gmn_scale_v1/evaluate_after_freeze.py \
