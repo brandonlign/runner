@@ -15,16 +15,23 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - name: Install distro graph-tool only
+      - name: Install graph-tool from official upstream Jammy repository
         run: |
           set -euo pipefail
+          codename="$(lsb_release -s -c)"
+          test "$codename" = jammy
+          wget -q "https://downloads.skewed.de/skewed-keyring/skewed-keyring_1.3_all_${codename}.deb" -O /tmp/skewed-keyring.deb
+          sudo dpkg -i /tmp/skewed-keyring.deb
+          echo "deb [signed-by=/usr/share/keyrings/skewed-keyring.gpg] https://downloads.skewed.de/apt ${codename} main" | sudo tee /etc/apt/sources.list.d/skewed.list
           sudo apt-get update
+          apt-cache policy python3-graph-tool
           sudo apt-get install -y python3-graph-tool
+          dpkg-query -W -f='GRAPH_TOOL_APT_VERSION=${Version}\n' python3-graph-tool
 
       - name: Verify PPBlockState API on synthetic graph
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          /usr/bin/python3 - <<'PY'
           import json
           import numpy as np
           import graph_tool.all as gt
