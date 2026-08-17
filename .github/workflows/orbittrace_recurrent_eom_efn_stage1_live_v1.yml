@@ -1,0 +1,131 @@
+name: OrbitTrace recurrent-EOM EFN Stage-1 live blind receipt v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+    paths:
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_LIVE_RETRY5_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  blind-index-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify exact preaccess authorizers and promoted generic-modulo Stage-1 source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_FREEZE.json)" = '2a64e246534f5a41abfed8b8e725c723e2972b9e'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_DATE_ENCODING_REPAIR_FREEZE.json)" = '5c5c373cc055ceb03498aa37fac46803e6f38f0c'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_SOLAR_WRAP_CORRECTION.md)" = '7eea806ba74dd0c0f858707f75e516b4e56738a4'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_GENERIC_MODULO_REPAIR_FREEZE.json)" = '43a68e7bba83e45bd33452030cf04ac3bc7fcd4f'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py)" = 'f006b6087aca5136e2298d8bc4db012600ec87e6'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          python -m py_compile orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py
+          python - <<'PY'
+          import ast,json
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py'
+          src=open(p).read(); tree=ast.parse(src)
+          q=[n.value.value for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='QUERY' for t in n.targets) and isinstance(n.value,ast.Constant)]
+          assert q==['SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"']
+          assert 'canonical = raw % 360.0' in src
+          assert 'math.isfinite(raw)' in src
+          assert '0.0 <= raw <= 360.0' not in src
+          freeze=json.load(open('orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_GENERIC_MODULO_REPAIR_FREEZE.json'))
+          assert freeze['binding_repair_audit_verdict']=='PASS_RECURRENT_EOM_EFN_STAGE1_GENERIC_MODULO_REPAIR_SYNTHETIC_AUDIT'
+          assert freeze['binding_repair_audit_run']==31841002467
+          assert freeze['binding_repair_audit_artifact']==9234222069
+          assert freeze['scientific_method_changed'] is False and freeze['post_result_parameter_search'] is False
+          for forbidden in ('Lgeo-Lsun','Bgeo','Vgeo','Shower','Object','RAgeo','DEgeo','Vinf'):
+              assert forbidden not in q[0]
+          print('PASS_EFN_STAGE1_LIVE_RETRY5_AUTHORIZATION')
+          PY
+
+      - name: Execute sole promoted-modulo live blind-index query
+        run: |
+          set -euo pipefail
+          rm -rf orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1
+          python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py
+
+      - name: Enforce safe Stage-1 artifact boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1')
+          expected={'EFN_2017_RETAINED_IDS.txt','EFN_2018_RETAINED_IDS.txt','STAGE1_BLIND_RECEIPT.json'}
+          assert {p.name for p in root.iterdir() if p.is_file()}==expected
+          r=json.load(open(root/'STAGE1_BLIND_RECEIPT.json'))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE1_BLIND_RECEIPT'
+          assert r['scientific_role']=='PRISTINE_EXTERNAL_EFN_2017_2018_STAGE1_BLIND_INDEX_ONLY'
+          assert r['catalogue']=='J/A+A/667/A157' and r['rows_received']==824
+          assert r['years']==[2017,2018]
+          assert r['selected_columns']==['Code','Obs.date','Lsun']
+          assert r['returned_columns']==['Code','Obs_date','Lsun']
+          assert r['obs_date_encoding']=='VIZIER_SEC_PER_2000'
+          assert r['solar_longitude_normalization']=='raw_Lsun % 360.0 per promoted recurrent-EOM normalize_event'
+          assert r['raw_solar_longitude_required_finite_only'] is True
+          assert r['modulo_wrapped_rows_total']==4
+          assert sum(int(v) for v in r['modulo_wrapped_rows_by_year'].values())==4
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['blind_exclusion_applied_after_modulo_normalization'] is True
+          assert r['raw_response_persisted'] is False and r['solar_longitude_values_persisted'] is False
+          assert r['geometry_returned'] is False and r['shower_labels_returned'] is False and r['orbit_fields_returned'] is False
+          assert r['target_information_access'] is False and r['target_region_physical_values_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['orbittrace_target_access'] is False
+          for y in ('2017','2018'):
+              ids=(root/f'EFN_{y}_RETAINED_IDS.txt').read_text().splitlines()
+              assert ids==sorted(ids) and len(ids)==len(set(ids))==int(r['retained_rows_by_year'][y])
+              assert all(ids)
+          print(r['verdict'], r['rows_by_year'], r['excluded_rows_by_year'], r['retained_rows_by_year'], r['retained_ids_sha256'], r['modulo_wrapped_rows_by_year'])
+          PY
+
+      - name: Preserve safe Stage-1 provenance
+        if: always()
+        run: |
+          set +e
+          root='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1'
+          mkdir -p "$root"
+          sha256sum \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_SOLAR_WRAP_CORRECTION.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_GENERIC_MODULO_REPAIR_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_blind_receipt.py \
+            "$root/STAGE1_BLIND_RECEIPT.json" \
+            "$root/EFN_2017_RETAINED_IDS.txt" \
+            "$root/EFN_2018_RETAINED_IDS.txt" \
+            > "$root/source_output_sha256.txt" 2>/dev/null || true
+          git rev-parse HEAD > "$root/execution_commit.txt"
+          python --version > "$root/python_version.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-efn-stage1-live-retry5-v1
+          path: |
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1/EFN_2017_RETAINED_IDS.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1/EFN_2018_RETAINED_IDS.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1/STAGE1_BLIND_RECEIPT.json
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1/source_output_sha256.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1/execution_commit.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/stage1/python_version.txt
+          if-no-files-found: error
+          retention-days: 90

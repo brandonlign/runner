@@ -1,0 +1,111 @@
+name: OrbitTrace recurrent-EOM EFN Stage-1 Lsun transport diagnostic v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+    paths:
+      - 'orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_LSUN_DIAGNOSTIC_ACTIVATE.md'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  blind-field-only:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-recurrent-eom-efn-2017-2018-preaccess-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify sole diagnostic authorization and query boundary
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md)" = '3b9c325205cdf4647c06674476858ae8fecbb145'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_FREEZE.json)" = '2a64e246534f5a41abfed8b8e725c723e2972b9e'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_DATE_ENCODING_REPAIR_FREEZE.json)" = '5c5c373cc055ceb03498aa37fac46803e6f38f0c'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_LSUN_TRANSPORT_DIAGNOSTIC.md)" = '590ff886a53655ff00424d2eae16951ec4a1b769'
+          test "$(git hash-object orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_lsun_transport_diagnostic.py)" = 'c5065b5d18a46df5fe642be2ef2c66ee3d4e0a0b'
+          python -m py_compile orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_lsun_transport_diagnostic.py
+          python - <<'PY'
+          import importlib.util
+          p='orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_lsun_transport_diagnostic.py'
+          spec=importlib.util.spec_from_file_location('d',p); d=importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+          assert d.QUERY=='SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"'
+          assert d.RETURNED_COLUMNS==['Code','Obs_date','Lsun']
+          assert d.EXPECTED_ROWS==824
+          assert d.classify('0.0')==(True,'VALID_0_LE_LSUN_LT_360')
+          assert d.classify('359.9999')==(True,'VALID_0_LE_LSUN_LT_360')
+          assert d.classify('360.0')==(False,'GE_360')
+          assert d.classify('-0.1')==(False,'NEGATIVE')
+          assert d.classify('nan')==(False,'NON_FINITE')
+          assert d.classify('')==(False,'NON_NUMERIC')
+          print('PASS_EFN_STAGE1_LSUN_DIAGNOSTIC_SOURCE_BOUNDARY')
+          PY
+
+      - name: Execute sole frozen blind-field transport diagnostic
+        run: |
+          set -euo pipefail
+          rm -rf orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/lsun_diagnostic
+          python -u orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_lsun_transport_diagnostic.py
+
+      - name: Enforce diagnostic-only artifact
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/lsun_diagnostic')
+          assert {p.name for p in root.iterdir() if p.is_file()}=={'STAGE1_LSUN_TRANSPORT_DIAGNOSTIC.json'}
+          r=json.load(open(root/'STAGE1_LSUN_TRANSPORT_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_RECURRENT_EOM_EFN_STAGE1_LSUN_TRANSPORT_DIAGNOSTIC'
+          assert r['scientific_role']=='ENGINEERING_ONLY_STAGE1_BLIND_FIELD_TRANSPORT_DIAGNOSTIC'
+          assert r['query']=='SELECT Code, "Obs.date", Lsun FROM "J/A+A/667/A157/catalog"'
+          assert r['returned_columns']==['Code','Obs_date','Lsun']
+          assert r['rows_received']==824
+          assert r['valid_stage1_endpoint'] is False
+          assert r['retained_ids_frozen'] is False
+          assert r['raw_response_persisted'] is False
+          assert r['valid_row_lsun_values_persisted'] is False
+          assert r['geometry_returned'] is False and r['shower_labels_returned'] is False and r['orbit_fields_returned'] is False
+          assert r['target_information_access'] is False and r['target_region_physical_values_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False and r['orbittrace_target_access'] is False
+          print(r['verdict'], r['invalid_lsun_count'], r['invalid_lsun_rows'])
+          PY
+
+      - name: Preserve diagnostic provenance only
+        if: always()
+        run: |
+          set +e
+          root='orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/lsun_diagnostic'
+          mkdir -p "$root"
+          sha256sum \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/TAP_SCHEMA_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_DATE_ENCODING_REPAIR_FREEZE.json \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/STAGE1_LSUN_TRANSPORT_DIAGNOSTIC.md \
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/stage1_lsun_transport_diagnostic.py \
+            "$root/STAGE1_LSUN_TRANSPORT_DIAGNOSTIC.json" \
+            > "$root/source_output_sha256.txt" 2>/dev/null || true
+          git rev-parse HEAD > "$root/execution_commit.txt"
+          python --version > "$root/python_version.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-efn-stage1-lsun-diagnostic-v1
+          path: |
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/lsun_diagnostic/STAGE1_LSUN_TRANSPORT_DIAGNOSTIC.json
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/lsun_diagnostic/source_output_sha256.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/lsun_diagnostic/execution_commit.txt
+            orbittrace_recurrent_eom_efn_2017_2018_external_v1/output/lsun_diagnostic/python_version.txt
+          if-no-files-found: error
+          retention-days: 90
