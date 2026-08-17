@@ -1,0 +1,74 @@
+name: OrbitTrace support-cut bifiltration bridge v1
+on:
+  push:
+    branches: [agent/orbittrace-support-cut-bifiltration-bridge-v1]
+    paths: ['.github/workflows/orbittrace_support_cut_bifiltration_bridge_v1.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  structural:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify frozen source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_support_cut_bifiltration_bridge_v1/PROTOCOL.md)" = '4300e713e82a4eaa9783293e26414a133cf19c93'
+          test "$(git hash-object orbittrace_support_cut_bifiltration_bridge_v1/run_structural.py)" = '2af6a9462308d0ea84d3ce80177a405d20ae5620'
+          python -m py_compile orbittrace_support_cut_bifiltration_bridge_v1/run_structural.py
+          mkdir -p input/support input/bif output
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-support-resolved-cut-v1
+          path: input/support
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31961908008
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-annual-density-bifiltration-gmn-ranking-v1-prelabel
+          path: input/bif
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32037435314
+      - name: Verify immutable zero-label inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/support/TOPOMODAL_SUPPORT_RESOLVED_CUT_V1_PRELABEL.json|cut -d' ' -f1)" = '4529eadd9ff93aae057f0a6fd5e0dd923f2300b7c6e01b74a0b7638e22da6de6'
+          test "$(sha256sum input/bif/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json|cut -d' ' -f1)" = '95f8a57718a30b2c7e85016d505276d72cccb9e4ac1d6eb29f13067efc73dd0c'
+      - name: Run zero-label exact bridge gate
+        run: |
+          set -euo pipefail
+          python -u orbittrace_support_cut_bifiltration_bridge_v1/run_structural.py \
+            --support input/support/TOPOMODAL_SUPPORT_RESOLVED_CUT_V1_PRELABEL.json \
+            --bif input/bif/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json \
+            --output output
+      - name: Enforce no-truth firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/SUPPORT_CUT_BIFILTRATION_BRIDGE_V1_STRUCTURAL.json'))
+          assert r['scientific_role']=='ZERO_LABEL_STRUCTURAL_DIAGNOSTIC_ONLY'
+          assert r['verdict'] in {'PASS_SUPPORT_CUT_BIFILTRATION_BRIDGE_V1_STRUCTURAL','FAIL_SUPPORT_CUT_BIFILTRATION_BRIDGE_V1_STRUCTURAL'}
+          assert r['shower_truth_used'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['method_parameter_selection_from_result'] is False
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_support_cut_bifiltration_bridge_v1/PROTOCOL.md orbittrace_support_cut_bifiltration_bridge_v1/run_structural.py input/support/TOPOMODAL_SUPPORT_RESOLVED_CUT_V1_PRELABEL.json input/bif/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json output/SUPPORT_CUT_BIFILTRATION_BRIDGE_V1_STRUCTURAL.json > output/provenance_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-support-cut-bifiltration-bridge-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
