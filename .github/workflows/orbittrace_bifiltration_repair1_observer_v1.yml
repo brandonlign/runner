@@ -1,0 +1,26 @@
+name: OrbitTrace bifiltration repair1 observer v1
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-annual-density-bifiltration-gmn-ranking-repair1-v1]
+    paths:
+      - '.github/workflows/orbittrace_bifiltration_repair1_observer_v1.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query existing repair push runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/workflows/orbittrace_annual_density_bifiltration_gmn_ranking_repair1_v1.yml/runs?branch=agent%2Forbittrace-annual-density-bifiltration-gmn-ranking-repair1-v1&per_page=10" \
+            --jq '.workflow_runs[] | "REPAIR1_RUN_ID=\(.id) STATUS=\(.status) CONCLUSION=\(.conclusion // "null") HEAD_SHA=\(.head_sha) EVENT=\(.event) CREATED=\(.created_at)"'
