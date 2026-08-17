@@ -1,0 +1,78 @@
+name: OrbitTrace bifiltration containment antichain v1
+
+on:
+  push:
+    branches: [agent/orbittrace-bifiltration-containment-antichain-v1]
+    paths:
+      - '.github/workflows/orbittrace_bifiltration_containment_antichain_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  structural:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify frozen source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_bifiltration_containment_antichain_v1/PROTOCOL.md)" = 'bccdfce71d6137f686564703042b430b87b099fa'
+          test "$(git hash-object orbittrace_bifiltration_containment_antichain_v1/run_structural.py)" = '8a23725b2b5f0ba7aeb5952c147581de75b86fc5'
+          python -m py_compile orbittrace_bifiltration_containment_antichain_v1/run_structural.py
+          mkdir -p input output
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-annual-density-bifiltration-gmn-ranking-v1-prelabel
+          path: input
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32037435314
+
+      - name: Verify immutable zero-label input
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json | cut -d' ' -f1)" = '95f8a57718a30b2c7e85016d505276d72cccb9e4ac1d6eb29f13067efc73dd0c'
+
+      - name: Run zero-label containment-antichain gate
+        run: |
+          set -euo pipefail
+          python -u orbittrace_bifiltration_containment_antichain_v1/run_structural.py \
+            --prelabel input/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json \
+            --output output
+
+      - name: Enforce no-truth firewall and binding structural verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/BIFILTRATION_CONTAINMENT_ANTICHAIN_V1_STRUCTURAL.json'))
+          assert r['scientific_role']=='ZERO_LABEL_STRUCTURAL_DIAGNOSTIC_ONLY'
+          assert r['verdict'] in {'PASS_BIFILTRATION_CONTAINMENT_ANTICHAIN_V1_STRUCTURAL','FAIL_BIFILTRATION_CONTAINMENT_ANTICHAIN_V1_STRUCTURAL'}
+          assert r['shower_truth_used'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['amos_scientific_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['method_parameter_selection_from_result'] is False
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          sha256sum orbittrace_bifiltration_containment_antichain_v1/PROTOCOL.md orbittrace_bifiltration_containment_antichain_v1/run_structural.py input/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json output/BIFILTRATION_CONTAINMENT_ANTICHAIN_V1_STRUCTURAL.json > output/provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-bifiltration-containment-antichain-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
