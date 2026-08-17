@@ -70,11 +70,13 @@ def main() -> int:
             comp_manifest = load(comp_manifest_path)
             require(int(comp.get("year", -1)) == year, "comparator year mismatch")
             require(comp.get("truth_accessed") is False, "comparator truth accessed prefreeze")
-            # The already-audited Sugar/HDBSCAN primary payload predates the target-access
-            # metadata field; its source manifest carries the binding false declaration.
-            if "target_information_access" in comp:
-                require(comp.get("target_information_access") is False, "comparator target access")
-            require(comp_manifest.get("target_information_access") is False, "comparator source-manifest target access")
+            # Historical Sugar/HDBSCAN declare target-access=false in their source manifest;
+            # the new D_SH payload declares it in the primary output. Accept either exact
+            # provenance location, while rejecting any explicit true declaration.
+            primary_target = comp.get("target_information_access")
+            manifest_target = comp_manifest.get("target_information_access")
+            require(primary_target is not True and manifest_target is not True, "comparator target access")
+            require(primary_target is False or manifest_target is False, "missing false target-access declaration")
             require(isinstance(comp.get("families"), list), "invalid comparator families")
             b = int(comp.get("retained_family_count", -1))
             require(b == len(comp["families"]) and b > 0, f"empty/invalid literature family catalogue: {pair} {year}")
