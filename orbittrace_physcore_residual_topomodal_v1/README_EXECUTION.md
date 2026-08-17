@@ -1,0 +1,1 @@
+Execution is intentionally split into a label-free pretruth/capacity stage and a truth-stage evaluation. `frozen_topomodal.py` is added separately by Git tree reference to preserve the exact pre-frozen blob identity.
