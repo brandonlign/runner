@@ -1,0 +1,150 @@
+name: OrbitTrace recurrent-EOM recurrence-efficiency rank v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-recurrence-efficiency-rank-v1
+    paths:
+      - 'orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/**'
+      - '.github/workflows/orbittrace_recurrent_eom_recurrence_efficiency_rank_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact evaluation runtime and verify frozen science
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+          test "$(git hash-object orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/PROTOCOL.md)" = 'fb9d162d726274dadc2364544d215c68aeeb8107'
+          test "$(git hash-object orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/run_benchmark.py)" = 'c0c3b136c00b0cdbce807007e4f312fb5bc0e895'
+          python -m py_compile orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/run_benchmark.py
+          mkdir -p input/parent input/truth output
+          echo PASS_FROZEN_RECURRENCE_EFFICIENCY_SOURCE_PINS
+
+      - name: Restore immutable recurrent-EOM parent
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+
+      - name: Verify immutable parent and freeze successor order before truth
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json | cut -d' ' -f1)" = 'c6afbc0c3443b6c34e3f90b0f63453a0a35bfae3f3c84ffe8a479f8f50cffeef'
+          test "$(sha256sum input/parent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json | cut -d' ' -f1)" = 'c2395a86be5ba8a8b801210ac6e64b97c446e724991207aef85062ee00b89f12'
+          python -u orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/run_benchmark.py pretruth \
+            --parent-pretruth input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --output output
+          sha256sum output/RECURRENCE_EFFICIENCY_RANK_V1_PRETRUTH.json > output/PRETRUTH_SHA256.txt
+          PRETRUTH_SHA="$(cut -d' ' -f1 output/PRETRUTH_SHA256.txt)"
+          test -n "$PRETRUTH_SHA"
+          python - <<'PY'
+          import json
+          p=json.load(open('output/RECURRENCE_EFFICIENCY_RANK_V1_PRETRUTH.json'))
+          assert p['truth_accessed'] is False
+          assert p['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['maarsy_scientific_access'] is False
+          assert p['dms_scientific_access'] is False
+          assert p['pristine_external_access'] is False
+          assert any(p['routes'][r]['order_changed'] for r in ('sugar','hdbscan'))
+          print('PASS_COMPLETE_SUCCESSOR_ORDER_FROZEN_BEFORE_TRUTH')
+          PY
+
+      # Exposed SonotaCo truth is deliberately unavailable until the complete
+      # successor order above has been persisted and hash-frozen.
+      - name: Restore immutable exposed SonotaCo truth
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Evaluate sole frozen recurrence-efficiency outcome
+        run: |
+          set -euo pipefail
+          PRETRUTH_SHA="$(cut -d' ' -f1 output/PRETRUTH_SHA256.txt)"
+          test "$(sha256sum output/RECURRENCE_EFFICIENCY_RANK_V1_PRETRUTH.json | cut -d' ' -f1)" = "$PRETRUTH_SHA"
+          python -u orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/run_benchmark.py evaluate \
+            --successor-pretruth output/RECURRENCE_EFFICIENCY_RANK_V1_PRETRUTH.json \
+            --expected-successor-sha "$PRETRUTH_SHA" \
+            --parent-pretruth input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --parent-result input/parent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json \
+            --truth-root input/truth \
+            --output output
+
+      - name: Enforce binding verdict and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RECURRENCE_EFFICIENCY_RANK_V1_RESULT.json'))
+          assert r['verdict'] in {
+            'PASS_RECURRENT_EOM_RECURRENCE_EFFICIENCY_RANK_V1',
+            'FAIL_RECURRENT_EOM_RECURRENCE_EFFICIENCY_RANK_V1',
+          }
+          assert r['scientific_role']=='EXPOSED_SONOTACO_DEVELOPMENT_RANK_ONLY'
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['post_result_parameter_search'] is False
+          assert r['target_information_access'] is False
+          assert r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['pristine_external_access'] is False
+          assert len(r['panels'])==4
+          print(r['verdict'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_recurrence_efficiency_rank_v1/run_benchmark.py \
+            input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            input/parent/RECURRENT_EOM_SONOTACO_V31_BENCHMARK_V1.json \
+            output/RECURRENCE_EFFICIENCY_RANK_V1_PRETRUTH.json \
+            output/RECURRENCE_EFFICIENCY_RANK_V1_RESULT.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Upload complete frozen evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-recurrence-efficiency-rank-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
