@@ -1,0 +1,1 @@
+Execution authorization only for the already-frozen cross-route corroboration diagnostic. This marker changes no scientific method, match definition, diagnostic statistic, parameter, input, firewall, or evaluation rule.
