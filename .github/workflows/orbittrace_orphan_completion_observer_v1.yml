@@ -1,0 +1,26 @@
+name: OrbitTrace orphan-completion observer v1
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-support-cut-recurrent-orphan-completion-v1]
+    paths:
+      - '.github/workflows/orbittrace_orphan_completion_observer_v1.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query existing orphan-completion runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/workflows/orbittrace_support_cut_recurrent_orphan_completion_v1.yml/runs?branch=agent%2Forbittrace-support-cut-recurrent-orphan-completion-v1&per_page=10" \
+            --jq '.workflow_runs[] | "ORPHAN_RUN_ID=\(.id) STATUS=\(.status) CONCLUSION=\(.conclusion // "null") HEAD_SHA=\(.head_sha) EVENT=\(.event) CREATED=\(.created_at)"'
