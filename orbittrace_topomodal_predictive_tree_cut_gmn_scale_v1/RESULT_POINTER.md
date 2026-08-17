@@ -1,0 +1,1 @@
+Binding scientific status is recorded in `ORBITTRACE_TOPOMODAL_PREDICTIVE_TREE_CUT_V1_GMN_SCALE_RESULT.md`. Run `32035358123` is the scientifically informative endpoint; run `32035051841` was engineering-only and failed before candidate construction.
