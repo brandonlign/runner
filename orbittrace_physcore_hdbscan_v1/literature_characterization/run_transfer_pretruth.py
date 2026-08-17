@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, hashlib, json
+import argparse, hashlib, importlib.util, json, sys
 from pathlib import Path
 from typing import Any
 import numpy as np
-from orbittrace_physcore_hdbscan_v1 import run_pretruth as core
+
+ROOT=Path(__file__).resolve().parents[2]
+CORE_PATH=ROOT/'orbittrace_physcore_hdbscan_v1'/'run_pretruth.py'
+spec=importlib.util.spec_from_file_location('frozen_physcore_hdbscan_v1_core',CORE_PATH)
+if spec is None or spec.loader is None: raise RuntimeError('cannot load frozen PhysCore source')
+core=importlib.util.module_from_spec(spec); sys.modules[spec.name]=core; spec.loader.exec_module(core)
 
 BLIND=(20.0,55.0)
 
@@ -27,7 +32,7 @@ def main()->int:
         out.append({'family_id':f'PCH{a.year}_{rank:03d}','rank':rank,'parent_family_id':str(f['family_id']),'event_ids':ids,'member_count':len(ids),'parent_member_count':len(parent_ids),'fallback_to_parent':fallback})
         audits.append({'parent_family_id':str(f['family_id']),'parent_member_count':len(parent_ids),'refined_member_count':len(ids),'retained_fraction':len(ids)/len(parent_ids),'fallback_to_parent':fallback})
     req(any(x['refined_member_count']<x['parent_member_count'] for x in audits),'no strict refinement')
-    payload={'schema':'ORBITTRACE_PHYSCORE_HDBSCAN_V1_TRANSFER_PRETRUTH','method':'PhysCore-HDBSCAN v1','pair':a.pair,'year':a.year,'family_count':len(out),'families':out,'audit':audits,'configuration':{'h_sol':core.H_SOL,'h_rad':core.H_RAD,'h_logv':core.H_LOGV,'radius':core.RADIUS,'min_support_including_self':core.MIN_SUPPORT_INCLUDING_SELF,'peeling':'maximal_3_core','split_components':False,'fallback':'parent_if_core_lt_4'},'frozen_core_source_sha256':sha(Path(core.__file__)),'transfer_source_sha256':sha(Path(__file__)),'row_json_sha256':sha(a.rows),'hdbscan_primary_output_sha256':sha(hp),'hdbscan_source_manifest_sha256':sha(hm),'truth_accessed':False,'target_information_access':False,'target_region_events_accessed':False,'maarsy_scientific_access':False,'dms_scientific_access':False,'post_result_parameter_search':False}
+    payload={'schema':'ORBITTRACE_PHYSCORE_HDBSCAN_V1_TRANSFER_PRETRUTH','method':'PhysCore-HDBSCAN v1','pair':a.pair,'year':a.year,'family_count':len(out),'families':out,'audit':audits,'configuration':{'h_sol':core.H_SOL,'h_rad':core.H_RAD,'h_logv':core.H_LOGV,'radius':core.RADIUS,'min_support_including_self':core.MIN_SUPPORT_INCLUDING_SELF,'peeling':'maximal_3_core','split_components':False,'fallback':'parent_if_core_lt_4'},'frozen_core_source_sha256':sha(CORE_PATH),'transfer_source_sha256':sha(Path(__file__)),'row_json_sha256':sha(a.rows),'hdbscan_primary_output_sha256':sha(hp),'hdbscan_source_manifest_sha256':sha(hm),'truth_accessed':False,'target_information_access':False,'target_region_events_accessed':False,'maarsy_scientific_access':False,'dms_scientific_access':False,'post_result_parameter_search':False}
     outsha=dump(a.output/f'physcore_{a.pair}_{a.year}.json',payload)
     dump(a.output/f'physcore_{a.pair}_{a.year}_manifest.json',{'pair':a.pair,'year':a.year,'candidate_output_sha256':outsha,'frozen_core_source_sha256':payload['frozen_core_source_sha256'],'transfer_source_sha256':payload['transfer_source_sha256'],'truth_accessed':False,'target_information_access':False})
     print(json.dumps({'pair':a.pair,'year':a.year,'families':len(out),'strict_refinements':sum(x['refined_member_count']<x['parent_member_count'] for x in audits),'mean_retained_fraction':float(np.mean([x['retained_fraction'] for x in audits])),'candidate_sha256':outsha},indent=2))
