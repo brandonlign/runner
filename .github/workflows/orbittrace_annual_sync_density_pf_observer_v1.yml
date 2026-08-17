@@ -1,0 +1,21 @@
+name: OrbitTrace annual sync-density PF run observer v1
+on:
+  pull_request:
+    branches: [agent/orbittrace-annual-sync-density-pf-v1]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query existing sync-density PF push runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/workflows/orbittrace_annual_sync_density_pf_v1.yml/runs?branch=agent%2Forbittrace-annual-sync-density-pf-v1&per_page=10" \
+            --jq '.workflow_runs[] | "SYNC_PF_RUN_ID=\(.id) STATUS=\(.status) CONCLUSION=\(.conclusion // "null") HEAD_SHA=\(.head_sha) EVENT=\(.event) CREATED=\(.created_at)"'
