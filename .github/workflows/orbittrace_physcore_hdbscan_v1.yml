@@ -1,0 +1,152 @@
+name: OrbitTrace PhysCore-HDBSCAN v1 development
+on:
+  push:
+    branches: [agent/orbittrace-published-hdbscan-physcore-v1]
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3
+          path: input/h13
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3
+          path: input/h14
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - name: Generate and freeze PhysCore without truth
+        run: |
+          set -euo pipefail
+          mkdir -p output/pretruth
+          python orbittrace_physcore_hdbscan_v1/run_pretruth.py --year 2013 --rows input/rows/hdbscan_2013.json --hdbscan-dir input/h13 --output output/pretruth
+          python orbittrace_physcore_hdbscan_v1/run_pretruth.py --year 2014 --rows input/rows/hdbscan_2014.json --hdbscan-dir input/h14 --output output/pretruth
+          python orbittrace_physcore_hdbscan_v1/freeze_pretruth.py --input output/pretruth --rows input/rows --h13 input/h13 --h14 input/h14 --source orbittrace_physcore_hdbscan_v1/run_pretruth.py --protocol orbittrace_physcore_hdbscan_v1/PROTOCOL.md --output output/freeze
+          python - <<'PY'
+          import json
+          f=json.load(open('output/freeze/PRETRUTH_FREEZE.json'))
+          assert f['pretruth_outputs_frozen'] is True and f['truth_accessed_before_freeze'] is False
+          assert f['target_information_access'] is False and f['target_region_events_accessed'] is False
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-physcore-hdbscan-v1-pretruth
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+  evaluate:
+    needs: pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-physcore-hdbscan-v1-pretruth
+          path: input/run
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3
+          path: input/h13
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3
+          path: input/h14
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Restore exact evaluator and truth map
+        run: |
+          set -euo pipefail
+          mkdir -p input/csv input/archives input/evaluator
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          raw=gzip.decompress(base64.b64decode(''.join(Path('infra/orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64').read_text().split()),validate=True))
+          Path('input/evaluator/evaluator.py').write_bytes(raw)
+          assert hashlib.sha256(raw).hexdigest()=='cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          assert hashlib.sha256(Path('input/mapping/audit.json').read_bytes()).hexdigest()=='f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          PY
+      - name: Reacquire exposed truth only after freeze
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          integ=json.load(open('input/rows/source_integrity.json'))
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv'),2014:('input/archives/014a.zip','_U2_20140101_S.csv')}
+          for y,(zp,b) in specs.items():
+              raw=Path(zp).read_bytes(); assert hashlib.sha256(raw).hexdigest()==integ['years'][str(y)]['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  ms=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==b]; assert len(ms)==1; data=z.read(ms[0])
+              assert hashlib.sha256(data).hexdigest()==integ['years'][str(y)]['member_sha256']; Path(f'input/csv/{y}.csv').write_bytes(data)
+          PY
+      - name: Binding HDBSCAN comparison
+        env:
+          PYTHONPATH: infra
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_physcore_hdbscan_v1/evaluate_after_freeze.py --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv --mapping-audit input/mapping/audit.json --evaluator-source input/evaluator/evaluator.py --rows input/rows --pretruth input/run/pretruth --freeze input/run/freeze/PRETRUTH_FREEZE.json --h13 input/h13 --h14 input/h14 --output output
+          rm -rf input/csv input/archives
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RESULT.json')); print(r['verdict'])
+          for p in r['panels']: print(p['year'],p['physcore']['macro_f1'],p['published_hdbscan']['macro_f1'],p['physcore']['recovered_f1_gt_0_5'],p['published_hdbscan']['recovered_f1_gt_0_5'],p['win'])
+          assert r['truth_access_before_pretruth'] is False and r['post_result_parameter_search'] is False
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-physcore-hdbscan-v1-result
+          path: output
+          if-no-files-found: error
+          retention-days: 90
