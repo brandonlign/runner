@@ -1,0 +1,188 @@
+name: OrbitTrace Adaptive Density Ascent v1 HDBSCAN development
+
+on:
+  push:
+    branches: [agent/orbittrace-adaptive-density-ascent-v1]
+    paths:
+      - 'orbittrace_adaptive_density_ascent_v1/**'
+      - '.github/workflows/orbittrace_adaptive_density_ascent_v1_development.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install frozen density-ascent runtime
+        run: python -m pip install --disable-pip-version-check 'numpy==2.3.5' 'scipy==1.17.0' 'scikit-learn==1.8.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3
+          path: input/hdbscan-2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3
+          path: input/hdbscan-2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - name: Generate annual density-ascent basins without truth
+        run: |
+          set -euo pipefail
+          mkdir -p output/candidate output/freeze
+          PYTHONPATH=orbittrace_adaptive_density_ascent_v1 python -u orbittrace_adaptive_density_ascent_v1/run_pretruth.py \
+            --rows-2013 input/prepare/hdbscan_2013.json --rows-2014 input/prepare/hdbscan_2014.json \
+            --scientific-source orbittrace_adaptive_density_ascent_v1/adaptive_density_ascent_v1.py \
+            --protocol orbittrace_adaptive_density_ascent_v1/PROTOCOL.md --output output/candidate
+      - name: Hash-freeze candidate and exact HDBSCAN before truth
+        run: |
+          python -u orbittrace_adaptive_density_ascent_v1/freeze_pretruth.py \
+            --prepare-dir input/prepare --candidate-dir output/candidate \
+            --hdbscan-2013-dir input/hdbscan-2013 --hdbscan-2014-dir input/hdbscan-2014 --output output/freeze
+      - name: Enforce pretruth structural gates
+        run: |
+          python - <<'PY'
+          import json
+          f=json.load(open('output/freeze/PRETRUTH_FREEZE.json'))
+          assert f['pretruth_outputs_frozen'] is True and f['truth_accessed_before_freeze'] is False
+          for p in f['panels']:
+              c=json.load(open(f"output/candidate/candidate_{p['year']}.json")); s=c['structural_summary']
+              assert s['k']==14 and s['local_root_count']>1
+              assert c['family_count']>=p['hdbscan_family_budget']
+              assert s['max_reportable_basin_fraction']<=0.10
+          print('PASS_ADAPTIVE_DENSITY_ASCENT_V1_PRETRUTH_STRUCTURAL_GATES')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-adaptive-density-ascent-v1-pretruth
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install frozen evaluator runtime
+        run: python -m pip install --disable-pip-version-check 'numpy==2.3.5' 'scipy==1.17.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/prepare
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-adaptive-density-ascent-v1-pretruth
+          path: input/pretruth
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3
+          path: input/hdbscan-2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3
+          path: input/hdbscan-2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Restore exact evaluator and truth map
+        run: |
+          set -euo pipefail
+          mkdir -p input/csv input/archives input/evaluator
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          raw=gzip.decompress(base64.b64decode(''.join(Path('infra/orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64').read_text().split()),validate=True))
+          Path('input/evaluator/evaluator.py').write_bytes(raw)
+          assert hashlib.sha256(raw).hexdigest()=='cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          assert hashlib.sha256(Path('input/mapping/audit.json').read_bytes()).hexdigest()=='f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          PY
+      - name: Reacquire identical exposed archives only after freeze
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          integ=json.load(open('input/prepare/source_integrity.json'))
+          for y,zp,bn in [(2013,'input/archives/013a.zip','_U2_20130101_S.csv'),(2014,'input/archives/014a.zip','_U2_20140101_S.csv')]:
+              raw=Path(zp).read_bytes(); assert hashlib.sha256(raw).hexdigest()==integ['years'][str(y)]['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  m=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==bn]; assert len(m)==1; data=z.read(m[0])
+              assert hashlib.sha256(data).hexdigest()==integ['years'][str(y)]['member_sha256']; Path(f'input/csv/{y}.csv').write_bytes(data)
+          PY
+      - name: Run binding HDBSCAN comparison
+        env: {PYTHONPATH: infra}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_adaptive_density_ascent_v1/evaluate_after_freeze.py \
+            --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv \
+            --mapping-audit input/mapping/audit.json --evaluator-source input/evaluator/evaluator.py \
+            --prepare-dir input/prepare --freeze-file input/pretruth/freeze/PRETRUTH_FREEZE.json \
+            --candidate-dir input/pretruth/candidate --hdbscan-2013-dir input/hdbscan-2013 --hdbscan-2014-dir input/hdbscan-2014 --output output
+          rm -rf input/csv input/archives
+      - name: Enforce binding result schema
+        run: |
+          python - <<'PY'
+          import json
+          r=json.load(open('output/ADAPTIVE_DENSITY_ASCENT_V1_HDBSCAN_RESULT.json'))
+          assert r['verdict'] in {'PASS_ADAPTIVE_DENSITY_ASCENT_V1_HDBSCAN_DEVELOPMENT','FAIL_ADAPTIVE_DENSITY_ASCENT_V1_HDBSCAN_DEVELOPMENT'}
+          assert r['panel_count']==2 and len(r['panels'])==2
+          assert r['truth_access_before_pretruth'] is False and r['target_information_access'] is False
+          print(r['verdict'])
+          for p in r['panels']:
+              print(p['year'],'WIN' if p['candidate_win'] else 'LOSS',p['adaptive_density_ascent']['macro_f1'],p['published_hdbscan']['macro_f1'],p['adaptive_density_ascent']['recovered_f1_gt_0_5'],p['published_hdbscan']['recovered_f1_gt_0_5'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-adaptive-density-ascent-v1-hdbscan-result
+          path: output
+          if-no-files-found: error
+          retention-days: 90
