@@ -67,9 +67,14 @@ def main() -> int:
             comp_path = comp_dir / "comparator_primary_output.json"
             comp_manifest_path = comp_dir / "comparator_source_manifest.json"
             comp = load(comp_path)
+            comp_manifest = load(comp_manifest_path)
             require(int(comp.get("year", -1)) == year, "comparator year mismatch")
             require(comp.get("truth_accessed") is False, "comparator truth accessed prefreeze")
-            require(comp.get("target_information_access") is False, "comparator target access")
+            # The already-audited Sugar/HDBSCAN primary payload predates the target-access
+            # metadata field; its source manifest carries the binding false declaration.
+            if "target_information_access" in comp:
+                require(comp.get("target_information_access") is False, "comparator target access")
+            require(comp_manifest.get("target_information_access") is False, "comparator source-manifest target access")
             require(isinstance(comp.get("families"), list), "invalid comparator families")
             b = int(comp.get("retained_family_count", -1))
             require(b == len(comp["families"]) and b > 0, f"empty/invalid literature family catalogue: {pair} {year}")
