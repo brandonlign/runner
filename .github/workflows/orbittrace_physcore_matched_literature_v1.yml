@@ -1,0 +1,249 @@
+name: OrbitTrace PhysCore matched literature v1
+on:
+  push:
+    branches: [agent/orbittrace-physcore-matched-literature-v1]
+    paths:
+      - '.github/workflows/orbittrace_physcore_matched_literature_v1.yml'
+      - 'orbittrace_physcore_hdbscan_v1/literature_characterization/**'
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install exact published-HDBSCAN runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.7.1' 'hdbscan==0.8.44'
+          test "$(git -C infra hash-object orbittrace_final_sonotaco_comparators_v1/pretruth_comparators.py)" = '00578445ed0957fb3708bb84fda1df6ef7b5b004'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-sources-v1-retry
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983941271
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-physcore-hdbscan-v1-pretruth
+          path: input/direct
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31988198562
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2013-v1-r3
+          path: input/hdb_2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-hdbscan-2014-v1-r3
+          path: input/hdb_2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-sugar-2013-v1-r3
+          path: input/comparators/sugar_2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-sugar-2014-v1-r3
+          path: input/comparators/sugar_2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2013-v1-r2
+          path: input/comparators/dsh_2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2014-v1-r2
+          path: input/comparators/dsh_2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - name: Verify exact archived source bytes
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/sources/hdbscan_catalogue_runner.py | cut -d' ' -f1)" = 'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'
+          test "$(sha256sum input/sources/literature_comparators.py | cut -d' ' -f1)" = '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+      - name: Reproduce frozen direct PhysCore memberships with transfer adapter
+        run: |
+          set -euo pipefail
+          mkdir -p output/generated/physcore_hdbscan_2013 output/generated/physcore_hdbscan_2014
+          python orbittrace_physcore_hdbscan_v1/literature_characterization/run_transfer_pretruth.py --pair hdbscan --year 2013 --rows input/rows/hdbscan_2013.json --hdbscan-dir input/hdb_2013 --output output/generated/physcore_hdbscan_2013
+          python orbittrace_physcore_hdbscan_v1/literature_characterization/run_transfer_pretruth.py --pair hdbscan --year 2014 --rows input/rows/hdbscan_2014.json --hdbscan-dir input/hdb_2014 --output output/generated/physcore_hdbscan_2014
+      - name: Run exact published HDBSCAN parent on Sugar and D_SH matched rows
+        env:
+          PYTHONPATH: infra
+        run: |
+          set -euo pipefail
+          for pair in sugar dsh; do
+            for year in 2013 2014; do
+              mkdir -p "output/generated/parent_${pair}_${year}"
+              python orbittrace_topomodal_flagship/literature_benchmark/run_legacy_comparator_pretruth_compat.py --comparator hdbscan --year "$year" --rows "input/rows/${pair}_${year}.json" --source input/sources/hdbscan_catalogue_runner.py --output "output/generated/parent_${pair}_${year}"
+              mkdir -p "output/generated/physcore_${pair}_${year}"
+              python orbittrace_physcore_hdbscan_v1/literature_characterization/run_transfer_pretruth.py --pair "$pair" --year "$year" --rows "input/rows/${pair}_${year}.json" --hdbscan-dir "output/generated/parent_${pair}_${year}" --output "output/generated/physcore_${pair}_${year}"
+            done
+          done
+      - name: Exact transfer-equivalence audit and pretruth freeze
+        run: |
+          set -euo pipefail
+          mkdir -p output/freeze
+          python orbittrace_physcore_hdbscan_v1/literature_characterization/freeze_pretruth.py --rows input/rows --generated output/generated --direct input/direct --comparators input/comparators --output output/freeze
+          python - <<'PY'
+          import json
+          f=json.load(open('output/freeze/PRETRUTH_FREEZE.json'))
+          assert f['pretruth_outputs_frozen'] is True
+          assert f['truth_accessed_before_freeze'] is False
+          assert len(f['panels'])==4
+          assert all(x['exact_membership_equivalence'] for x in f['transfer_equivalence'])
+          assert f['target_information_access'] is False and f['target_region_events_accessed'] is False
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-physcore-matched-literature-v1-pretruth
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+  evaluate:
+    needs: pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 174d659b87cef2f7bcff8145a74e46e979462f38
+          path: infra
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-physcore-matched-literature-v1-pretruth
+          path: input/run
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-flagship-literature-rows-v1
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31983863152
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-sugar-2013-v1-r3
+          path: input/comparators/sugar_2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-sugar-2014-v1-r3
+          path: input/comparators/sugar_2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984184708
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2013-v1-r2
+          path: input/comparators/dsh_2013
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-literature-dsh-2014-v1-r2
+          path: input/comparators/dsh_2014
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31984080540
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Restore exact evaluator and truth map
+        run: |
+          set -euo pipefail
+          mkdir -p input/csv input/archives input/evaluator
+          python - <<'PY'
+          import base64,gzip,hashlib
+          from pathlib import Path
+          raw=gzip.decompress(base64.b64decode(''.join(Path('infra/orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64').read_text().split()),validate=True))
+          Path('input/evaluator/evaluator.py').write_bytes(raw)
+          assert hashlib.sha256(raw).hexdigest()=='cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          assert hashlib.sha256(Path('input/mapping/audit.json').read_bytes()).hexdigest()=='f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          PY
+      - name: Reacquire identical exposed truth only after freeze
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          integ=json.load(open('input/rows/source_integrity.json'))
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv'),2014:('input/archives/014a.zip','_U2_20140101_S.csv')}
+          for y,(zp,b) in specs.items():
+              raw=Path(zp).read_bytes(); assert hashlib.sha256(raw).hexdigest()==integ['years'][str(y)]['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  ms=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==b]; assert len(ms)==1; data=z.read(ms[0])
+              assert hashlib.sha256(data).hexdigest()==integ['years'][str(y)]['member_sha256']; Path(f'input/csv/{y}.csv').write_bytes(data)
+          PY
+      - name: Binding matched Sugar and D_SH characterization
+        env:
+          PYTHONPATH: infra
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_physcore_hdbscan_v1/literature_characterization/evaluate_after_freeze.py --csv-2013 input/csv/2013.csv --csv-2014 input/csv/2014.csv --mapping-audit input/mapping/audit.json --evaluator-source input/evaluator/evaluator.py --rows input/rows --generated input/run/generated --comparators input/comparators --freeze input/run/freeze/PRETRUTH_FREEZE.json --output output
+          rm -rf input/csv input/archives
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RESULT.json')); print(r['characterization_verdict'])
+          for p in r['panels']: print(p['pair'],p['year'],p['physcore']['macro_f1'],p['literature']['macro_f1'],p['physcore']['recovered_f1_gt_0_5'],p['literature']['recovered_f1_gt_0_5'],p['win'])
+          assert r['truth_access_before_pretruth'] is False and r['post_result_parameter_search'] is False
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-physcore-matched-literature-v1-result
+          path: output
+          if-no-files-found: error
+          retention-days: 90
