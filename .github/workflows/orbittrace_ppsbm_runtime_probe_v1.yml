@@ -10,54 +10,87 @@ on:
 permissions:
   contents: read
 
+env:
+  GRAPH_TOOL_IMAGE: tiagopeixoto/graph-tool@sha256:4e613c0da8cfb85c05661c124da0ef2d167ec4a5a3347ae10a8f5030bab0a375
+
 jobs:
   probe:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - name: Pull official graph-tool container and record immutable digest
+      - name: Pull immutable official graph-tool image
         run: |
           set -euo pipefail
-          docker pull tiagopeixoto/graph-tool:latest
-          digest="$(docker image inspect tiagopeixoto/graph-tool:latest --format '{{index .RepoDigests 0}}')"
-          test -n "$digest"
-          echo "GRAPH_TOOL_IMAGE_DIGEST=$digest"
-          echo "$digest" > /tmp/graph_tool_image_digest.txt
+          docker pull "$GRAPH_TOOL_IMAGE"
+          resolved="$(docker image inspect "$GRAPH_TOOL_IMAGE" --format '{{index .RepoDigests 0}}')"
+          test "$resolved" = "$GRAPH_TOOL_IMAGE"
+          echo "GRAPH_TOOL_IMAGE_DIGEST=$resolved"
 
-      - name: Verify PPBlockState API on synthetic graph
+      - name: Verify exact PPBlockState arguments and fixed-seed repeatability
         run: |
           set -euo pipefail
-          image="$(cat /tmp/graph_tool_image_digest.txt)"
-          docker run --rm -i "$image" python3 - <<'PY'
+          docker run --rm -i "$GRAPH_TOOL_IMAGE" python3 - <<'PY'
           import json
           import numpy as np
           import graph_tool.all as gt
 
+          EXPECTED_VERSION='3.6 (commit fd9762d9, Sun Aug 2 18:45:30 2026 +0200)'
+          SEED=20260817
           gt.openmp_set_num_threads(1)
-          gt.seed_rng(20260817)
-          np.random.seed(20260817)
+          assert getattr(gt, '__version__', None) == EXPECTED_VERSION
 
-          # Toy graph only: two mixed-side assortative communities.
+          # Synthetic-only test: five strong mixed-side bipartite communities.
+          groups=5
+          side=10
+          n=groups*side*2
           edges=[]
-          for a0,b0 in [(0,8),(4,12)]:
-              for i in range(a0,a0+4):
-                  for j in range(b0,b0+4):
+          for gidx in range(groups):
+              left0=gidx*side
+              right0=groups*side+gidx*side
+              for i in range(left0,left0+side):
+                  for j in range(right0,right0+side):
                       edges.append((i,j))
-          edges += [(0,12),(4,8)]
-          g=gt.Graph(edges, directed=False)
-          state=gt.minimize_blockmodel_dl(g, state=gt.PPBlockState)
-          blocks=np.asarray(state.get_blocks().a, dtype=int)
+          # Deterministic sparse bridges so the full graph is connected.
+          for gidx in range(groups):
+              left=gidx*side
+              next_right=groups*side+((gidx+1)%groups)*side
+              edges.append((left,next_right))
+
+          graph=gt.Graph(n, directed=False)
+          graph.add_edge_list(edges)
+
+          def fit_once():
+              gt.seed_rng(SEED)
+              np.random.seed(SEED)
+              state=gt.minimize_blockmodel_dl(
+                  graph,
+                  state=gt.PPBlockState,
+                  state_args=dict(uniform=False, deg_corr=True),
+              )
+              blocks=np.asarray(state.get_blocks().a, dtype=int)
+              families=[]
+              for label in sorted(set(map(int, blocks))):
+                  families.append(tuple(np.flatnonzero(blocks==label).tolist()))
+              families=tuple(sorted(families))
+              return {
+                  'B': int(state.get_B()),
+                  'entropy': float(state.entropy()),
+                  'families': families,
+              }
+
+          a=fit_once()
+          b=fit_once()
           out={
               'graph_tool_version': getattr(gt, '__version__', 'unknown'),
-              'vertices': int(g.num_vertices()),
-              'edges': int(g.num_edges()),
-              'blocks': int(state.get_B()),
-              'entropy': float(state.entropy()),
-              'membership': blocks.tolist(),
+              'vertices': int(graph.num_vertices()),
+              'edges': int(graph.num_edges()),
+              'blocks': a['B'],
+              'entropy': a['entropy'],
+              'repeat_identical': a==b,
               'openmp_threads': int(gt.openmp_get_num_threads()),
           }
           print(json.dumps(out, sort_keys=True))
-          assert len(blocks)==g.num_vertices()
-          assert state.get_B() >= 1
+          assert a == b
+          assert a['B'] > 1
           assert gt.openmp_get_num_threads()==1
           PY
