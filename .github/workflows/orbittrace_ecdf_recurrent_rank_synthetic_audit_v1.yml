@@ -1,0 +1,64 @@
+name: OrbitTrace ECDF recurrent-rank HDBSCAN v1 synthetic audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-ecdf-recurrent-rank-hdbscan-v1
+    paths:
+      - 'orbittrace_ecdf_recurrent_rank_hdbscan_v1/PROTOCOL.md'
+      - 'orbittrace_ecdf_recurrent_rank_hdbscan_v1/ecdf_rank.py'
+      - 'orbittrace_ecdf_recurrent_rank_hdbscan_v1/synthetic_audit.py'
+      - 'orbittrace_ecdf_recurrent_rank_hdbscan_v1/ACTIVATE_SYNTHETIC_AUDIT.md'
+      - '.github/workflows/orbittrace_ecdf_recurrent_rank_synthetic_audit_v1.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  synthetic-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen mathematical and audit bytes
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          test "$(git hash-object orbittrace_ecdf_recurrent_rank_hdbscan_v1/PROTOCOL.md)" = '2b8329afbcd16b4ac5afb1f35260ee87e7212bb6'
+          test "$(git hash-object orbittrace_ecdf_recurrent_rank_hdbscan_v1/ecdf_rank.py)" = '89601baf31a133d93409c57961baa57e9203c09f'
+          test "$(git hash-object orbittrace_ecdf_recurrent_rank_hdbscan_v1/synthetic_audit.py)" = 'abb845da3f7b7936f238876a45b39df9cc6ef861'
+          python -m py_compile orbittrace_ecdf_recurrent_rank_hdbscan_v1/ecdf_rank.py orbittrace_ecdf_recurrent_rank_hdbscan_v1/synthetic_audit.py
+      - name: Run zero-data synthetic audit
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          PYTHONPATH=. python -u orbittrace_ecdf_recurrent_rank_hdbscan_v1/synthetic_audit.py --output output
+          python - <<'PY'
+          import json
+          p=json.load(open('output/ECDF_RECURRENT_RANK_HDBSCAN_V1_SYNTHETIC_AUDIT.json'))
+          assert p['verdict']=='PASS_ECDF_RECURRENT_RANK_HDBSCAN_V1_SYNTHETIC_AUDIT'
+          assert all(p['checks'].values())
+          for k in ('network_access','gmn_accessed','truth_accessed','sonotaco_accessed','asfn_accessed','amos_accessed','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert p[k] is False
+          PY
+      - name: Preserve audit provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_ecdf_recurrent_rank_hdbscan_v1/PROTOCOL.md orbittrace_ecdf_recurrent_rank_hdbscan_v1/ecdf_rank.py orbittrace_ecdf_recurrent_rank_hdbscan_v1/synthetic_audit.py output/ECDF_RECURRENT_RANK_HDBSCAN_V1_SYNTHETIC_AUDIT.json > output/source_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-ecdf-recurrent-rank-hdbscan-v1-synthetic-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
