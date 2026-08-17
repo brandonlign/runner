@@ -1,0 +1,21 @@
+name: OrbitTrace density-sync FLASC repair03 observer v1
+on:
+  pull_request:
+    branches: [agent/orbittrace-density-sync-flasc-refine-v1]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query existing FLASC repair03 push runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/workflows/orbittrace_density_sync_flasc_refine_v1_repair03.yml/runs?branch=agent%2Forbittrace-density-sync-flasc-refine-v1&per_page=20" \
+            --jq '.workflow_runs[] | "FLASC_REPAIR03_RUN_ID=\(.id) STATUS=\(.status) CONCLUSION=\(.conclusion // "null") HEAD_SHA=\(.head_sha) EVENT=\(.event) CREATED=\(.created_at)"'
