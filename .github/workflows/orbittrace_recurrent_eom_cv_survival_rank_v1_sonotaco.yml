@@ -1,0 +1,162 @@
+name: OrbitTrace recurrent-EOM CV survival SonotaCo one-shot
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-cv-survival-rank-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_cv_survival_rank_v1_sonotaco.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-recurrent-eom-cv-survival-rank-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify frozen source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/rows input/parent input/truth output
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_cv_survival_rank_v1/SONOTACO_PROTOCOL.md)" = '796187848464b2435b0bfe5b5096dad0c93df5d2'
+          test "$(git hash-object orbittrace_recurrent_eom_cv_survival_rank_v1/run_sonotaco_benchmark.py)" = '90b25c196aa114b99746a9c6725db1aabd124307'
+          test "$(sha256sum orbittrace_recurrent_eom_cv_survival_rank_v1/LABEL_FREE_CV_RESULT.md | cut -d' ' -f1)" != ''
+          python -m py_compile orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py orbittrace_recurrent_eom_cv_survival_rank_v1/run_sonotaco_benchmark.py
+
+      - name: Restore exact label-free SonotaCo route rows
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Restore immutable recurrent-EOM full-route parent pretruth
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+
+      - name: Verify pretruth-only inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json | cut -d' ' -f1)" = 'c6afbc0c3443b6c34e3f90b0f63453a0a35bfae3f3c84ffe8a479f8f50cffeef'
+          test "$(sha256sum input/rows/label_free_preparation_manifest.json | cut -d' ' -f1)" = '0a24077f352ddba91c5fea2a102f996d6bea154b1bc769235a4dd916850dba2b'
+          test "$(sha256sum input/rows/sugar_2013.json | cut -d' ' -f1)" = '47fb0b700fbf710c7b061eead343016bd8d182756eb0c7f406507c5739e4c4f8'
+          test "$(sha256sum input/rows/sugar_2014.json | cut -d' ' -f1)" = 'bc83c113e9a14b1c6e1ef460ca9a40e05df77f3a449fec6064f8910add04c912'
+          test "$(sha256sum input/rows/hdbscan_2013.json | cut -d' ' -f1)" = '2433b556d4a859580ef5431d2307ef34c8fa4c15d42841a2ec7b0c11e5f1f158'
+          test "$(sha256sum input/rows/hdbscan_2014.json | cut -d' ' -f1)" = '206692292b2ca252777e40c13c367880740d8e2576d27615f7ea94b7790e3f55'
+          python - <<'PY'
+          import json
+          p=json.load(open('input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json'))
+          assert p['truth_accessed'] is False
+          assert p['routes']['sugar']['candidate_count']==144
+          assert p['routes']['hdbscan']['candidate_count']==123
+          assert p['blind_exclusion']==[20.0,55.0]
+          m=json.load(open('input/rows/label_free_preparation_manifest.json'))
+          assert m['shower_truth_accessed'] is False
+          assert m['target_region_retained'] is False
+          PY
+
+      - name: Generate ten deletion-fold catalogues and freeze complete successor orders before truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_cv_survival_rank_v1/run_sonotaco_benchmark.py pretruth \
+            --rows-root input/rows \
+            --parent-pretruth input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --output output
+          sha256sum output/RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_PRETRUTH.json > output/SONOTACO_PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_PRETRUTH.json'))
+          assert p['truth_accessed'] is False
+          assert p['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert p['routes']['sugar']['parent_candidate_count']==144
+          assert p['routes']['hdbscan']['parent_candidate_count']==123
+          assert p['routes']['sugar']['parent_membership_sha256']==p['routes']['sugar']['successor_membership_sha256']
+          assert p['routes']['hdbscan']['parent_membership_sha256']==p['routes']['hdbscan']['successor_membership_sha256']
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['target_information_access'] is False and p['target_region_events_accessed'] is False
+          assert p['amos_access'] is False and p['maarsy_scientific_access'] is False and p['dms_scientific_access'] is False
+          print({r:(p['routes'][r]['parent_order_sha256'],p['routes'][r]['successor_order_sha256']) for r in ('sugar','hdbscan')})
+          PY
+
+      # Exposed shower truth is unavailable until every fold and full successor order above is frozen.
+      - name: Restore immutable exposed SonotaCo truth only after pretruth freeze
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Evaluate one frozen CV-survival outcome
+        run: |
+          set -euo pipefail
+          PRETRUTH_SHA="$(sha256sum output/RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_PRETRUTH.json | cut -d' ' -f1)"
+          python -u orbittrace_recurrent_eom_cv_survival_rank_v1/run_sonotaco_benchmark.py evaluate \
+            --pretruth output/RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_PRETRUTH.json \
+            --expected-pretruth-sha "$PRETRUTH_SHA" \
+            --parent-pretruth input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --truth-root input/truth \
+            --output output
+
+      - name: Enforce binding verdict and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_RESULT.json'))
+          assert r['verdict'] in {'PASS_RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_DEVELOPMENT','FAIL_RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_DEVELOPMENT'}
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['membership_universe_identical'] is True
+          assert r['mechanism_active'] is True
+          assert r['post_result_parameter_search'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['amos_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert len(r['panels'])==4
+          print(json.dumps({'verdict':r['verdict'],'panels':r['panels']},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py orbittrace_recurrent_eom_cv_survival_rank_v1/SONOTACO_PROTOCOL.md orbittrace_recurrent_eom_cv_survival_rank_v1/run_sonotaco_benchmark.py input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json output/RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_PRETRUTH.json output/RECURRENT_EOM_CV_SURVIVAL_RANK_V1_SONOTACO_RESULT.json > output/source_input_output_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-cv-survival-rank-v1-sonotaco
+          path: output
+          if-no-files-found: error
+          retention-days: 90
