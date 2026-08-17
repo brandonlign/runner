@@ -1,0 +1,89 @@
+name: OrbitTrace phase-neutral source audit v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-phase-neutral-density-sync-v1
+    paths:
+      - '.github/workflows/orbittrace_phase_neutral_source_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: 'orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:orbittrace_phase_neutral_density_sync_v1:.'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-phase-neutral-density-sync-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin source, compile both endpoints, and inspect module binding without data
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p output
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/PROTOCOL.md)" = '4f64703ce84168bb4fbe1b8c3b85c4eb06fec935'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py)" = '32d61da99319bd1c463e4b70a92654e7ddc6778e'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/run_paired_development.py)" = '6795fbc411ba5cf6dfd964cdf125623f96e1a28b'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/SONOTACO_PROTOCOL.md)" = 'e61c43db33187a3e8f83950b45720aecfdeffcdf'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/run_sonotaco_contingency.py)" = '466e77b5c6149085c5dcb6c9574028aa255ab4c1'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile \
+            orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py \
+            orbittrace_phase_neutral_density_sync_v1/run_paired_development.py \
+            orbittrace_phase_neutral_density_sync_v1/run_sonotaco_contingency.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py
+          python - <<'PY'
+          import json
+          import run_development as parent_runner
+          import recurrent_eom
+          import density_synchronous_eom
+          import phase_neutral_geometry
+          import run_paired_development as paired
+          import run_sonotaco_contingency as snt
+          assert parent_runner.__file__.endswith('orbittrace_recurrent_eom_hdbscan_v1/run_development.py')
+          assert recurrent_eom.__file__.endswith('orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py')
+          assert density_synchronous_eom.__file__.endswith('orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py')
+          assert phase_neutral_geometry.__file__.endswith('orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py')
+          assert paired.parent_runner is parent_runner
+          assert paired.parent_reom is recurrent_eom
+          assert paired.density_synchronous_stability is density_synchronous_eom.density_synchronous_stability
+          assert snt.parent_reom is recurrent_eom
+          assert snt.density_synchronous_stability is density_synchronous_eom.density_synchronous_stability
+          result={
+            'verdict':'PASS_PHASE_NEUTRAL_SOURCE_IMPORT_AUDIT_V1',
+            'parent_runner_bound_exactly':True,
+            'recurrent_kernel_bound_exactly':True,
+            'density_sync_kernel_bound_exactly':True,
+            'paired_runner_imported':True,
+            'sonotaco_runner_imported':True,
+            'gmn_access':False,
+            'truth_access':False,
+            'sonotaco_access':False,
+            'target_information_access':False,
+            'target_region_events_accessed':False,
+            'amos_access':False,
+            'maarsy_scientific_access':False,
+            'dms_scientific_access':False,
+          }
+          open('output/PHASE_NEUTRAL_SOURCE_IMPORT_AUDIT_V1.json','w').write(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-phase-neutral-source-import-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
