@@ -1,0 +1,163 @@
+name: OrbitTrace recurrent-EOM condensed-tree oracle diagnostic v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-tree-oracle-diagnostic-v1
+    paths:
+      - '.github/workflows/orbittrace_recurrent_eom_tree_oracle_diagnostic_v1.yml'
+      - 'orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          test "$(git hash-object orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/PROTOCOL.md)" = '76a9ca93ea0091066b5fecb3b4ee8e55e3647608'
+          test "$(git hash-object orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/run_diagnostic.py)" = 'ee95254fc1d2a2302093ed2a0951ca6edd416aa7'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_sonotaco_v31_benchmark_v1/run_benchmark.py)" = '2b833e5f7a9d5daab5bbdf5e01f1ba96bd41af17'
+          python -m py_compile orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/run_diagnostic.py
+          mkdir -p input/rows input/parent input/residual input/truth output
+
+      - name: Restore exact label-free SonotaCo rows
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Restore immutable recurrent-EOM parent pretruth
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+
+      - name: Freeze complete condensed-tree node universe before truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/run_diagnostic.py pretruth \
+            --rows-root input/rows \
+            --parent-pretruth input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --output output
+          test -s output/RECURRENT_EOM_TREE_ORACLE_PRETRUTH_V1.json
+          sha256sum output/RECURRENT_EOM_TREE_ORACLE_PRETRUTH_V1.json > output/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/RECURRENT_EOM_TREE_ORACLE_PRETRUTH_V1.json'))
+          assert p['truth_accessed'] is False
+          assert p['residual_categories_accessed'] is False
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['pristine_external_access'] is False
+          assert p['routes']['sugar']['selected_recurrent_eom_count']==144
+          assert p['routes']['hdbscan']['selected_recurrent_eom_count']==123
+          print('PRETRUTH_FROZEN', {r:p['routes'][r]['all_nonroot_cluster_node_count'] for r in ('sugar','hdbscan')})
+          PY
+
+      # Outcome-bearing residual categories and truth are unavailable until the entire node universe above is frozen.
+      - name: Restore frozen residual diagnostic after hierarchy freeze
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-residual-analysis-v1
+          path: input/residual
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31994209058
+
+      - name: Restore already-exposed SonotaCo truth after hierarchy freeze
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Evaluate fixed tree-oracle diagnostic
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/run_diagnostic.py evaluate \
+            --pretruth output/RECURRENT_EOM_TREE_ORACLE_PRETRUTH_V1.json \
+            --residual input/residual/RECURRENT_EOM_RESIDUAL_ANALYSIS_V1.json \
+            --truth-root input/truth \
+            --output output
+
+      - name: Enforce diagnostic integrity and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/RECURRENT_EOM_TREE_ORACLE_DIAGNOSTIC_V1.json'))
+          assert r['schema']=='ORBITTRACE_RECURRENT_EOM_TREE_ORACLE_DIAGNOSTIC_V1'
+          assert r['scientific_role']=='EXPOSED_SONOTACO_DIAGNOSTIC_ONLY_NO_SUCCESSOR_EVALUATION'
+          assert r['candidate_generation_failures']==58
+          assert r['eom_extraction_failures']+r['hierarchy_absent_failures']==58
+          assert len(r['panels'])==4
+          assert r['method_selected'] is False
+          assert r['post_result_parameter_search'] is False
+          assert r['target_information_access'] is False
+          assert r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False
+          assert r['dms_scientific_access'] is False
+          assert r['pristine_external_access'] is False
+          print('TREE_ORACLE', r['eom_extraction_failures'], r['hierarchy_absent_failures'], r['eom_extraction_fraction'])
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/PROTOCOL.md \
+            orbittrace_recurrent_eom_tree_oracle_diagnostic_v1/run_diagnostic.py \
+            input/rows/label_free_preparation_manifest.json \
+            input/parent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            output/RECURRENT_EOM_TREE_ORACLE_PRETRUTH_V1.json \
+            input/residual/RECURRENT_EOM_RESIDUAL_ANALYSIS_V1.json \
+            input/truth/truth_sugar_2013.json \
+            input/truth/truth_sugar_2014.json \
+            input/truth/truth_hdbscan_2013.json \
+            input/truth/truth_hdbscan_2014.json \
+            output/RECURRENT_EOM_TREE_ORACLE_DIAGNOSTIC_V1.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-recurrent-eom-tree-oracle-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
