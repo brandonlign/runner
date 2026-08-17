@@ -1,0 +1,234 @@
+name: OrbitTrace phase-neutral paired GMN v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-phase-neutral-density-sync-v1
+    paths:
+      - 'orbittrace_phase_neutral_density_sync_v1/ACTIVATE_GMN'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: 'orbittrace_recurrent_eom_hdbscan_v1:orbittrace_density_synchronous_recurrent_eom_v1:orbittrace_phase_neutral_density_sync_v1:.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  paired-development:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-phase-neutral-density-sync-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pin frozen science and activation boundary
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
+          mkdir -p input/audits/synthetic input/audits/source input/snapshot/label_free input/snapshot/truth output
+          test -e orbittrace_phase_neutral_density_sync_v1/ACTIVATE_GMN
+          test -e orbittrace_phase_neutral_density_sync_v1/SNAPSHOT_BINDING.json
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/PROTOCOL.md)" = '4f64703ce84168bb4fbe1b8c3b85c4eb06fec935'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py)" = '32d61da99319bd1c463e4b70a92654e7ddc6778e'
+          test "$(git hash-object orbittrace_phase_neutral_density_sync_v1/run_paired_development.py)" = '6795fbc411ba5cf6dfd964cdf125623f96e1a28b'
+          test "$(git hash-object orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile \
+            orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py \
+            orbittrace_phase_neutral_density_sync_v1/run_paired_development.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-phase-neutral-geo4-synthetic-audit-v1
+          path: input/audits/synthetic
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31996744238
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-phase-neutral-source-import-audit-v1
+          path: input/audits/source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31996959107
+
+      - name: Verify pre-data audits and immutable snapshot binding
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          syn=json.load(open('input/audits/synthetic/PHASE_NEUTRAL_GEO4_SYNTHETIC_AUDIT.json'))
+          src=json.load(open('input/audits/source/PHASE_NEUTRAL_SOURCE_IMPORT_AUDIT_V1.json'))
+          bind=json.load(open('orbittrace_phase_neutral_density_sync_v1/SNAPSHOT_BINDING.json'))
+          assert syn['verdict']=='PASS_PHASE_NEUTRAL_GEO4_SYNTHETIC_AUDIT'
+          assert all(syn['tests'].values())
+          assert src['verdict']=='PASS_PHASE_NEUTRAL_SOURCE_IMPORT_AUDIT_V1'
+          assert bind['schema']=='ORBITTRACE_PHASE_NEUTRAL_GMN_SNAPSHOT_BINDING_V1'
+          assert bind['snapshot_run_id']==31996666561
+          assert bind['snapshot_attempt']>=2
+          assert bind['label_free_artifact']['name']=='orbittrace-phase-neutral-gmn-label-free-snapshot-v1'
+          assert bind['sealed_truth_artifact']['name']=='orbittrace-phase-neutral-gmn-sealed-truth-v1'
+          assert bind['scientific_outcome_known_at_binding'] is False
+          assert bind['method_evaluation_executed_at_binding'] is False
+          assert bind['target_information_access'] is False
+          print('PASS_PRE_DATA_AUTHORIZATION')
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-phase-neutral-gmn-label-free-snapshot-v1
+          path: input/snapshot/label_free
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31996666561
+
+      - name: Verify exact label-free snapshot and build both complete methods before truth
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,pathlib
+          bind=json.load(open('orbittrace_phase_neutral_density_sync_v1/SNAPSHOT_BINDING.json'))
+          root=pathlib.Path('input/snapshot/label_free')
+          def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          assert sha(root/'manifest.json')==bind['label_free_manifest_sha256']
+          m=json.load(open(root/'manifest.json'))
+          assert m['schema']=='ORBITTRACE_PHASE_NEUTRAL_GMN_LABEL_FREE_SNAPSHOT_V1'
+          assert m['labels_present'] is False
+          assert m['hdbscan_fit_executed'] is False
+          assert m['method_evaluation_executed'] is False
+          assert m['blind_exclusion']==[20.0,55.0]
+          assert m['events_by_year']==bind['events_by_year']
+          assert m['events_total']==bind['events_total']
+          for year in ('2022','2023'):
+              assert sha(root/m['row_files'][year])==bind['row_sha256'][year]
+              assert m['row_sha256'][year]==bind['row_sha256'][year]
+          print('PASS_LABEL_FREE_SNAPSHOT_BINDING',m['events_by_year'])
+          PY
+          python -u orbittrace_phase_neutral_density_sync_v1/run_paired_development.py pretruth \
+            --label-free-root input/snapshot/label_free \
+            --output output
+          sha256sum output/PHASE_NEUTRAL_DENSITY_SYNC_PRETRUTH_V1.json > output/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/PHASE_NEUTRAL_DENSITY_SYNC_PRETRUTH_V1.json'))
+          assert p['schema']=='ORBITTRACE_PHASE_NEUTRAL_DENSITY_SYNC_PRETRUTH_V1'
+          assert p['scientific_role']=='PRETRUTH_PAIRED_CURRENT_GMN_DEVELOPMENT_SNAPSHOT'
+          assert p['truth_accessed'] is False
+          assert p['blind_exclusion']==[20.0,55.0]
+          assert p['sole_scientific_change']=='remove_cos_solar_longitude_and_sin_solar_longitude_from_clustering_representation'
+          assert p['champion']['representation']=='GEO6'
+          assert p['successor']['representation']=='GEO4_PHASE_NEUTRAL'
+          for k in ['target_information_access','target_region_events_accessed','sonotaco_access','amos_access','maarsy_scientific_access','dms_scientific_access']:
+              assert p[k] is False,(k,p[k])
+          print('PRETRUTH_FROZEN',p['champion']['candidate_count'],p['successor']['candidate_count'],p['mechanism_active'])
+          PY
+
+      # The sealed truth artifact is deliberately unavailable until both complete candidate universes/orders above exist.
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-phase-neutral-gmn-sealed-truth-v1
+          path: input/snapshot/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31996666561
+
+      - name: Verify exact sealed truth only after pretruth freeze
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,pathlib
+          bind=json.load(open('orbittrace_phase_neutral_density_sync_v1/SNAPSHOT_BINDING.json'))
+          root=pathlib.Path('input/snapshot/truth')
+          def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          assert sha(root/'manifest.json')==bind['truth_manifest_sha256']
+          m=json.load(open(root/'manifest.json'))
+          assert m['schema']=='ORBITTRACE_PHASE_NEUTRAL_GMN_SEALED_TRUTH_V1'
+          assert m['truth_sha256']==bind['truth_file_sha256']
+          assert sha(root/m['truth_file'])==bind['truth_file_sha256']
+          assert m['method_evaluation_executed'] is False
+          assert m['blind_exclusion']==[20.0,55.0]
+          print('PASS_SEALED_TRUTH_BINDING',m['truth_entries'])
+          PY
+
+      - name: Evaluate sole frozen paired GMN outcome
+        run: |
+          set -euo pipefail
+          python -u orbittrace_phase_neutral_density_sync_v1/run_paired_development.py evaluate \
+            --pretruth output/PHASE_NEUTRAL_DENSITY_SYNC_PRETRUTH_V1.json \
+            --label-free-root input/snapshot/label_free \
+            --truth-root input/snapshot/truth \
+            --output output
+
+      - name: Enforce binding result and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/PHASE_NEUTRAL_DENSITY_SYNC_GMN_DEVELOPMENT_V1.json'))
+          assert r['verdict'] in {'PASS_PHASE_NEUTRAL_DENSITY_SYNC_V1_GMN_DEVELOPMENT','FAIL_PHASE_NEUTRAL_DENSITY_SYNC_V1_GMN_DEVELOPMENT'}
+          assert r['scientific_role']=='PAIRED_CURRENT_GMN_2022_2023_EXPOSED_DEVELOPMENT_SNAPSHOT_ONLY'
+          assert r['champion_representation']=='GEO6'
+          assert r['successor_representation']=='GEO4_PHASE_NEUTRAL'
+          assert r['post_result_parameter_search'] is False
+          assert r['historical_1263_metrics_used_as_gate'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          for k in ['target_information_access','target_region_events_accessed','sonotaco_access','amos_access','maarsy_scientific_access','dms_scientific_access']:
+              assert r[k] is False,(k,r[k])
+          print(json.dumps({
+              'verdict':r['verdict'],
+              'events_by_year':r['events_by_year'],
+              'champion_candidate_count':r['champion_candidate_count'],
+              'successor_candidate_count':r['successor_candidate_count'],
+              'mechanism_active':r['mechanism_active'],
+              'strict_100':r['strict_recovered_at_100_improvement_some_year'],
+              'champion':{y:{k:v for k,v in m.items() if k!='first_rank_by_label'} for y,m in r['champion_metrics'].items()},
+              'successor':{y:{k:v for k,v in m.items() if k!='first_rank_by_label'} for y,m in r['successor_metrics'].items()},
+              'annual_gates':r['annual_gates'],
+          },indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve binding provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum \
+            orbittrace_phase_neutral_density_sync_v1/PROTOCOL.md \
+            orbittrace_phase_neutral_density_sync_v1/SNAPSHOT_BINDING.json \
+            orbittrace_phase_neutral_density_sync_v1/phase_neutral_geometry.py \
+            orbittrace_phase_neutral_density_sync_v1/run_paired_development.py \
+            orbittrace_density_synchronous_recurrent_eom_v1/density_synchronous_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
+            orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            input/snapshot/label_free/manifest.json \
+            output/PHASE_NEUTRAL_DENSITY_SYNC_PRETRUTH_V1.json \
+            input/snapshot/truth/manifest.json \
+            output/PHASE_NEUTRAL_DENSITY_SYNC_GMN_DEVELOPMENT_V1.json \
+            > output/source_input_output_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-phase-neutral-density-sync-paired-gmn-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
