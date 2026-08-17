@@ -1,0 +1,22 @@
+name: OrbitTrace component-union run observer v1
+on:
+  pull_request:
+    branches: [agent/orbittrace-recurrent-topomodal-component-union-v1]
+    paths: ['.github/workflows/orbittrace_component_union_observer_v1.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query existing component-union push runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/workflows/orbittrace_recurrent_topomodal_component_union_v1.yml/runs?branch=agent%2Forbittrace-recurrent-topomodal-component-union-v1&per_page=10" \
+            --jq '.workflow_runs[] | "COMPONENT_UNION_RUN_ID=\(.id) STATUS=\(.status) CONCLUSION=\(.conclusion // "null") HEAD_SHA=\(.head_sha) EVENT=\(.event) CREATED=\(.created_at)"'
