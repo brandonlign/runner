@@ -1,0 +1,1 @@
+Activate exactly one frozen recurrent-EOM direct GMN literature benchmark v1 execution. No parameter tuning, method changes, reranking, threshold changes, or protected-region access are authorized after this marker.
