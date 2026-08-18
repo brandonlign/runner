@@ -40,6 +40,7 @@ jobs:
           test "$(git hash-object orbittrace_recurrent_eom_gmn_literature_direct_v1/build_pretruth.py)" = 'be9ce377cfca8889bf98846e716e65eb24575097'
           test "$(git hash-object orbittrace_recurrent_eom_gmn_literature_direct_v1/evaluate_truth.py)" = 'bb4dec3a40429db7d017bafcb442c536c4c7e6d6'
           test "$(git -C local-trunk-src hash-object orbittrace_recurrent_local_topomodal_trunk_v1/export_geometry.py)" = '32abfb3e68520cfdc83585a88731fa3982900cde'
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
           python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
           python -m pip install --no-deps gmn-python-api==0.0.13
           python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43'
@@ -77,7 +78,7 @@ jobs:
           test "$(sha256sum input/recurrent/RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT.json | cut -d' ' -f1)" = '433c641f57122b244b9476f5cbcb5e6f82956d9467270a9f24945600a32d2106'
       - name: Export label-free exact GMN geometry
         env:
-          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3/source_parts
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3
         run: |
           python -u local-trunk-src/orbittrace_recurrent_local_topomodal_trunk_v1/export_geometry.py \
             --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
@@ -128,6 +129,7 @@ jobs:
           mkdir -p input/ranker input/v8 input/recurrent input/v3 input/sealed output/truth
           git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
           git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git -C frozen-v8 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
           rm -f /tmp/run_wavelet_catalogue_v3_development.py
           (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py >/dev/null)
       - uses: actions/download-artifact@v4
@@ -162,7 +164,7 @@ jobs:
           test "$expected" = "$got"
       - name: Run binding common-truth evaluation
         env:
-          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3/source_parts
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3
         run: |
           python -u orbittrace_recurrent_eom_gmn_literature_direct_v1/evaluate_truth.py \
             --pretruth input/sealed/GMN_LITERATURE_DIRECT_V1_PRETRUTH.json \
