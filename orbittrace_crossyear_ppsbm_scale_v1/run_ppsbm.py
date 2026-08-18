@@ -49,7 +49,7 @@ def canonical_partition(blocks: np.ndarray,ids: list[str]) -> tuple[tuple[str,..
     return tuple(sorted(groups))
 
 
-def fit_once(g: Any,ids: list[str],seed: int) -> tuple[Any,np.ndarray,tuple[tuple[str,...],...],float]:
+def fit_once(g: Any,ids: list[str],seed: int) -> tuple[tuple[tuple[str,...],...],float]:
     gt.seed_rng(seed); np.random.seed(seed)
     state=gt.minimize_blockmodel_dl(
         g,
@@ -59,7 +59,7 @@ def fit_once(g: Any,ids: list[str],seed: int) -> tuple[Any,np.ndarray,tuple[tupl
     blocks=np.asarray(state.get_blocks().a,dtype=np.int64).copy()
     canonical=canonical_partition(blocks,ids)
     entropy=float(state.entropy())
-    return state,blocks,canonical,entropy
+    return canonical,entropy
 
 
 def main() -> int:
@@ -97,23 +97,36 @@ def main() -> int:
         g.add_edge_list(edges)
         req(int(g.num_vertices())==len(ids) and int(g.num_edges())==len(edges),"graph-tool graph changed")
         seed=panel_seed(d,b)
-        state1,blocks1,canon1,entropy1=fit_once(g,ids,seed)
-        _state2,blocks2,canon2,entropy2=fit_once(g,ids,seed)
+        canon1,entropy1=fit_once(g,ids,seed)
+        canon2,entropy2=fit_once(g,ids,seed)
         repeat_identical=(canon1==canon2 and entropy1==entropy2)
 
+        flat=[eid for members in canon1 for eid in members]
+        req(len(flat)==len(ids),"PP-SBM partition omitted or duplicated vertices")
+        req(len(set(flat))==len(ids) and set(flat)==set(ids),"PP-SBM partition universe changed")
+
+        id_to_index={eid:i for i,eid in enumerate(ids)}
+        group_by_index=np.empty(len(ids),dtype=np.int64)
+        for group_idx,members in enumerate(canon1):
+            for eid in members:
+                group_by_index[id_to_index[eid]]=group_idx
+        internal_edge_counts=np.zeros(len(canon1),dtype=np.int64)
+        for i,j in edges:
+            gi=int(group_by_index[i])
+            if gi==int(group_by_index[j]):
+                internal_edge_counts[gi]+=1
+
         groups=[]
-        for members in canon1:
-            member_set=set(members)
-            indices=[i for i,eid in enumerate(ids) if eid in member_set]
+        for group_idx,members in enumerate(canon1):
+            indices=[id_to_index[eid] for eid in members]
             n22=sum(int(years[i])==2022 for i in indices); n23=sum(int(years[i])==2023 for i in indices)
-            internal_edges=sum(1 for i,j in edges if ids[i] in member_set and ids[j] in member_set)
             groups.append({
                 "family_hash":family_hash(list(members)),
                 "event_ids":list(members),
                 "member_count":len(members),
                 "members_2022":int(n22),"members_2023":int(n23),
                 "bottleneck_annual_support":int(min(n22,n23)),
-                "internal_crossyear_edge_count":int(internal_edges),
+                "internal_crossyear_edge_count":int(internal_edge_counts[group_idx]),
                 "eligible":bool(n22>=MIN_SUPPORT and n23>=MIN_SUPPORT),
             })
         eligible=[dict(r) for r in groups if bool(r["eligible"])]
