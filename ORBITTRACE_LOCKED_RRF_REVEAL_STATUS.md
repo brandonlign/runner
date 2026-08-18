@@ -1,0 +1,1 @@
+Execution branch created from the frozen reveal-source audit. Scientific reveal not yet completed. The successful immutable blind-scan artifact remains `8973803775` from run `31112651984` with ZIP digest `sha256:1c26dc06193eb2119a0e181d9a85c22c18b09da8316fe6679754cb554ca29d34`.
