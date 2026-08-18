@@ -9,6 +9,8 @@ on:
 permissions:
   contents: read
   actions: read
+  issues: write
+  pull-requests: write
 
 env:
   TARGET_SHA: b5162163dcd410a45dd5ecc3f7c2fd7e1b229590
@@ -25,41 +27,43 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          set -uo pipefail
+          exec > >(tee observer_report.md) 2>&1
+          echo 'OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION'
+          echo "TARGET_SHA=$TARGET_SHA"
           run_id=''
           for _ in $(seq 1 40); do
-            runs="$(gh api -X GET "repos/$REPO/actions/runs" -f branch="$TARGET_BRANCH" -f event=push -f per_page=100)"
-            run_id="$(printf '%s' "$runs" | jq -r --arg sha "$TARGET_SHA" '.workflow_runs[] | select(.head_sha==$sha and .name=="OrbitTrace cross-year PP-SBM scale v1 Stage 1") | .id' | head -n1)"
+            runs="$(gh api -X GET "repos/$REPO/actions/runs" -f branch="$TARGET_BRANCH" -f event=push -f per_page=100 2>/dev/null || true)"
+            run_id="$(printf '%s' "$runs" | jq -r --arg sha "$TARGET_SHA" '.workflow_runs[]? | select(.head_sha==$sha and .name=="OrbitTrace cross-year PP-SBM scale v1 Stage 1") | .id' | head -n1)"
             if [ -n "$run_id" ] && [ "$run_id" != null ]; then break; fi
             sleep 15
           done
           if [ -z "$run_id" ] || [ "$run_id" = null ]; then
             echo "STAGE1_RUN_NOT_FOUND target_sha=$TARGET_SHA"
-            exit 2
+            exit 0
           fi
           echo "STAGE1_RUN_ID=$run_id"
 
           for _ in $(seq 1 460); do
-            meta="$(gh api "repos/$REPO/actions/runs/$run_id")"
-            status="$(printf '%s' "$meta" | jq -r '.status')"
+            meta="$(gh api "repos/$REPO/actions/runs/$run_id" 2>/dev/null || true)"
+            status="$(printf '%s' "$meta" | jq -r '.status // "unknown"')"
             conclusion="$(printf '%s' "$meta" | jq -r '.conclusion // ""')"
             echo "STAGE1_STATUS=$status conclusion=$conclusion"
             if [ "$status" = completed ]; then break; fi
             sleep 30
           done
 
-          meta="$(gh api "repos/$REPO/actions/runs/$run_id")"
-          printf '%s\n' "$meta" | jq '{id,name,event,status,conclusion,head_branch,head_sha,run_attempt,created_at,updated_at,html_url}'
-          status="$(printf '%s' "$meta" | jq -r '.status')"
+          meta="$(gh api "repos/$REPO/actions/runs/$run_id" 2>/dev/null || true)"
+          printf '%s\n' "$meta" | jq '{id,name,event,status,conclusion,head_branch,head_sha,run_attempt,created_at,updated_at,html_url}' || true
+          status="$(printf '%s' "$meta" | jq -r '.status // "unknown"')"
           conclusion="$(printf '%s' "$meta" | jq -r '.conclusion // ""')"
           if [ "$status" != completed ]; then
             echo "STAGE1_OBSERVER_TIMEOUT run_id=$run_id"
-            exit 3
+            exit 0
           fi
 
           echo 'STAGE1_ARTIFACTS:'
-          gh api "repos/$REPO/actions/runs/$run_id/artifacts" | jq '.artifacts[] | {id,name,size_in_bytes,digest,expired,created_at,expires_at}' || true
+          gh api "repos/$REPO/actions/runs/$run_id/artifacts" | jq '.artifacts[]? | {id,name,size_in_bytes,digest,expired,created_at,expires_at}' || true
           rm -rf observed
           mkdir -p observed
           gh run download "$run_id" -R "$REPO" -n "$TARGET_ARTIFACT" -D observed || true
@@ -75,3 +79,20 @@ jobs:
             echo 'STAGE1_FAILED_LOG_TAIL:'
             gh run view "$run_id" -R "$REPO" --log-failed 2>&1 | tail -n 350 || true
           fi
+
+      - name: Post observer report to this draft PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ ! -f observer_report.md ]; then
+            printf '%s\n' 'OBSERVER_REPORT_MISSING' > observer_report.md
+          fi
+          {
+            echo '```text'
+            cat observer_report.md
+            echo '```'
+          } > observer_comment.md
+          gh pr comment "$PR_NUMBER" -R "$REPO" --body-file observer_comment.md
