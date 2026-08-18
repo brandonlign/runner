@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [agent/orbittrace-crossyear-ppsbm-scale-v1-activate]
     paths:
-      - '.orbittrace_crossyear_ppsbm_stage1_observer_trigger'
+      - '.github/workflows/orbittrace_crossyear_ppsbm_stage1_observer.yml'
 
 permissions:
   contents: read
@@ -20,14 +20,13 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 235
     steps:
-      - uses: actions/checkout@v4
-
       - name: Locate and observe the already-started Stage-1 push run
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
           run_id=''
           for _ in $(seq 1 40); do
             runs="$(gh api -X GET "repos/$REPO/actions/runs" -f branch="$TARGET_BRANCH" -f event=push -f per_page=100)"
@@ -40,7 +39,6 @@ jobs:
             exit 2
           fi
           echo "STAGE1_RUN_ID=$run_id"
-          echo "$run_id" > stage1_run_id.txt
 
           for _ in $(seq 1 460); do
             meta="$(gh api "repos/$REPO/actions/runs/$run_id")"
