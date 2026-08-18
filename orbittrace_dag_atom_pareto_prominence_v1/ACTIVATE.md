@@ -1,0 +1,1 @@
+Activate exactly the frozen staged DAG-atom Pareto-prominence v1 experiment from base commit `b3f612d9fe3e95faa4702a18ab9135af67875e36`. This marker changes no scientific source, atom membership, rank rule, comparator, gate, truth semantics, firewall, target authorization, or external-data authorization. Do not merge this activation branch.
