@@ -1,0 +1,1 @@
+The execution workflow must call the exact frozen reveal source without modifying its logic. This note records that any engineering repair is limited to supplying immutable artifact identifiers/paths expected by the frozen source; scientific criteria remain unchanged.
