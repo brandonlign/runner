@@ -1,0 +1,46 @@
+name: OrbitTrace local-trunk literature fairness source audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-local-trunk-gmn-literature-fairness-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_local_trunk_gmn_literature_fairness_v1/PROTOCOL.md)" = '140fda762054279c9cc49107a29a26a53262b07a'
+          test "$(git hash-object orbittrace_local_trunk_gmn_literature_fairness_v1/evaluate_fairness.py)" = 'bb6a18de51796f33a00fe7c53f3e93f8658757b0'
+          python -m py_compile orbittrace_local_trunk_gmn_literature_fairness_v1/evaluate_fairness.py
+      - name: Verify dormant firewall declaration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path('orbittrace_local_trunk_gmn_literature_fairness_v1/FREEZE.json').read_text())
+          assert p['scientific_status'] == 'DORMANT_PRE_OUTCOME'
+          assert p['activation_condition'] == 'PASS_RECURRENT_LOCAL_TOPOMODAL_TRUNK_V1'
+          assert p['pairwise_gate_count'] == 4
+          assert p['comparators'] == ['sugar2017', 'hdbscan2025']
+          for key in (
+              'target_information_access', 'target_region_events_accessed',
+              'sonotaco_scientific_access', 'amos_scientific_access',
+              'asfn_efn_event_access', 'maarsy_scientific_access',
+              'dms_scientific_access', 'post_result_parameter_search'):
+              assert p[key] is False, key
+          print('PASS_LOCAL_TRUNK_LITERATURE_FAIRNESS_SOURCE_AUDIT')
+          PY
