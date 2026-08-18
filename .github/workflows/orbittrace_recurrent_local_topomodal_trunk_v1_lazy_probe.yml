@@ -1,0 +1,119 @@
+name: OrbitTrace local TopoModal trunk v1 lazy technical probe
+
+on:
+  push:
+    branches: [agent/orbittrace-recurrent-local-topomodal-trunk-v1-activate]
+    paths:
+      - '.github/workflows/orbittrace_recurrent_local_topomodal_trunk_v1_lazy_probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  equivalence:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        rank: [50, 100, 500]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit frozen science and lazy repair
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_local_topomodal_trunk_v1/build_prelabel.py)" = 'cd3fb15263fd4b2e38e4b413ece9b347b64816d5'
+          test "$(git hash-object orbittrace_recurrent_local_topomodal_trunk_v1/technical_lazy_local_trunk.py)" = '552f961eddf176ac1789aaf1fc3ff82fdfe627ec'
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'gudhi==3.12.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-local-trunk-v1-exact-geometry-cache
+          path: input/geometry
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32094995828
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-v1-gmn-import-repair-retry
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31852836840
+      - name: Require exact lazy/original equivalence
+        env:
+          PYTHONPATH: orbittrace_recurrent_local_topomodal_trunk_v1
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_local_topomodal_trunk_v1/technical_lazy_local_trunk.py \
+            --geometry input/geometry/RECURRENT_LOCAL_TOPOMODAL_TRUNK_V1_GEOMETRY.json \
+            --parent-prelabel input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json \
+            --rank ${{ matrix.rank }} --compare-original > lazy-equivalence-${{ matrix.rank }}.json
+          grep -q '"exact_original_equivalence":true' lazy-equivalence-${{ matrix.rank }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-local-trunk-v1-lazy-equivalence-rank-${{ matrix.rank }}
+          path: lazy-equivalence-${{ matrix.rank }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+  rank1:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit frozen science and lazy repair
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_local_topomodal_trunk_v1/build_prelabel.py)" = 'cd3fb15263fd4b2e38e4b413ece9b347b64816d5'
+          test "$(git hash-object orbittrace_recurrent_local_topomodal_trunk_v1/technical_lazy_local_trunk.py)" = '552f961eddf176ac1789aaf1fc3ff82fdfe627ec'
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'gudhi==3.12.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-local-trunk-v1-exact-geometry-cache
+          path: input/geometry
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32094995828
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-density-synchronous-recurrent-eom-v1-gmn-import-repair-retry
+          path: input/parent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31852836840
+      - name: Execute blocking rank 1 with exact lazy graph
+        env:
+          PYTHONPATH: orbittrace_recurrent_local_topomodal_trunk_v1
+        run: |
+          set -euo pipefail
+          /usr/bin/time -v python -u orbittrace_recurrent_local_topomodal_trunk_v1/technical_lazy_local_trunk.py \
+            --geometry input/geometry/RECURRENT_LOCAL_TOPOMODAL_TRUNK_V1_GEOMETRY.json \
+            --parent-prelabel input/parent/DENSITY_SYNCHRONOUS_RECURRENT_EOM_V1_PRELABEL.json \
+            --rank 1 > rank1-lazy.json
+          python - <<'PY'
+          import json
+          r=json.load(open('rank1-lazy.json'))
+          assert r['rank']==1 and r['parent_n']==32458
+          print(json.dumps({'rank':1,'parent_n':r['parent_n'],'final_n':len(r['final_ids']),'decision':r['summary']['decision'],'degree_median':r['summary']['radius_degree_median'],'degree_max':r['summary']['radius_degree_max'],'leaf_count':r['summary']['leaf_count']},sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-local-trunk-v1-rank1-lazy-probe
+          path: rank1-lazy.json
+          if-no-files-found: error
+          retention-days: 30
