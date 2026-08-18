@@ -1,0 +1,1 @@
+Activate only the frozen label-free engineering equivalence audit from base commit `29a9171c608cb175b9fa48af74bb76839782bda0`. No scientific method, membership rule, truth metric, gate, target access, or external-data authorization changes. Do not merge.
