@@ -1,0 +1,1 @@
+Activate only the frozen zero-label exact full-row transport audit from base commit `667b9b31720446b0870cd11d7b678185041182a5`. The transport returns every exact radius neighbor with no graph pruning. No scientific method, parameter, membership rule, truth metric, gate, target access, or external-data authorization changes. Do not merge.
