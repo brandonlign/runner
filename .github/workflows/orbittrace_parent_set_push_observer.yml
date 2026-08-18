@@ -12,7 +12,7 @@ jobs:
   observe:
     runs-on: ubuntu-22.04
     steps:
-      - name: Observe exact activation run and report to PR 1326
+      - name: Report exact activation run immediately to PR 1326
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -23,20 +23,12 @@ jobs:
           hdr=(-H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json')
           data=$(curl -fsSL "${hdr[@]}" "$api/actions/runs?branch=agent%2Forbittrace-pareto-parent-set-unanimous-v1&per_page=100")
           row=$(echo "$data" | jq -c --arg sha "$TARGET_SHA" '[.workflow_runs[] | select(.head_sha==$sha and .name=="OrbitTrace Pareto parent-set unanimous v1")][0] // empty')
-          if [ -z "$row" ]; then
-            body="Observer could not find the frozen binding run at activation SHA \`$TARGET_SHA\`. No scientific rerun was started."
-            curl -fsSL -X POST "${hdr[@]}" "$api/issues/1326/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
-            exit 1
-          fi
+          test -n "$row"
           id=$(echo "$row"|jq -r .id)
-          for i in $(seq 1 120); do
-            r=$(curl -fsSL "${hdr[@]}" "$api/actions/runs/$id")
-            st=$(echo "$r"|jq -r .status); co=$(echo "$r"|jq -r '.conclusion // ""')
-            [ "$st" = completed ] && break
-            sleep 15
-          done
+          r=$(curl -fsSL "${hdr[@]}" "$api/actions/runs/$id")
+          st=$(echo "$r"|jq -r .status); co=$(echo "$r"|jq -r '.conclusion // ""')
           jobs=$(curl -fsSL "${hdr[@]}" "$api/actions/runs/$id/jobs?per_page=100")
           arts=$(curl -fsSL "${hdr[@]}" "$api/actions/runs/$id/artifacts?per_page=100")
           summary=$(jq -n --arg id "$id" --arg st "$st" --arg co "$co" --argjson jobs "$(echo "$jobs"|jq '[.jobs[]|{id,name,status,conclusion}]')" --argjson arts "$(echo "$arts"|jq '[.artifacts[]|{id,name,size_in_bytes,digest,expired}]')" '{binding_run_id:($id|tonumber),status:$st,conclusion:$co,jobs:$jobs,artifacts:$arts}')
-          body=$(printf 'Read-only binding observer result:\n\n```json\n%s\n```\n' "$summary")
+          body=$(printf 'Immediate read-only binding status:\n\n```json\n%s\n```\n' "$summary")
           curl -fsSL -X POST "${hdr[@]}" "$api/issues/1326/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
