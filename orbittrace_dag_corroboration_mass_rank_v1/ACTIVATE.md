@@ -1,0 +1,1 @@
+Activate exactly the frozen DAG corroboration-mass rank v1 experiment from science-base commit `9d89f790576b6d884eff429098fb13a294fc6196`. The activation changes no candidate membership, score formula, order, panel, truth gate, firewall, source artifact, target authorization, external-data authorization, or post-result rescue rule. Do not merge this activation branch.
