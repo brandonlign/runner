@@ -1,0 +1,24 @@
+name: Observe recurrent cross-year Tukey core v1
+on:
+  pull_request:
+    branches: [agent/orbittrace-recurrent-crossyear-tukey-core-v1]
+    paths: ['ORBITTRACE_TUKEY_CORE_OBSERVER.md']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Find exact binding run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: 2df45a70b912163b0b0446445ce3a7f11c5f99b6
+        run: |
+          set -euo pipefail
+          data=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs?branch=agent%2Forbittrace-recurrent-crossyear-tukey-core-v1&per_page=100")
+          echo "$data" | jq -c --arg sha "$TARGET_SHA" '.workflow_runs[] | select(.head_sha==$sha) | {id,name,status,conclusion,event,head_sha,created_at,updated_at,html_url}'
+          n=$(echo "$data" | jq --arg sha "$TARGET_SHA" '[.workflow_runs[] | select(.head_sha==$sha and .name=="OrbitTrace recurrent cross-year Tukey core v1")] | length')
+          echo "FOUND_BINDING_RUN_COUNT=$n"
+          test "$n" = 1
