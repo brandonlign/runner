@@ -1,0 +1,21 @@
+name: Observe direct GMN literature benchmark
+on:
+  pull_request:
+    branches: [agent/orbittrace-recurrent-eom-gmn-literature-direct-v1]
+    paths: ['ORBITTRACE_GMN_LITERATURE_OBSERVER.md']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Find exact binding run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: cfc98647ef9fb5e9e9bfb4c3b945a4e0a1350ff9
+        run: |
+          set -euo pipefail
+          data=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs?branch=agent%2Forbittrace-recurrent-eom-gmn-literature-direct-v1&per_page=100")
+          echo "$data" | jq -c --arg sha "$TARGET_SHA" '.workflow_runs[] | select(.head_sha==$sha) | {id,name,status,conclusion,event,head_sha,created_at,updated_at,html_url}'
