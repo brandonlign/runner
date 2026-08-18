@@ -1,0 +1,1 @@
+Activate exactly the frozen zero-label cross-hierarchy refinement DAG v1 diagnostic from base commit `a2de5fb4c8ff52e818b0e4604f6ce133ff259743`. This activation changes no scientific source, gate, hierarchy, representation, metric, firewall, truth authorization, or external-data authorization. Do not merge this activation branch.
