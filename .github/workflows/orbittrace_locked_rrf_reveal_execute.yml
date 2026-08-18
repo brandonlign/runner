@@ -1,0 +1,48 @@
+name: OrbitTrace locked RRF frozen reveal execution
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-locked-rrf-reveal-source-audit
+    paths:
+      - ORBITTRACE_LOCKED_RRF_REVEAL_EXECUTION_REQUEST.md
+      - ORBITTRACE_LOCKED_RRF_REVEAL_ARTIFACT_PIN.json
+      - .github/workflows/orbittrace_locked_rrf_reveal_execute.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  reveal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-locked-rrf-reveal-execution
+      - name: Verify frozen reveal source and execute exact reveal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          pin = json.loads(Path('ORBITTRACE_LOCKED_RRF_REVEAL_ARTIFACT_PIN.json').read_text())
+          source = Path('orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py').read_bytes()
+          got = hashlib.sha256(source).hexdigest()
+          if got != pin['reveal_source_sha256']:
+              raise RuntimeError(f'reveal source hash mismatch: {got}')
+          print('frozen reveal source verified:', got)
+          PY
+          mkdir -p input/scan output
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8973803775/zip" \
+            -o input/scan.zip
+          echo "1c26dc06193eb2119a0e181d9a85c22c18b09da8316fe6679754cb554ca29d34  input/scan.zip" | sha256sum -c -
+          unzip -q input/scan.zip -d input/scan
+          python orbittrace_fixed4_locked_rrf_reveal/reveal_locked_rrf.py --help
