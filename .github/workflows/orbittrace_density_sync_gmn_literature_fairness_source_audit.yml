@@ -1,0 +1,47 @@
+name: OrbitTrace density-sync literature fairness source audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-density-sync-gmn-literature-fairness-v1
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen source identities and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_density_sync_gmn_literature_fairness_v1/PROTOCOL.md)" = '21dbd0139c13fbfb33183e9c6029fc2aa587de58'
+          test "$(git hash-object orbittrace_density_sync_gmn_literature_fairness_v1/evaluate_fairness.py)" = '8bb0fd2f7732dbb3a5bc01ccba822958d5eb81ef'
+          test "$(git hash-object .github/workflows/orbittrace_density_sync_gmn_literature_fairness_exec_v1.yml)" = 'ebd7b47004f80157cdee2f7ec650a1d8b9ebcdf7'
+          python -m py_compile orbittrace_density_sync_gmn_literature_fairness_v1/evaluate_fairness.py
+      - name: Verify immutable characterization boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_density_sync_gmn_literature_fairness_v1/PROTOCOL.md').read_text()
+          w=Path('.github/workflows/orbittrace_density_sync_gmn_literature_fairness_exec_v1.yml').read_text()
+          assert 'RETROSPECTIVE CHARACTERIZATION OF AN IMMUTABLE PRE-EXISTING METHOD' in p
+          assert 'efce0617a738a0372ec5b007fb87b46912accd8419f0f768829c4c0cb7d62993' in p
+          assert 'ca6aeed2b82739003ea5d39b59e869df876de2962164344a938fe4935ea38711' in p
+          assert 'PASS_DENSITY_SYNC_GMN_MATCHED_CAPACITY_LITERATURE_4_OF_4' in p
+          assert 'NO_DENSITY_SYNC_GMN_MATCHED_CAPACITY_4_OF_4_SUPERIORITY' in p
+          assert 'run-id: 31852836840' in w
+          assert 'run-id: 32152924956' in w
+          assert 'efce0617a738a0372ec5b007fb87b46912accd8419f0f768829c4c0cb7d62993' in w
+          assert 'ca6aeed2b82739003ea5d39b59e869df876de2962164344a938fe4935ea38711' in w
+          print('PASS_DENSITY_SYNC_GMN_LITERATURE_SOURCE_AUDIT')
+          PY
