@@ -1,0 +1,1 @@
+Trigger only the artifact-backed zero-write metadata observer for existing density-sync FLASC Repair 03 workflow runs. No scientific execution, code, candidate, truth, ranking, gate, firewall, or protected-data change.
