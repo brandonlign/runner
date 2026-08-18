@@ -8,6 +8,8 @@ This is not a truth-scored detector and is not a repair of the closed recurrent-
 
 The diagnostic asks whether the canonical many-to-many overlap structure itself is stable enough under deterministic thinning to justify a separately frozen future detector.
 
+The post-freeze edit following technical no-result run `32184246575` changes **provenance wording only**: the raw support-resolved TopoModal parent is rebound against its own immutable support-resolved-cut prelabel, not against the later overlap-consensus/Pareto successor chain. No hierarchy, membership rule, graph, atom, metric, panel, gate, threshold, firewall, or interpretation boundary is changed.
+
 ## 1. Scientific question
 
 Can recurrent-EOM and support-resolved TopoModal be related through a label-free bipartite correspondence DAG whose canonical common-refinement atoms are more stable under thinning than either hierarchy alone?
@@ -79,9 +81,9 @@ Reconstruct the already-frozen support-resolved TopoModal cut unchanged:
 - exact deterministic cut that partitions each reportable TopoModal root;
 - no alternative persistence threshold or hierarchy selection.
 
-For d=128 and d=1024, unordered recurrent memberships and support-resolved TopoModal memberships must reproduce the already-sealed recurrent-TopoModal Pareto pretruth source candidates exactly before accepting this diagnostic.
+For d=128 and d=1024, unordered recurrent memberships and raw support-resolved TopoModal memberships must reproduce the immutable `TOPOMODAL_SUPPORT_RESOLVED_CUT_V1_PRELABEL.json` from authoritative run `31961908008`, artifact `9267530845`, prelabel SHA-256 `4529eadd9ff93aae057f0a6fd5e0dd923f2300b7c6e01b74a0b7638e22da6de6`, before accepting this diagnostic.
 
-No d=64 Pareto output is reused or assumed valid. d=64 is reconstructed from the same immutable parent sources because this diagnostic does not require unique-parent correspondence.
+No sealed d=64 support-resolved-cut output is required or invented. d=64 is reconstructed from the same immutable parent implementations because the predecessor support-resolved-cut experiment froze only d=128/d=1024 panels and this diagnostic does not require unique-parent correspondence.
 
 ## 5. Cross-hierarchy correspondence DAG
 
@@ -151,7 +153,7 @@ Return
 iff all of the following hold:
 
 1. all 12 panel universes and protected-region exclusions reproduce exactly;
-2. d=128/d=1024 recurrent and TopoModal memberships reproduce the sealed Pareto-pretruth sources exactly;
+2. d=128/d=1024 recurrent and raw support-resolved TopoModal memberships reproduce the immutable support-resolved-cut prelabel exactly;
 3. every panel's atoms are pairwise disjoint, nonempty, and their union equals `union(T) ∩ union(R)` exactly;
 4. the representation is genuinely exercising the motivating topology: at least one d=64 panel contains a TopoModal node with degree >1;
 5. pooled mean symmetric atom stability across the eight transitions is strictly greater than pooled mean recurrent-EOM stability;
