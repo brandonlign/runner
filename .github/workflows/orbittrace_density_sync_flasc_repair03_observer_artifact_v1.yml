@@ -1,0 +1,46 @@
+name: OrbitTrace density-sync FLASC repair03 observer artifact v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-density-sync-flasc-refine-v1
+    paths:
+      - 'orbittrace_density_sync_flasc_refine_v1/OBSERVE_REPAIR03_ARTIFACT.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Query existing repair03 workflow runs only
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          mkdir -p observer-output
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/workflows/orbittrace_density_sync_flasc_refine_v1_repair03.yml/runs?branch=agent%2Forbittrace-density-sync-flasc-refine-v1&per_page=20" \
+            > observer-output/repair03-runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('observer-output/repair03-runs.json').read_text())
+          rows=[]
+          for r in data.get('workflow_runs', []):
+              rows.append({k:r.get(k) for k in ('id','status','conclusion','head_sha','event','created_at','updated_at','html_url')})
+          Path('observer-output/repair03-runs-compact.json').write_text(json.dumps(rows,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(rows,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-density-sync-flasc-repair03-observer-metadata-v1
+          path: observer-output
+          if-no-files-found: error
+          retention-days: 30
