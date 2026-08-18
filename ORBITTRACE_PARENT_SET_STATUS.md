@@ -2,3 +2,4 @@ Read-only status trigger for binding execution at activation SHA `721f4d08f89f10
 
 Status observer refresh only.
 Push observer trigger.
+Immediate status refresh.
