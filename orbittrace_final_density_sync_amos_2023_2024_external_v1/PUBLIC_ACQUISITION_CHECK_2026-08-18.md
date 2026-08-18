@@ -17,6 +17,16 @@ Relevant official pages checked:
 
 An older AMOS network page states that AMOS/SVMN orbits were stored in the EDMOND database.
 
+### 2026 Icarus AMOS network paper does not expose the required bulk endpoint in the public record found
+
+A current literature search found the new AMOS methods/network paper:
+
+- Tóth et al. (2026), **“AMOS global meteor network: Instrumentation, procedures, accuracy validation and results,”** *Icarus* 454, 117086, DOI `10.1016/j.icarus.2026.117086`.
+
+The publicly indexed article description says the paper presents the AMOS instrumentation, reduction architecture and resulting meteor data products through validation/representative case-study material. The public article/search records reviewed did **not** expose a downloadable complete 2023/2024 multi-station event catalogue or supplementary table matching the frozen Stage-1/2/3 contract.
+
+This is useful confirmation that the current AMOS processing pipeline and network are active, but it is not a substitute for the complete one-shot population required here.
+
 ### Current EDMOND release does not supply the required AMOS 2023/2024 endpoint
 
 The current EDMOND v6.01 page is publicly downloadable through 2024, but its network inventory explicitly lists **SVMN (Slovak Video Meteor Network) as 2007–2016**. Its 2023 and 2024 records therefore cannot be assumed to constitute the complete AMOS 2023/2024 solved multi-station population required by the frozen final-test contract.
@@ -39,7 +49,7 @@ Current MDC page checked:
 
 `NO_PUBLIC_SOURCE_FOUND_THAT_SATISFIES_FROZEN_AMOS_2023_2024_CONTRACT`
 
-The existing staged provider-request draft remains the correct acquisition path if the owner authorizes outreach. Do not silently substitute EDMOND, IAU MDC, or another survey for AMOS after development outcomes are known.
+The existing staged provider-request draft remains the correct acquisition path if the owner authorizes outreach. Do not silently substitute EDMOND, IAU MDC, a representative paper sample, or another survey for AMOS after development outcomes are known.
 
 ## Firewall state
 
