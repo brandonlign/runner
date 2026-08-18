@@ -16,6 +16,8 @@ Exact selected kernel Git blob:
 
 `30ac3fa3bc47910370df528fcf3ae8ecb6277b47`
 
+Later cross-hierarchy work produced a positive zero-label structural result but a negative binding detector result. That later exploration does **not** supersede recurrent-EOM as the selected truth-scored paper method.
+
 ## 🟢 Target-excluded GMN development — PASS
 
 Binding run `31827903547`; artifact `9229646556`; artifact digest `sha256:a0b1ba017696b32cf2e19b3542430adac7bfd13fa2fb78494b6d42742aa35f6d`; result SHA-256 `433c641f57122b244b9476f5cbcb5e6f82956d9467270a9f24945600a32d2106`.
@@ -82,6 +84,40 @@ Mechanistically, density-sync was active, but recurrent-EOM and #1263 selected t
 
 **Selection implication:** recurrent-EOM is preferred by parsimony. The paper does not need the density-synchronous refinement to obtain its demonstrated benchmark performance.
 
+## 🟢 structural / 🔴 detector — cross-hierarchy refinement DAG
+
+A separately frozen zero-label structural diagnostic represented the exact many-to-many correspondence between support-resolved TopoModal candidates and recurrent-EOM candidates using every nonempty intersection atom. Binding run `32185851992` passed all nine preregistered gates.
+
+Across eight nested thinning transitions, pooled mean symmetric stability was:
+
+- common-refinement atoms: **`0.8066370721`**;
+- support-resolved TopoModal: `0.7917895143`;
+- recurrent-EOM: `0.6917863083`.
+
+The atom representation strictly beat both parents on `7/8` transitions. This is valid positive evidence that the cross-hierarchy common refinement is a more thinning-stable **structural representation**. It is not itself a shower-detection result.
+
+The structural protocol authorized exactly one separately frozen truth-scored detector extraction. That successor used the complete raw atom set and the already-successful two-objective Pareto-prominence ordering, with no atom-size filter, merge rule, overlap threshold, degree penalty, learned score, or result-informed tuning.
+
+Binding detector run `32189372993`; artifact `9343696639`; artifact digest `sha256:ada957a3e1550caeca16f83ccfea77c3a529cd7559e3cfa9bda97d66223b745b`; result SHA-256 `d4e11a82ca54bb754b229f085744133859f7174d15a609d39036fd1af4300064`.
+
+Exact verdict:
+
+`FAIL_DAG_ATOM_PARETO_PROMINENCE_V1`
+
+The historical d=128/d=1024 Pareto comparator reproduced exactly before interpretation and the scientific firewall remained intact.
+
+| Scale | Comparator qualified | DAG-atom qualified | Comparator zero-filled MRR | DAG-atom zero-filled MRR | Comparator precision | DAG-atom precision |
+|---|---:|---:|---:|---:|---:|---:|
+| d=64 | 153 | **185** | **0.0406474** | 0.0385136 | 0.325428 | **0.462414** |
+| d=128 | **127** | 125 | **0.0671605** | 0.0667014 | 0.508492 | **0.517009** |
+| d=1024 | **30** | 28 | **0.402504** | 0.393932 | **0.589292** | 0.586514 |
+
+At d=64 the raw atoms materially increased eventual qualified recovery and purity but regressed the frozen zero-filled-MRR gate; at d=128/d=1024 they lost a small amount of recovery and MRR against the already-successful sparse Pareto predecessor. The strict sparse-added-value gate failed.
+
+**Interpretation:** finer cross-hierarchy structural stability does not imply that every refinement atom should be reported as a detector cluster. Raw atomization is too fine-grained under the frozen truth-scored contract. The exact DAG-atom detector is closed and must not be rescued through result-informed thresholds, component unions, weighting, quotas, or reranking.
+
+**Paper implication:** this exploration is useful as negative/structural evidence if discussed, but it does not replace recurrent-EOM as the selected methodology.
+
 ## 🔴 / 🟡 Important robustness limitations
 
 These belong in the manuscript rather than being hidden:
@@ -106,6 +142,7 @@ Ordinary and recurrent EOM selected the same 8 nodes. Because the recurrence mec
 2. **GMN development:** the frozen recurrent-EOM method passed a preregistered same-hierarchy comparison against ordinary HDBSCAN EOM on target-excluded GMN 2022/2023.
 3. **SonotaCo benchmark:** recurrent-EOM beat v31 and the corresponding frozen literature comparators on all four matched SonotaCo 2013/2014 panels.
 4. **Parsimony:** the later density-synchronous refinement did not improve any of those four SonotaCo panels, supporting selection of the simpler recurrent-EOM objective.
+5. **Exploratory structural characterization:** exact TopoModal↔recurrent common-refinement atoms are more thinning-stable than either parent representation on the frozen nested-panel diagnostic, while the one authorized raw-atom detector extraction failed its truth-scored promotion contract.
 
 ### Claims that are **not** supported
 
@@ -113,11 +150,17 @@ Ordinary and recurrent EOM selected the same 8 nodes. Because the recurrence mec
 - SonotaCo establishes pristine external validation;
 - ASFN validates recurrent-EOM;
 - recurrence necessarily changes HDBSCAN extraction on every survey;
-- #1263 is demonstrably superior to recurrent-EOM overall.
+- #1263 is demonstrably superior to recurrent-EOM overall;
+- the cross-hierarchy refinement DAG is a superior shower detector;
+- structural thinning stability alone establishes optimal physical-cluster granularity.
 
 ## Suggested concise Results wording
 
 > Recurrent-EOM altered HDBSCAN flat-cluster extraction while leaving the pooled density hierarchy unchanged. On target-excluded GMN 2022/2023 it passed the preregistered no-regression gate against ordinary EOM, including an increase from 88 to 89 recovered showers at rank 100 in 2022 and from 44 to 46 at rank 50 in 2023, with higher top-100 precision and MRR in both years. On the exposed SonotaCo 2013/2014 benchmark, recurrent-EOM exceeded v31 and the corresponding frozen Sugar-style or catalogue-HDBSCAN comparator in macro-F1 on all four matched panels without reducing the number of recovered showers. A later density-synchronous refinement produced no additional SonotaCo gain, favoring the simpler recurrent-EOM objective for the final methodology.
+
+Optional exploratory sentence if the DAG study is retained in the paper or supplement:
+
+> A separate zero-label cross-hierarchy diagnostic found that exact common-refinement atoms were more stable under deterministic thinning than either parent representation, but the one preregistered raw-atom detector extraction failed its truth-scored promotion contract, showing that structural stability did not translate directly into better reportable cluster granularity.
 
 ## Suggested concise limitation wording
 
@@ -125,4 +168,4 @@ Ordinary and recurrent EOM selected the same 8 nodes. Because the recurrence mec
 
 ## Firewall / scope
 
-Protected solar longitude `[20°,55°]` remains inaccessible. OrbitTrace target information/events, MAARSY and DMS remain scientifically inaccessible. No AMOS request or AMOS scientific data are part of the selected-method evidence package.
+Protected solar longitude `[20°,55°]` remains inaccessible. OrbitTrace target information/events, MAARSY and DMS remain scientifically inaccessible. No AMOS request or AMOS scientific data are part of the selected-method evidence package. The cross-hierarchy structural and detector experiments used only authorized target-excluded GMN development data and did not open protected target information or external scientific data.
