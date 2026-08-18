@@ -1,0 +1,43 @@
+name: Probe OrbitTrace local trunk batched status
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-recurrent-local-topomodal-trunk-v1-activate]
+    paths:
+      - '.github/workflows/orbittrace_local_trunk_batched_probe_status.yml'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+env:
+  TARGET_BRANCH: agent/orbittrace-recurrent-local-topomodal-trunk-v1-activate
+  TARGET_WORKFLOW_NAME: OrbitTrace local TopoModal trunk v1 batched technical probe
+
+jobs:
+  status:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Read latest probe status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api -X GET "repos/$REPO/actions/runs" -f branch="$TARGET_BRANCH" -f event=push -f per_page=100)"
+          run_id="$(printf '%s' "$runs" | jq -r --arg name "$TARGET_WORKFLOW_NAME" '.workflow_runs[]? | select(.name==$name) | .id' | head -n1)"
+          test -n "$run_id"
+          meta="$(gh api "repos/$REPO/actions/runs/$run_id")"
+          jobs="$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100")"
+          {
+            echo '```text'
+            echo "PROBE_RUN_ID=$run_id"
+            printf '%s\n' "$meta" | jq -c '{status,conclusion,head_sha,run_attempt,created_at,updated_at,html_url}'
+            printf '%s\n' "$jobs" | jq -c '.jobs[] | {id,name,status,conclusion,steps:[.steps[]|{name,status,conclusion}]}'
+            echo '```'
+          } > status.md
+          gh pr comment "$PR_NUMBER" -R "$REPO" --body-file status.md
+# refresh 2
