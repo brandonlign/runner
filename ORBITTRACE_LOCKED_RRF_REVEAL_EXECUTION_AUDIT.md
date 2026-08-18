@@ -1,0 +1,1 @@
+Pre-execution audit: reveal source remains frozen to SHA-256 `9bb8108c012b4681c4bfacdfbdfcc703b52ba2b1cc7dd38e8a2cd076eda811fd`; scan artifact remains frozen to `8973803775` / ZIP SHA-256 `1c26dc06193eb2119a0e181d9a85c22c18b09da8316fe6679754cb554ca29d34`.
