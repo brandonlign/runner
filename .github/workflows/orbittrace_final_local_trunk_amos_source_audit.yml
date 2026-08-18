@@ -22,7 +22,9 @@ jobs:
           test "$(git hash-object orbittrace_final_local_trunk_amos_2023_2024_external_v1/PROTOCOL.md)" = '70f40e0b41d828c89cc1a0d4165de3404da286f5'
           test "$(git hash-object orbittrace_final_local_trunk_amos_2023_2024_external_v1/CONDITIONAL_SELECTION_FREEZE.json)" = 'f53b41dfd80a80c4639fe70a6b8eee005a5e91d7'
           test "$(git hash-object orbittrace_final_local_trunk_amos_2023_2024_external_v1/generate_pretruth.py)" = '3be8d3e9f2ea10ce5a71c7eeb591332ba5297c45'
+          test "$(git hash-object orbittrace_final_local_trunk_amos_2023_2024_external_v1/evaluate_labels.py)" = 'ec94293fc50a46dbe6455b9b36bd08eeba39cd82'
           python -m py_compile orbittrace_final_local_trunk_amos_2023_2024_external_v1/generate_pretruth.py
+          python -m py_compile orbittrace_final_local_trunk_amos_2023_2024_external_v1/evaluate_labels.py
       - name: Verify conditional selection and no-data firewall
         shell: bash
         run: |
@@ -49,27 +51,40 @@ jobs:
               assert p[key] is False, key
           print('PASS_FINAL_LOCAL_TRUNK_AMOS_SOURCE_AUDIT')
           PY
-      - name: Verify transfer source pins are explicit
+      - name: Verify transfer and evaluator source pins are explicit
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           import ast
           from pathlib import Path
-          src = Path('orbittrace_final_local_trunk_amos_2023_2024_external_v1/generate_pretruth.py').read_text()
-          tree = ast.parse(src)
-          values = {}
-          for node in tree.body:
-              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-                  try:
-                      values[node.targets[0].id] = ast.literal_eval(node.value)
-                  except Exception:
-                      pass
-          assert values['PARENT_AMOS_GENERATOR_BLOB'] == 'b76d7c53ab238cd45f12027947f2098a770ba7b6'
-          assert values['LOCAL_TRUNK_PROTOCOL_BLOB'] == 'de8d040a1f9d3b0825ce56532efd5950acefc689'
-          assert values['LOCAL_TRUNK_CONSTRUCTOR_BLOB'] == 'cd3fb15263fd4b2e38e4b413ece9b347b64816d5'
-          assert values['LOCAL_TRUNK_LAZY_TRANSPORT_BLOB'] == '79cc2e51929fd60f8e17faec4c1b04c19e43010e'
-          assert values['LOCAL_TRUNK_EXACT_ROW_TRANSPORT_BLOB'] == '81e4833ac24bb90fe810b0444da534906b10e798'
-          assert values['LOCAL_TRUNK_SOURCE_COMMIT'] == '3afb4bd1de98d9c765dcaff79b9e98a0cc1234a4'
-          print('PASS_TRANSFER_SOURCE_PINS')
+
+          def constants(path):
+              tree = ast.parse(Path(path).read_text())
+              values = {}
+              for node in tree.body:
+                  if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                      try:
+                          values[node.targets[0].id] = ast.literal_eval(node.value)
+                      except Exception:
+                          pass
+              return values
+
+          g = constants('orbittrace_final_local_trunk_amos_2023_2024_external_v1/generate_pretruth.py')
+          assert g['PARENT_AMOS_GENERATOR_BLOB'] == 'b76d7c53ab238cd45f12027947f2098a770ba7b6'
+          assert g['LOCAL_TRUNK_PROTOCOL_BLOB'] == 'de8d040a1f9d3b0825ce56532efd5950acefc689'
+          assert g['LOCAL_TRUNK_CONSTRUCTOR_BLOB'] == 'cd3fb15263fd4b2e38e4b413ece9b347b64816d5'
+          assert g['LOCAL_TRUNK_LAZY_TRANSPORT_BLOB'] == '79cc2e51929fd60f8e17faec4c1b04c19e43010e'
+          assert g['LOCAL_TRUNK_EXACT_ROW_TRANSPORT_BLOB'] == '81e4833ac24bb90fe810b0444da534906b10e798'
+          assert g['LOCAL_TRUNK_SOURCE_COMMIT'] == '3afb4bd1de98d9c765dcaff79b9e98a0cc1234a4'
+
+          e = constants('orbittrace_final_local_trunk_amos_2023_2024_external_v1/evaluate_labels.py')
+          assert e['PARENT_AMOS_EVALUATOR_BLOB'] == 'c45e4739ea68639945b13de54f6e24dc9d870ba3'
+          assert e['LOCAL_TRUNK_GMN_EVALUATOR_BLOB'] == '749a527b7a9ee3c5f1a70832669d83fa1af592d7'
+          assert e['LOCAL_TRUNK_PROTOCOL_BLOB'] == g['LOCAL_TRUNK_PROTOCOL_BLOB']
+          assert e['LOCAL_TRUNK_CONSTRUCTOR_BLOB'] == g['LOCAL_TRUNK_CONSTRUCTOR_BLOB']
+          assert e['LOCAL_TRUNK_LAZY_TRANSPORT_BLOB'] == g['LOCAL_TRUNK_LAZY_TRANSPORT_BLOB']
+          assert e['LOCAL_TRUNK_EXACT_ROW_TRANSPORT_BLOB'] == g['LOCAL_TRUNK_EXACT_ROW_TRANSPORT_BLOB']
+          assert e['LOCAL_TRUNK_SOURCE_COMMIT'] == g['LOCAL_TRUNK_SOURCE_COMMIT']
+          print('PASS_TRANSFER_AND_EVALUATOR_SOURCE_PINS')
           PY
