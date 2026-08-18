@@ -1,0 +1,22 @@
+name: Probe overlap-barycenter binding
+on:
+  pull_request:
+    branches: [agent/orbittrace-pareto-overlap-barycenter-v1]
+    paths: ['ORBITTRACE_BARYCENTER_PROBE.md']
+permissions:
+  actions: read
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Find binding by activation SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          data=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs?branch=agent%2Forbittrace-pareto-overlap-barycenter-v1&per_page=100")
+          echo "$data" | jq -c '.workflow_runs[] | select(.head_sha=="6dcaa450bad6003c111a31c4111183e59c84a785") | {id,name,status,conclusion,event,head_sha,created_at,updated_at,html_url}'
+          n=$(echo "$data" | jq '[.workflow_runs[] | select(.head_sha=="6dcaa450bad6003c111a31c4111183e59c84a785" and .name=="OrbitTrace Pareto overlap-barycenter v1")] | length')
+          echo "FOUND_BINDING_RUN_COUNT=$n"
+          test "$n" = 1
