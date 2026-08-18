@@ -1,0 +1,3 @@
+RUN_MATCHED_CAPACITY_GMN_LITERATURE_FAIRNESS_V1
+Frozen protocol commit: 397d71f953b93fe7de37987024bb00eb9f3e1799
+No method or comparator changes.
