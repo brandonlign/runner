@@ -8,7 +8,7 @@ Exact recurrent-EOM kernel Git blob:
 
 `30ac3fa3bc47910370df528fcf3ae8ecb6277b47`
 
-This selection is based on the combined target-excluded GMN development evidence, exposed SonotaCo 2013/2014 benchmark evidence, and the direct comparison against the later density-synchronous refinement (#1263).
+This selection is based on the combined target-excluded GMN development evidence, exposed SonotaCo 2013/2014 benchmark evidence, the matched-capacity GMN literature audit, and the direct comparison against the later density-synchronous refinement (#1263).
 
 ## 🟢 Positive evidence for recurrent-EOM
 
@@ -32,6 +32,22 @@ Result SHA-256:
 `c2395a86be5ba8a8b801210ac6e64b97c446e724991207aef85062ee00b89f12`
 
 SonotaCo is **EXPOSED DEVELOPMENT / VALIDATION BENCHMARK**, not pristine external validation.
+
+### Matched-capacity GMN literature audit
+
+After recurrent-EOM was fixed, the target-excluded matched-capacity literature audit returned:
+
+`PASS_RECURRENT_EOM_GMN_MATCHED_CAPACITY_LITERATURE_4_OF_4`
+
+Binding run: `32156065072`.
+
+Result SHA-256:
+
+`6c3c7fe927b80f5913088d3698609d07cca0174a95650b6cd6ec69712e31a0ff`
+
+At identical complete catalogue capacity, recurrent-EOM had strictly higher macro-F1 with no recovered-shower loss in both 2022 and 2023 against both tested comparator families: the deterministic published Sugar DBSCAN core and published-configuration catalogue HDBSCAN.
+
+This supports superiority to the **tested relevant unsupervised comparator implementations**, not universal superiority to every meteor-stream algorithm.
 
 ## 🟡 Direct comparison against #1263 density-synchronous recurrent-EOM
 
@@ -76,12 +92,18 @@ Choose **recurrent-EOM HDBSCAN v1** over #1263 for the paper because:
 
 1. it already has a positive frozen GMN development result;
 2. it has 4/4 superiority versus v31 on the established SonotaCo benchmark;
-3. it has 4/4 superiority versus the matched literature comparators;
+3. it has 4/4 superiority versus matched literature comparators on SonotaCo and 4/4 in the later matched-capacity GMN literature audit;
 4. #1263's extra full-GMN recovery gain is sample-sensitive under the frozen deletion diagnostic;
 5. #1263 produces zero gain over recurrent-EOM on all four direct SonotaCo validation panels;
 6. recurrent-EOM is the simpler method, so the evidence favors it by parsimony.
 
 This conclusion does not erase #1263's positive full-GMN result. It says only that the added density-synchronous criterion is not justified as the preferred paper method by the combined evidence.
+
+## Separate targeted OrbitTrace recovery evidence
+
+The canonical OrbitTrace/GhostStream target was already opened in the separately frozen fixed-4° application, PR #153, after that detector and its application protocol were immutable. Binding run `30927310565` returned `FULL_FROZEN_GHOSTSTREAM_RECOVERY` with all 14 frozen gates passing.
+
+That result is **targeted independent recovery evidence for the fixed-4° detector**, not evidence used to select or tune recurrent-EOM, and not a blind catalogue rediscovery. It must not be imported into recurrent-EOM development or method selection.
 
 ## Closed paths
 
@@ -89,12 +111,13 @@ Do not restart:
 
 - the #1263 density-sync successor search;
 - alternate density-sync weights/minima/alignment/smoothing/blends;
-- AMOS outreach or AMOS data acquisition for this method-selection goal;
 - external-dataset shopping;
 - result-informed parameter or threshold rescue.
 
-Further OrbitTrace work should treat recurrent-EOM as fixed and focus on characterization, comparison, figures, and manuscript claims rather than another methodology-search loop.
+AMOS is no longer a method-selection exercise. The already-frozen one-shot AMOS endpoint is reserved only for the unresolved pristine cross-survey generalization question.
+
+Further OrbitTrace work should treat recurrent-EOM as fixed and focus on characterization, comparison, figures, manuscript claims, and the already-preregistered AMOS test rather than another methodology-search loop.
 
 ## Scientific firewall
 
-Protected solar longitude `[20°,55°]` remains inaccessible. OrbitTrace target information/events, MAARSY and DMS remain scientifically inaccessible. The direct method-selection benchmark used only the already-exposed SonotaCo benchmark outside the protected interval.
+The canonical target interval `[20°,55°]` was opened only in the historically frozen fixed-4° targeted application (PR #153). Recurrent-EOM development, literature comparison, SonotaCo method selection, and the AMOS endpoint remain target-excluded: no OrbitTrace target event, label, coordinate, or protected-region result may be used to alter recurrent-EOM or its gates. MAARSY and DMS remain scientifically inaccessible. AMOS scientific rows and labels remain unopened.
