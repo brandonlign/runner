@@ -1,0 +1,1 @@
+Activate exactly the validated exact full-row transport execution from base commit `3afb4bd1de98d9c765dcaff79b9e98a0cc1234a4`. Audit run 32191528958 passed exact equivalence on 2,028 frozen parents. The scientific protocol, graph edges, density, candidate rule, rank order, truth evaluator, 16 gates, firewall, and access policy remain unchanged. Do not merge.
