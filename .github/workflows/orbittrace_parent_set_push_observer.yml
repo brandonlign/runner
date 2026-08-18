@@ -1,0 +1,34 @@
+name: Push-observe Pareto parent-set binding
+on:
+  push:
+    branches: [agent/orbittrace-parent-set-status-child]
+    paths: ['ORBITTRACE_PARENT_SET_STATUS.md']
+permissions:
+  actions: read
+  issues: write
+  pull-requests: write
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Report exact activation run immediately to PR 1326
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: 721f4d08f89f1038ea9eb3f2ea021337f2cb3856
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$REPO"
+          hdr=(-H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json')
+          data=$(curl -fsSL "${hdr[@]}" "$api/actions/runs?branch=agent%2Forbittrace-pareto-parent-set-unanimous-v1&per_page=100")
+          row=$(echo "$data" | jq -c --arg sha "$TARGET_SHA" '[.workflow_runs[] | select(.head_sha==$sha and .name=="OrbitTrace Pareto parent-set unanimous v1")][0] // empty')
+          test -n "$row"
+          id=$(echo "$row"|jq -r .id)
+          r=$(curl -fsSL "${hdr[@]}" "$api/actions/runs/$id")
+          st=$(echo "$r"|jq -r .status); co=$(echo "$r"|jq -r '.conclusion // ""')
+          jobs=$(curl -fsSL "${hdr[@]}" "$api/actions/runs/$id/jobs?per_page=100")
+          arts=$(curl -fsSL "${hdr[@]}" "$api/actions/runs/$id/artifacts?per_page=100")
+          summary=$(jq -n --arg id "$id" --arg st "$st" --arg co "$co" --argjson jobs "$(echo "$jobs"|jq '[.jobs[]|{id,name,status,conclusion}]')" --argjson arts "$(echo "$arts"|jq '[.artifacts[]|{id,name,size_in_bytes,digest,expired}]')" '{binding_run_id:($id|tonumber),status:$st,conclusion:$co,jobs:$jobs,artifacts:$arts}')
+          body=$(printf 'Immediate read-only binding status:\n\n```json\n%s\n```\n' "$summary")
+          curl -fsSL -X POST "${hdr[@]}" "$api/issues/1326/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
