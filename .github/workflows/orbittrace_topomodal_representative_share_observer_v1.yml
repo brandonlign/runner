@@ -1,0 +1,19 @@
+name: OrbitTrace TopoModal representative-share observer v1
+on:
+  pull_request:
+    branches: [agent/orbittrace-topomodal-representative-share-oof-v1]
+    paths: ['.github/workflows/orbittrace_topomodal_representative_share_observer_v1.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: List scientific branch workflow runs read-only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/runs?branch=agent%2Forbittrace-topomodal-representative-share-oof-v1&per_page=20" \
+            --jq '.workflow_runs[] | [.id,.name,.event,.status,.conclusion,.head_sha,.created_at] | @tsv'
