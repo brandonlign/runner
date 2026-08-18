@@ -1,0 +1,75 @@
+name: OrbitTrace final local-trunk AMOS source audit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen source identities and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_final_local_trunk_amos_2023_2024_external_v1/PROTOCOL.md)" = '70f40e0b41d828c89cc1a0d4165de3404da286f5'
+          test "$(git hash-object orbittrace_final_local_trunk_amos_2023_2024_external_v1/CONDITIONAL_SELECTION_FREEZE.json)" = 'f53b41dfd80a80c4639fe70a6b8eee005a5e91d7'
+          test "$(git hash-object orbittrace_final_local_trunk_amos_2023_2024_external_v1/generate_pretruth.py)" = '3be8d3e9f2ea10ce5a71c7eeb591332ba5297c45'
+          python -m py_compile orbittrace_final_local_trunk_amos_2023_2024_external_v1/generate_pretruth.py
+      - name: Verify conditional selection and no-data firewall
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path('orbittrace_final_local_trunk_amos_2023_2024_external_v1/CONDITIONAL_SELECTION_FREEZE.json').read_text())
+          assert p['scientific_status'] == 'DORMANT_PRE_OUTCOME_PRE_DATA'
+          assert p['activation_condition'] == 'PASS_RECURRENT_LOCAL_TOPOMODAL_TRUNK_V1'
+          assert p['activation_gate_count_required'] == 16
+          assert p['literature_audit_is_activation_condition'] is False
+          assert p['old_endpoint_superseded_only_if_activated'] is True
+          assert p['amos_years'] == [2023, 2024]
+          assert p['blind_exclusion_inclusive'] == [20.0, 55.0]
+          assert p['provider_request_sent'] is False
+          assert p['amos_transfer_received'] is False
+          for key in (
+              'amos_scientific_access', 'amos_shower_association_access',
+              'target_information_access', 'target_region_events_accessed',
+              'orbittrace_target_access', 'sonotaco_access', 'asfn_access',
+              'efn_access', 'maarsy_scientific_access', 'dms_scientific_access',
+              'post_result_parameter_search', 'new_external_survey_hunt'):
+              assert p[key] is False, key
+          print('PASS_FINAL_LOCAL_TRUNK_AMOS_SOURCE_AUDIT')
+          PY
+      - name: Verify transfer source pins are explicit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          src = Path('orbittrace_final_local_trunk_amos_2023_2024_external_v1/generate_pretruth.py').read_text()
+          tree = ast.parse(src)
+          values = {}
+          for node in tree.body:
+              if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                  try:
+                      values[node.targets[0].id] = ast.literal_eval(node.value)
+                  except Exception:
+                      pass
+          assert values['PARENT_AMOS_GENERATOR_BLOB'] == 'b76d7c53ab238cd45f12027947f2098a770ba7b6'
+          assert values['LOCAL_TRUNK_PROTOCOL_BLOB'] == 'de8d040a1f9d3b0825ce56532efd5950acefc689'
+          assert values['LOCAL_TRUNK_CONSTRUCTOR_BLOB'] == 'cd3fb15263fd4b2e38e4b413ece9b347b64816d5'
+          assert values['LOCAL_TRUNK_LAZY_TRANSPORT_BLOB'] == '79cc2e51929fd60f8e17faec4c1b04c19e43010e'
+          assert values['LOCAL_TRUNK_EXACT_ROW_TRANSPORT_BLOB'] == '81e4833ac24bb90fe810b0444da534906b10e798'
+          assert values['LOCAL_TRUNK_SOURCE_COMMIT'] == '3afb4bd1de98d9c765dcaff79b9e98a0cc1234a4'
+          print('PASS_TRANSFER_SOURCE_PINS')
+          PY
