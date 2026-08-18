@@ -16,16 +16,19 @@ DEGREE_BATCH = 512
 
 
 class LazyRadiusNeighbors:
-    """Exact frozen radius graph exposed one row at a time.
+    """Exact frozen radius graph exposed one hierarchy-relevant row at a time.
 
-    GUDHI Tomato's manual-graph core indexes neighbors[i] during the hierarchy
-    sweep. Returning the exact cKDTree radius row lazily changes only storage,
-    not graph membership, density, ordering, topology, or scientific outputs.
+    GUDHI's frozen _hierarchy sorts points by decreasing density and, for the
+    current point, immediately discards neighbors appearing later in that order.
+    Any neighbor with strictly lower density is therefore provably discarded.
+    We retain every equal-density neighbor because its tie order is internal to
+    GUDHI. This changes only transport/storage, not any hierarchy decision.
     """
 
-    def __init__(self, tree: cKDTree, z: np.ndarray):
+    def __init__(self, tree: cKDTree, z: np.ndarray, rho: np.ndarray):
         self.tree = tree
         self.z = z
+        self.rho = rho
         self.n = int(len(z))
         self.rows_served = 0
         self.entries_served = 0
@@ -37,10 +40,13 @@ class LazyRadiusNeighbors:
         i = int(i)
         if i < 0 or i >= self.n:
             raise IndexError(i)
-        row = self.tree.query_ball_point(
+        raw = self.tree.query_ball_point(
             self.z[i], r=frozen.RADIUS, p=2.0, eps=0.0, return_sorted=True
         )
-        row = [int(x) for x in row]
+        # Strictly lower-density neighbors can never have rorder < current i in
+        # GUDHI's decreasing-density sweep and are discarded by the C++ core.
+        # Equal-density neighbors are retained so GUDHI alone resolves ties.
+        row = [int(x) for x in raw if self.rho[int(x)] >= self.rho[i]]
         frozen.req(i in row, f"self missing from lazy radius graph at {i}")
         frozen.req(all(0 <= j < self.n for j in row), "lazy radius graph index out of range")
         self.rows_served += 1
@@ -69,16 +75,12 @@ def local_trunk_lazy(parent_ids: list[str], event_by_id: dict[str, dict[str, Any
     z = frozen.physical_embedding(events)
     tree = cKDTree(z)
 
-    # Frozen density is degree / parent size. Compute the exact same degrees
-    # without retaining the billion-entry graph in memory.
+    # Frozen density is exact radius degree / parent size.
     degrees = exact_degrees(tree, z)
     rho = degrees / float(len(ids))
     frozen.req(np.all(np.isfinite(rho)) and np.all(rho > 0.0), "invalid local density")
 
-    # cKDTree radius membership is symmetric by construction because the frozen
-    # graph uses one Euclidean radius, p=2, eps=0 on the same point set. GUDHI's
-    # manual hierarchy receives the exact same sorted neighbor row, but lazily.
-    neighbors = LazyRadiusNeighbors(tree, z)
+    neighbors = LazyRadiusNeighbors(tree, z, rho)
     model = Tomato(graph_type="manual", density_type="manual")
     model.fit(neighbors, weights=rho)
     frozen.req(neighbors.rows_served == len(ids), "GUDHI did not request exactly one lazy row per point")
