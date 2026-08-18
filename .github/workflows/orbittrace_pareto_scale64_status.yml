@@ -1,0 +1,40 @@
+name: Observe Pareto scale64 status
+on:
+  pull_request:
+    branches: [agent/orbittrace-pareto-prominence-scale64-v1]
+    paths: ['ORBITTRACE_SCALE64_STATUS_PING.md']
+permissions:
+  actions: read
+  issues: write
+  pull-requests: write
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Observe existing binding only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          run=''
+          for i in $(seq 1 60); do
+            data=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/workflows/orbittrace_pareto_prominence_scale64_v1.yml/runs?branch=agent%2Forbittrace-pareto-prominence-scale64-v1&per_page=10")
+            run=$(echo "$data" | jq -r '.workflow_runs | map(select(.head_sha=="f13631d868b24c95983e1cfd6f8886ff5c8a5a5d")) | .[0].id // empty')
+            test -n "$run" && break
+            sleep 5
+          done
+          test -n "$run"
+          for i in $(seq 1 120); do
+            meta=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/$run")
+            jobs=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/$run/jobs?per_page=20")
+            payload=$(printf 'SCALE64_BINDING_RUN_ID=%s\n%s\n%s' "$run" "$(echo "$meta"|jq -c '{status,conclusion,head_sha,run_attempt,created_at,updated_at,html_url}')" "$(echo "$jobs"|jq -c '[.jobs[]|{id,name,status,conclusion,steps:[.steps[]?|{name,status,conclusion}]}]')")
+            curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/issues/$PR/comments" -d "$(jq -n --arg body "\`\`\`text
+$payload
+\`\`\`" '{body:$body}')" >/dev/null
+            test "$(echo "$meta"|jq -r .status)" = completed && exit 0
+            sleep 15
+          done
+          exit 1
