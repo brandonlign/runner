@@ -24,6 +24,7 @@ jobs:
           set -euo pipefail
           test "$(git hash-object orbittrace_local_trunk_gmn_literature_fairness_v1/PROTOCOL.md)" = '140fda762054279c9cc49107a29a26a53262b07a'
           test "$(git hash-object orbittrace_local_trunk_gmn_literature_fairness_v1/evaluate_fairness.py)" = 'bb6a18de51796f33a00fe7c53f3e93f8658757b0'
+          test "$(git hash-object .github/workflows/orbittrace_local_trunk_gmn_literature_fairness_exec_v1.yml)" = '4afa544de68aaf9b128202280793f5a0608e4a6a'
           python -m py_compile orbittrace_local_trunk_gmn_literature_fairness_v1/evaluate_fairness.py
       - name: Verify dormant firewall declaration
         shell: bash
@@ -44,4 +45,20 @@ jobs:
               'dms_scientific_access', 'post_result_parameter_search'):
               assert p[key] is False, key
           print('PASS_LOCAL_TRUNK_LITERATURE_FAIRNESS_SOURCE_AUDIT')
+          PY
+      - name: Verify execution wrapper remains conditional on binding PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('.github/workflows/orbittrace_local_trunk_gmn_literature_fairness_exec_v1.yml').read_text()
+          assert 'run-id: 32191925070' in text
+          assert 'orbittrace-recurrent-local-topomodal-trunk-v1-prelabel-exact-row' in text
+          assert 'orbittrace-recurrent-local-topomodal-trunk-v1-binding-exact-row' in text
+          assert "r['verdict']=='PASS_RECURRENT_LOCAL_TOPOMODAL_TRUNK_V1'" in text
+          assert "r['passed_gate_count']==r['total_gate_count']==16" in text
+          assert 'PASS_LOCAL_TRUNK_GMN_MATCHED_CAPACITY_LITERATURE_4_OF_4' in text
+          assert 'NO_LOCAL_TRUNK_GMN_MATCHED_CAPACITY_4_OF_4_SUPERIORITY' in text
+          print('PASS_LOCAL_TRUNK_LITERATURE_EXECUTION_WRAPPER_AUDIT')
           PY
