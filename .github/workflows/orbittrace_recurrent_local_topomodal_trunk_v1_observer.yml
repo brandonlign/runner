@@ -13,16 +13,17 @@ permissions:
   pull-requests: write
 
 env:
-  TARGET_SHA: 9a1a98aaacd971a6f6809c31fef34e9c2e8513c6
+  TARGET_SHA: 7ba5d8f9f791f45f9804828acedfbff1101632e1
   TARGET_BRANCH: agent/orbittrace-recurrent-local-topomodal-trunk-v1-activate
-  TARGET_ARTIFACT: orbittrace-recurrent-local-topomodal-trunk-v1-binding
+  TARGET_WORKFLOW_NAME: OrbitTrace recurrent local TopoModal trunk v1 import repair
+  TARGET_ARTIFACT: orbittrace-recurrent-local-topomodal-trunk-v1-binding-import-repair
 
 jobs:
   observe:
     runs-on: ubuntu-22.04
     timeout-minutes: 295
     steps:
-      - name: Observe the already-started binding run
+      - name: Observe the already-started repaired binding run
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -34,7 +35,7 @@ jobs:
           run_id=''
           for _ in $(seq 1 40); do
             runs="$(gh api -X GET "repos/$REPO/actions/runs" -f branch="$TARGET_BRANCH" -f event=push -f per_page=100 2>/dev/null || true)"
-            run_id="$(printf '%s' "$runs" | jq -r --arg sha "$TARGET_SHA" '.workflow_runs[]? | select(.head_sha==$sha and .name=="OrbitTrace recurrent local TopoModal trunk v1") | .id' | head -n1)"
+            run_id="$(printf '%s' "$runs" | jq -r --arg sha "$TARGET_SHA" --arg name "$TARGET_WORKFLOW_NAME" '.workflow_runs[]? | select(.head_sha==$sha and .name==$name) | .id' | head -n1)"
             if [ -n "$run_id" ] && [ "$run_id" != null ]; then break; fi
             sleep 15
           done
@@ -43,7 +44,6 @@ jobs:
             exit 0
           fi
           echo "BINDING_RUN_ID=$run_id"
-
           for _ in $(seq 1 570); do
             meta="$(gh api "repos/$REPO/actions/runs/$run_id" 2>/dev/null || true)"
             status="$(printf '%s' "$meta" | jq -r '.status // "unknown"')"
@@ -52,7 +52,6 @@ jobs:
             if [ "$status" = completed ]; then break; fi
             sleep 30
           done
-
           meta="$(gh api "repos/$REPO/actions/runs/$run_id" 2>/dev/null || true)"
           printf '%s\n' "$meta" | jq '{id,name,event,status,conclusion,head_branch,head_sha,run_attempt,created_at,updated_at,html_url}' || true
           status="$(printf '%s' "$meta" | jq -r '.status // "unknown"')"
@@ -61,11 +60,9 @@ jobs:
             echo "BINDING_OBSERVER_TIMEOUT run_id=$run_id"
             exit 0
           fi
-
           echo 'BINDING_ARTIFACTS:'
           gh api "repos/$REPO/actions/runs/$run_id/artifacts" | jq '.artifacts[]? | {id,name,size_in_bytes,digest,expired,created_at,expires_at}' || true
-          rm -rf observed
-          mkdir -p observed
+          rm -rf observed && mkdir -p observed
           gh run download "$run_id" -R "$REPO" -n "$TARGET_ARTIFACT" -D observed || true
           if [ -f observed/truth/RECURRENT_LOCAL_TOPOMODAL_TRUNK_V1_BINDING_RESULT.json ]; then
             echo 'BINDING_RESULT_SHA256:'
@@ -81,9 +78,8 @@ jobs:
           fi
           if [ "$conclusion" != success ]; then
             echo 'BINDING_FAILED_LOG_TAIL:'
-            gh run view "$run_id" -R "$REPO" --log-failed 2>&1 | tail -n 450 || true
+            gh run view "$run_id" -R "$REPO" --log-failed 2>&1 | tail -n 500 || true
           fi
-
       - name: Post observer report to this draft PR
         if: always()
         env:
@@ -91,12 +87,6 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [ ! -f observer_report.md ]; then
-            printf '%s\n' 'OBSERVER_REPORT_MISSING' > observer_report.md
-          fi
-          {
-            echo '```text'
-            cat observer_report.md
-            echo '```'
-          } > observer_comment.md
+          if [ ! -f observer_report.md ]; then printf '%s\n' 'OBSERVER_REPORT_MISSING' > observer_report.md; fi
+          { echo '```text'; cat observer_report.md; echo '```'; } > observer_comment.md
           gh pr comment "$PR_NUMBER" -R "$REPO" --body-file observer_comment.md
