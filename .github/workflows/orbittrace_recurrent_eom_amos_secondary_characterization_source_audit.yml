@@ -24,7 +24,9 @@ jobs:
           set -euo pipefail
           test "$(git hash-object orbittrace_recurrent_eom_amos_secondary_characterization_v1/PROTOCOL.md)" = '84ed2264583e5af23a53a19a51546eead82ac274'
           test "$(git hash-object orbittrace_recurrent_eom_amos_secondary_characterization_v1/adjudicate_primary_result.py)" = '1350dc5df5c1af292721906fc85fb8179757867f'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_secondary_characterization_v1/audit_synthetic.py)" = '8a63facd5b0a751d7f1ff56a4a67d968a2299501'
           python -m py_compile orbittrace_recurrent_eom_amos_secondary_characterization_v1/adjudicate_primary_result.py
+          python -m py_compile orbittrace_recurrent_eom_amos_secondary_characterization_v1/audit_synthetic.py
       - name: Verify single-endpoint characterization contract
         shell: bash
         run: |
@@ -52,3 +54,8 @@ jobs:
           assert vals['FAIL']=='FAIL_RECURRENT_EOM_HDBSCAN_V1_AMOS_2023_2024_EXTERNAL_CHARACTERIZATION'
           print('PASS_RECURRENT_EOM_AMOS_SECONDARY_SOURCE_AUDIT')
           PY
+      - name: Exercise exact 12-gate adjudicator synthetically
+        shell: bash
+        run: |
+          set -euo pipefail
+          python orbittrace_recurrent_eom_amos_secondary_characterization_v1/audit_synthetic.py
