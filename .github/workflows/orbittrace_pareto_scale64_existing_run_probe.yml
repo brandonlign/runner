@@ -1,0 +1,21 @@
+name: Probe existing Pareto scale64 binding
+on:
+  pull_request:
+    branches: [agent/orbittrace-pareto-prominence-scale64-v1]
+    paths: ['ORBITTRACE_SCALE64_PROBE.md']
+permissions:
+  actions: read
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Find original binding by immutable execution SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          data=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs?branch=agent%2Forbittrace-pareto-prominence-scale64-v1&per_page=100")
+          echo "$data" | jq -c '.workflow_runs[] | select(.head_sha=="f13631d868b24c95983e1cfd6f8886ff5c8a5a5d") | {id,name,status,conclusion,event,head_sha,created_at,updated_at,html_url}'
+          n=$(echo "$data" | jq '[.workflow_runs[] | select(.head_sha=="f13631d868b24c95983e1cfd6f8886ff5c8a5a5d" and .name=="OrbitTrace Pareto-prominence scale64 v1")] | length')
+          echo "FOUND_BINDING_RUN_COUNT=$n"
