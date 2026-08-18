@@ -1,0 +1,49 @@
+name: OrbitTrace PP-SBM parser source audit v1
+
+on:
+  push:
+    branches: [agent/orbittrace-ppsbm-parser-source-audit-v1]
+    paths:
+      - '.github/workflows/orbittrace_ppsbm_parser_source_audit_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - name: Reconstruct frozen support source without executing it
+        run: |
+          set -euo pipefail
+          cat frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 | base64 -d | gzip -dc > /tmp/support.py
+          sha256sum /tmp/support.py
+          python3 -m py_compile /tmp/support.py
+
+      - name: Print parser source and direct local call targets only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          src=Path('/tmp/support.py').read_text()
+          tree=ast.parse(src)
+          funcs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          target=funcs['parse_catalogue']
+          print('=== PARSE_CATALOGUE ===')
+          print(ast.get_source_segment(src,target))
+          calls=sorted({n.func.id for n in ast.walk(target) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name)})
+          print('=== DIRECT_CALL_NAMES ===')
+          print(calls)
+          for name in calls:
+              if name in funcs:
+                  print(f'=== LOCAL_FUNCTION {name} ===')
+                  print(ast.get_source_segment(src,funcs[name]))
+          PY
