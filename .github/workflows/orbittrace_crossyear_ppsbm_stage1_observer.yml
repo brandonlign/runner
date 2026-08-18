@@ -1,0 +1,79 @@
+name: Observe OrbitTrace cross-year PP-SBM Stage 1
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-crossyear-ppsbm-scale-v1-activate]
+    paths:
+      - '.orbittrace_crossyear_ppsbm_stage1_observer_trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  TARGET_SHA: b5162163dcd410a45dd5ecc3f7c2fd7e1b229590
+  TARGET_BRANCH: agent/orbittrace-crossyear-ppsbm-scale-v1-activate
+  TARGET_ARTIFACT: orbittrace-crossyear-ppsbm-scale-v1-stage1
+
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 235
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate and observe the already-started Stage-1 push run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_id=''
+          for _ in $(seq 1 40); do
+            runs="$(gh api -X GET "repos/$REPO/actions/runs" -f branch="$TARGET_BRANCH" -f event=push -f per_page=100)"
+            run_id="$(printf '%s' "$runs" | jq -r --arg sha "$TARGET_SHA" '.workflow_runs[] | select(.head_sha==$sha and .name=="OrbitTrace cross-year PP-SBM scale v1 Stage 1") | .id' | head -n1)"
+            if [ -n "$run_id" ] && [ "$run_id" != null ]; then break; fi
+            sleep 15
+          done
+          if [ -z "$run_id" ] || [ "$run_id" = null ]; then
+            echo "STAGE1_RUN_NOT_FOUND target_sha=$TARGET_SHA"
+            exit 2
+          fi
+          echo "STAGE1_RUN_ID=$run_id"
+          echo "$run_id" > stage1_run_id.txt
+
+          for _ in $(seq 1 460); do
+            meta="$(gh api "repos/$REPO/actions/runs/$run_id")"
+            status="$(printf '%s' "$meta" | jq -r '.status')"
+            conclusion="$(printf '%s' "$meta" | jq -r '.conclusion // ""')"
+            echo "STAGE1_STATUS=$status conclusion=$conclusion"
+            if [ "$status" = completed ]; then break; fi
+            sleep 30
+          done
+
+          meta="$(gh api "repos/$REPO/actions/runs/$run_id")"
+          printf '%s\n' "$meta" | jq '{id,name,event,status,conclusion,head_branch,head_sha,run_attempt,created_at,updated_at,html_url}'
+          status="$(printf '%s' "$meta" | jq -r '.status')"
+          conclusion="$(printf '%s' "$meta" | jq -r '.conclusion // ""')"
+          if [ "$status" != completed ]; then
+            echo "STAGE1_OBSERVER_TIMEOUT run_id=$run_id"
+            exit 3
+          fi
+
+          echo 'STAGE1_ARTIFACTS:'
+          gh api "repos/$REPO/actions/runs/$run_id/artifacts" | jq '.artifacts[] | {id,name,size_in_bytes,digest,expired,created_at,expires_at}' || true
+          rm -rf observed
+          mkdir -p observed
+          gh run download "$run_id" -R "$REPO" -n "$TARGET_ARTIFACT" -D observed || true
+          if [ -f observed/pretruth/CROSSYEAR_PPSBM_SCALE_V1_PRETRUTH.json ]; then
+            echo 'STAGE1_PRETRUTH_SHA256:'
+            sha256sum observed/pretruth/CROSSYEAR_PPSBM_SCALE_V1_PRETRUTH.json
+            echo 'STAGE1_PRETRUTH_JSON:'
+            cat observed/pretruth/CROSSYEAR_PPSBM_SCALE_V1_PRETRUTH.json
+          else
+            echo 'STAGE1_PRETRUTH_RESULT_NOT_PRESENT'
+          fi
+          if [ "$conclusion" != success ]; then
+            echo 'STAGE1_FAILED_LOG_TAIL:'
+            gh run view "$run_id" -R "$REPO" --log-failed 2>&1 | tail -n 350 || true
+          fi
