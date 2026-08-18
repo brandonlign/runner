@@ -1,0 +1,52 @@
+name: OrbitTrace recurrent-Pareto inactivity router failure observer v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-recurrent-pareto-inactivity-router-v1
+    paths:
+      - 'orbittrace_recurrent_pareto_inactivity_router_v1/OBSERVE_FAILURE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Capture existing binding-run metadata and logs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: '32157337069'
+        run: |
+          set -euo pipefail
+          echo OBSERVER_ONLY_NO_SCIENTIFIC_EXECUTION
+          mkdir -p observer-output
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/runs/$RUN_ID" > observer-output/run.json
+          gh api -H 'Accept: application/vnd.github+json' \
+            "/repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" > observer-output/jobs.json
+          gh run view "$RUN_ID" --repo "$REPO" --log > observer-output/run.log 2>&1 || true
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('observer-output/jobs.json').read_text())
+          compact=[]
+          for job in j.get('jobs',[]):
+              compact.append({
+                  'id':job.get('id'),'name':job.get('name'),'status':job.get('status'),
+                  'conclusion':job.get('conclusion'),'started_at':job.get('started_at'),
+                  'completed_at':job.get('completed_at'),
+                  'steps':[{k:s.get(k) for k in ('number','name','status','conclusion')} for s in job.get('steps',[])]
+              })
+          Path('observer-output/jobs-compact.json').write_text(json.dumps(compact,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(compact,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-pareto-inactivity-router-failure-observer-v1
+          path: observer-output
+          if-no-files-found: error
+          retention-days: 30
