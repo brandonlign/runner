@@ -1,0 +1,143 @@
+name: OrbitTrace TopoModal representative-share OOF v1 repair01
+on:
+  push:
+    branches: [agent/orbittrace-topomodal-representative-share-oof-v1]
+    paths: ['.github/workflows/orbittrace_topomodal_representative_share_oof_v1_repair01.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  representative-share-oof-repair01:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and audit frozen sources plus repair
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/v3 input/v8 input/ranker input/predecessor output
+          test "$(git hash-object orbittrace_topomodal_representative_share_oof_v1/PROTOCOL.md)" = 'dc65b2b1d3effc6da48739f7c5bbe8bf4e794f15'
+          test "$(git hash-object orbittrace_topomodal_representative_share_oof_v1/train_evaluate.py)" = '7414be16c694a31820eb2978aada8780c73eaf10'
+          test "$(git hash-object orbittrace_topomodal_representative_share_oof_v1/TECHNICAL_REPAIR_01.md)" = 'e8504f0f64fb39450599eb38e8ad1abd9e59c1d3'
+          test "$(git hash-object orbittrace_topomodal_representative_share_oof_v1/technical_repair_01_wrapper.py)" = '791f8ab2319594bc782a3e43c716224717103b87'
+          test "$(git hash-object orbittrace_topomodal_supervised_antichain_oof_v1/train_evaluate.py)" = '09b24df67a789e1936093df98fd917562fbd3a3e'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_topomodal_representative_share_oof_v1/train_evaluate.py orbittrace_topomodal_representative_share_oof_v1/technical_repair_01_wrapper.py orbittrace_topomodal_supervised_antichain_oof_v1/train_evaluate.py
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-topomodal-supervised-antichain-oof-v1
+          path: input/predecessor
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32062821745
+      - name: Verify exact predecessor pretruth
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/predecessor/TOPOMODAL_SUPERVISED_ANTICHAIN_OOF_V1_PRETRUTH.json|cut -d' ' -f1)" = '22ee242d16e73c553d0e2041e55a8d938963c504a824797e92119d15b4bab7ba'
+          python - <<'PY'
+          import json
+          x=json.load(open('input/predecessor/TOPOMODAL_SUPERVISED_ANTICHAIN_OOF_V1_PRETRUTH.json'))
+          assert x['schema']=='ORBITTRACE_TOPOMODAL_SUPERVISED_ANTICHAIN_OOF_V1_PRETRUTH'
+          assert x['scientific_role']=='PRETRUTH_FEATURE_AND_MEMBERSHIP_FREEZE'
+          assert x['feature_dimension']==16 and len(x['subsets'])==8
+          assert x['blind_exclusion']==[20.0,55.0] and x['shower_truth_used'] is False
+          assert x['target_information_access'] is False and x['target_region_events_accessed'] is False
+          print('PASS_EXACT_PREDECESSOR_PRETRUTH')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - name: Verify immutable runtime inputs and prior no-result provenance
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py|cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json|cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          printf '%s\n' 'TECHNICAL_NO_RESULT: run 32085559553; no result JSON/gate verdict; None-rank adapter exception only' > output/prior_attempt_status.txt
+      - name: Run sole frozen endpoint through repair01 wrapper
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_topomodal_representative_share_oof_v1/technical_repair_01_wrapper.py \
+            --pretruth input/predecessor/TOPOMODAL_SUPERVISED_ANTICHAIN_OOF_V1_PRETRUTH.json \
+            --protocol orbittrace_topomodal_representative_share_oof_v1/PROTOCOL.md \
+            --predecessor-trainer orbittrace_topomodal_supervised_antichain_oof_v1/train_evaluate.py \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --ranker-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+      - name: Enforce binding result contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/TOPOMODAL_REPRESENTATIVE_SHARE_OOF_V1.json'))
+          assert r['verdict'] in {'PASS_TOPOMODAL_REPRESENTATIVE_SHARE_OOF_V1','FAIL_TOPOMODAL_REPRESENTATIVE_SHARE_OOF_V1'}
+          assert r['pretruth_sha256']=='22ee242d16e73c553d0e2041e55a8d938963c504a824797e92119d15b4bab7ba'
+          assert r['target_definition']=='PANELWISE_YEARWISE_F1_SHARE_WITHIN_ASSIGNED_SHOWER_GROUP'
+          assert r['fold_definition']=='EXACT_PREDECESSOR_WHOLE_SHOWER_FOLDS'
+          assert len(r['gates'])==12 and len(r['selector_summaries'])==8 and len(r['fold_diagnostics'])==5
+          assert r['blind_exclusion']==[20.0,55.0] and r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['sonotaco_2013_2014_access'] is False and r['amos_scientific_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['supersedes_frozen_amos_endpoint'] is False and r['post_result_parameter_search'] is False
+          for p in r['panels']:
+            for k in ('parent_equal_budget','successor_equal_budget'):
+              m=p[k]
+              assert m['eligible_label_count'] >= m['recovered_label_count'] == m['qualified_matches']
+              assert 0.0 <= m['mrr_zero_filled'] <= m['mrr'] + 1e-15 or m['qualified_matches']==m['eligible_label_count']
+          print(r['verdict'])
+          print(json.dumps({'candidate_capacity_all_panels':r['candidate_capacity_all_panels'],'selector_summaries':r['selector_summaries'],'scales':r['scale_aggregates'],'gates':r['gates'],'selected_capacities':[x['selected_capacity'] for x in r['fold_diagnostics']]},indent=2,sort_keys=True))
+          PY
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_topomodal_representative_share_oof_v1/PROTOCOL.md orbittrace_topomodal_representative_share_oof_v1/train_evaluate.py orbittrace_topomodal_representative_share_oof_v1/TECHNICAL_REPAIR_01.md orbittrace_topomodal_representative_share_oof_v1/technical_repair_01_wrapper.py orbittrace_topomodal_supervised_antichain_oof_v1/train_evaluate.py input/predecessor/TOPOMODAL_SUPERVISED_ANTICHAIN_OOF_V1_PRETRUTH.json output/TOPOMODAL_REPRESENTATIVE_SHARE_OOF_V1.json > output/source_input_output_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-topomodal-representative-share-oof-v1-repair01
+          path: output
+          if-no-files-found: error
+          retention-days: 90
