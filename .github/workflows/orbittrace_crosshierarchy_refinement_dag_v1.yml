@@ -1,0 +1,142 @@
+name: OrbitTrace cross-hierarchy refinement DAG v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-crosshierarchy-refinement-dag-v1-activate
+    paths:
+      - 'orbittrace_crosshierarchy_refinement_dag_v1/ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  structural:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-topomodal-support-resolved-cut-v1
+          path: support-cut-src
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-topomodal-hierarchy-scale-v1
+          path: structural-src
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit frozen science and install exact runtime
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_crosshierarchy_refinement_dag_v1/PROTOCOL.md)" = '5cb9e22eacb608706381d84324c27ad3e4fb9019'
+          test "$(git hash-object orbittrace_crosshierarchy_refinement_dag_v1/run_structural.py)" = '4a45d8ab4b2237ddcbc4e1d0bf0f8a01dba15bf0'
+          test "$(git -C support-cut-src hash-object orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py)" = '4988997c023d9df2b504372b4290dcab379a6dcc'
+          test "$(git -C structural-src hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          python -m py_compile orbittrace_crosshierarchy_refinement_dag_v1/run_structural.py
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/{ranker,v8,v3,pareto} output/structural
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py >/dev/null && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: '${{ github.token }}'
+          repository: '${{ github.repository }}'
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: '${{ github.token }}'
+          repository: '${{ github.repository }}'
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-topomodal-pareto-prominence-v1-pretruth
+          path: input/pareto
+          github-token: '${{ github.token }}'
+          repository: '${{ github.repository }}'
+          run-id: 32077260440
+      - name: Rebind immutable inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          test "$(sha256sum input/pareto/RECURRENT_TOPOMODAL_PARETO_PROMINENCE_V1_PRELABEL.json | cut -d' ' -f1)" = '5752ef8b36a5d317455e649723c26692fe2636262dc6d74befbe2ffb95945310'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('orbittrace_crosshierarchy_refinement_dag_v1/EXECUTION_FREEZE.json')
+          x=json.loads(p.read_text())
+          assert x['protocol_blob']=='5cb9e22eacb608706381d84324c27ad3e4fb9019'
+          assert x['runner_blob']=='4a45d8ab4b2237ddcbc4e1d0bf0f8a01dba15bf0'
+          assert x['truth_stage_authorized'] is False
+          assert x['protected_interval']==[20.0,55.0]
+          PY
+      - name: Run frozen zero-label structural diagnostic
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3
+        run: |
+          set -euo pipefail
+          python -u orbittrace_crosshierarchy_refinement_dag_v1/run_structural.py \
+            --support-cut-generator support-cut-src/orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py \
+            --structural-runner structural-src/orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --pareto-prelabel input/pareto/RECURRENT_TOPOMODAL_PARETO_PROMINENCE_V1_PRELABEL.json \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output/structural
+      - name: Enforce zero-label result and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p='output/structural/CROSSHIERARCHY_REFINEMENT_DAG_V1_RESULT.json'
+          x=json.load(open(p))
+          assert x['verdict'] in {'SUPPORTS_CROSSHIERARCHY_REFINEMENT_DAG_V1','REFUTES_CROSSHIERARCHY_REFINEMENT_DAG_V1'}
+          assert x['shower_truth_used'] is False
+          assert x['target_information_access'] is False
+          assert x['target_region_events_accessed'] is False
+          assert x['external_scientific_access'] is False
+          assert x['post_result_parameter_search'] is False
+          assert len(x['transitions'])==8
+          assert len(x['panel_audit'])==12
+          print(json.dumps({'verdict':x['verdict'],'gates':x['gates'],'aggregate':x['aggregate']},indent=2,sort_keys=True))
+          PY
+          printf '%s\n' "$GITHUB_SHA" > output/structural/execution_commit.txt
+          printf '%s\n' "$GITHUB_RUN_ID" > output/structural/execution_run_id.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-crosshierarchy-refinement-dag-v1
+          path: output/structural
+          if-no-files-found: error
+          retention-days: 90
