@@ -1,0 +1,40 @@
+name: Observe Pareto parent-set unanimous binding
+on:
+  pull_request:
+    branches: [agent/orbittrace-pareto-parent-set-unanimous-v1]
+    paths: ['ORBITTRACE_PARENT_SET_STATUS.md']
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+jobs:
+  observe:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Observe exact activation run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TARGET_SHA: 721f4d08f89f1038ea9eb3f2ea021337f2cb3856
+        run: |
+          set -euo pipefail
+          data=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs?branch=agent%2Forbittrace-pareto-parent-set-unanimous-v1&per_page=100")
+          row=$(echo "$data" | jq -c --arg sha "$TARGET_SHA" '[.workflow_runs[] | select(.head_sha==$sha and .name=="OrbitTrace Pareto parent-set unanimous v1")][0] // empty')
+          test -n "$row"
+          id=$(echo "$row" | jq -r .id)
+          echo "BINDING_RUN_ID=$id"
+          for i in $(seq 1 120); do
+            r=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/$id")
+            st=$(echo "$r"|jq -r .status); co=$(echo "$r"|jq -r '.conclusion // ""')
+            echo "BINDING_STATUS=$st conclusion=$co"
+            [ "$st" = completed ] && break
+            sleep 15
+          done
+          jobs=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/$id/jobs?per_page=100")
+          echo "$jobs" | jq -c '.jobs[]|{id,name,status,conclusion,steps:[.steps[]|{name,status,conclusion}]}'
+          arts=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/actions/runs/$id/artifacts?per_page=100")
+          echo "$arts" | jq -c '.artifacts[]|{id,name,size_in_bytes,digest,expired}'
+          body=$(printf 'Read-only observer. Binding run `%s` reached `%s` / `%s`.\n\n```json\n%s\n```\n' "$id" "$st" "$co" "$(echo "$jobs"|jq -c '[.jobs[]|{id,name,status,conclusion}]')")
+          curl -fsSL -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/issues/$PR/comments" -d "$(jq -n --arg body "$body" '{body:$body}')" >/dev/null
+          test "$st" = completed
