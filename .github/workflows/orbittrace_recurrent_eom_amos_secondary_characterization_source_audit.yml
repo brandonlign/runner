@@ -1,0 +1,54 @@
+name: OrbitTrace recurrent-EOM AMOS secondary source audit
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-recurrent-eom-amos-secondary-characterization-v1
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify frozen source identities and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_recurrent_eom_amos_secondary_characterization_v1/PROTOCOL.md)" = '84ed2264583e5af23a53a19a51546eead82ac274'
+          test "$(git hash-object orbittrace_recurrent_eom_amos_secondary_characterization_v1/adjudicate_primary_result.py)" = '1350dc5df5c1af292721906fc85fb8179757867f'
+          python -m py_compile orbittrace_recurrent_eom_amos_secondary_characterization_v1/adjudicate_primary_result.py
+      - name: Verify single-endpoint characterization contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_recurrent_eom_amos_secondary_characterization_v1/PROTOCOL.md').read_text()
+          s=Path('orbittrace_recurrent_eom_amos_secondary_characterization_v1/adjudicate_primary_result.py').read_text()
+          assert 'same single pristine AMOS 2023/2024 receipt' in p
+          assert 'does not create a second external chance' in p
+          assert '12 mandatory booleans' in p
+          assert 'PASS_RECURRENT_EOM_HDBSCAN_V1_AMOS_2023_2024_EXTERNAL_CHARACTERIZATION' in p
+          assert 'FAIL_RECURRENT_EOM_HDBSCAN_V1_AMOS_2023_2024_EXTERNAL_CHARACTERIZATION' in p
+          tree=ast.parse(s)
+          vals={}
+          for node in tree.body:
+              if isinstance(node, ast.Assign) and len(node.targets)==1 and isinstance(node.targets[0], ast.Name):
+                  try: vals[node.targets[0].id]=ast.literal_eval(node.value)
+                  except Exception: pass
+          assert vals['UPSTREAM_EVALUATOR_BLOB']=='c45e4739ea68639945b13de54f6e24dc9d870ba3'
+          assert vals['RECURRENT_KERNEL_BLOB']=='30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          assert vals['RECURRENT_RUNNER_BLOB']=='fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          assert vals['PASS']=='PASS_RECURRENT_EOM_HDBSCAN_V1_AMOS_2023_2024_EXTERNAL_CHARACTERIZATION'
+          assert vals['FAIL']=='FAIL_RECURRENT_EOM_HDBSCAN_V1_AMOS_2023_2024_EXTERNAL_CHARACTERIZATION'
+          print('PASS_RECURRENT_EOM_AMOS_SECONDARY_SOURCE_AUDIT')
+          PY
