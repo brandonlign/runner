@@ -21,9 +21,9 @@ The pooled 2013+2014 event geometry is label-free and identical for every method
 
 Exact recurrent-EOM objective and GEO6 representation. Search only HDBSCAN finite-support settings:
 
-`(min_cluster_size,min_samples) = (5,5), (10,5), (10,10), (20,10), (20,20), (40,20), (40,40), (80,40), (80,80)`.
+`(min_cluster_size,min_samples) = (5,5), (10,5), (10,10), (20,10), (20,20), (40,20), (40,40), (50,25), (50,50), (80,40), (80,80), (100,50), (100,100)`.
 
-The recurrence combiner remains the published/frozen annual minimum; it is not changed.
+The recurrence combiner remains the published/frozen annual minimum; it is not changed. The `(100,100)` point is retained so the search explicitly contains the scale used by the published catalogue-HDBSCAN configuration.
 
 ### catalogue HDBSCAN
 
@@ -33,7 +33,7 @@ Use the frozen 2025 comparator feature transform. Search the same finite-support
 
 Use the frozen Sugar uncertainty source, six-dimensional feature transform, Gaussian uncertainty clones, overlap merger, hard assignment, fourth-neighbour calculation, and DBSCAN implementation. Keep `min_samples=5`, and search the dataset-dependent fourth-neighbour epsilon percentile over:
 
-`10, 15, 20, 23, 25, 30, 35` percent.
+`5, 10, 15, 20, 23, 25, 30, 35, 40, 45, 50` percent.
 
 Use 100 uncertainty-clone catalogues during development-grid selection and 1000 clones for the final selected configuration in each fold. The final 1000-clone rerun is label-free and occurs only after the percentile has been selected from the development year.
 
