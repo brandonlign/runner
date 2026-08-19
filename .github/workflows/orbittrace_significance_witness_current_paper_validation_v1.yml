@@ -1,0 +1,180 @@
+name: OrbitTrace significance-witness current-paper validation
+
+on:
+  push:
+    branches: [agent/orbittrace-significance-witness-macrof1-v1-paper-contingency]
+    paths: ['orbittrace_significance_witness_macrof1_v1/PAPER_VALIDATION_ACTIVATE.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth:
+    strategy:
+      fail-fast: false
+      matrix:
+        route: [sugar, hdbscan]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-significance-witness-macrof1-v1-paper-contingency
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'gudhi==3.12.0'
+          test "$(sha256sum orbittrace_significance_witness_macrof1_v1/paper_validation.py | cut -d' ' -f1)" = 'cafef458560d9bd98f24c38306a8c88cb87103e2219b90ef85fc78d9ed239501'
+          test "$(git hash-object orbittrace_significance_witness_macrof1_v1/PROTOCOL.md)" = '2bf554e9d1798e119433e385a3858847b681f6fa'
+          test "$(git hash-object orbittrace_significance_witness_macrof1_v1/PAPER_VALIDATION_CONTINGENCY.md)" = 'bb091b3b72e03ec8f1aa6643179a9a40812fd79d'
+          python -m py_compile orbittrace_significance_witness_macrof1_v1/paper_validation.py
+          mkdir -p input/rows input/recurrent input/gmn output
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-significance-witness-macrof1-v1-gmn-32229859079
+          path: input/gmn
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32229859079
+      - name: Require prospective GMN promotion PASS
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/gmn/RESULT.json | cut -d' ' -f1)" = '5fe9b8a4a213e06e310a141a1e1e7ab1f168cf3a825e5a6f2758ab80025f409f'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/gmn/RESULT.json'))
+          assert r['verdict']=='PASS_SIGNIFICANCE_WITNESS_MACROF1_V1_GMN'
+          assert all(r['gates'].values())
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/recurrent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+      - name: Construct and seal route pretruth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_significance_witness_macrof1_v1/paper_validation.py pretruth \
+            --route '${{ matrix.route }}' \
+            --rows-root input/rows \
+            --recurrent input/recurrent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --output output/SIGNIFICANCE_WITNESS_${{ matrix.route }}_PRETRUTH.json
+          sha256sum output/SIGNIFICANCE_WITNESS_${{ matrix.route }}_PRETRUTH.json > output/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json,glob
+          p=json.load(open(glob.glob('output/*_PRETRUTH.json')[0]))
+          assert p['truth_accessed'] is False
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['rows']['B']==199 and p['rows']['alpha']==0.05
+          assert p['witness']['mechanism_active'] is True
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-significance-witness-paper-pretruth-${{ matrix.route }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  evaluate:
+    needs: pretruth
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-significance-witness-macrof1-v1-paper-contingency
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-sonotaco-temporal-fairness-correction-v1
+          path: paper-benchmark
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install 'numpy==2.1.3' 'scipy==1.14.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-significance-witness-paper-pretruth-sugar
+          path: input/pretruth/sugar
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-significance-witness-paper-pretruth-hdbscan
+          path: input/pretruth/hdbscan
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Run binding exact current-paper evaluation
+        run: |
+          set -euo pipefail
+          test "$(git -C paper-benchmark hash-object orbittrace_temporal_fair_literature_v1/RESULT.json)" = '1ac067658d7a1d99b1a276099ca6d3fee83a6c0b'
+          mkdir -p output
+          python -u orbittrace_significance_witness_macrof1_v1/paper_validation.py evaluate \
+            --pretruth-root input/pretruth \
+            --truth-root input/truth \
+            --paper-result paper-benchmark/orbittrace_temporal_fair_literature_v1/RESULT.json \
+            --output output/PAPER_VALIDATION_RESULT.json
+          sha256sum output/PAPER_VALIDATION_RESULT.json > output/RESULT_SHA256.txt
+      - name: Record binding result on branch and PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp output/PAPER_VALIDATION_RESULT.json orbittrace_significance_witness_macrof1_v1/PAPER_VALIDATION_RESULT.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_significance_witness_macrof1_v1/PAPER_VALIDATION_RESULT.json
+          git commit -m 'Record binding significance-witness paper validation result'
+          git push origin HEAD:agent/orbittrace-significance-witness-macrof1-v1-paper-contingency
+          python - <<'PY' > /tmp/result-comment.md
+          import json
+          r=json.load(open('output/PAPER_VALIDATION_RESULT.json'))
+          print('## Binding current-paper validation result')
+          print('')
+          print('`'+r['verdict']+'`')
+          print('')
+          print('| Panel | Successor macro-F1 | Recurrent | Literature | Recovered |')
+          print('|---|---:|---:|---:|---:|')
+          for p in r['panels']:
+            s=p['successor'];rec=p['recurrent'];lit=p['literature']
+            print(f"| {p['route']} {p['year']} (B={p['budget']}) | {s['macro_f1']:.6f} | {rec['macro_f1']:.6f} | {lit['macro_f1']:.6f} | {s['recovered_f1_gt_0_5']} |")
+          print('')
+          print('Mean macro-F1: successor %.6f vs recurrent %.6f.'%(r['successor_mean_macro_f1'],r['recurrent_mean_macro_f1']))
+          print('All frozen gates: '+str(r['gates']))
+          PY
+          gh pr comment 1371 --repo "$GITHUB_REPOSITORY" --body-file /tmp/result-comment.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-significance-witness-current-paper-validation-binding
+          path: output
+          if-no-files-found: error
+          retention-days: 90
