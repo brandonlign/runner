@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Execution retrigger only: exact reveal logic unchanged.
 from __future__ import annotations
 
 import argparse
