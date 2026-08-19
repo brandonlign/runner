@@ -1,0 +1,136 @@
+name: OrbitTrace internal-mass SonotaCo development v1 prep relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-internal-mass-sonotaco-development-v1-prep
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  BENCH_BRANCH: agent/orbittrace-internal-mass-sonotaco-development-v1
+
+jobs:
+  prep:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1372 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_INTERNAL_MASS_SONOTACO_DEVELOPMENT_V1_PREP'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1372 --repo "${{ github.repository }}" --body "ORBITTRACE_INTERNAL_MASS_SONOTACO_PREP_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind frozen prep head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'f186396907a1063ee815ffe5c0b79f8abf72f07c'
+          test "$(git hash-object orbittrace_internal_mass_sonotaco_development_v1/PROTOCOL.md)" = 'b64e02193a1c93f562bc7a3306c7b3b8d222809c'
+          test "$(git hash-object orbittrace_internal_mass_sonotaco_development_v1/prepare_pretruth.py)" = 'bcd11af6fca454c2475b08b4259155da827f2ba7'
+          test "$(git hash-object orbittrace_symmetric_tuned_literature_v2/run_benchmark.py)" = 'd9b2af130580b74ca97e549d474860869e01a502'
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-topomodal-support-resolved-cut-v1
+          path: support-method
+          fetch-depth: 1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-topomodal-hierarchy-scale-v1
+          path: structural-method
+          fetch-depth: 1
+
+      - name: Verify exact method sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object support-method/orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py)" = '4988997c023d9df2b504372b4290dcab379a6dcc'
+          test "$(git hash-object structural-method/orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/rows output
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Generate zero-label support and graph feasibility pretruth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_internal_mass_sonotaco_development_v1/prepare_pretruth.py \
+            --rows-root input/rows \
+            --benchmark-module orbittrace_symmetric_tuned_literature_v2/run_benchmark.py \
+            --support-source support-method/orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py \
+            --structural-source structural-method/orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            --output output
+
+      - name: Enforce zero-label firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p=json.load(open('output/INTERNAL_MASS_SONOTACO_DEVELOPMENT_V1_PRETRUTH_SUPPORT.json'))
+          assert p['schema']=='ORBITTRACE_INTERNAL_MASS_SONOTACO_DEVELOPMENT_V1_PRETRUTH_SUPPORT'
+          assert p['scientific_role']=='ZERO_LABEL_FIXED_CANDIDATE_AND_GRAPH_FEASIBILITY'
+          assert p['candidate_count']==888
+          assert p['truth_used'] is False and p['shower_labels_accessed'] is False
+          assert p['post_result_parameter_search'] is False
+          assert p['universe']['common_counts']=={'2013':15988,'2014':13258}
+          print(json.dumps({'candidate_count':p['candidate_count'],'covered_event_count':p['covered_event_count'],'annual_density_diagnostics':p['annual_density_diagnostics']},indent=2,sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-internal-mass-sonotaco-development-v1-prep-${{ github.run_id }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1372 --repo "${{ github.repository }}" --body "ORBITTRACE_INTERNAL_MASS_SONOTACO_PREP_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1372 --repo "${{ github.repository }}" --body "ORBITTRACE_INTERNAL_MASS_SONOTACO_PREP_FAILED=${GITHUB_RUN_ID}"
