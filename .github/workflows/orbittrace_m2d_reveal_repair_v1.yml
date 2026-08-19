@@ -1,0 +1,137 @@
+name: OrbitTrace M2D reveal-only repair v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-support-cut-bifiltration-internal-mass-gmn-v1
+    paths:
+      - orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids_repair.py
+      - .github/workflows/orbittrace_m2d_reveal_repair_v1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: orbittrace-m2d-reveal-only-repair-20260819-v1
+  cancel-in-progress: false
+
+jobs:
+  reveal-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PRETRUTH_ARTIFACT_ID: '9376851894'
+      PRETRUTH_ARTIFACT_ZIP_SHA256: '5f5b4c1b76a17828e96ccba59415fdf2a4e428ae1f14fb10f8bf86dc678a2c59'
+      PRETRUTH_GZIP_SHA256: '6d72b0f9558b89228953dd73b3760c61df039b713f233473079ae4fac563a100'
+      PRETRUTH_INNER_SHA256: '7ff3b13bc45e19b4b886453b4d8cc3b4f18090bf8a2291e39850540fd69b5e53'
+      CANONICAL_ARTIFACT_ID: '8814798136'
+      CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify reveal-only source contract
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids_repair.py
+          grep -F "scientific_scan_reexecuted\": False" orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids_repair.py
+          grep -F "exact unique_trajectory_identifier set intersection only" orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids_repair.py
+          mkdir -p input/pretruth output
+
+      - name: Retrieve exact already-frozen M2D pretruth artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PRETRUTH_ARTIFACT_ID}/zip" \
+            -o input/pretruth.zip
+          echo "${PRETRUTH_ARTIFACT_ZIP_SHA256}  input/pretruth.zip" | sha256sum -c -
+          unzip -q input/pretruth.zip -d input/pretruth
+          echo "${PRETRUTH_GZIP_SHA256}  input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz" | sha256sum -c -
+          python - <<'PY'
+          import gzip,hashlib
+          p='input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz'
+          raw=gzip.decompress(open(p,'rb').read())
+          assert hashlib.sha256(raw).hexdigest()=='7ff3b13bc45e19b4b886453b4d8cc3b4f18090bf8a2291e39850540fd69b5e53'
+          print('frozen pretruth inner SHA verified')
+          PY
+
+      - name: Retrieve exact canonical artifact after pretruth verification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" \
+            -o input/canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/canonical.zip" | sha256sum -c -
+
+      - name: Run exact-ID-only reveal repair
+        run: |
+          set -euo pipefail
+          python orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids_repair.py \
+            --pretruth input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            --canonical-zip input/canonical.zip \
+            --output output
+          cat output/M2D_BLIND_REVEAL_REPAIR.md
+
+      - name: Enforce frozen verdict fields
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/M2D_BLIND_REVEAL_REPAIR.json'))
+          assert r['scientific_scan_reexecuted'] is False
+          assert r['reveal_repair_only'] is True
+          assert r['pretruth_gzip_sha256']=='6d72b0f9558b89228953dd73b3760c61df039b713f233473079ae4fac563a100'
+          assert r['pretruth_inner_sha256']=='7ff3b13bc45e19b4b886453b4d8cc3b4f18090bf8a2291e39850540fd69b5e53'
+          assert r['candidate_count']==8469
+          assert r['verdict'] in {'FULL_M2D_BLIND_ORBITTRACE_REDISCOVERY','PARTIAL_M2D_BLIND_ORBITTRACE_REDISCOVERY','NO_M2D_BLIND_ORBITTRACE_REDISCOVERY'}
+          print(json.dumps(r,indent=2,sort_keys=True))
+          PY
+
+      - name: Record reveal provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids_repair.py \
+            input/pretruth.zip \
+            input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            input/canonical.zip \
+            output/M2D_BLIND_REVEAL_REPAIR.json \
+            > output/REVEAL_REPAIR_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/reveal_repair_commit.txt
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-reveal-only-repair-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post binding reveal repair result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -s output/M2D_BLIND_REVEAL_REPAIR.md; then
+            gh pr comment 1378 --repo "$GITHUB_REPOSITORY" --body-file output/M2D_BLIND_REVEAL_REPAIR.md
+          else
+            gh pr comment 1378 --repo "$GITHUB_REPOSITORY" --body "M2D reveal-only repair failed before producing an exact-ID result. Frozen pretruth was not modified. Workflow: $GITHUB_RUN_ID"
+          fi

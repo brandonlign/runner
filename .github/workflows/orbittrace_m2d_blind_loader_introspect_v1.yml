@@ -1,0 +1,58 @@
+name: OrbitTrace M2D blind loader introspection v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-m2d-blind-rediscovery-v1
+    paths:
+      - .github/workflows/orbittrace_m2d_blind_loader_introspect_v1.yml
+      - orbittrace_m2d_blind_rediscovery_v1/INTROSPECT_RUN.md
+  pull_request:
+    branches:
+      - agent/orbittrace-support-cut-bifiltration-internal-mass-gmn-v1
+    paths:
+      - .github/workflows/orbittrace_m2d_blind_loader_introspect_v1.yml
+      - orbittrace_m2d_blind_rediscovery_v1/INTROSPECT_RUN.md
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode audited four-part blind source and inspect loader interfaces only
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/introspection.txt
+          import ast, base64, gzip, pathlib
+          root=pathlib.Path('orbittrace_fixed4_blind_catalogue/source_parts')
+          parts=sorted(root.glob('part*.b64'))
+          if [p.name for p in parts] != [f'part{i:02d}.b64' for i in range(4)]:
+              raise RuntimeError(f'wrong source parts: {[p.name for p in parts]}')
+          enc=''.join(''.join(p.read_text().split()) for p in parts)
+          raw=gzip.decompress(base64.b64decode(enc, validate=True))
+          text=raw.decode()
+          forbidden=['april_candidate_members.csv','247.17','-14.34','37.62','OrbitTrace-April-36.9']
+          hit=[x for x in forbidden if x in text]
+          if hit: raise RuntimeError(f'target strings in blind source: {hit}')
+          tree=ast.parse(text)
+          print('SOURCE_BYTES',len(raw))
+          wanted=['parse_catalogue','read_gmn_frame','scan_year','build_families','main']
+          funcs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          for name in wanted:
+              if name not in funcs: raise RuntimeError(f'missing {name}')
+              node=funcs[name]
+              print('\n###',name)
+              print(ast.get_source_segment(text,node)[:16000])
+          PY
+          cat /tmp/introspection.txt
+      - name: Comment PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1378 --repo "$GITHUB_REPOSITORY" --body-file /tmp/introspection.txt
