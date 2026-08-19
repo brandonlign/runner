@@ -1,0 +1,113 @@
+name: OrbitTrace significance-witness macro-F1 v1 prelabel relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-significance-witness-macrof1-v1
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  BENCH_BRANCH: agent/orbittrace-significance-witness-macrof1-v1
+  FROZEN_HEAD: 06c2005afd118203fcb407e0dbe4f5746d307761
+
+jobs:
+  prelabel:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1370 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1370 --repo "${{ github.repository }}" --body "ORBITTRACE_SIGNIFICANCE_WITNESS_PRELABEL_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind frozen method before source prelabel access
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${FROZEN_HEAD}"
+          test ! -e orbittrace_significance_witness_macrof1_v1/SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL.json
+          test ! -e orbittrace_significance_witness_macrof1_v1/RESULT.json
+          test "$(git hash-object orbittrace_significance_witness_macrof1_v1/PROTOCOL.md)" = '2bf554e9d1798e119433e385a3858847b681f6fa'
+          test "$(git hash-object orbittrace_significance_witness_macrof1_v1/build_prelabel.py)" = '7a81aa882960aa87d1d0a06c65f699bdb941cf81'
+          test "$(git hash-object orbittrace_significance_witness_macrof1_v1/evaluate_macrof1.py)" = 'f27d74f239c43bdb97f2f6cfd46333b91b540e38'
+          mkdir -p input/source output
+
+      - name: Download immutable significance-pruned prelabel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-significance-pruned-topomodal-v1
+          path: input/source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31969105299
+
+      - name: Build frozen significance-witness prelabel
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/source/SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL.json | awk '{print $1}')" = 'bb5f071e19a39297170730985c65181a05ca92dbe7b366f1a84e77d99e074a9a'
+          python -u orbittrace_significance_witness_macrof1_v1/build_prelabel.py \
+            --source-prelabel input/source/SIGNIFICANCE_PRUNED_TOPOMODAL_V1_PRELABEL.json \
+            --output output
+          test -f output/SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL.json
+          sha256sum output/SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL.json | tee output/PRELABEL_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL.json'))
+          assert p['shower_truth_used'] is False
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['sonotaco_2013_2014_access'] is False
+          assert p['candidate_budget_sufficient_all_panels'] is True
+          assert p['pairwise_disjoint_all_panels'] is True
+          assert p['mechanism_active_any_panel'] is True
+          print('PASS_SIGNIFICANCE_WITNESS_PRELABEL')
+          PY
+
+      - name: Upload immutable prelabel
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-significance-witness-macrof1-v1-prelabel-${{ github.run_id }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit immutable prelabel
+        run: |
+          set -euo pipefail
+          cp output/SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL.json orbittrace_significance_witness_macrof1_v1/SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL.json
+          cp output/PRELABEL_SHA256.txt orbittrace_significance_witness_macrof1_v1/PRELABEL_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_significance_witness_macrof1_v1/SIGNIFICANCE_WITNESS_MACROF1_V1_PRELABEL.json orbittrace_significance_witness_macrof1_v1/PRELABEL_SHA256.txt
+          git commit -m 'Record significance-witness macro-F1 prelabel'
+          git push origin HEAD:"${BENCH_BRANCH}"
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1370 --repo "${{ github.repository }}" --body "ORBITTRACE_SIGNIFICANCE_WITNESS_PRELABEL_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1370 --repo "${{ github.repository }}" --body "ORBITTRACE_SIGNIFICANCE_WITNESS_PRELABEL_FAILED=${GITHUB_RUN_ID}"
