@@ -93,6 +93,7 @@ def main() -> int:
         subprocess.run(cmd, check=True)
         raw = json.loads(raw_path.read_text())
 
+    req(raw.get("flat_envelope_exactly_support_pruned") is True, "flat envelope identity changed in frozen ECT evaluator")
     flat_gates = dict(raw["flat_envelope_gates"])
     core_gates = dict(raw["core_gates"])
     verdict = "PASS_ENVELOPE_MULTICORE_UNION_V1_GMN_DEVELOPMENT" if all(flat_gates.values()) and all(core_gates.values()) else "FAIL_ENVELOPE_MULTICORE_UNION_V1_GMN_DEVELOPMENT"
@@ -105,12 +106,13 @@ def main() -> int:
         "frozen_ect_evaluator_sha256": ECT_EVALUATOR_SHA,
         "flat_envelope_exactly_support_pruned": raw["flat_envelope_exactly_support_pruned"],
         "flat_envelope_gates": flat_gates,
-        "flat_routes": raw["flat_routes"],
-        "flat_scales": raw["flat_scales"],
+        "flat_envelope_routes": raw["flat_envelope_routes"],
+        "flat_envelope_scales": raw["flat_envelope_scales"],
+        "core_pair_selection": raw["core_pair_selection"],
         "core_routes": raw["core_routes"],
         "core_scales": raw["core_scales"],
         "core_gates": core_gates,
-        "paired_comparisons": raw["paired_comparisons"],
+        "paired_rows": raw["paired_rows"],
         "size_summary": pre["size_summary"],
         "mechanism_summary": pre["mechanism_summary"],
         "structural_gates": pre["structural_gates"],
