@@ -1,0 +1,161 @@
+name: OrbitTrace fixed TopoModal SonotaCo transfer v1 relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-fixed-topomodal-sonotaco-transfer-v1
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  BENCH_BRANCH: agent/orbittrace-topomodal-sonotaco-transfer-v1
+
+jobs:
+  benchmark:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1369 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_FIXED_TOPOMODAL_SONOTACO_TRANSFER_V1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1369 --repo "${{ github.repository }}" --body "ORBITTRACE_FIXED_TOPOMODAL_TRANSFER_RUN_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind benchmark head and evaluator
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'd0c7e6025624823227f80d891475624644c23ad4'
+          test "$(git hash-object orbittrace_fixed_topomodal_sonotaco_transfer_v1/PROTOCOL.md)" = '483140a6131e875ceca529ff21fc1ad835012485'
+          test "$(git hash-object orbittrace_fixed_topomodal_sonotaco_transfer_v1/evaluate.py)" = '1346768a680ba154609239381ba9159ca1661f43'
+          test "$(git hash-object orbittrace_symmetric_tuned_literature_v2/run_benchmark.py)" = 'd9b2af130580b74ca97e549d474860869e01a502'
+          test "$(git hash-object orbittrace_symmetric_tuned_literature_v2/RESULT.json)" = 'f58d796d8c2da1b1e2b825e67d808379986e31bd'
+          python -m py_compile orbittrace_fixed_topomodal_sonotaco_transfer_v1/evaluate.py
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-topomodal-support-resolved-cut-v1
+          path: support-method
+          fetch-depth: 1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-topomodal-hierarchy-scale-v1
+          path: structural-method
+          fetch-depth: 1
+
+      - name: Verify exact transferred method sources
+        run: |
+          set -euo pipefail
+          test "$(git hash-object support-method/orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py)" = '4988997c023d9df2b504372b4290dcab379a6dcc'
+          test "$(git hash-object structural-method/orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frozen numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/rows input/truth output
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Execute binding fixed transfer
+        run: |
+          set -euo pipefail
+          python -u orbittrace_fixed_topomodal_sonotaco_transfer_v1/evaluate.py \
+            --rows-root input/rows \
+            --truth-root input/truth \
+            --benchmark-module orbittrace_symmetric_tuned_literature_v2/run_benchmark.py \
+            --benchmark-result orbittrace_symmetric_tuned_literature_v2/RESULT.json \
+            --support-source support-method/orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py \
+            --structural-source structural-method/orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            --output output
+
+      - name: Enforce binding result
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/FIXED_TOPOMODAL_SONOTACO_TRANSFER_V1.json'))
+          assert r['schema']=='ORBITTRACE_FIXED_TOPOMODAL_SONOTACO_TRANSFER_V1'
+          assert r['scientific_role']=='FIXED_GMN_DEVELOPED_METHOD_TO_SONOTACO_COMMON_UNIVERSE_TRANSFER'
+          assert r['verdict'] in {'PASS_FIXED_TOPOMODAL_SONOTACO_TRANSFER_V1','FAIL_FIXED_TOPOMODAL_SONOTACO_TRANSFER_V1'}
+          assert r['method']['sonotaco_tuning'] is False
+          assert r['sonotaco_labels_used_for_method_selection'] is False
+          assert r['post_result_parameter_search'] is False
+          assert r['universe']['common_counts']=={'2013':15988,'2014':13258}
+          assert sum(r['universe']['common_counts'].values())==29246
+          print(r['verdict'])
+          print(json.dumps({'aggregate':r['aggregate'],'ranking':r['ranking'],'delta':r['strict_auc_delta_vs_tuned_hdbscan']},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_fixed_topomodal_sonotaco_transfer_v1/PROTOCOL.md orbittrace_fixed_topomodal_sonotaco_transfer_v1/evaluate.py output/FIXED_TOPOMODAL_SONOTACO_PRETRUTH.json output/FIXED_TOPOMODAL_SONOTACO_TRANSFER_V1.json > output/provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-fixed-topomodal-sonotaco-transfer-v1-${{ github.run_id }}
+          path: output
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1369 --repo "${{ github.repository }}" --body "ORBITTRACE_FIXED_TOPOMODAL_TRANSFER_RUN_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1369 --repo "${{ github.repository }}" --body "ORBITTRACE_FIXED_TOPOMODAL_TRANSFER_RUN_FAILED=${GITHUB_RUN_ID}"
