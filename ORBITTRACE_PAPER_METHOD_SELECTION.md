@@ -105,19 +105,27 @@ The canonical OrbitTrace/GhostStream target was already opened in the separately
 
 That result is **targeted independent recovery evidence for the fixed-4° detector**, not evidence used to select or tune recurrent-EOM, and not a blind catalogue rediscovery. It must not be imported into recurrent-EOM development or method selection.
 
+## Separate sparse-sample robustness result
+
+Fixed-scale native TopoModal is retained as the sparse/sample-size robustness result. Its frozen GMN stress panels materially improved qualified recovery and dominant precision at both ~0.7k and ~5.8k scales, with no qualified-recovery loss across the frozen bucket-year panels. Later dense-scale TopoModal/Pareto translations failed their frozen gates.
+
+Accordingly, TopoModal is **not** a replacement for recurrent-EOM at full catalogue scale and does not reopen method selection.
+
 ## Closed paths
 
 Do not restart:
 
 - the #1263 density-sync successor search;
 - alternate density-sync weights/minima/alignment/smoothing/blends;
+- dense-scale TopoModal rescue variants;
 - external-dataset shopping;
-- result-informed parameter or threshold rescue.
+- result-informed parameter or threshold rescue;
+- post-target-reveal tuning.
 
-AMOS is no longer a method-selection exercise. The already-frozen one-shot AMOS endpoint is reserved only for the unresolved pristine cross-survey generalization question.
+The historical AMOS #1268/#1351 preregistrations are now **ABANDONED / UNEXECUTED BY PROJECT DECISION**. No AMOS rows or labels were opened, no request was sent, and no AMOS result exists. They remain provenance only, not a pending endpoint or paper blocker, and no replacement survey is authorized as a rescue for pristine generalization.
 
-Further OrbitTrace work should treat recurrent-EOM as fixed and focus on characterization, comparison, figures, manuscript claims, and the already-preregistered AMOS test rather than another methodology-search loop.
+Further work for the current paper should treat recurrent-EOM and fixed-scale TopoModal as frozen in their respective roles and focus only on figures, tables, manuscript consistency, submission/layout QA, and claim-to-evidence integrity.
 
 ## Scientific firewall
 
-The canonical target interval `[20°,55°]` was opened only in the historically frozen fixed-4° targeted application (PR #153). Recurrent-EOM development, literature comparison, SonotaCo method selection, and the AMOS endpoint remain target-excluded: no OrbitTrace target event, label, coordinate, or protected-region result may be used to alter recurrent-EOM or its gates. MAARSY and DMS remain scientifically inaccessible. AMOS scientific rows and labels remain unopened.
+The canonical target interval `[20°,55°]` was opened only in the historically frozen fixed-4° targeted application (PR #153). Recurrent-EOM development, literature comparison, and SonotaCo method selection remained target-excluded: no OrbitTrace target event, label, coordinate, or protected-region result may be used to alter recurrent-EOM or its gates. MAARSY and DMS remain scientifically inaccessible. AMOS scientific rows and labels were never opened and the AMOS acquisition lane is closed.
