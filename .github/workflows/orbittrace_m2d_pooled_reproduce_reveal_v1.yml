@@ -35,6 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: a5dd599ac94ce3c2597755be6c40c945f95929f8
+          path: m2d-reference
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -55,9 +61,9 @@ jobs:
           test "$(git hash-object orbittrace_m2d_blind_rediscovery_v1/run_scan.py)" = '3def559978444e9bde1eab9cf9c3d47b8cbb2944'
           test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
           test "$(git hash-object orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py)" = '4988997c023d9df2b504372b4290dcab379a6dcc'
-          test "$(sha256sum orbittrace_m2d_blind_rediscovery_v1/internal_mass_exact.cpp | cut -d' ' -f1)" = '4eef6f1b70b5baee5d1983d2480c02d73569b12af868ec23bbb6009d6ca1fa37'
+          test "$(sha256sum m2d-reference/orbittrace_internal_mass_sonotaco_development_v1/internal_mass_exact.cpp | cut -d' ' -f1)" = '4eef6f1b70b5baee5d1983d2480c02d73569b12af868ec23bbb6009d6ca1fa37'
           python -m py_compile orbittrace_m2d_blind_rediscovery_v1/run_scan.py orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py
-          sha256sum orbittrace_m2d_blind_rediscovery_v1/run_scan.py orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py > output/frozen_source_sha256.txt
+          sha256sum orbittrace_m2d_blind_rediscovery_v1/run_scan.py orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py m2d-reference/orbittrace_internal_mass_sonotaco_development_v1/internal_mass_exact.cpp > output/frozen_source_sha256.txt
 
       - name: Reproduce target-free complete pooled M2D ranking
         run: |
@@ -69,7 +75,7 @@ jobs:
             --scorer-parts mondrian_clique_development/source_parts_v2 \
             --structural-source orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
             --support-source orbittrace_topomodal_support_resolved_cut_v1/generate_prelabel.py \
-            --exact-cpp orbittrace_m2d_blind_rediscovery_v1/internal_mass_exact.cpp \
+            --exact-cpp m2d-reference/orbittrace_internal_mass_sonotaco_development_v1/internal_mass_exact.cpp \
             --output output \
             2>&1 | tee output/reproduction.log
 
@@ -148,13 +154,14 @@ jobs:
         run: |
           set +e
           git rev-parse HEAD > output/execution_commit.txt
+          git -C m2d-reference rev-parse HEAD > output/m2d_reference_commit.txt
           python --version > output/python_version.txt
           python -m pip freeze > output/environment.txt
           sha256sum \
             orbittrace_m2d_blind_rediscovery_v1/PROTOCOL.md \
             orbittrace_m2d_blind_rediscovery_v1/run_scan.py \
             orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py \
-            orbittrace_m2d_blind_rediscovery_v1/internal_mass_exact.cpp \
+            m2d-reference/orbittrace_internal_mass_sonotaco_development_v1/internal_mass_exact.cpp \
             output/orbittrace_m2d_blind_ranked_pretruth.json.gz \
             input/canonical.zip \
             output/M2D_POOLED_BLIND_REVEAL.json \
