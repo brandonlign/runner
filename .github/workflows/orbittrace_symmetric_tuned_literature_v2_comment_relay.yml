@@ -47,7 +47,7 @@ jobs:
         id: guard
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = 'c38e0b55c712ff721dfe8f2ce1de7142bac6abaf'
+          test "$(git rev-parse HEAD)" = '33787b7733efa7e52483e59af183966b846e50f7'
           if [ -f orbittrace_symmetric_tuned_literature_v2/RESULT.json ]; then
             echo 'run=false' >> "$GITHUB_OUTPUT"
             echo RESULT_ALREADY_PRESENT
@@ -55,6 +55,7 @@ jobs:
             echo 'run=true' >> "$GITHUB_OUTPUT"
           fi
           test "$(git hash-object orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_symmetric_tuned_literature_v2/literature_comparators.py)" = 'ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
 
       - uses: actions/setup-python@v5
         if: steps.guard.outputs.run == 'true'
@@ -71,7 +72,8 @@ jobs:
           python -m py_compile \
             orbittrace_symmetric_tuned_literature_v2/run_benchmark.py \
             orbittrace_symmetric_tuned_literature_v2/run_exact.py \
-            orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py
+            orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py \
+            orbittrace_symmetric_tuned_literature_v2/literature_comparators.py
 
       - uses: actions/download-artifact@v4
         if: steps.guard.outputs.run == 'true'
