@@ -1,0 +1,115 @@
+name: OrbitTrace support-pruned blind replay reveal repair
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-support-cut-bifiltration-internal-mass-gmn-v1
+    paths:
+      - orbittrace_m2d_support_pruned_blind_replay_v1/reveal_repair.py
+      - .github/workflows/orbittrace_m2d_support_pruned_blind_replay_reveal_repair.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  reveal-repair:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify reveal-only repair source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_support_pruned_blind_replay_v1/reveal_repair.py)" = '13269d708e906343e1e25d4fbe8a9924242ac821'
+          python -m py_compile orbittrace_m2d_support_pruned_blind_replay_v1/reveal_repair.py
+          mkdir -p input/pretruth input output
+
+      - name: Retrieve exact sealed pretruth from successful replay scan
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-m2d-support-pruned-blind-replay-v1-pretruth
+          path: input/pretruth
+          github-token: ${{ github.token }}
+          repository: brandonlign/runner
+          run-id: '32287958931'
+
+      - name: Verify exact sealed ranking before canonical access
+        run: |
+          set -euo pipefail
+          echo 'b1beb3dac03579b2ca2a0f85a2e65213e3a4826dfe0d8f038856f6b227319765  input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz' | sha256sum -c -
+          python - <<'PY'
+          import gzip,hashlib,json
+          p='input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz'
+          raw=gzip.decompress(open(p,'rb').read()); r=json.loads(raw)
+          assert hashlib.sha256(raw).hexdigest()=='75dec41919072681a423d3c37d4565ca5ee19dccf86900b3b39ef5d30153ca0b'
+          assert r['candidate_count']==8884==len(r['candidates'])
+          assert r['replay_variant']=='PROMOTED_SUPPORT_PRUNED_CUT_V1_POST_PROMOTION_BLIND_PROTOCOL_REPLAY'
+          assert r['orbittrace_target_information_access'] is False
+          assert r['orbittrace_canonical_members_access'] is False
+          assert r['prior_orbittrace_reveal_access'] is False
+          print('SEALED_PRETRUTH_VERIFIED_BEFORE_CANONICAL_ACCESS')
+          PY
+
+      - name: Retrieve same canonical bundle used by PR1378
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CANONICAL_ARTIFACT_ID: '8814798136'
+          CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" \
+            -o input/canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/canonical.zip" | sha256sum -c -
+
+      - name: Perform reveal-only nested-bundle repair
+        run: |
+          set -euo pipefail
+          python orbittrace_m2d_support_pruned_blind_replay_v1/reveal_repair.py \
+            --pretruth input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            --canonical-zip input/canonical.zip \
+            --output output
+          cat output/SUPPORT_PRUNED_BLIND_REPLAY_REVEAL_REPAIR.md
+
+      - name: Preserve exact reveal provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_m2d_support_pruned_blind_replay_v1/reveal_repair.py \
+            input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            input/canonical.zip \
+            output/SUPPORT_PRUNED_BLIND_REPLAY_REVEAL_REPAIR.json \
+            > output/reveal_repair_provenance_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/reveal_repair_execution_commit.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-support-pruned-blind-replay-v1-reveal-repair
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post binding replay comparison to PR1380
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -s output/SUPPORT_PRUNED_BLIND_REPLAY_REVEAL_REPAIR.md; then
+            gh pr comment 1380 --repo "$GITHUB_REPOSITORY" --body-file output/SUPPORT_PRUNED_BLIND_REPLAY_REVEAL_REPAIR.md
+          else
+            gh pr comment 1380 --repo "$GITHUB_REPOSITORY" --body "Reveal-only repair of sealed support-pruned replay ended without a valid exact-ID result. The frozen scan remains valid; this is a technical reveal no-result. Workflow: $GITHUB_RUN_ID"
+          fi
