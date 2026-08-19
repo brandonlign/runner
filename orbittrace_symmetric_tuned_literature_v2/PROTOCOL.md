@@ -31,7 +31,7 @@ Use the frozen 2025 comparator feature transform. Search the same finite-support
 
 ### Sugar-style uncertainty-aware DBSCAN
 
-Use the frozen Sugar uncertainty source, six-dimensional feature transform, Gaussian uncertainty clones, overlap merger, and hard assignment. Keep `min_samples=5`, and search the dataset-dependent fourth-neighbour epsilon percentile over:
+Use the frozen Sugar uncertainty source, six-dimensional feature transform, Gaussian uncertainty clones, overlap merger, hard assignment, fourth-neighbour calculation, and DBSCAN implementation. Keep `min_samples=5`, and search the dataset-dependent fourth-neighbour epsilon percentile over:
 
 `10, 15, 20, 23, 25, 30, 35` percent.
 
@@ -48,6 +48,10 @@ Primary development objective: maximize mean macro-F1 across those four budgets.
 For the opposite-year test labels, report the full K=10/20/30/40 curve plus native complete-catalogue macro-F1. Aggregate the two test folds by mean budget-curve macro-F1 (primary), mean K=40 macro-F1, total recovered showers at K=40, and mean native macro-F1.
 
 No method receives a different truth definition, evaluator, temporal window, event subset, or candidate budget.
+
+## Frozen implementation identities
+
+The recurrent-EOM kernel file must have Git blob `30ac3fa3bc47910370df528fcf3ae8ecb6277b47`. Sugar candidate construction in the executed driver calls the comparator source's own `transferred_epsilon`, `clone_feature_matrix`, `dbscan_clusters`, `OverlapGraphMerger`, and `hard_assignment` primitives; only the preregistered epsilon percentile and development/final clone counts vary. Catalogue HDBSCAN uses the frozen comparator feature transform and the explicitly declared support/selection grid above.
 
 ## Interpretation
 
