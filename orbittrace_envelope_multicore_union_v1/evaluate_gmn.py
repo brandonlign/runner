@@ -14,6 +14,7 @@ from typing import Any
 EMCU_SCHEMA = "ORBITTRACE_ENVELOPE_MULTICORE_UNION_V1_PRETRUTH"
 EMCU_ROLE = "TARGET_EXCLUDED_GMN_EMCU_V1_HIERARCHICAL_CANDIDATES_FROZEN_BEFORE_CORE_TRUTH_TEST"
 ECT_EVALUATOR_SHA = "43669902a0f891316bdff0650be36d3d7e8e5c32e44417574088d3d0fd1e00a0"
+ECT_DEVELOPMENT_STATUS = "GMN_2022_2023_EXPOSED_DEVELOPMENT_AFTER_BWM_CMR_FOCR_DCR_PADCR; NON_GMN_TRANSFER_REQUIRED_FOR_GENERALIZATION"
 
 
 def req(ok: bool, msg: str) -> None:
@@ -61,6 +62,7 @@ def main() -> int:
     compat = copy.deepcopy(pre)
     compat["schema"] = "ORBITTRACE_ENVELOPE_CORE_TOPOMODAL_V1_PRETRUTH"
     compat["scientific_role"] = "TARGET_EXCLUDED_GMN_ECT_V1_HIERARCHICAL_CANDIDATES_FROZEN_BEFORE_CORE_TRUTH_TEST"
+    compat["development_status"] = ECT_DEVELOPMENT_STATUS
     compat["configuration"] = {
         "core_replaces_envelope": False,
         "core_changes_envelope_rank": False,
