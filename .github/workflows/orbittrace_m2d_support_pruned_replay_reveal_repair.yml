@@ -1,0 +1,77 @@
+name: OrbitTrace support-pruned replay reveal repair
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-support-cut-bifiltration-internal-mass-gmn-v1]
+    paths: ['.github/workflows/orbittrace_m2d_support_pruned_replay_reveal_repair.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  REPLAY_ARTIFACT_ID: '9378535904'
+  REPLAY_ARTIFACT_ZIP_SHA256: '50f2f9b1864608951620c9b40ba2ac6edf576c500afa250952cb84ccf15886e5'
+  REPLAY_PRETRUTH_GZIP_SHA256: 'b1beb3dac03579b2ca2a0f85a2e65213e3a4826dfe0d8f038856f6b227319765'
+  CANONICAL_ARTIFACT_ID: '8814798136'
+  CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+
+jobs:
+  reveal-repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify reveal-only source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_support_pruned_cut_v1/reveal_replay_exact_ids.py)" = '1331b8a1a130b905e32f68b235bb18ae87a6054b'
+          python -m py_compile orbittrace_m2d_support_pruned_cut_v1/reveal_replay_exact_ids.py
+          mkdir -p input/pretruth input output
+      - name: Download exact frozen replay pretruth artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${REPLAY_ARTIFACT_ID}/zip" -o input/replay.zip
+          echo "${REPLAY_ARTIFACT_ZIP_SHA256}  input/replay.zip" | sha256sum -c -
+          unzip -q input/replay.zip -d input/pretruth
+          echo "${REPLAY_PRETRUTH_GZIP_SHA256}  input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz" | sha256sum -c -
+      - name: Download canonical bundle only after frozen replay verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" -o input/canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/canonical.zip" | sha256sum -c -
+      - name: Exact-ID reveal only
+        run: |
+          set -euo pipefail
+          python orbittrace_m2d_support_pruned_cut_v1/reveal_replay_exact_ids.py --pretruth input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz --canonical-zip input/canonical.zip --output output
+          cat output/SUPPORT_PRUNED_REPLAY_REVEAL_REPAIR.md
+      - name: Enforce expected repair scope
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/SUPPORT_PRUNED_REPLAY_REVEAL_REPAIR.json'))
+          assert r['scientific_scan_reexecuted'] is False and r['reveal_repair_only'] is True
+          assert r['pretruth_gzip_sha256']=='b1beb3dac03579b2ca2a0f85a2e65213e3a4826dfe0d8f038856f6b227319765'
+          assert r['candidate_count']==8884
+          print(json.dumps(r,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-support-pruned-replay-reveal-repair
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Post exact replay characterization
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1380 --repo "$GITHUB_REPOSITORY" --body-file output/SUPPORT_PRUNED_REPLAY_REVEAL_REPAIR.md
