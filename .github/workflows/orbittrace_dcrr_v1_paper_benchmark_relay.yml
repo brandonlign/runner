@@ -1,0 +1,119 @@
+name: OrbitTrace DCRR v1 paper benchmark relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-dcrr-v1-paper-benchmark
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  BENCH_BRANCH: agent/orbittrace-dual-cut-recurrent-rank-v1
+  FROZEN_HEAD: 6ac7f6db56dc488a7231129c33d5328f0033675d
+
+jobs:
+  evaluate:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1365 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_DCRR_V1_PAPER_BENCHMARK'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1365 --repo "${{ github.repository }}" --body "ORBITTRACE_DCRR_V1_PAPER_BENCHMARK_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind immutable DCRR pretruth and evaluator
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${FROZEN_HEAD}"
+          test ! -e orbittrace_dual_cut_recurrent_rank_v1/RESULT.json
+          test "$(git hash-object orbittrace_dual_cut_recurrent_rank_v1/PROTOCOL.md)" = '028327585823779cd0624161aeb3904ab98eed51'
+          test "$(git hash-object orbittrace_dual_cut_recurrent_rank_v1/build_pretruth.py)" = '9e35ae71b35d59b9412321002f6fda76409fbba3'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test "$(git hash-object orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH.json)" = 'c89ffb1cbc35b1c208e1b1df4605114a920ddede'
+          test "$(sha256sum orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH.json | awk '{print $1}')" = 'e32c4aa6ea61f5933330f0a7bdcff34a655b588bda4c230bf339e8432f2a01ea'
+          test "$(git hash-object orbittrace_dual_cut_recurrent_rank_v1/evaluate_paper_benchmark.py)" = '87e52391c804b291a713c4f8926ad315f7bbd373'
+          test "$(git hash-object orbittrace_dual_cut_recurrent_rank_v1/EVALUATION_FREEZE.json)" = '343870c5a3961f939139a5af4c3fceab98390e19'
+          test "$(git hash-object orbittrace_temporal_fair_literature_v1/RESULT.json)" = '1ac067658d7a1d99b1a276099ca6d3fee83a6c0b'
+          echo PASS_DCRR_BINDING_FREEZE
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install evaluator runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+          python -m py_compile orbittrace_dual_cut_recurrent_rank_v1/evaluate_paper_benchmark.py
+          mkdir -p input/truth output/result
+
+      - name: Download paper truth only after freeze bind
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Evaluate exact current paper benchmark
+        run: |
+          set -euo pipefail
+          python -u orbittrace_dual_cut_recurrent_rank_v1/evaluate_paper_benchmark.py \
+            --pretruth orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH.json \
+            --truth-root input/truth \
+            --paper-result orbittrace_temporal_fair_literature_v1/RESULT.json \
+            --output output/result
+          test -f output/result/RESULT.json
+          sha256sum output/result/RESULT.json | tee output/result/RESULT_SHA256.txt
+          cat output/result/RESULT.json
+
+      - name: Commit binding result
+        run: |
+          set -euo pipefail
+          cp output/result/RESULT.json orbittrace_dual_cut_recurrent_rank_v1/RESULT.json
+          cp output/result/RESULT_SHA256.txt orbittrace_dual_cut_recurrent_rank_v1/RESULT_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_dual_cut_recurrent_rank_v1/RESULT.json orbittrace_dual_cut_recurrent_rank_v1/RESULT_SHA256.txt
+          git commit -m 'Record DCRR v1 paper benchmark result'
+          git push origin HEAD:"${BENCH_BRANCH}"
+
+      - name: Upload binding result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-dcrr-v1-paper-benchmark-${{ github.run_id }}
+          path: output/result
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1365 --repo "${{ github.repository }}" --body "ORBITTRACE_DCRR_V1_PAPER_BENCHMARK_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1365 --repo "${{ github.repository }}" --body "ORBITTRACE_DCRR_V1_PAPER_BENCHMARK_FAILED=${GITHUB_RUN_ID}"
