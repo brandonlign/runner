@@ -1,0 +1,291 @@
+name: OrbitTrace support-pruned M2D blind replay v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-m2d-support-pruned-cut-v1
+    paths:
+      - orbittrace_m2d_support_pruned_blind_replay_v1/run_replay.py
+      - .github/workflows/orbittrace_m2d_support_pruned_blind_replay_v1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 8b8475dc98fb219f0a28d3b6d0673efd676265dc
+          path: blind1378
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: a5dd599ac94ce3c2597755be6c40c945f95929f8
+          path: m2d-src
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: blind1378/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact scientific runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r blind1378/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p promotion output
+
+      - name: Verify frozen replay and method identities before GMN access
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_support_pruned_blind_replay_v1/run_replay.py)" = 'de1e28eeb69d199502c1158bc56f32695bb64b2c'
+          test "$(git hash-object orbittrace_m2d_support_pruned_cut_v1/support_pruned_cut.py)" = '3712a36033088f1bd486cefdc8dc474c194fc85c'
+          test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
+          test "$(git -C blind1378 hash-object orbittrace_m2d_blind_rediscovery_v1/run_scan.py)" = '3def559978444e9bde1eab9cf9c3d47b8cbb2944'
+          test "$(sha256sum m2d-src/orbittrace_internal_mass_sonotaco_development_v1/internal_mass_exact.cpp | cut -d' ' -f1)" = '4eef6f1b70b5baee5d1983d2480c02d73569b12af868ec23bbb6009d6ca1fa37'
+          python -m py_compile orbittrace_m2d_support_pruned_blind_replay_v1/run_replay.py
+
+      - name: Retrieve binding support-pruned promotion evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-m2d-support-pruned-cut-v1-truth-capacity-repair
+          path: promotion
+          github-token: ${{ github.token }}
+          repository: brandonlign/runner
+          run-id: '32286806688'
+
+      - name: Verify promotion before full-catalogue replay
+        run: |
+          set -euo pipefail
+          echo 'cbc7a0ac6bad3ad93dbd91419718c9b2388eeb71d65016e9f7fcd2d275d00503  promotion/M2D_SUPPORT_PRUNED_CUT_V1_GMN_CAPACITY_REPAIR_RESULT.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('promotion/M2D_SUPPORT_PRUNED_CUT_V1_GMN_CAPACITY_REPAIR_RESULT.json'))
+          assert r['verdict']=='PASS_M2D_SUPPORT_PRUNED_CUT_V1_GMN_DEVELOPMENT'
+          assert r['method_changed_after_truth'] is False
+          assert r['target_information_access'] is False
+          assert r['orbittrace_reveal_access'] is False
+          print('PROMOTION_VERIFIED')
+          PY
+
+      - name: Execute exact full-catalogue support-pruned M2D replay
+        run: |
+          set -euo pipefail
+          /usr/bin/time -v python -u orbittrace_m2d_support_pruned_blind_replay_v1/run_replay.py \
+            --old-scan blind1378/orbittrace_m2d_blind_rediscovery_v1/run_scan.py \
+            --blind-source-parts blind1378/orbittrace_fixed4_blind_catalogue/source_parts \
+            --candidate-payload blind1378/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload blind1378/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts blind1378/mondrian_clique_development/source_parts_v2 \
+            --structural-source orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            --support-source orbittrace_m2d_support_pruned_cut_v1/support_pruned_cut.py \
+            --exact-cpp m2d-src/orbittrace_internal_mass_sonotaco_development_v1/internal_mass_exact.cpp \
+            --output output \
+            2>&1 | tee output/replay.log
+
+      - name: Enforce pre-reveal firewall and freeze
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import gzip,hashlib,json
+          p='output/orbittrace_m2d_blind_ranked_pretruth.json.gz'
+          raw=gzip.decompress(open(p,'rb').read()); r=json.loads(raw)
+          assert r['schema']=='ORBITTRACE_M2D_BLIND_REDISCOVERY_V1_PRETRUTH'
+          assert r['scientific_role']=='TARGET_FREE_COMPLETE_M2D_RANKING_BEFORE_ORBITTRACE_REVEAL'
+          assert r['verdict']=='BLIND_M2D_SCAN_FROZEN_AWAITING_SEPARATE_REVEAL'
+          assert r['configuration']['target_interval_exclusion'] is None
+          assert r['configuration']['cut_rule']=='recurse_reportable_child_discard_immediate_subsupport_sibling_else_parent_when_both_children_subsupport'
+          assert r['source_identity']['support_git_blob']=='3712a36033088f1bd486cefdc8dc474c194fc85c'
+          assert r['promotion_evidence_result_sha256']=='cbc7a0ac6bad3ad93dbd91419718c9b2388eeb71d65016e9f7fcd2d275d00503'
+          assert r['implementation_equivalence']['verdict']=='PASS_EXACT_SYNTHETIC_SUPPORT_PRUNED_CUT_EQUIVALENCE'
+          assert r['shower_truth_used'] is False
+          assert r['orbittrace_target_information_access'] is False
+          assert r['orbittrace_canonical_members_access'] is False
+          assert r['prior_orbittrace_reveal_access'] is False
+          assert r['post_result_parameter_search'] is False
+          assert r['post_promotion_parameter_search'] is False
+          assert r['candidate_count']==len(r['candidates'])>0
+          assert [x['rank'] for x in r['candidates']]==list(range(1,r['candidate_count']+1))
+          print('PRETRUTH_GZIP_SHA256='+hashlib.sha256(open(p,'rb').read()).hexdigest())
+          print('PRETRUTH_INNER_SHA256='+hashlib.sha256(raw).hexdigest())
+          print('EVENTS='+str(r['event_count']))
+          print('CANDIDATES='+str(r['candidate_count']))
+          print('COVERED='+str(r['support_summary']['covered_event_count']))
+          print('DISCARDED_SUBSUPPORT='+str(r['support_summary']['discarded_subsupport_event_count']))
+          PY
+
+      - name: Preserve pretruth provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_m2d_support_pruned_blind_replay_v1/run_replay.py \
+            orbittrace_m2d_support_pruned_cut_v1/support_pruned_cut.py \
+            orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py \
+            blind1378/orbittrace_m2d_blind_rediscovery_v1/run_scan.py \
+            m2d-src/orbittrace_internal_mass_sonotaco_development_v1/internal_mass_exact.cpp \
+            output/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            > output/replay_provenance_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/replay_execution_commit.txt
+          git -C blind1378 rev-parse HEAD > output/frozen_1378_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-support-pruned-blind-replay-v1-pretruth
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  reveal:
+    needs: scan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 8b8475dc98fb219f0a28d3b6d0673efd676265dc
+          path: blind1378
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Retrieve frozen replay pretruth
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-m2d-support-pruned-blind-replay-v1-pretruth
+          path: input/pretruth
+
+      - name: Verify ranking was frozen before canonical access
+        run: |
+          set -euo pipefail
+          test -s input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz
+          python - <<'PY'
+          import gzip,json
+          r=json.loads(gzip.decompress(open('input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz','rb').read()))
+          assert r['verdict']=='BLIND_M2D_SCAN_FROZEN_AWAITING_SEPARATE_REVEAL'
+          assert r['replay_variant']=='PROMOTED_SUPPORT_PRUNED_CUT_V1_POST_PROMOTION_BLIND_PROTOCOL_REPLAY'
+          assert r['orbittrace_canonical_members_access'] is False
+          assert r['orbittrace_target_information_access'] is False
+          print('FROZEN_CANDIDATES='+str(r['candidate_count']))
+          PY
+
+      - name: Retrieve same frozen canonical bundle used by PR1378
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CANONICAL_ARTIFACT_ID: '8814798136'
+          CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" \
+            -o input/canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/canonical.zip" | sha256sum -c -
+
+      - name: Perform unchanged PR1378 exact-ID reveal
+        run: |
+          set -euo pipefail
+          python blind1378/orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids.py \
+            --pretruth input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            --canonical-zip input/canonical.zip \
+            --output output
+          cat output/M2D_BLIND_REVEAL.md
+
+      - name: Compare directly with authoritative PR1378 recovery
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/M2D_BLIND_REVEAL.json')); c=r['chosen_family']
+          baseline={'rank':84,'overlap_2022':10,'overlap_2023':8,'overlap_total':18,'member_count':1814,'precision':18/1814}
+          new={'rank':int(c['rank']),'overlap_2022':len(c['overlap_2022']),'overlap_2023':len(c['overlap_2023']),'overlap_total':int(c['overlap_total']),'member_count':int(c['member_count']),'precision':float(c['precision']),'recall':float(c['recall'])}
+          checks={
+            'preserves_all_18_exact_ids': new['overlap_total']==18 and new['overlap_2022']==10 and new['overlap_2023']==8,
+            'remains_within_partial_rank_band': new['rank']<=100,
+            'family_strictly_smaller_than_1814': new['member_count']<1814,
+          }
+          comparison={
+            'verdict':'IMPROVED_SUPPORT_PRUNED_ORBITTRACE_EXTRACTION' if all(checks.values()) else 'NO_CLEAN_SUPPORT_PRUNED_ORBITTRACE_EXTRACTION_IMPROVEMENT',
+            'baseline_pr1378':baseline,
+            'support_pruned_replay':new,
+            'checks':checks,
+            'member_reduction':1814-new['member_count'],
+            'member_reduction_fraction':(1814-new['member_count'])/1814,
+            'precision_multiplier':new['precision']/baseline['precision'] if baseline['precision'] else None,
+            'interpretation_boundary':'Post-promotion apples-to-apples replay of the frozen PR1378 exact-ID protocol. This is not a new pristine blind discovery claim and does not establish tuned-HDBSCAN-family superiority or cross-survey generalization.',
+          }
+          open('output/SUPPORT_PRUNED_BLIND_REPLAY_COMPARISON.json','w').write(json.dumps(comparison,indent=2,sort_keys=True)+'\n')
+          lines=[
+            '# Support-pruned M2D OrbitTrace replay', '',
+            'Verdict: **`%s`**' % comparison['verdict'], '',
+            '- exact overlap: **%d/18** (2022 **%d/10**, 2023 **%d/8**)' % (new['overlap_total'],new['overlap_2022'],new['overlap_2023']),
+            '- rank: **%d** (PR #1378: **84**)' % new['rank'],
+            '- family members: **%d** (PR #1378: **1,814**; reduction **%d**, %.1f%%)' % (new['member_count'],comparison['member_reduction'],100*comparison['member_reduction_fraction']),
+            '- exact-ID precision: **%.6f** (PR #1378: **%.6f**; %.2fx)' % (new['precision'],baseline['precision'],comparison['precision_multiplier']), '',
+            'This is a post-promotion apples-to-apples replay. Candidate generation/ranking was frozen before the canonical bundle was opened; no parameters were changed from promoted support-pruned v1.'
+          ]
+          open('output/SUPPORT_PRUNED_BLIND_REPLAY_COMPARISON.md','w').write('\n'.join(lines)+'\n')
+          print('\n'.join(lines))
+          PY
+
+      - name: Preserve reveal provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            blind1378/orbittrace_m2d_blind_rediscovery_v1/reveal_exact_ids.py \
+            input/pretruth/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            input/canonical.zip \
+            output/M2D_BLIND_REVEAL.json \
+            output/SUPPORT_PRUNED_BLIND_REPLAY_COMPARISON.json \
+            > output/reveal_provenance_sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/reveal_execution_commit.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-support-pruned-blind-replay-v1-reveal
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post replay result to PR1380
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -s output/SUPPORT_PRUNED_BLIND_REPLAY_COMPARISON.md; then
+            gh pr comment 1380 --repo "$GITHUB_REPOSITORY" --body-file output/SUPPORT_PRUNED_BLIND_REPLAY_COMPARISON.md
+          else
+            gh pr comment 1380 --repo "$GITHUB_REPOSITORY" --body "Support-pruned M2D blind replay ended without a valid exact-ID comparison. Treat as a technical no-result, not a scientific failure. Workflow: $GITHUB_RUN_ID"
+          fi
