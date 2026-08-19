@@ -13,17 +13,38 @@ LOIP is designed after target-excluded GMN 2022/2023 development results through
 
 ## Frozen event rule
 
-For each promoted support-pruned parent `P` and the exact frozen annual-density bifiltration witness catalogue used by M₂D:
+For a promoted support-pruned parent `P`, let its exact frozen M₂D witness set be the bifiltration components `B ⊆ P` used by the promoted score. Define
 
-1. Compute the exact parent score `M₂D(P)` with the unchanged formula.
-2. For every event `v ∈ P`, independently compute the exact one-deletion score `M₂D(P \ {v})`.
-3. Mark `v` as negative-influence iff `M₂D(P \ {v}) > M₂D(P)` by a strict floating-point comparison under the frozen implementation/runtime.
+`A(P) = Σ_B |B| * persistence_area(B)`
+
+so the unchanged flagship score is
+
+`M₂D(P) = A(P) / |P|`.
+
+For each event `v ∈ P`, define its exact witness-participation mass
+
+`R(v;P) = Σ_{B ⊆ P, v ∈ B} |B| * persistence_area(B)`.
+
+Deleting `v` alone gives
+
+`M₂D(P \ {v}) = (A(P) - R(v;P)) / (|P|-1)`.
+
+Therefore, algebraically and without a fitted cutoff,
+
+`M₂D(P \ {v}) > M₂D(P)` iff `R(v;P) < M₂D(P)`.
+
+LOIP v1 uses that identity directly:
+
+1. Compute the exact parent M₂D witness catalogue and `M₂D(P)`.
+2. Accumulate `R(v;P)` for every event from the same frozen witnesses.
+3. Mark `v` as negative-influence iff `R(v;P) < M₂D(P)` using the frozen float accumulation order and a strict comparison.
 4. Remove **all** negative-influence events simultaneously in one shot.
-5. Do not recompute influences after any removal. No removed or retained event can trigger a second pass.
-6. The resulting membership must retain inherited support `>=4`; otherwise the structural gate fails closed rather than rescuing or padding the family.
-7. Preserve the exact promoted support-pruned parent ordering and parent M₂D discovery score. Child M₂D is recorded only as a membership diagnostic and cannot rerank families.
+5. Do not recompute influence after removal. No removed or retained event can trigger a second pass.
+6. Recompute the exact child M₂D only as a sealed structural diagnostic.
+7. The output must retain inherited support `>=4`; otherwise pretruth fails closed rather than rescuing or padding the family.
+8. Preserve the exact promoted support-pruned parent ordering and parent M₂D discovery score. Child M₂D cannot rerank families.
 
-This is the exact local optimality test implied by the promoted objective: an event is removed only when deleting that event alone strictly improves the same M₂D criterion already used by the flagship. There is no fitted affinity threshold, retention fraction, geometric scale, modularity search, hierarchy cut, size cap, score blend, growth depth, or target-derived parameter.
+This is not a new heuristic score: it is the exact leave-one-out local-improvement condition implied by the already-promoted M₂D objective, expressed in one-pass form. There is no fitted affinity threshold, retention fraction, geometric scale, modularity search, hierarchy cut, size cap, score blend, growth depth, or target-derived parameter.
 
 ## Pretruth structural gate
 
