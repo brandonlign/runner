@@ -67,7 +67,7 @@ To call the result a **clean consensus rediscovery**, two additional characteriz
 - core precision >=0.50;
 - core size <=32 members.
 
-The size ceiling is twice the minimum two-year exact-ID support target (16) and is fixed before any consensus-core target membership exists. It is not a search parameter and cannot affect parent ranking or core construction.
+The 32-member compactness ceiling is four times the inherited minimum eight-ID two-year support requirement and is fixed before any consensus-core target membership exists. It is not a search parameter and cannot affect parent ranking or core construction.
 
 Classification:
 
