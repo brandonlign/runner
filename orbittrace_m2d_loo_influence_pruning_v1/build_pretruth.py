@@ -50,17 +50,24 @@ def burden(values: list[int]) -> float:
     return float(sum(v * v for v in values) / sum(values))
 
 
-def exact_m2d(candidate: frozenset[str], bif_rows: list[dict[str, Any]]) -> tuple[float, int, float]:
+def parse_witnesses(rows: list[dict[str, Any]]) -> list[tuple[frozenset[str], float]]:
+    out: list[tuple[frozenset[str], float]] = []
+    for row in rows:
+        witness = members(row)
+        area = float(row["persistence_area"])
+        req(len(witness) >= MIN_SUPPORT and area > 0.0 and math.isfinite(area), "bad witness")
+        out.append((witness, area))
+    return out
+
+
+def official_m2d(candidate: frozenset[str], witnesses: list[tuple[frozenset[str], float]]) -> tuple[float, int, float]:
     n = len(candidate)
     req(n >= MIN_SUPPORT, "candidate below support")
     weighted = 0.0
     raw_area = 0.0
     count = 0
-    for row in bif_rows:
-        witness = members(row)
+    for witness, area in witnesses:
         if witness.issubset(candidate):
-            area = float(row["persistence_area"])
-            req(len(witness) >= MIN_SUPPORT and area > 0.0 and math.isfinite(area), "bad witness")
             weighted += (len(witness) / n) * area
             raw_area += area
             count += 1
@@ -114,6 +121,7 @@ def main() -> int:
     all_outputs_supported = True
     all_changed_child_m2d_strictly_higher = True
     recompute_match_max_abs = 0.0
+    identity_official_max_abs = 0.0
     retained_fractions: list[float] = []
 
     for key in sorted(keys):
@@ -124,38 +132,67 @@ def main() -> int:
             == {str(y): list(map(str, fs["annual_event_ids"][str(y)])) for y in (2022, 2023)},
             f"annual universe mismatch {key}",
         )
-        bif_rows = list(fs["bifiltration_candidates"])
+        witnesses = parse_witnesses(list(fs["bifiltration_candidates"]))
         parents = list(cs["support_pruned_baseline_candidates"])
-        req(parents and bif_rows, "empty source catalogue")
+        req(parents and witnesses, "empty source catalogue")
 
         rows: list[dict[str, Any]] = []
         panel_changed = 0
         panel_removed = 0
+
         for parent_rank, parent in enumerate(parents, 1):
             total_parent_count += 1
             parent_set = members(parent)
             parent_n = len(parent_set)
             req(parent_n == int(parent["member_count"]) and parent_n >= MIN_SUPPORT, "parent size/support mismatch")
             req(int(parent["internal_mass_rank"]) == parent_rank, "promoted parent order changed")
-            parent_score, parent_witness_count, parent_raw_area = exact_m2d(parent_set, bif_rows)
-            recompute_match_max_abs = max(recompute_match_max_abs, abs(parent_score - float(parent["internal_2d_mass"])))
-            req(math.isclose(parent_score, float(parent["internal_2d_mass"]), rel_tol=0.0, abs_tol=1e-15), "parent M2D recompute mismatch")
 
-            removed: list[str] = []
-            loo_scores: dict[str, float] = {}
+            # One pass over the exact frozen M2D witnesses contained by this parent.
+            contained: list[tuple[frozenset[str], float]] = []
+            numerator_mass = 0.0
+            witness_participation = {event_id: 0.0 for event_id in parent_set}
+            for witness, area in witnesses:
+                if not witness.issubset(parent_set):
+                    continue
+                contained.append((witness, area))
+                mass = len(witness) * area
+                numerator_mass += mass
+                for event_id in witness:
+                    witness_participation[event_id] += mass
+
+            parent_identity_score = numerator_mass / parent_n
+            parent_official_score, parent_witness_count, parent_raw_area = official_m2d(parent_set, contained)
+            recompute_match_max_abs = max(
+                recompute_match_max_abs,
+                abs(parent_official_score - float(parent["internal_2d_mass"])),
+            )
+            identity_official_max_abs = max(identity_official_max_abs, abs(parent_identity_score - parent_official_score))
+            req(
+                math.isclose(parent_official_score, float(parent["internal_2d_mass"]), rel_tol=0.0, abs_tol=1e-15),
+                "parent M2D recompute mismatch",
+            )
+            req(
+                math.isclose(parent_identity_score, parent_official_score, rel_tol=0.0, abs_tol=1e-15),
+                "M2D influence identity drift",
+            )
+
+            # Exact LOO identity in real arithmetic:
+            # M(P-v) > M(P) iff R(v;P) < A(P)/|P| = M(P).
+            removed = []
             if parent_n > MIN_SUPPORT:
-                for event_id in sorted(parent_set):
-                    reduced = frozenset(x for x in parent_set if x != event_id)
-                    score_minus, _count_minus, _area_minus = exact_m2d(reduced, bif_rows)
-                    loo_scores[event_id] = score_minus
-                    if score_minus > parent_score:
-                        removed.append(event_id)
-            keep = frozenset(x for x in parent_set if x not in set(removed))
+                removed = sorted(
+                    event_id
+                    for event_id in parent_set
+                    if witness_participation[event_id] < parent_identity_score
+                )
+
+            removed_set = set(removed)
+            keep = frozenset(event_id for event_id in parent_set if event_id not in removed_set)
             output_supported = len(keep) >= MIN_SUPPORT
             all_outputs_supported = all_outputs_supported and output_supported
             req(output_supported, "LOIP produced sub-support output; fail closed")
 
-            child_score, child_witness_count, child_raw_area = exact_m2d(keep, bif_rows)
+            child_official_score, child_witness_count, child_raw_area = official_m2d(keep, contained)
             changed = keep != parent_set
             if changed:
                 changed_parent_count += 1
@@ -164,12 +201,12 @@ def main() -> int:
                 total_removed_events += len(removed)
                 max_removed_events = max(max_removed_events, len(removed))
                 retained_fractions.append(len(keep) / parent_n)
-                if not child_score > parent_score:
+                if not child_official_score > parent_official_score:
                     all_changed_child_m2d_strictly_higher = False
             else:
                 req(not removed, "unchanged membership with removals")
 
-            row = {
+            rows.append({
                 "family_id": family_id(keep),
                 "family_hash": member_hash(keep),
                 "event_ids": sorted(keep),
@@ -181,8 +218,9 @@ def main() -> int:
                 "loip_parent_family_hash": str(parent["family_hash"]),
                 "loip_parent_family_id": str(parent["family_id"]),
                 "loip_parent_member_count": parent_n,
-                "loip_parent_m2d_recomputed": parent_score,
-                "loip_child_m2d_recomputed": child_score,
+                "loip_parent_m2d_official_recomputed": parent_official_score,
+                "loip_parent_m2d_identity": parent_identity_score,
+                "loip_child_m2d_official_recomputed": child_official_score,
                 "loip_parent_witness_count": parent_witness_count,
                 "loip_child_witness_count": child_witness_count,
                 "loip_parent_raw_area_sum": parent_raw_area,
@@ -190,10 +228,9 @@ def main() -> int:
                 "loip_removed_event_ids": removed,
                 "loip_removed_event_count": len(removed),
                 "loip_changed": changed,
-                "loip_rule": "remove v iff exact M2D(parent_without_v) > exact M2D(parent); simultaneous one-shot",
+                "loip_rule": "remove v iff frozen witness-participation mass R(v;P) < parent M2D; algebraically equivalent to M2D(P-v) > M2D(P); simultaneous one-shot",
                 "loip_parent_order_preserved": True,
-            }
-            rows.append(row)
+            })
 
         req(len(rows) == len(parents), "LOIP candidate cardinality changed")
         req(len({str(r["loip_parent_family_hash"]) for r in rows}) == len(rows), "duplicate parent mapping")
@@ -253,6 +290,7 @@ def main() -> int:
         "changed_mean_retained_fraction": mean(retained_fractions) if retained_fractions else None,
         "changed_min_retained_fraction": min(retained_fractions) if retained_fractions else None,
         "max_parent_m2d_recompute_abs_difference": recompute_match_max_abs,
+        "max_identity_vs_official_m2d_abs_difference": identity_official_max_abs,
         "ranking_changed_from_support_pruned": False,
     }
     structural_gates = {
@@ -274,8 +312,8 @@ def main() -> int:
         "bif_endpoint_prelabel_sha256": BIF_ENDPOINT_SHA,
         "support_pruned_pretruth_sha256": SUPPORT_PRUNED_SHA,
         "configuration": {
-            "membership_rule": "simultaneous one-shot deletion of each event whose independent exact leave-one-out deletion strictly increases parent M2D",
-            "influence_comparison": "exact float: M2D(P\\{v}) > M2D(P)",
+            "membership_rule": "simultaneous one-shot deletion of each event whose frozen M2D witness-participation mass is strictly below the parent M2D average",
+            "loo_identity": "R(v;P) < M2D(P) iff M2D(P\\{v}) > M2D(P)",
             "recursive_recompute": False,
             "ranking_rule": "exact promoted support-pruned parent M2D order",
             "one_candidate_per_parent": True,
@@ -296,7 +334,12 @@ def main() -> int:
         "interpretation_boundary": "LOIP v1 is designed after prior target-excluded GMN development results. GMN is development evidence only. Any pass must transfer frozen to the designated non-GMN validation stage before OrbitTrace characterization.",
     }
     a.output.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")
-    print(json.dumps({"structural_pass": structural_pass, "mechanism_summary": mechanism_summary, "size_summary": size_summary, "structural_gates": structural_gates}, indent=2, sort_keys=True))
+    print(json.dumps({
+        "structural_pass": structural_pass,
+        "mechanism_summary": mechanism_summary,
+        "size_summary": size_summary,
+        "structural_gates": structural_gates,
+    }, indent=2, sort_keys=True))
     return 0
 
 
