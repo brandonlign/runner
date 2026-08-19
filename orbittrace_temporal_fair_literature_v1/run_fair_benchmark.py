@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse, hashlib, importlib.util, json, math
+import argparse, hashlib, importlib.util, json, math, sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -29,7 +29,7 @@ def sha(p:Path): return hashlib.sha256(p.read_bytes()).hexdigest()
 
 def load(path:Path,name:str):
     spec=importlib.util.spec_from_file_location(name,path); req(spec and spec.loader,'module load failed')
-    m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+    m=importlib.util.module_from_spec(spec); sys.modules[name]=m; spec.loader.exec_module(m); return m
 
 def families_from_labels(rows, labels, prefix, probs=None):
     g=defaultdict(list)
