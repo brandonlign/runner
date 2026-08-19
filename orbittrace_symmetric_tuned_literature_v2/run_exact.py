@@ -20,7 +20,7 @@ def sugar_candidate_output_exact(
     preregistered dataset-level epsilon percentile and clone count.
 
     The frozen source supplies the 4th-neighbour distances, DBSCAN implementation,
-    clone generator, overlap graph, and hard assignment.  Development uses a
+    clone generator, overlap graph, and hard assignment. Development uses a
     clone-count-scaled 10% recurrence floor; selected configurations are rerun at
     the source-native 1000-clone / 100-recurrence scale before test scoring.
     """
@@ -61,5 +61,9 @@ def sugar_candidate_output_exact(
     )
 
 
+# hdbscan 0.8.44 uses the newer ensure_all_finite keyword while the frozen
+# scikit-learn 1.4.2 runtime uses force_all_finite. Apply the same compatibility
+# bridge before recurrent-EOM or catalogue-HDBSCAN performs its first fit.
+benchmark.install_hdb_compat()
 benchmark.sugar_candidate_output = sugar_candidate_output_exact
 raise SystemExit(benchmark.main())
