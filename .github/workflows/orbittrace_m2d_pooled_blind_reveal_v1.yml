@@ -1,0 +1,155 @@
+name: OrbitTrace M2D pooled blind reveal v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-m2d-blind-rediscovery-v1
+    paths:
+      - 'orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py'
+      - '.github/workflows/orbittrace_m2d_pooled_blind_reveal_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: orbittrace-m2d-pooled-blind-reveal-v1
+  cancel-in-progress: false
+
+jobs:
+  reveal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PRETRUTH_ARTIFACT_ID: '9376585923'
+      PRETRUTH_ARTIFACT_SHA256: '177f17af4d74d6f75a2cb29b80a05261d65eaa09e64dbdeacaaf17a5e2222a85'
+      PRETRUTH_INNER_SHA256: '7ff3b13bc45e19b4b886453b4d8cc3b4f18090bf8a2291e39850540fd69b5e53'
+      CANONICAL_ARTIFACT_ID: '8814798136'
+      CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Freeze reveal source before opening canonical IDs
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          python -m py_compile orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py
+          sha256sum orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py > output/reveal_source_sha256.txt
+          grep -q 'exact event-ID set intersection only' orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py
+          grep -q 'FULL_M2D_BLIND_ORBITTRACE_REDISCOVERY' orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py
+          grep -q 'PARTIAL_M2D_BLIND_ORBITTRACE_REDISCOVERY' orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py
+          grep -q 'NO_M2D_BLIND_ORBITTRACE_REDISCOVERY' orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py
+
+      - name: Retrieve exact frozen pooled M2D pretruth
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PRETRUTH_ARTIFACT_ID}/zip" \
+            -o input/pretruth.zip
+          echo "${PRETRUTH_ARTIFACT_SHA256}  input/pretruth.zip" | sha256sum -c -
+          python - <<'PY'
+          import gzip, hashlib, os, zipfile
+          from pathlib import Path
+          zpath=Path('input/pretruth.zip')
+          with zipfile.ZipFile(zpath) as z:
+              ranked=[n for n in z.namelist() if Path(n).name=='orbittrace_m2d_blind_ranked_pretruth.json.gz']
+              hashes=[n for n in z.namelist() if Path(n).name=='ranked_payload_sha256.txt']
+              if len(ranked)!=1 or len(hashes)!=1:
+                  raise RuntimeError(f'pretruth members ranked={ranked} hashes={hashes}')
+              gz=z.read(ranked[0]); htxt=z.read(hashes[0]).decode()
+          Path('input/orbittrace_m2d_blind_ranked_pretruth.json.gz').write_bytes(gz)
+          Path('input/ranked_payload_sha256.txt').write_text(htxt)
+          inner=hashlib.sha256(gzip.decompress(gz)).hexdigest()
+          expected=os.environ['PRETRUTH_INNER_SHA256']
+          if inner!=expected:
+              raise RuntimeError(f'inner pretruth SHA mismatch {inner}')
+          if expected not in htxt:
+              raise RuntimeError('frozen hash ledger does not contain expected inner SHA')
+          print('frozen pooled pretruth inner SHA-256:',inner)
+          PY
+
+      - name: Retrieve canonical OrbitTrace IDs only after pretruth verification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s input/orbittrace_m2d_blind_ranked_pretruth.json.gz
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" \
+            -o input/canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/canonical.zip" | sha256sum -c -
+
+      - name: Execute frozen exact-ID-only reveal
+        run: |
+          set -euo pipefail
+          python orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py \
+            --pretruth input/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            --canonical-zip input/canonical.zip \
+            --output output
+          cat output/M2D_POOLED_BLIND_REVEAL.md
+
+      - name: Enforce reveal boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/M2D_POOLED_BLIND_REVEAL.json'))
+          assert r['pretruth_inner_sha256']=='7ff3b13bc45e19b4b886453b4d8cc3b4f18090bf8a2291e39850540fd69b5e53'
+          assert r['candidate_count']==8469
+          assert r['reveal_operation']=='exact event-ID set intersection only'
+          assert r['coordinates_used'] is False
+          assert r['activity_interval_used'] is False
+          assert r['orbit_matching_used'] is False
+          assert r['member_expansion_used'] is False
+          assert r['reranking_used'] is False
+          assert r['verdict'] in {'FULL_M2D_BLIND_ORBITTRACE_REDISCOVERY','PARTIAL_M2D_BLIND_ORBITTRACE_REDISCOVERY','NO_M2D_BLIND_ORBITTRACE_REDISCOVERY'}
+          print(json.dumps(r,indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve reveal provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_m2d_blind_rediscovery_v1/reveal_pooled_exact_ids.py \
+            input/pretruth.zip \
+            input/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            input/canonical.zip \
+            output/M2D_POOLED_BLIND_REVEAL.json \
+            > output/POOLED_REVEAL_SHA256SUMS.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-pooled-blind-reveal-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post binding pooled reveal to PR 1378
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -s output/M2D_POOLED_BLIND_REVEAL.md; then
+            gh pr comment 1378 --repo "$GITHUB_REPOSITORY" --body-file output/M2D_POOLED_BLIND_REVEAL.md
+          else
+            gh pr comment 1378 --repo "$GITHUB_REPOSITORY" --body "Pooled M2D exact-ID reveal failed technically before producing a verdict. Workflow $GITHUB_RUN_ID. Frozen pretruth remains unchanged."
+          fi
