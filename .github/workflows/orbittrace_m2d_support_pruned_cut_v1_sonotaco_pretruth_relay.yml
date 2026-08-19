@@ -1,0 +1,35 @@
+name: OrbitTrace support-pruned SonotaCo pretruth relay
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-support-cut-bifiltration-internal-mass-gmn-v1]
+    paths: ['.github/workflows/orbittrace_m2d_support_pruned_cut_v1_sonotaco_pretruth_relay.yml']
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch frozen SonotaCo pretruth workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run orbittrace_m2d_support_pruned_cut_v1_sonotaco_pretruth.yml --repo "$GITHUB_REPOSITORY" --ref agent/orbittrace-m2d-support-pruned-cut-v1
+          sleep 3
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow orbittrace_m2d_support_pruned_cut_v1_sonotaco_pretruth.yml --branch agent/orbittrace-m2d-support-pruned-cut-v1 --limit 5 --json databaseId,event,status,headSha,createdAt > /tmp/runs.json
+          cat /tmp/runs.json
+          python - <<'PY' > /tmp/c.md
+          import json
+          rows=[r for r in json.load(open('/tmp/runs.json')) if r.get('event')=='workflow_dispatch']
+          if not rows: raise SystemExit('no dispatched run')
+          r=rows[0]
+          print('M2D_SUPPORT_PRUNED_SONOTACO_PRETRUTH_DISPATCHED=%s' % r['databaseId'])
+          print('head_sha=%s' % r['headSha'])
+          PY
+          gh pr comment 1380 --repo "$GITHUB_REPOSITORY" --body-file /tmp/c.md
