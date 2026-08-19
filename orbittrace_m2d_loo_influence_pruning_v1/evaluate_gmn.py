@@ -52,7 +52,8 @@ def main() -> int:
     pre = json.loads(a.loip_pretruth.read_text())
     req(pre.get("schema") == LOIP_SCHEMA and pre.get("scientific_role") == LOIP_ROLE, "wrong LOIP identity")
     req(pre.get("structural_pass") is True, "LOIP structural gate failed")
-    req(pre.get("configuration", {}).get("membership_rule") == "simultaneous one-shot deletion of each event whose independent exact leave-one-out deletion strictly increases parent M2D", "LOIP membership rule changed")
+    req(pre.get("configuration", {}).get("membership_rule") == "simultaneous one-shot deletion of each event whose frozen M2D witness-participation mass is strictly below the parent M2D average", "LOIP membership rule changed")
+    req(pre.get("configuration", {}).get("loo_identity") == "R(v;P) < M2D(P) iff M2D(P\\{v}) > M2D(P)", "LOIP identity changed")
     req(pre.get("configuration", {}).get("recursive_recompute") is False, "LOIP recursion changed")
     req(pre.get("configuration", {}).get("ranking_rule") == "exact promoted support-pruned parent M2D order", "LOIP ranking changed")
     req(pre.get("configuration", {}).get("new_tuned_parameters") == [], "unexpected LOIP tuned parameters")
@@ -67,8 +68,6 @@ def main() -> int:
         "LOIP protected-data firewall",
     )
 
-    # Byte-compatible projection into the already-frozen BWM evaluator. Only the
-    # candidate memberships differ; rank/order is the exact promoted parent order.
     compat = copy.deepcopy(pre)
     compat["schema"] = "ORBITTRACE_BIF_WITNESS_MODULARITY_V1_PRETRUTH"
     compat["scientific_role"] = "TARGET_EXCLUDED_GMN_BWM_V1_RANKING_FROZEN_BEFORE_SHOWER_TRUTH"
