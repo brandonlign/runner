@@ -9,3 +9,5 @@ Scientific source remains exactly pinned to:
 - internal-mass prelabel SHA-256 `7b1ddfcd32cd0b52321e3b3dfc614a88dd9b973f947c1d4d0de74fddf26b59cd`
 
 No scientific choice changed after activation. If the earlier activation run already produced a technically valid result, that earlier result remains binding; this relay is a deterministic reproduction for visibility.
+
+Relay trigger: 2026-08-19T15:14Z.
