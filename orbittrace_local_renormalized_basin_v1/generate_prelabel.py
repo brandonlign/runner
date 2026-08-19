@@ -17,6 +17,7 @@ BUCKETS = (0, 1, 2, 3)
 SUPPORT_PRUNED_PRETRUTH_SHA = "57a6fd0fa680fb56b3d6a8a984682213e0235baadf14b27f241927b2dbb4b50f"
 QUALITY_SHA = "dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990"
 V8_SHA = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"
+FROZEN_UNIVERSE_SOURCE_BLOB = "4988997c023d9df2b504372b4290dcab379a6dcc"
 
 
 def req(ok: bool, msg: str) -> None:
@@ -36,18 +37,6 @@ def load(path: Path, name: str) -> Any:
     return mod
 
 
-def event_hash_u64(text: str) -> int:
-    return int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "big", signed=False)
-
-
-def selected_indices(hashes: np.ndarray, denominator: int, bucket: int) -> np.ndarray:
-    return np.flatnonzero((hashes % np.uint64(denominator)) == np.uint64(bucket))
-
-
-def universe_hash(ids: list[str]) -> str:
-    return hashlib.sha256(("\n".join(sorted(ids)) + "\n").encode()).hexdigest()
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     for name in ("structural-runner", "parent-runner", "quality-source", "support-source-parts", "candidate-payload", "baseline-payload", "scorer-parts", "v8-result-json", "support-pruned-pretruth"):
@@ -57,11 +46,16 @@ def main() -> int:
     a.output.mkdir(parents=True, exist_ok=True)
 
     here = Path(__file__).resolve().parent
+    frozen_universe_source = here.parent / "orbittrace_topomodal_support_resolved_cut_v1" / "generate_prelabel.py"
+    req(hashlib.sha1(b"blob " + str(len(frozen_universe_source.read_bytes())).encode() + b"\0" + frozen_universe_source.read_bytes()).hexdigest() == FROZEN_UNIVERSE_SOURCE_BLOB, "frozen sparse-universe source blob changed")
+    original = load(frozen_universe_source, "lrb_frozen_sparse_universe")
     lrb = load(here / "local_renormalized_basin.py", "lrb_method")
     support_pruned = load(here.parent / "orbittrace_m2d_support_pruned_cut_v1" / "support_pruned_cut.py", "lrb_support_pruned")
     structural = load(a.structural_runner, "lrb_structural")
     parent_runner = load(a.parent_runner, "lrb_parent_geometry")
 
+    req(original.SALT == "ORBITTRACE_SCALE_STRESS_V1|", "frozen sparse-universe salt changed")
+    req(int(original.COARSE_D) == 128 and int(original.FINE_D) == 1024 and tuple(original.BUCKETS) == BUCKETS, "frozen sparse-universe panel definition changed")
     req(sha(a.quality_source) == QUALITY_SHA, "quality source changed")
     req(sha(a.v8_result_json) == V8_SHA, "v8 result changed")
     req(sha(a.support_pruned_pretruth) == SUPPORT_PRUNED_PRETRUTH_SHA, "support-pruned pretruth changed")
@@ -101,7 +95,7 @@ def main() -> int:
     req(len(events) == 738682 and len({str(e["id"]) for e in events}) == 738682, "event universe changed")
     req(all(not (BLIND[0] <= float(e["sol"]) <= BLIND[1]) for e in events), "protected target-region event survived")
     ids_full = [str(e["id"]) for e in events]
-    hashes = np.asarray([event_hash_u64(x) for x in ids_full], dtype=np.uint64)
+    hashes = np.asarray([original.event_hash_u64(x) for x in ids_full], dtype=np.uint64)
 
     subsets: list[dict[str, Any]] = []
     mechanism_panels = 0
@@ -110,14 +104,14 @@ def main() -> int:
     for d in DENOMS:
         for b in BUCKETS:
             bs = base_subsets[(d, b)]
-            ix = selected_indices(hashes, d, b)
+            ix = original.selected_indices(hashes, d, b)
             sub = [events[int(i)] for i in ix]
             ids = [ids_full[int(i)] for i in ix]
             yrs = np.asarray([int(events[int(i)]["year"]) for i in ix], dtype=np.int64)
             frozen_annual = {str(y): [str(x) for x in bs["annual_event_ids"][str(y)]] for y in YEARS}
             frozen_ids = set(frozen_annual["2022"]).union(frozen_annual["2023"])
             req(set(ids) == frozen_ids and len(ids) == int(bs["event_count"]), f"sparse universe mismatch d={d} b={b}")
-            req(universe_hash(ids) == str(bs.get("event_universe_sha256", universe_hash(ids))), f"sparse universe hash mismatch d={d} b={b}")
+            req(original.universe_hash(ids) == str(bs["event_universe_sha256"]), f"sparse universe hash mismatch d={d} b={b}")
 
             print(f"[lrb-prelabel] d={d} b={b} n={len(ids)}", flush=True)
             rows, summary = lrb.local_renormalized_basin_cut(structural, support_pruned, sub)
@@ -135,7 +129,7 @@ def main() -> int:
                 "bucket": b,
                 "event_count": len(ids),
                 "events_by_year": {str(y): int(np.sum(yrs == y)) for y in YEARS},
-                "event_universe_sha256": universe_hash(ids),
+                "event_universe_sha256": original.universe_hash(ids),
                 "annual_event_ids": frozen_annual,
                 "equal_budget_k": int(bs["equal_budget_k"]),
                 "lrb_candidates": rows,
@@ -158,6 +152,7 @@ def main() -> int:
             "new_tuned_parameters": [],
         },
         "support_pruned_pretruth_sha256": SUPPORT_PRUNED_PRETRUTH_SHA,
+        "frozen_sparse_universe_source_blob": FROZEN_UNIVERSE_SOURCE_BLOB,
         "subsets": subsets,
         "mechanism_summary": {
             "active_panels": mechanism_panels,
