@@ -1,100 +1,49 @@
-# OrbitTrace paper-method selection
+# OrbitTrace paper-method selection — temporal-fairness correction
 
 ## Selected method
 
-**Recurrent-EOM HDBSCAN v1** is the preferred OrbitTrace paper/development methodology.
+**Recurrent-EOM HDBSCAN v1** remains the preferred OrbitTrace paper/development methodology on the strength of its frozen target-excluded GMN development result and its direct tie with the later density-synchronous refinement on the same pooled SonotaCo benchmark.
 
 Exact recurrent-EOM kernel Git blob:
 
 `30ac3fa3bc47910370df528fcf3ae8ecb6277b47`
 
-This selection is based on the combined target-excluded GMN development evidence, exposed SonotaCo 2013/2014 benchmark evidence, and the direct comparison against the later density-synchronous refinement (#1263).
+## Binding correction to the SonotaCo literature claim
 
-## 🟢 Positive evidence for recurrent-EOM
+The prior statement that recurrent-EOM had established **4/4 superiority over the frozen Sugar/HDBSCAN literature comparators** on SonotaCo 2013/2014 is withdrawn as a fair-comparison claim.
 
-Recurrent-EOM passed its frozen target-excluded GMN 2022+2023 development gate.
+Reason: the recurrent-EOM benchmark fits one pooled 2013+2014 hierarchy for each route and uses both years to determine recurrent stability, selected clusters, memberships, and ranking before evaluating the 2013 and 2014 panels separately. The frozen literature comparator runner instead executes Sugar or HDBSCAN on one year at a time. Thus recurrent-EOM receives cross-year temporal information that the literature comparators do not receive. Truth remains sealed until after all candidate outputs are frozen, so this is **not truth leakage**, but it is an information-set asymmetry and therefore cannot support a clean apples-to-apples literature-superiority claim.
 
-Its frozen exposed SonotaCo benchmark then beat exact v31 on all four established matched panels and also beat the corresponding frozen literature comparator on all four panels:
+The numerical SonotaCo results remain valid descriptions of the outputs produced under that asymmetric protocol:
 
-| Panel | recurrent-EOM macro-F1 / recovered | v31 macro-F1 / recovered |
+| Panel | recurrent-EOM macro-F1 / recovered | literature macro-F1 / recovered |
 |---|---:|---:|
-| Sugar 2013 | `0.3752906816276458 / 23` | `0.2719801488280529 / 16` |
-| Sugar 2014 | `0.43773122295664196 / 24` | `0.31529041952487225 / 17` |
-| HDBSCAN 2013 | `0.1914598192215768 / 11` | `0.14888037368183737 / 9` |
-| HDBSCAN 2014 | `0.1685878550176112 / 9` | `0.15198123772301594 / 9` |
+| Sugar 2013 | `0.3752906816276458 / 23` | `0.20372657466522806 / 13` |
+| Sugar 2014 | `0.43773122295664196 / 24` | `0.25901527732153334 / 15` |
+| HDBSCAN 2013 | `0.1914598192215768 / 11` | `0.16813025050497152 / 10` |
+| HDBSCAN 2014 | `0.1685878550176112 / 9` | `0.15689595582646423 / 9` |
 
-Binding recurrent-EOM SonotaCo run: `31829200215`.
+These values must be labeled **asymmetric temporal-context benchmark results**, not literature superiority.
 
-Artifact: `9230008341`.
+## Evidence that remains valid
 
-Result SHA-256:
+1. Recurrent-EOM passed its frozen target-excluded GMN 2022+2023 development gate.
+2. On the exposed SonotaCo pooled benchmark, recurrent-EOM beat exact v31 on all four panels. This comparison is temporally fair because v31 and recurrent-EOM are compared within the same established pooled benchmark framework.
+3. The later density-synchronous refinement #1263 tied recurrent-EOM exactly on all four direct SonotaCo panels and did not justify its added complexity.
 
-`c2395a86be5ba8a8b801210ac6e64b97c446e724991207aef85062ee00b89f12`
+## Required fair literature benchmark
 
-SonotaCo is **EXPOSED DEVELOPMENT / VALIDATION BENCHMARK**, not pristine external validation.
+Before claiming superiority to Sugar or catalogue HDBSCAN, rerun a preregistered benchmark with **equal temporal information**. Acceptable designs are:
 
-## 🟡 Direct comparison against #1263 density-synchronous recurrent-EOM
+- pooled-vs-pooled: give each comparator the same pooled 2013+2014 label-free event universe before freezing outputs, then score year-specific memberships under the same fixed candidate-budget and Hungarian-F1 evaluator; or
+- forward-transfer: fit/freeze every method using only a common development year set and evaluate on an untouched later year, with identical temporal access for every method.
 
-#1263 was a scientifically valid parameter-free refinement and passed its frozen full-GMN gate. Its strict recovered@100 gain, however, was not robust under the separately frozen 10-fold deletion diagnostic: aggregate recovered@100 was `1761 -> 1761`.
+Do not use the existing pooled recurrent-EOM versus single-year comparator run as evidence that recurrent-EOM beats the literature.
 
-The direct owner-authorized SonotaCo benchmark in PR #1269 then compared exact recurrent-EOM and exact #1263 density-sync on the same label-free rows, same pooled hierarchy per route, same truth, same fixed candidate budgets, and same Hungarian evaluator.
+## Current paper claim level
 
-Binding direct run: `31889652785`.
+Until an equal-temporal-information benchmark is completed, the defensible claim is:
 
-Artifact: `9248203777`.
+> recurrent-EOM is a positive modification of HDBSCAN under frozen target-excluded GMN development and shows strong portability on exposed SonotaCo, but superiority over the published Sugar/HDBSCAN comparators has not yet been established under a fully symmetric temporal-information benchmark.
 
-Artifact digest:
-
-`sha256:a9e3b7895b43465181d94376b873c04ddc70d815d325930a0a49332a144a23d0`
-
-Pretruth SHA-256:
-
-`051ea9a213c7a72b93875e8ddd6716aa884e802377c293b7b6cf4a6de5ca5609`
-
-Result SHA-256:
-
-`00b9defa3a07fc1396b8d9dcbc3bd62da44dc95e7245ad44d7bdedf375570f5c`
-
-Exact verdict:
-
-`NEUTRAL_DENSITY_SYNC_SONOTACO_DIRECT_BENCHMARK_V1`
-
-The four direct results were exact ties:
-
-| Panel | recurrent-EOM | #1263 density-sync | Delta |
-|---|---:|---:|---:|
-| Sugar 2013 | `0.3752906816276458 / 23` | `0.3752906816276458 / 23` | `0 / 0` |
-| Sugar 2014 | `0.43773122295664196 / 24` | `0.43773122295664196 / 24` | `0 / 0` |
-| HDBSCAN 2013 | `0.1914598192215768 / 11` | `0.1914598192215768 / 11` | `0 / 0` |
-| HDBSCAN 2014 | `0.1685878550176112 / 9` | `0.1685878550176112 / 9` | `0 / 0` |
-
-The density-synchronous mechanism was active, but both methods selected the exact same node sets on both SonotaCo routes. Their first complete-order difference occurred only at rank 42. Sugar top-34 was identical; Sugar top-46 contained the same candidate set; HDBSCAN top-9 and top-11 were identical. Therefore the established evaluation panels received no benefit from the added density-synchronous criterion.
-
-## Final decision
-
-Choose **recurrent-EOM HDBSCAN v1** over #1263 for the paper because:
-
-1. it already has a positive frozen GMN development result;
-2. it has 4/4 superiority versus v31 on the established SonotaCo benchmark;
-3. it has 4/4 superiority versus the matched literature comparators;
-4. #1263's extra full-GMN recovery gain is sample-sensitive under the frozen deletion diagnostic;
-5. #1263 produces zero gain over recurrent-EOM on all four direct SonotaCo validation panels;
-6. recurrent-EOM is the simpler method, so the evidence favors it by parsimony.
-
-This conclusion does not erase #1263's positive full-GMN result. It says only that the added density-synchronous criterion is not justified as the preferred paper method by the combined evidence.
-
-## Closed paths
-
-Do not restart:
-
-- the #1263 density-sync successor search;
-- alternate density-sync weights/minima/alignment/smoothing/blends;
-- AMOS outreach or AMOS data acquisition for this method-selection goal;
-- external-dataset shopping;
-- result-informed parameter or threshold rescue.
-
-Further OrbitTrace work should treat recurrent-EOM as fixed and focus on characterization, comparison, figures, and manuscript claims rather than another methodology-search loop.
-
-## Scientific firewall
-
-Protected solar longitude `[20°,55°]` remains inaccessible. OrbitTrace target information/events, MAARSY and DMS remain scientifically inaccessible. The direct method-selection benchmark used only the already-exposed SonotaCo benchmark outside the protected interval.
+Protected solar longitude `[20°,55°]`, OrbitTrace target information/events, MAARSY, and DMS remain inaccessible.
