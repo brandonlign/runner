@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/introspection.txt
-          import base64, gzip, inspect, importlib.util, pathlib, sys
+          import ast, base64, gzip, pathlib
           root=pathlib.Path('orbittrace_fixed4_blind_catalogue/source_parts')
           parts=sorted(root.glob('part*.b64'))
           if [p.name for p in parts] != [f'part{i:02d}.b64' for i in range(4)]:
@@ -40,13 +40,15 @@ jobs:
           forbidden=['april_candidate_members.csv','247.17','-14.34','37.62','OrbitTrace-April-36.9']
           hit=[x for x in forbidden if x in text]
           if hit: raise RuntimeError(f'target strings in blind source: {hit}')
-          q=pathlib.Path('/tmp/blind_scan.py'); q.write_bytes(raw)
-          spec=importlib.util.spec_from_file_location('blind_scan',q); mod=importlib.util.module_from_spec(spec); sys.modules['blind_scan']=mod; spec.loader.exec_module(mod)
+          tree=ast.parse(text)
           print('SOURCE_BYTES',len(raw))
-          for name in ['parse_catalogue','read_gmn_frame','scan_year','build_families','main']:
-              obj=getattr(mod,name)
-              print('\n###',name,inspect.signature(obj))
-              print(inspect.getsource(obj)[:12000])
+          wanted=['parse_catalogue','read_gmn_frame','scan_year','build_families','main']
+          funcs={n.name:n for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          for name in wanted:
+              if name not in funcs: raise RuntimeError(f'missing {name}')
+              node=funcs[name]
+              print('\n###',name)
+              print(ast.get_source_segment(text,node)[:16000])
           PY
           cat /tmp/introspection.txt
       - name: Comment PR
