@@ -1,0 +1,218 @@
+name: OrbitTrace M2D leave-one-out influence pruning v1
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-m2d-support-pruned-cut-v1]
+    paths:
+      - orbittrace_m2d_loo_influence_pruning_v1/**
+      - .github/workflows/orbittrace_m2d_loo_influence_pruning_v1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    outputs:
+      pretruth_sha: ${{ steps.seal.outputs.pretruth_sha }}
+      structural_pass: ${{ steps.seal.outputs.structural_pass }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact pretruth runtime and verify frozen sources
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          test "$(git hash-object orbittrace_m2d_loo_influence_pruning_v1/build_pretruth.py)" = '032c9bb983dcdbc6f46648e5f0e6ebbcbf39a516'
+          test "$(git hash-object orbittrace_m2d_loo_influence_pruning_v1/evaluate_gmn.py)" = '256e3ef9baec479ea51286bdb447c01b31a7e8ba'
+          python -m py_compile orbittrace_m2d_loo_influence_pruning_v1/build_pretruth.py orbittrace_m2d_loo_influence_pruning_v1/evaluate_gmn.py
+          mkdir -p input/cmr input/bif output/pretruth
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-core-majority-regrowth-v1-pretruth
+          path: input/cmr
+          github-token: ${{ github.token }}
+          repository: brandonlign/runner
+          run-id: '32301521305'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-annual-density-bifiltration-gmn-ranking-v1-prelabel
+          path: input/bif
+          github-token: ${{ github.token }}
+          repository: brandonlign/runner
+          run-id: '32037435314'
+      - name: Verify immutable zero-label inputs
+        run: |
+          set -euo pipefail
+          echo '8b77e80f305c6f47fc70b359bf03ebadcd6263b5d5ee6a6b9c30efda658bffcb  input/cmr/CORE_MAJORITY_REGROWTH_V1_PRETRUTH.json' | sha256sum -c -
+          echo '95f8a57718a30b2c7e85016d505276d72cccb9e4ac1d6eb29f13067efc73dd0c  input/bif/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json' | sha256sum -c -
+      - name: Build frozen one-shot M2D influence catalogue
+        run: |
+          set -euo pipefail
+          python -u orbittrace_m2d_loo_influence_pruning_v1/build_pretruth.py \
+            --cmr-pretruth input/cmr/CORE_MAJORITY_REGROWTH_V1_PRETRUTH.json \
+            --bif-endpoint-prelabel input/bif/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json \
+            --output output/pretruth/M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH.json
+      - name: Seal exact membership catalogue before shower truth
+        id: seal
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os
+          p='output/pretruth/M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH.json'
+          raw=open(p,'rb').read(); h=hashlib.sha256(raw).hexdigest(); r=json.loads(raw)
+          assert r['schema']=='ORBITTRACE_M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH'
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_M2D_LOIP_V1_DEVELOPMENT_RANKING'
+          assert r['configuration']['membership_rule']=='simultaneous one-shot deletion of each event whose independent exact leave-one-out deletion strictly increases parent M2D'
+          assert r['configuration']['recursive_recompute'] is False
+          assert r['configuration']['ranking_rule']=='exact promoted support-pruned parent M2D order'
+          assert r['configuration']['new_tuned_parameters']==[] and r['configuration']['one_candidate_per_parent'] is True
+          assert r['mechanism_summary']['ranking_changed_from_support_pruned'] is False
+          assert r['shower_truth_used'] is False and r['target_information_access'] is False and r['target_region_events_accessed'] is False and r['orbittrace_reveal_access'] is False and r['sonotaco_scientific_access'] is False
+          sp='true' if r['structural_pass'] else 'false'
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write('pretruth_sha='+h+'\n'); f.write('structural_pass='+sp+'\n')
+          open('output/pretruth/PRETRUTH_SHA256.txt','w').write(h+'  M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH.json\n')
+          print('LOIP_PRETRUTH_SHA='+h); print('STRUCTURAL_PASS='+sp)
+          print(json.dumps(r['mechanism_summary'],sort_keys=True))
+          print(json.dumps(r['size_summary'],sort_keys=True))
+          print(json.dumps(r['structural_gates'],sort_keys=True))
+          PY
+      - name: Preserve pretruth provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/pretruth/execution_commit.txt
+          python --version > output/pretruth/python_version.txt
+          python -m pip freeze > output/pretruth/environment.txt
+          sha256sum orbittrace_m2d_loo_influence_pruning_v1/PROTOCOL.md orbittrace_m2d_loo_influence_pruning_v1/build_pretruth.py orbittrace_m2d_loo_influence_pruning_v1/evaluate_gmn.py input/cmr/CORE_MAJORITY_REGROWTH_V1_PRETRUTH.json input/bif/BIFILTRATION_GMN_RANKING_V1_PRELABEL.json output/pretruth/M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH.json > output/pretruth/provenance_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-loo-influence-pruning-v1-pretruth
+          path: output/pretruth
+          if-no-files-found: error
+          retention-days: 90
+
+  truth:
+    needs: pretruth
+    if: needs.pretruth.outputs.structural_pass == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 0960edd77ea29b29b70d05f389dce312d451f0d2
+          path: frozen-bwm
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact hidden-label runtime and verify frozen evaluator
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          test "$(git hash-object orbittrace_m2d_loo_influence_pruning_v1/build_pretruth.py)" = '032c9bb983dcdbc6f46648e5f0e6ebbcbf39a516'
+          test "$(git hash-object orbittrace_m2d_loo_influence_pruning_v1/evaluate_gmn.py)" = '256e3ef9baec479ea51286bdb447c01b31a7e8ba'
+          echo '1578f5eb28fc7e66a2c73f3ef66a6697e20b53b992a7fc979276720047e534d6  frozen-bwm/orbittrace_bif_witness_modularity_v1/evaluate_gmn.py' | sha256sum -c -
+          mkdir -p input/pretruth input/fairness input/ranker input/v8 input/v3 output/truth
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-m2d-loo-influence-pruning-v1-pretruth
+          path: input/pretruth
+      - name: Verify exact sealed LOIP ranking
+        run: |
+          set -euo pipefail
+          echo '${{ needs.pretruth.outputs.pretruth_sha }}  input/pretruth/M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH.json' | sha256sum -c -
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-internal-mass-gmn-sparse-literature-fairness-v1-pretruth
+          path: input/fairness
+          github-token: ${{ github.token }}
+          repository: brandonlign/runner
+          run-id: '32268943692'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: brandonlign/runner
+          run-id: '31344632499'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: brandonlign/runner
+          run-id: '31217916558'
+      - name: Score frozen LOIP on exposed GMN development truth
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_m2d_loo_influence_pruning_v1/evaluate_gmn.py \
+            --loip-pretruth input/pretruth/M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH.json \
+            --expected-pretruth-sha '${{ needs.pretruth.outputs.pretruth_sha }}' \
+            --frozen-bwm-evaluator frozen-bwm/orbittrace_bif_witness_modularity_v1/evaluate_gmn.py \
+            --literature-pretruth input/fairness/GMN_INTERNAL_MASS_SPARSE_LITERATURE_FAIRNESS_V1_PRETRUTH.json \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output/truth/M2D_LOO_INFLUENCE_PRUNING_V1_GMN_RESULT.json
+      - name: Print exact development verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          p='output/truth/M2D_LOO_INFLUENCE_PRUNING_V1_GMN_RESULT.json'; r=json.load(open(p))
+          assert r['verdict'] in {'PASS_M2D_LOO_INFLUENCE_PRUNING_V1_GMN_DEVELOPMENT','FAIL_M2D_LOO_INFLUENCE_PRUNING_V1_GMN_DEVELOPMENT'}
+          assert r['loip_pretruth_sha256']=='${{ needs.pretruth.outputs.pretruth_sha }}'
+          assert r['post_result_parameter_search'] is False and r['target_information_access'] is False and r['target_region_events_accessed'] is False and r['orbittrace_reveal_access'] is False and r['sonotaco_scientific_access'] is False
+          print(r['verdict']); print('RESULT_SHA256='+hashlib.sha256(open(p,'rb').read()).hexdigest())
+          print(json.dumps({'routes':r['routes'],'scales':r['scales'],'inherited_gates':r['inherited_gates'],'extraction_gates':r['extraction_gates'],'gates':r['gates'],'size_summary':r['size_summary'],'mechanism_summary':r['mechanism_summary']},indent=2,sort_keys=True))
+          PY
+      - name: Preserve truth provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/truth/execution_commit.txt
+          python --version > output/truth/python_version.txt
+          python -m pip freeze > output/truth/environment.txt
+          sha256sum orbittrace_m2d_loo_influence_pruning_v1/PROTOCOL.md orbittrace_m2d_loo_influence_pruning_v1/build_pretruth.py orbittrace_m2d_loo_influence_pruning_v1/evaluate_gmn.py frozen-bwm/orbittrace_bif_witness_modularity_v1/evaluate_gmn.py input/pretruth/M2D_LOO_INFLUENCE_PRUNING_V1_PRETRUTH.json input/fairness/GMN_INTERNAL_MASS_SPARSE_LITERATURE_FAIRNESS_V1_PRETRUTH.json output/truth/M2D_LOO_INFLUENCE_PRUNING_V1_GMN_RESULT.json > output/truth/provenance_sha256.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-loo-influence-pruning-v1-gmn-result
+          path: output/truth
+          if-no-files-found: error
+          retention-days: 90
