@@ -1,0 +1,56 @@
+name: OrbitTrace DMS solar-longitude header-only diagnostic
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  diagnose:
+    if: >-
+      github.event.issue.number == 1374 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'DIAG_ORBITTRACE_DMS_SOLAR_HEADER_ONLY_V1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Locate solar-longitude-like header labels only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv,io,re,urllib.request,zipfile
+          from html.parser import HTMLParser
+          from urllib.parse import urljoin
+          PAGE='https://ceres.ta3.sk/iaumdcdb/home/catalog/video';ANCHOR='DMS1991-1998 - ZIP archive'
+          class P(HTMLParser):
+              def __init__(self):super().__init__();self.h=None;self.p=[];self.a=[]
+              def handle_starttag(self,t,attrs):
+                  if t.lower()=='a':self.h=dict(attrs).get('href');self.p=[]
+              def handle_data(self,d):
+                  if self.h is not None:self.p.append(d)
+              def handle_endtag(self,t):
+                  if t.lower()=='a' and self.h is not None:self.a.append((''.join(self.p).strip(),self.h));self.h=None;self.p=[]
+          def get(u):
+              r=urllib.request.Request(u,headers={'User-Agent':'OrbitTrace-DMS-solar-header-only/1.0'})
+              with urllib.request.urlopen(r,timeout=60) as f:return f.read()
+          page=get(PAGE);p=P();p.feed(page.decode());links=[h for text,h in p.a if text==ANCHOR];assert len(links)==1
+          raw=get(urljoin(PAGE,links[0]));
+          with zipfile.ZipFile(io.BytesIO(raw)) as z:
+              names=[i.filename for i in z.infolist() if not i.is_dir()];assert len(names)==1;text=z.read(names[0]).decode('utf-8-sig')
+          rows=[r for r in csv.reader(io.StringIO(text),delimiter=';') if r and any(c.strip() for c in r)];assert len(rows)==910 and len(rows[0])==len(rows[1])==42
+          patterns=('sol','sun','lambda','long','ls','lam')
+          hits=[]
+          for i in range(42):
+              labels=[rows[0][i].strip(),rows[1][i].strip()]
+              norm=' '.join(labels).lower()
+              if any(pat in norm for pat in patterns): hits.append({'index':i,'headers':labels})
+          print(hits)
+          assert hits
+          PY
+      - name: Report completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_SOLAR_HEADER_ONLY=${GITHUB_RUN_ID}"
