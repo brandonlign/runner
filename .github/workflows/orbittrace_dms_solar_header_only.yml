@@ -1,6 +1,9 @@
 name: OrbitTrace DMS solar-longitude header-only diagnostic
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/orbittrace_dms_solar_header_only.trigger']
   issue_comment:
     types: [created]
 
@@ -11,9 +14,10 @@ permissions:
 jobs:
   diagnose:
     if: >-
-      github.event.issue.number == 1374 &&
-      github.event.comment.user.login == 'brandonlign' &&
-      github.event.comment.body == 'DIAG_ORBITTRACE_DMS_SOLAR_HEADER_ONLY_V1'
+      github.event_name == 'push' ||
+      (github.event.issue.number == 1374 &&
+       github.event.comment.user.login == 'brandonlign' &&
+       github.event.comment.body == 'DIAG_ORBITTRACE_DMS_SOLAR_HEADER_ONLY_V1')
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
@@ -21,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import csv,io,re,urllib.request,zipfile
+          import csv,io,urllib.request,zipfile
           from html.parser import HTMLParser
           from urllib.parse import urljoin
           PAGE='https://ceres.ta3.sk/iaumdcdb/home/catalog/video';ANCHOR='DMS1991-1998 - ZIP archive'
@@ -51,6 +55,7 @@ jobs:
           assert hits
           PY
       - name: Report completion
+        if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_SOLAR_HEADER_ONLY=${GITHUB_RUN_ID}"
