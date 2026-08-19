@@ -1,0 +1,122 @@
+name: OrbitTrace RC-EOM v1 paper benchmark relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-rc-eom-v1-paper-benchmark
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  BENCH_BRANCH: agent/orbittrace-recurrent-constrained-eom-v1
+  FROZEN_HEAD: 227eff9a70ee1dcfeb27ce3b00afdf0a3f09696f
+
+jobs:
+  evaluate:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1363 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_RC_EOM_V1_PAPER_BENCHMARK'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1363 --repo "${{ github.repository }}" --body "ORBITTRACE_RC_EOM_V1_PAPER_BENCHMARK_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind immutable pretruth and evaluator
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${FROZEN_HEAD}"
+          test ! -e orbittrace_recurrent_constrained_eom_v1/RESULT.json
+          test "$(git hash-object orbittrace_recurrent_constrained_eom_v1/rc_eom.py)" = 'bee32ec9e613a4b7e7aba0b0a9b3d6d08c92e730'
+          test "$(git hash-object orbittrace_recurrent_constrained_eom_v1/build_pretruth.py)" = '09794ce28a5fd5e6233f613b62d1e4844d33c518'
+          test "$(git hash-object orbittrace_recurrent_constrained_eom_v1/PROTOCOL.md)" = 'c87422e345c1ade75f8c597a711a44af19ac76c8'
+          test "$(git hash-object orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH.json)" = '602b964019605b45bb160fbfac4a547fd6722cba'
+          test "$(sha256sum orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH.json | awk '{print $1}')" = '46b5a447507480c7297ebf6fd0c9f261e8b79dc8bb986e5bd6ae6550060fe09b'
+          test "$(git hash-object orbittrace_recurrent_constrained_eom_v1/evaluate_paper_benchmark.py)" = '17fbcb73bc3c280ac539c4a76b7c6bdf782d0499'
+          test "$(git hash-object orbittrace_recurrent_constrained_eom_v1/EVALUATION_FREEZE.json)" = 'ba708c951b41f5ce767f0e2959ae3f08e54b9391'
+          test "$(git hash-object orbittrace_temporal_fair_literature_v1/RESULT.json)" = '1ac067658d7a1d99b1a276099ca6d3fee83a6c0b'
+          echo PASS_BINDING_FREEZE
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install evaluator runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+          python -m py_compile orbittrace_recurrent_constrained_eom_v1/evaluate_paper_benchmark.py
+          mkdir -p input/truth output/result
+
+      - name: Download paper truth only after pretruth/evaluator bind
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Evaluate exact current paper benchmark
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_constrained_eom_v1/evaluate_paper_benchmark.py \
+            --pretruth orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH.json \
+            --truth-root input/truth \
+            --paper-result orbittrace_temporal_fair_literature_v1/RESULT.json \
+            --output output/result
+          test -f output/result/RESULT.json
+          sha256sum output/result/RESULT.json | tee output/result/RESULT_SHA256.txt
+          cat output/result/RESULT.json
+
+      - name: Commit binding result
+        run: |
+          set -euo pipefail
+          cp output/result/RESULT.json orbittrace_recurrent_constrained_eom_v1/RESULT.json
+          cp output/result/RESULT_SHA256.txt orbittrace_recurrent_constrained_eom_v1/RESULT_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_recurrent_constrained_eom_v1/RESULT.json orbittrace_recurrent_constrained_eom_v1/RESULT_SHA256.txt
+          git commit -m 'Record RC-EOM v1 paper benchmark result'
+          git push origin HEAD:"${BENCH_BRANCH}"
+
+      - name: Upload binding result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rc-eom-v1-paper-benchmark-${{ github.run_id }}
+          path: output/result
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1363 --repo "${{ github.repository }}" --body "ORBITTRACE_RC_EOM_V1_PAPER_BENCHMARK_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1363 --repo "${{ github.repository }}" --body "ORBITTRACE_RC_EOM_V1_PAPER_BENCHMARK_FAILED=${GITHUB_RUN_ID}"
