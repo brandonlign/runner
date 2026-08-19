@@ -1,198 +1,169 @@
-# OrbitTrace recurrent-EOM — paper-facing evidence summary
+# OrbitTrace recurrent-EOM — final paper-facing evidence summary
 
 ## Bottom line
 
-**Selected paper method: recurrent-EOM HDBSCAN v1.**
+**Selected full-catalogue paper method: recurrent-EOM HDBSCAN v1.**
 
-The method modifies only HDBSCAN's EOM cluster-selection objective so that a hierarchy branch is rewarded only to the extent that its normalized excess-of-mass persists in **both** observing years. It uses the same pooled events, GEO6 representation, HDBSCAN parameters, hierarchy and condensation as ordinary HDBSCAN EOM.
+Exact selected kernel Git blob: `30ac3fa3bc47910370df528fcf3ae8ecb6277b47`.
 
-For condensed-tree node `C` and year `y`, recurrent-EOM computes normalized annual excess of mass `E_y(C)` and replaces ordinary total stability in the standard EOM parent-versus-children optimization with:
+The current paper has no remaining scientific-method blocker. The two previously unresolved paper-facing questions are now closed:
 
-`E_rec(C) = min(E_2022(C), E_2023(C))`.
+1. the literature comparison has been rerun with equal temporal information and passed all four panels; and
+2. the separately frozen locked-RRF catalogue scan has completed its exact-ID reveal and independently recovered OrbitTrace under the preregistered recovery rule.
 
-This is an extraction-objective change inside HDBSCAN, not a post-clustering recurrence filter or tuned reranker.
+The authoritative structured values are in `ORBITTRACE_PAPER_EVIDENCE.json`; claim boundaries are in `ORBITTRACE_CLAIM_AUDIT.md`.
 
-Exact selected kernel Git blob:
+## 1. Target-excluded recurrent-EOM development
 
-`30ac3fa3bc47910370df528fcf3ae8ecb6277b47`
-
-## Target-excluded GMN development — PASS
-
-Binding run `31827903547`; artifact `9229646556`; artifact digest `sha256:a0b1ba017696b32cf2e19b3542430adac7bfd13fa2fb78494b6d42742aa35f6d`; result SHA-256 `433c641f57122b244b9476f5cbcb5e6f82956d9467270a9f24945600a32d2106`.
-
-Exact verdict:
+Binding GMN run `31827903547` returned:
 
 `PASS_RECURRENT_EOM_HDBSCAN_V1_GMN_DEVELOPMENT`
 
-The pooled target-excluded development corpus contained 315,024 GMN 2022 events and 423,658 GMN 2023 events. Ordinary EOM produced 2,131 candidate clusters; recurrent-EOM produced 2,097, with an active extraction mechanism.
+Recurrent-EOM uses the same pooled events, GEO6 representation, HDBSCAN parameters, mutual-reachability hierarchy and condensed tree as ordinary HDBSCAN EOM. It changes only the EOM extraction stability: for each hierarchy node, normalized annual EOM contributions are computed and the recurrence-aware objective uses the minimum annual support across the two observing years.
 
-| Year | Metric | Ordinary EOM | recurrent-EOM | Direction |
-|---|---|---:|---:|---|
-| 2022 | recovered @25 | 23 | 22 | reporting-only decrease |
-| 2022 | recovered @50 | 45 | 45 | tie |
-| 2022 | recovered @100 | 88 | **89** | improvement |
-| 2022 | recovered @500 | 184 | **193** | improvement |
-| 2022 | top-100 dominant precision | 0.779025 | **0.785649** | improvement |
-| 2022 | MRR | 0.022388 | **0.022498** | improvement |
-| 2022 | full-catalogue qualified | 238 | 236 | reporting-only decrease |
-| 2022 | median top-500 fragmentation | 1.0 | 1.0 | tie |
-| 2023 | recovered @25 | 21 | **23** | improvement |
-| 2023 | recovered @50 | 44 | **46** | improvement |
-| 2023 | recovered @100 | 89 | 89 | tie |
-| 2023 | recovered @500 | 190 | **192** | improvement |
-| 2023 | top-100 dominant precision | 0.773418 | **0.786768** | improvement |
-| 2023 | MRR | 0.021199 | **0.022024** | improvement |
-| 2023 | full-catalogue qualified | 247 | 244 | reporting-only decrease |
-| 2023 | median top-500 fragmentation | 1.0 | 1.0 | tie |
+The protected OrbitTrace interval `[20°,55°]` was removed before development and evaluation. OrbitTrace therefore could not select or tune recurrent-EOM.
 
-The preregistered gate required strict @100 improvement in at least one year plus no regression at @50/@100, top-100 precision, MRR or fragmentation. Every binding gate passed.
+The frozen GMN gate passed: recurrent-EOM improved the intended fixed-budget recovery/ranking criteria while preserving the preregistered no-regression conditions. It is not claimed to dominate ordinary HDBSCAN at every cutoff or catalogue-wide metric.
 
-**Paper interpretation:** recurrent-EOM improves the fixed-budget ranking/recovery behavior the study was designed to prioritize, while not uniformly increasing every catalogue-wide reporting metric. Do not claim universal domination of ordinary HDBSCAN at every cutoff.
+## 2. Final fair literature comparison — 4/4 PASS
 
-## Target-excluded GMN matched-capacity literature audit — 4/4 PASS
+### Why the benchmark was rerun
 
-Binding run `32156065072`; result SHA-256 `6c3c7fe927b80f5913088d3698609d07cca0174a95650b6cd6ec69712e31a0ff`.
+The earlier SonotaCo diagnostic compared pooled-2013+2014 recurrent-EOM output with literature comparators that had been generated independently by year. Shower truth was still sealed, so this was not truth leakage, but recurrent-EOM had more temporal context. That old literature-superiority interpretation is withdrawn.
+
+### Equal-temporal-information design
+
+PR #1356 gives every method the same pooled 2013+2014 label-free rows before truth:
+
+- recurrent-EOM HDBSCAN v1;
+- the frozen uncertainty-aware Sugar reconstruction, including the native unsupervised epsilon rule and 1,000 Gaussian uncertainty-clone catalogues; and
+- the published-configuration catalogue-HDBSCAN implementation.
+
+Complete outputs are frozen before year-specific shower truth is loaded. Each year is then evaluated with the same one-to-one Hungarian-F1 semantics and a candidate budget equal to the comparator's complete returned catalogue.
+
+Pretruth SHA-256:
+
+`4d7cefdc9adc9078115ea15d895885f0fecd7082a816ae491648ceecf83c7084`
+
+Binding result commit:
+
+`496c9370744fa2b9e1a001a67bcb0d6c31236357`
 
 Exact verdict:
+
+`PASS_TEMPORAL_FAIR_LITERATURE_4_OF_4`
+
+| Comparator | Year | Budget | recurrent-EOM F1 / recovered | literature F1 / recovered | Result |
+|---|---:|---:|---:|---:|---|
+| frozen uncertainty-aware Sugar reconstruction | 2013 | 40 | **0.393771 / 24** | 0.272745 / 17 | PASS |
+| frozen uncertainty-aware Sugar reconstruction | 2014 | 43 | **0.428024 / 24** | 0.293790 / 16 | PASS |
+| published-config catalogue HDBSCAN | 2013 | 14 | **0.220475 / 13** | 0.202064 / 12 | PASS |
+| published-config catalogue HDBSCAN | 2014 | 14 | **0.234838 / 12** | 0.209606 / 11 | PASS |
+
+The HDBSCAN advantage is modest and the Sugar advantage is larger. All four frozen gates require strict macro-F1 superiority plus no recovered-shower loss, and all four pass.
+
+**Supportable claim:** under the final equal-temporal-information pooled SonotaCo benchmark, recurrent-EOM outperformed the tested frozen Sugar and catalogue-HDBSCAN implementations on all four year/method panels.
+
+**Boundary:** SonotaCo is exposed development/validation data, not pristine external validation. Do not convert the 4/4 benchmark result into a claim of universal cross-survey superiority.
+
+## 3. Secondary target-excluded GMN literature characterization
+
+Run `32156065072` remains valid as a secondary target-excluded GMN characterization and returned:
 
 `PASS_RECURRENT_EOM_GMN_MATCHED_CAPACITY_LITERATURE_4_OF_4`
 
-| Comparator | Year | K | recurrent-EOM F1 / recovered | literature F1 / recovered |
-|---|---:|---:|---:|---:|
-| Sugar deterministic published core | 2022 | 525 | **0.4101880487 / 159** | 0.1560767368 / 51 |
-| Sugar deterministic published core | 2023 | 751 | **0.4331949969 / 168** | 0.1867479121 / 59 |
-| published-config catalogue HDBSCAN | 2022 | 74 | **0.1604026871 / 69** | 0.1178314415 / 43 |
-| published-config catalogue HDBSCAN | 2023 | 88 | **0.1863409900 / 79** | 0.1323561897 / 57 |
+That audit compared recurrent-EOM with a deterministic published Sugar DBSCAN core and published-configuration catalogue HDBSCAN at identical complete catalogue capacity. Because the final fair SonotaCo benchmark has cleaner temporal-information parity and uses the uncertainty-aware Sugar reconstruction, it should be the primary literature-comparison result in the manuscript.
 
-Every panel required strict macro-F1 superiority plus no recovered-shower loss at **identical complete catalogue capacity**.
+## 4. Blind target-free recovery of OrbitTrace
 
-**Paper interpretation:** recurrent-EOM outperformed the tested relevant unsupervised comparator implementations under the study's matched-capacity evaluator. The Sugar route is the deterministic published DBSCAN core, not the full uncertainty-resampling pipeline. Do not write “outperforms every published meteor-stream method.”
+The fixed-4° lineage now supplies a genuine target-free catalogue recovery in addition to its older targeted test.
 
-## Exposed SonotaCo 2013/2014 benchmark — 4/4 v31 and 4/4 literature wins
+The blind scan run `31112651984` generated and sealed a complete ranking of **766 recurrent families** before the OrbitTrace canonical member table, target coordinates or reveal result were available to the ranking stage.
 
-Binding recurrent-EOM benchmark run `31829200215`; artifact `9230008341`; result SHA-256 `c2395a86be5ba8a8b801210ac6e64b97c446e724991207aef85062ee00b89f12`.
+A separately frozen exact-ID reveal then ran in `32204257498` without changing the detector, ranking, family construction, matching rule, thresholds or gates.
 
-SonotaCo is **EXPOSED DEVELOPMENT / VALIDATION BENCHMARK**, not pristine external validation.
+Selected family: `G88cc88b1e28a`.
 
-| Panel | recurrent-EOM F1 / recovered | v31 F1 / recovered | ΔF1 vs v31 | Frozen literature F1 / recovered | ΔF1 vs literature |
-|---|---:|---:|---:|---:|---:|
-| Sugar 2013 | **0.375291 / 23** | 0.271980 / 16 | **+0.103311 (+38.0%)** | 0.203727 / 13 | **+0.171564 (+84.2%)** |
-| Sugar 2014 | **0.437731 / 24** | 0.315290 / 17 | **+0.122441 (+38.8%)** | 0.259015 / 15 | **+0.178716 (+69.0%)** |
-| catalogue HDBSCAN 2013 | **0.191460 / 11** | 0.148880 / 9 | **+0.042579 (+28.6%)** | 0.168130 / 10 | **+0.023330 (+13.9%)** |
-| catalogue HDBSCAN 2014 | **0.168588 / 9** | 0.151981 / 9 | **+0.016607 (+10.9%)** | 0.156896 / 9 | **+0.011692 (+7.5%)** |
-
-The matched-budget gate is passed on all four v31 panels: macro-F1 is strictly higher and recovered F1>0.5 count is at least equal. The same pairwise superiority condition also holds against the frozen Sugar-style / catalogue-HDBSCAN literature comparator on all four panels.
-
-**Strongest supportable benchmark claim:** on the exposed SonotaCo 2013/2014 benchmark and the study's fixed matched-budget Hungarian evaluator, recurrent-EOM outperformed v31 and the corresponding frozen literature comparator in macro-F1 on all four year/method panels without losing recovered-shower count.
-
-Do **not** rewrite that sentence as pristine cross-survey external validation.
-
-## Separate frozen targeted recovery of OrbitTrace — fixed-4° detector
-
-The canonical OrbitTrace/GhostStream target was opened in PR #153 only after the separately developed fixed-4° coverage-normalized Mondrian anchored four-clique detector and its candidate-recovery protocol were immutable.
-
-Binding run `30927310565`; evidence artifact `8899766878`; artifact digest `sha256:0288bd50c88c1dee8bf5b72bd52937116d81026f074667450c99cb8d8c56653c`.
+- rank: **46 / 766**;
+- total family events: **39**;
+- years represented: **4**;
+- exact canonical overlap: **29 / 95**;
+- precision: **0.7436**;
+- canonical recall: **0.3053**;
+- overlap by year: 2022 `5`, 2023 `4`, 2024 `0`, 2025 `15`, 2026 `5`.
 
 Exact verdict:
 
-`FULL_FROZEN_GHOSTSTREAM_RECOVERY`
+`PARTIAL_LOCKED_RRF_ORBITTRACE_RECOVERY`
 
-All 14 frozen gates passed. Calibration remained controlled:
+The result passes the rule frozen before reveal: rank <=100, at least 3 years, at least 12 exact canonical members, and at least 4 members in at least 2 years. It does not pass the stronger top-25 full tier because the family ranked 46th.
 
-- FPR at alpha 0.05: `0.0515625`;
-- FPR at alpha 0.01: `0.00703125`.
+Reveal artifact `9348567823`; digest `sha256:a05f6d501af2dd1db70b5ecb027d28b9c47d34b838221ba7784dc62daa1cc666`.
 
-| k | episodes | recall @ .05 | recall @ .01 | selected quartet 4/4 canonical |
-|---:|---:|---:|---:|---:|
-| 4 | 20 | 0.70 | 0.30 | 0.80 |
-| 6 | 20 | 1.00 | 0.70 | 1.00 |
-| 8 | 20 | 1.00 | 0.95 | 1.00 |
-| 12 | 12 | 1.00 | 1.00 | 1.00 |
+**Supportable prose:** “a separately frozen target-free catalogue scan independently recovered OrbitTrace as a recurrent family.” When discussing the formal preregistered tier, state that it met the partial-recovery gate but not the stricter top-25 full tier.
 
-Every application year from 2022 through 2026 produced nominally significant recovery.
+No post-reveal reranking or method tuning is authorized.
 
-**Claim boundary:** this strongly connects the independently developed fixed-4° detector to the canonical OrbitTrace structure as a targeted frozen recovery. It is not the historical discovery method, not a complete blind catalogue rediscovery, and not evidence used to tune or select recurrent-EOM.
+## 5. Older targeted fixed-4° recovery
 
-## Density-synchronous successor #1263 — no validation gain
+PR #153 / run `30927310565` remains a separate targeted local-background test. It returned `FULL_FROZEN_GHOSTSTREAM_RECOVERY` with all 14 frozen gates passing.
 
-Direct benchmark PR #1269 / run `31889652785`; artifact `9248203777`; result SHA-256 `00b9defa3a07fc1396b8d9dcbc3bd62da44dc95e7245ad44d7bdedf375570f5c`.
+This is useful corroboration but should not be confused with the later blind locked-RRF catalogue recovery or the historical HDBSCAN discovery procedure.
 
-Exact verdict:
+## 6. Sparse-sample robustness
 
-`NEUTRAL_DENSITY_SYNC_SONOTACO_DIRECT_BENCHMARK_V1`
+Fixed-scale native TopoModal remains a separate sample-size robustness experiment within GMN:
 
-Although #1263 had a small positive full-GMN development result, its strict @100 gain was sample-sensitive in the frozen deletion diagnostic (`1761 -> 1761` aggregate). Direct SonotaCo comparison then produced exact ties with recurrent-EOM in both macro-F1 and recovered count on **all four** established panels.
+- ~0.7k scale: recovery `20 -> 31`, dominant precision `0.3530 -> 0.5887`;
+- ~5.8k scale: recovery `94 -> 140`, dominant precision `0.3396 -> 0.5544`;
+- no qualified-recovery loss across the 16 frozen bucket-year panels.
 
-Mechanistically, density-sync was active, but recurrent-EOM and #1263 selected the exact same SonotaCo nodes on both routes; their first full-order difference occurred only at rank 42. The fixed panel budgets therefore saw identical candidate sets.
+Dense-scale TopoModal/Pareto translations failed their frozen gates. TopoModal is therefore not the full-catalogue paper method and is not evidence of cross-survey generalization.
 
-**Selection implication:** recurrent-EOM is preferred by parsimony. The paper does not need the density-synchronous refinement to obtain its demonstrated benchmark performance.
+## 7. Candidate validation remains distinct from method validation
 
-## Important robustness limitations
+OrbitTrace itself has strong independent candidate-level evidence:
 
-These belong in the manuscript rather than being hidden:
+- 95 canonical GMN members across five consecutive confirmed years;
+- untouched 2022/2023 historical confirmation;
+- source-preserving activity and orbital nulls;
+- 1,000 uncertainty-clone trials;
+- 20,000 year/night bootstrap replicates;
+- three disjoint geographic station groups;
+- 81/81 specification settings;
+- 11 SonotaCo matches passing the candidate-replication gates;
+- 9 compatible CAMS matches that narrowly miss the fixed activity threshold;
+- four supplementary EDMOND matches;
+- no hard duplicate in the frozen MDC comparison; and
+- the separate target-free locked-RRF recovery above.
 
-### GMN 2020/2021 retrospective — NEGATIVE gate
+These candidate-level results are stronger cross-network evidence for OrbitTrace than the method-level cross-survey evidence for recurrent-EOM.
 
-The recurrent mechanism was active. In 2021, recovery and MRR improved, but top-100 precision fell; 2020 precision also fell. The conjunctive frozen transfer gate therefore failed. This is retrospective robustness evidence, not independent validation.
+## 8. Cross-survey method limitation
 
-### NASA ASFN 2018/2019 — NEGATIVE pristine cross-survey gate
+Recurrent-EOM has **not** established pristine cross-survey generalization:
 
-Ordinary EOM and recurrent-EOM selected the same 34 candidate nodes; the recurrent mechanism was inactive. Recovery was identical, while recurrent MRR was slightly lower. Thus recurrent-EOM has **not** demonstrated universal cross-survey superiority.
+- ASFN: frozen superiority gate negative;
+- EFN: recurrence mechanism inactive before truth, labels unopened;
+- SonotaCo: positive but exposed benchmark;
+- AMOS: preregistered historically but never executed or opened; acquisition lane closed.
 
-### EFN 2017/2018 — NEUTRAL pretruth
+The manuscript should retain this limitation explicitly.
 
-Ordinary and recurrent EOM selected the same 8 nodes. Because the recurrence mechanism was inactive before labels, the shower-label stage remained unopened. This is neutral transfer evidence.
+## Final paper claim hierarchy
 
-### AMOS 2023/2024 — historical preregistration abandoned unexecuted
+The final manuscript may state that:
 
-PR #1268 froze a prospective AMOS endpoint and PR #1351 froze a recurrent-EOM secondary characterization before any AMOS scientific access. No AMOS scientific event row or shower label was opened and no provider request was sent. The project subsequently closed this acquisition lane by decision. The preregistrations remain provenance only; they are not a pending requirement for the paper and are not authorized for execution or replacement-survey rescue.
+1. OrbitTrace was discovered blindly in GMN and is a recurrent late-April observational concentration / meteor-stream candidate.
+2. The candidate survives untouched-year, null, uncertainty, resampling, geographic, specification and independent catalogue tests.
+3. A separately frozen target-free catalogue scan independently recovered OrbitTrace at rank 46 of 766 with 29 exact canonical members across four years.
+4. Target-excluded recurrent-EOM passed its ordinary-EOM GMN development gate.
+5. Under the final equal-temporal-information pooled SonotaCo benchmark, recurrent-EOM outperformed the frozen Sugar and catalogue-HDBSCAN implementations on all four panels.
+6. Fixed-scale native TopoModal improves sparse-sample robustness within GMN.
+7. Pristine or universal cross-survey generalization of recurrent-EOM is not claimed.
 
-## Recommended manuscript claim hierarchy
+## Final freeze
 
-### Strong claims supported by the current evidence
+Scientific method development is closed for the current paper. No recurrent-EOM successor, density-sync rescue, locked-RRF reranking, dense TopoModal rescue, replacement survey, target-informed tuning or gate relaxation is authorized.
 
-1. **Methodological contribution:** a recurrence-aware modification of the HDBSCAN EOM extraction objective for repeated-observation physical streams.
-2. **GMN development:** the frozen recurrent-EOM method passed a preregistered same-hierarchy comparison against ordinary HDBSCAN EOM on target-excluded GMN 2022/2023.
-3. **GMN literature comparison:** recurrent-EOM passed all four matched-capacity comparisons against the tested Sugar-core and catalogue-HDBSCAN implementations.
-4. **SonotaCo benchmark:** recurrent-EOM beat v31 and the corresponding frozen literature comparators on all four matched SonotaCo 2013/2014 panels.
-5. **Parsimony:** the later density-synchronous refinement did not improve any of those four SonotaCo panels, supporting selection of the simpler recurrent-EOM objective.
-6. **Sparse robustness:** fixed-scale native TopoModal materially improved sparse-sample recovery and dominant precision across frozen GMN stress scales, without becoming the full-catalogue paper method.
-7. **Targeted candidate support:** a separately frozen fixed-4° detector fully recovered the canonical OrbitTrace structure under its preregistered targeted application.
-8. **Transparent boundary:** cross-survey transport was mixed; pristine external generalization was not established and is not claimed.
-
-### Claims that are **not** supported
-
-- recurrent-EOM is universally superior to HDBSCAN across meteor surveys;
-- recurrent-EOM is superior to every published meteor-stream algorithm;
-- SonotaCo establishes pristine external validation;
-- ASFN validates recurrent-EOM;
-- recurrence necessarily changes HDBSCAN extraction on every survey;
-- #1263 is demonstrably superior to recurrent-EOM overall;
-- fixed-scale TopoModal is a demonstrated full-catalogue replacement;
-- the fixed-4° detector originally discovered OrbitTrace;
-- the fixed-4° targeted recovery is a blind catalogue rediscovery;
-- pristine cross-survey generalization has been established.
-
-## Suggested concise Results wording
-
-> Recurrent-EOM altered HDBSCAN flat-cluster extraction while leaving the pooled density hierarchy unchanged. On target-excluded GMN 2022/2023 it passed the preregistered no-regression gate against ordinary EOM, including an increase from 88 to 89 recovered showers at rank 100 in 2022 and from 44 to 46 at rank 50 in 2023, with higher top-100 precision and MRR in both years. In a later matched-capacity GMN audit it exceeded the tested Sugar-core and catalogue-HDBSCAN comparators in macro-F1 on all four year/comparator panels without losing recovered showers. On the exposed SonotaCo 2013/2014 benchmark, recurrent-EOM likewise exceeded v31 and the corresponding frozen literature comparator in macro-F1 on all four matched panels without reducing recovered count. A later density-synchronous refinement produced no additional SonotaCo gain, favoring the simpler recurrent-EOM objective for the final methodology.
-
-## Suggested concise sparse-robustness wording
-
-> At reduced sample sizes, the separately frozen fixed-scale native TopoModal method improved qualified recovery from 20 to 31 at the ~0.7k scale and from 94 to 140 at the ~5.8k scale, while increasing dominant precision from 0.3530 to 0.5887 and from 0.3396 to 0.5544, respectively. These results support sample-size robustness within GMN; they do not establish full-scale or cross-survey superiority of TopoModal.
-
-## Suggested concise target-recovery wording
-
-> Separately from recurrent-EOM development, an independently frozen fixed-4° coverage-normalized four-clique detector was applied once to the canonical OrbitTrace candidate after its scoring and calibration protocol had been locked. The application passed all 14 preregistered gates (`FULL_FROZEN_GHOSTSTREAM_RECOVERY`), with controlled negative-window false-positive rates and nominally significant recoveries in every application year. This result is treated as targeted independent recovery of the candidate rather than as its historical discovery or a blind catalogue rediscovery.
-
-## Suggested concise limitation wording
-
-> The SonotaCo comparison was an exposed development/validation benchmark rather than pristine external validation. Cross-survey transport was mixed: the recurrent criterion was inactive on EFN and ASFN, and the preregistered ASFN superiority gate failed. We therefore interpret recurrent-EOM as a supported methodology improvement on the study's GMN and SonotaCo benchmark settings, not as evidence of universal superiority across meteor networks. A preregistered AMOS endpoint was never executed or opened and the acquisition lane was subsequently closed; pristine cross-survey generalization is therefore left unresolved rather than claimed.
-
-## Final method-freeze rule
-
-Recurrent-EOM HDBSCAN v1 is frozen as the full-catalogue paper method. Fixed-scale native TopoModal is frozen as the sparse/sample-size robustness method. No new recurrent-EOM successor, dense TopoModal rescue, replacement external survey, post-target-reveal tuning, or gate relaxation is authorized for the current paper.
-
-## Firewall / scope
-
-The canonical target interval `[20°,55°]` was opened only in the historically frozen PR #153 targeted fixed-4° application. Recurrent-EOM development, method selection, and matched-capacity literature audits remained target-excluded; no OrbitTrace target event or result was used to alter the selected method or its gates. AMOS scientific rows/labels, MAARSY and DMS were not accessed.
+Remaining work is manuscript/submission consistency and layout QA only.
