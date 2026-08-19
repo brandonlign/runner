@@ -1,0 +1,25 @@
+name: OrbitTrace internal-mass GMN branch probe
+
+on:
+  push:
+    branches: [agent/orbittrace-internal-mass-gmn-sparse-literature-fairness-v1]
+    paths: ['orbittrace_internal_mass_gmn_sparse_literature_fairness_v1/PROBE.md']
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1377,
+              body: `GMN_SPARSE_FAIRNESS_STATUS: BRANCH_PROBE_OK\nworkflow_run_id: ${context.runId}\nhead_sha: ${context.sha}`
+            });
