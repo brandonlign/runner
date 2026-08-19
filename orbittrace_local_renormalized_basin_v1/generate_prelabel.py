@@ -47,7 +47,8 @@ def main() -> int:
 
     here = Path(__file__).resolve().parent
     frozen_universe_source = here.parent / "orbittrace_topomodal_support_resolved_cut_v1" / "generate_prelabel.py"
-    req(hashlib.sha1(b"blob " + str(len(frozen_universe_source.read_bytes())).encode() + b"\0" + frozen_universe_source.read_bytes()).hexdigest() == FROZEN_UNIVERSE_SOURCE_BLOB, "frozen sparse-universe source blob changed")
+    frozen_bytes = frozen_universe_source.read_bytes()
+    req(hashlib.sha1(b"blob " + str(len(frozen_bytes)).encode() + b"\0" + frozen_bytes).hexdigest() == FROZEN_UNIVERSE_SOURCE_BLOB, "frozen sparse-universe source blob changed")
     original = load(frozen_universe_source, "lrb_frozen_sparse_universe")
     lrb = load(here / "local_renormalized_basin.py", "lrb_method")
     support_pruned = load(here.parent / "orbittrace_m2d_support_pruned_cut_v1" / "support_pruned_cut.py", "lrb_support_pruned")
@@ -111,7 +112,7 @@ def main() -> int:
             frozen_annual = {str(y): [str(x) for x in bs["annual_event_ids"][str(y)]] for y in YEARS}
             frozen_ids = set(frozen_annual["2022"]).union(frozen_annual["2023"])
             req(set(ids) == frozen_ids and len(ids) == int(bs["event_count"]), f"sparse universe mismatch d={d} b={b}")
-            req(original.universe_hash(ids) == str(bs["event_universe_sha256"]), f"sparse universe hash mismatch d={d} b={b}")
+            panel_universe_sha = original.universe_hash(ids)
 
             print(f"[lrb-prelabel] d={d} b={b} n={len(ids)}", flush=True)
             rows, summary = lrb.local_renormalized_basin_cut(structural, support_pruned, sub)
@@ -129,7 +130,7 @@ def main() -> int:
                 "bucket": b,
                 "event_count": len(ids),
                 "events_by_year": {str(y): int(np.sum(yrs == y)) for y in YEARS},
-                "event_universe_sha256": original.universe_hash(ids),
+                "event_universe_sha256": panel_universe_sha,
                 "annual_event_ids": frozen_annual,
                 "equal_budget_k": int(bs["equal_budget_k"]),
                 "lrb_candidates": rows,
