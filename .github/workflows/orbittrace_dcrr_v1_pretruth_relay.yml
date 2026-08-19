@@ -1,0 +1,121 @@
+name: OrbitTrace DCRR v1 pretruth relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-dcrr-v1-pretruth
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  BENCH_BRANCH: agent/orbittrace-dual-cut-recurrent-rank-v1
+  FROZEN_HEAD: 48447f6e804bfb46272641cb368a1d144c74213f
+
+jobs:
+  pretruth:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1365 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_DCRR_V1_PRETRUTH'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Announce
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1365 --repo "${{ github.repository }}" --body "ORBITTRACE_DCRR_V1_PRETRUTH_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind frozen DCRR method
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${FROZEN_HEAD}"
+          test ! -e orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH.json
+          test ! -e orbittrace_dual_cut_recurrent_rank_v1/RESULT.json
+          test "$(git hash-object orbittrace_dual_cut_recurrent_rank_v1/PROTOCOL.md)" = '028327585823779cd0624161aeb3904ab98eed51'
+          test "$(git hash-object orbittrace_dual_cut_recurrent_rank_v1/build_pretruth.py)" = '9e35ae71b35d59b9412321002f6fda76409fbba3'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python -m py_compile orbittrace_dual_cut_recurrent_rank_v1/build_pretruth.py orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py
+          mkdir -p input/rows output
+
+      - name: Download exact paper label-free rows
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Build and seal DCRR pretruth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_dual_cut_recurrent_rank_v1/build_pretruth.py --rows-root input/rows --output output
+          test -f output/DCRR_V1_PRETRUTH.json
+          sha256sum output/DCRR_V1_PRETRUTH.json | tee output/DCRR_V1_PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/DCRR_V1_PRETRUTH.json'))
+          assert p['truth_accessed'] is False
+          assert p['shower_label_fields_accessed'] is False
+          assert any(v['mechanism_active'] for v in p['routes'].values())
+          print('PASS_DCRR_PRETRUTH', {r:{k:v[k] for k in ('ordinary_candidate_count','current_recurrent_candidate_count','dcrr_candidate_count','ordinary_only_node_count','recurrent_only_node_count')} for r,v in p['routes'].items()})
+          PY
+
+      - name: Upload immutable pretruth
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-dcrr-v1-pretruth-${{ github.run_id }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit pretruth
+        run: |
+          set -euo pipefail
+          cp output/DCRR_V1_PRETRUTH.json orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH.json
+          cp output/DCRR_V1_PRETRUTH_SHA256.txt orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH.json orbittrace_dual_cut_recurrent_rank_v1/DCRR_V1_PRETRUTH_SHA256.txt
+          git commit -m 'Record DCRR v1 label-free pretruth'
+          git push origin HEAD:"${BENCH_BRANCH}"
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1365 --repo "${{ github.repository }}" --body "ORBITTRACE_DCRR_V1_PRETRUTH_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1365 --repo "${{ github.repository }}" --body "ORBITTRACE_DCRR_V1_PRETRUTH_FAILED=${GITHUB_RUN_ID}"
