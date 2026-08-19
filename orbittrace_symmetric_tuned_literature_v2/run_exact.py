@@ -1,12 +1,34 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import importlib.util
 import math
+import sys
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 import run_benchmark as benchmark
+
+
+def load_module_dataclass_safe(path: Path, name: str) -> Any:
+    """Import an exact frozen source file without changing its bytes.
+
+    Python 3.11 dataclasses expects the executing module to already be present in
+    sys.modules.  The original generic loader omitted that registration.  This is
+    an import-interface repair only; the frozen source file itself is unchanged.
+    """
+    spec = importlib.util.spec_from_file_location(name, path)
+    benchmark.req(spec is not None and spec.loader is not None, f"cannot import {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        sys.modules.pop(name, None)
+        raise
+    return mod
 
 
 def sugar_candidate_output_exact(
@@ -61,9 +83,9 @@ def sugar_candidate_output_exact(
     )
 
 
-# Final pre-result symmetric search spaces.  Both HDBSCAN-based methods receive
+# Final pre-result symmetric search spaces. Both HDBSCAN-based methods receive
 # the identical finite-support grid, including the literature configuration at
-# min_cluster_size=min_samples=100.  Sugar receives a deliberately broad
+# min_cluster_size=min_samples=100. Sugar receives a deliberately broad
 # dataset-level epsilon-percentile search while retaining its exact frozen core.
 benchmark.SUPPORT_GRID = (
     (5, 5),
@@ -76,9 +98,9 @@ benchmark.SUPPORT_GRID = (
 )
 benchmark.SUGAR_PERCENTILES = (5.0, 10.0, 15.0, 20.0, 23.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0)
 
-# hdbscan 0.8.44 uses the newer ensure_all_finite keyword while the frozen
-# scikit-learn 1.4.2 runtime uses force_all_finite. Apply the same compatibility
-# bridge before recurrent-EOM or catalogue-HDBSCAN performs its first fit.
+# Engineering compatibility only: exact frozen source bytes and all scientific
+# settings remain unchanged.
+benchmark.load_module = load_module_dataclass_safe
 benchmark.install_hdb_compat()
 benchmark.sugar_candidate_output = sugar_candidate_output_exact
 raise SystemExit(benchmark.main())
