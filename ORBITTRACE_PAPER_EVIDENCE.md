@@ -143,9 +143,9 @@ Ordinary EOM and recurrent-EOM selected the same 34 candidate nodes; the recurre
 
 Ordinary and recurrent EOM selected the same 8 nodes. Because the recurrence mechanism was inactive before labels, the shower-label stage remained unopened. This is neutral transfer evidence.
 
-### AMOS 2023/2024 — pristine endpoint still unopened
+### AMOS 2023/2024 — historical preregistration abandoned unexecuted
 
-The historical one-shot AMOS endpoint remains frozen in PR #1268. The recurrent-EOM secondary characterization gate is separately frozen and synthetic/source audited in PR #1351. No AMOS scientific event row or shower label has been opened.
+PR #1268 froze a prospective AMOS endpoint and PR #1351 froze a recurrent-EOM secondary characterization before any AMOS scientific access. No AMOS scientific event row or shower label was opened and no provider request was sent. The project subsequently closed this acquisition lane by decision. The preregistrations remain provenance only; they are not a pending requirement for the paper and are not authorized for execution or replacement-survey rescue.
 
 ## Recommended manuscript claim hierarchy
 
@@ -156,7 +156,9 @@ The historical one-shot AMOS endpoint remains frozen in PR #1268. The recurrent-
 3. **GMN literature comparison:** recurrent-EOM passed all four matched-capacity comparisons against the tested Sugar-core and catalogue-HDBSCAN implementations.
 4. **SonotaCo benchmark:** recurrent-EOM beat v31 and the corresponding frozen literature comparators on all four matched SonotaCo 2013/2014 panels.
 5. **Parsimony:** the later density-synchronous refinement did not improve any of those four SonotaCo panels, supporting selection of the simpler recurrent-EOM objective.
-6. **Targeted candidate support:** a separately frozen fixed-4° detector fully recovered the canonical OrbitTrace structure under its preregistered targeted application.
+6. **Sparse robustness:** fixed-scale native TopoModal materially improved sparse-sample recovery and dominant precision across frozen GMN stress scales, without becoming the full-catalogue paper method.
+7. **Targeted candidate support:** a separately frozen fixed-4° detector fully recovered the canonical OrbitTrace structure under its preregistered targeted application.
+8. **Transparent boundary:** cross-survey transport was mixed; pristine external generalization was not established and is not claimed.
 
 ### Claims that are **not** supported
 
@@ -166,12 +168,18 @@ The historical one-shot AMOS endpoint remains frozen in PR #1268. The recurrent-
 - ASFN validates recurrent-EOM;
 - recurrence necessarily changes HDBSCAN extraction on every survey;
 - #1263 is demonstrably superior to recurrent-EOM overall;
+- fixed-scale TopoModal is a demonstrated full-catalogue replacement;
 - the fixed-4° detector originally discovered OrbitTrace;
-- the fixed-4° targeted recovery is a blind catalogue rediscovery.
+- the fixed-4° targeted recovery is a blind catalogue rediscovery;
+- pristine cross-survey generalization has been established.
 
 ## Suggested concise Results wording
 
 > Recurrent-EOM altered HDBSCAN flat-cluster extraction while leaving the pooled density hierarchy unchanged. On target-excluded GMN 2022/2023 it passed the preregistered no-regression gate against ordinary EOM, including an increase from 88 to 89 recovered showers at rank 100 in 2022 and from 44 to 46 at rank 50 in 2023, with higher top-100 precision and MRR in both years. In a later matched-capacity GMN audit it exceeded the tested Sugar-core and catalogue-HDBSCAN comparators in macro-F1 on all four year/comparator panels without losing recovered showers. On the exposed SonotaCo 2013/2014 benchmark, recurrent-EOM likewise exceeded v31 and the corresponding frozen literature comparator in macro-F1 on all four matched panels without reducing recovered count. A later density-synchronous refinement produced no additional SonotaCo gain, favoring the simpler recurrent-EOM objective for the final methodology.
+
+## Suggested concise sparse-robustness wording
+
+> At reduced sample sizes, the separately frozen fixed-scale native TopoModal method improved qualified recovery from 20 to 31 at the ~0.7k scale and from 94 to 140 at the ~5.8k scale, while increasing dominant precision from 0.3530 to 0.5887 and from 0.3396 to 0.5544, respectively. These results support sample-size robustness within GMN; they do not establish full-scale or cross-survey superiority of TopoModal.
 
 ## Suggested concise target-recovery wording
 
@@ -179,8 +187,12 @@ The historical one-shot AMOS endpoint remains frozen in PR #1268. The recurrent-
 
 ## Suggested concise limitation wording
 
-> The SonotaCo comparison was an exposed development/validation benchmark rather than pristine external validation. Cross-survey transport was mixed: the recurrent criterion was inactive on EFN and ASFN, and the preregistered ASFN superiority gate failed. We therefore interpret recurrent-EOM as a supported methodology improvement on the study's GMN and SonotaCo benchmark settings, not as evidence of universal superiority across meteor networks. Pristine cross-survey validation remains contingent on the already-frozen AMOS 2023/2024 endpoint.
+> The SonotaCo comparison was an exposed development/validation benchmark rather than pristine external validation. Cross-survey transport was mixed: the recurrent criterion was inactive on EFN and ASFN, and the preregistered ASFN superiority gate failed. We therefore interpret recurrent-EOM as a supported methodology improvement on the study's GMN and SonotaCo benchmark settings, not as evidence of universal superiority across meteor networks. A preregistered AMOS endpoint was never executed or opened and the acquisition lane was subsequently closed; pristine cross-survey generalization is therefore left unresolved rather than claimed.
+
+## Final method-freeze rule
+
+Recurrent-EOM HDBSCAN v1 is frozen as the full-catalogue paper method. Fixed-scale native TopoModal is frozen as the sparse/sample-size robustness method. No new recurrent-EOM successor, dense TopoModal rescue, replacement external survey, post-target-reveal tuning, or gate relaxation is authorized for the current paper.
 
 ## Firewall / scope
 
-The canonical target interval `[20°,55°]` was opened only in the historically frozen PR #153 targeted fixed-4° application. Recurrent-EOM development, method selection, matched-capacity literature audits, and the AMOS endpoint remain target-excluded; no OrbitTrace target event or result may be used to alter the selected method or its gates. AMOS scientific rows/labels, MAARSY and DMS remain scientifically inaccessible.
+The canonical target interval `[20°,55°]` was opened only in the historically frozen PR #153 targeted fixed-4° application. Recurrent-EOM development, method selection, and matched-capacity literature audits remained target-excluded; no OrbitTrace target event or result was used to alter the selected method or its gates. AMOS scientific rows/labels, MAARSY and DMS were not accessed.
