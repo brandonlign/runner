@@ -1,0 +1,94 @@
+name: OrbitTrace DMS coverage parser repair v1 relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  audit:
+    if: >-
+      github.event.issue.number == 1374 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_DMS_COVERAGE_PARSER_REPAIR_V1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_COVERAGE_REPAIR_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-dms-coverage-parser-repair-v1
+          fetch-depth: 1
+
+      - name: Bind frozen repair and parent
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '31862a8d427d500ed8479fef07d96e85fb90c078'
+          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py)" = '8e519aa54b8f45e5fecc5d81cb4c20f2d5178685'
+          test "$(git hash-object orbittrace_dms_coverage_parser_repair_v1/PROTOCOL.md)" = 'a23a213dba78ff556a6164c8019c8f265b23015d'
+          test "$(git hash-object orbittrace_dms_coverage_parser_repair_v1/run_repaired_coverage.py)" = '645766be2a81a784032492f204262b09c5854161'
+          python -m py_compile orbittrace_dms_coverage_parser_repair_v1/run_repaired_coverage.py
+
+      - name: Run repaired coverage-only audit
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_dms_coverage_parser_repair_v1/run_repaired_coverage.py --output output/dms_coverage_repaired_v1.json
+
+      - name: Enforce scientific firewall and binding verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/dms_coverage_repaired_v1.json'))
+          assert r['catalogue']=='DMS1991-1998'
+          assert r['scientific_fields_accessed'] is False
+          assert r['radiant_accessed'] is False
+          assert r['velocity_accessed'] is False
+          assert r['orbital_elements_accessed'] is False
+          assert r['shower_labels_accessed'] is False
+          assert r['v15_executed'] is False
+          assert r['comparators_executed'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['maarsy_access'] is False
+          assert r['orbittrace_target_information_access'] is False
+          assert r['verdict'] in {'ELIGIBLE_DMS_PAIR_RESERVED_PRE_SCIENCE','INELIGIBLE_DMS_NO_ADEQUATE_CONSECUTIVE_PAIR'}
+          assert r['schema_mode']=='named_header'
+          assert r['parsed_row_count']==908
+          print(json.dumps({'verdict':r['verdict'],'reserved_pair':r.get('reserved_pair'),'years':r.get('years'),'schema_mode':r['schema_mode'],'parsed_row_count':r['parsed_row_count']},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/source_commit.txt
+          sha256sum orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py orbittrace_dms_coverage_parser_repair_v1/PROTOCOL.md orbittrace_dms_coverage_parser_repair_v1/run_repaired_coverage.py output/dms_coverage_repaired_v1.json > output/provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-dms-coverage-parser-repair-v1-${{ github.run_id }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_COVERAGE_REPAIR_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_COVERAGE_REPAIR_FAILED=${GITHUB_RUN_ID}"
