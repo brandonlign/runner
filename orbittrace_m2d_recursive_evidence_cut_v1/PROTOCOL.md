@@ -15,19 +15,18 @@ The physical TopoModal hierarchy is unchanged:
 - M2D formula: `M_2D(S)=(1/|S|)*sum_{B subseteq S}|B|*A(B)` with the same frozen annual-density bifiltration evidence;
 - score tie-breaks do not affect the hierarchy cut; strict floating-point `>` is used.
 
-The recursive evidence cut is deterministic:
+The recursive evidence cut is deterministic on the hierarchy compressed to reportable (support >=4) nodes:
 
-1. a leaf with support >=4 is emitted;
-2. a child with support <4 is treated as unreportable noise;
-3. if exactly one immediate child is reportable, recurse into that child and discard the sub-support sibling;
-4. if both immediate children are reportable, compare the already-frozen exact M2D scores of the parent and the two immediate children:
+1. a reportable node with no reportable descendant child is emitted;
+2. unreportable support <4 twigs are treated as noise and skipped when forming the compressed hierarchy;
+3. if a reportable node has exactly one immediate reportable descendant child, recurse into that child;
+4. if it has two immediate reportable descendant children, compare the exact M2D scores of the parent and the two children:
    - if `max(M2D(child_a), M2D(child_b)) > M2D(parent)`, recurse into **both** children;
-   - otherwise emit the parent;
-5. if neither child is reportable but the parent has support >=4, emit the parent.
+   - otherwise emit the parent.
 
-Thus no target branch can be cherry-picked: whenever evidence forces a split, both reportable branches remain eligible. The output is one pairwise-disjoint antichain/frontier of the hierarchy.
+Thus no target branch can be cherry-picked: whenever evidence forces a split, both reportable branches remain eligible. The output is one pairwise-disjoint antichain/frontier of the hierarchy. Compressing sub-support twigs is exactly the support-pruned behavior, expressed without introducing another parameter.
 
-Final selected families are ranked by unchanged M2D descending, then modal contrast descending, then family hash ascending.
+Final selected families are ranked by unchanged M2D descending, then family hash ascending. Exact M2D ties are therefore resolved deterministically without adding a scientific score.
 
 ## Development firewall
 
