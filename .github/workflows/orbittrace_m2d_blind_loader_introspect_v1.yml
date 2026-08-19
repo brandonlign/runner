@@ -7,6 +7,12 @@ on:
     paths:
       - .github/workflows/orbittrace_m2d_blind_loader_introspect_v1.yml
       - orbittrace_m2d_blind_rediscovery_v1/INTROSPECT_RUN.md
+  pull_request:
+    branches:
+      - agent/orbittrace-support-cut-bifiltration-internal-mass-gmn-v1
+    paths:
+      - .github/workflows/orbittrace_m2d_blind_loader_introspect_v1.yml
+      - orbittrace_m2d_blind_rediscovery_v1/INTROSPECT_RUN.md
 
 permissions:
   contents: read
@@ -23,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/introspection.txt
-          import ast, base64, gzip, inspect, importlib.util, pathlib, sys
+          import base64, gzip, inspect, importlib.util, pathlib, sys
           p=pathlib.Path('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64')
           raw=gzip.decompress(base64.b64decode(''.join(p.read_text().split()), validate=True))
           text=raw.decode()
@@ -36,8 +42,7 @@ jobs:
           for name in ['parse_catalogue','read_gmn_frame','scan_year','build_families','main']:
               obj=getattr(mod,name)
               print('\n###',name,inspect.signature(obj))
-              src=inspect.getsource(obj)
-              print(src[:12000])
+              print(inspect.getsource(obj)[:12000])
           PY
           cat /tmp/introspection.txt
       - name: Comment PR
