@@ -1,0 +1,192 @@
+name: OrbitTrace protected-prefix fusion CV v1 comment relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-protected-prefix-fusion-cv-v1-binding
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  BENCH_BRANCH: agent/orbittrace-protected-prefix-fusion-cv-v1
+
+jobs:
+  benchmark:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1368 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_PROTECTED_PREFIX_FUSION_CV_V1_BINDING'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1368 --repo "${{ github.repository }}" --body "ORBITTRACE_PROTECTED_PREFIX_CV_RUN_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind frozen benchmark head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '0a7aa3264037e6a8703e285cf6a9e3019236d7ca'
+          test "$(git hash-object orbittrace_protected_prefix_fusion_cv_v1/PROTOCOL.md)" = '9ab153fc96e89782d8ab00766d06a2e2c11594b8'
+          test "$(git hash-object orbittrace_protected_prefix_fusion_cv_v1/evaluate.py)" = '723f3cab48e2b6ca4aa8a6f88e42cc55bd5630f9'
+          test "$(git hash-object orbittrace_recurrent_eom_hdbscan_v1/run_development.py)" = 'fdc4f3f6e037014aadfcc3ce41b7344aa0a80b2c'
+          test ! -f orbittrace_protected_prefix_fusion_cv_v1/RESULT.json
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact runtime and verify frozen source
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0'
+          mkdir -p input/v3 input/v8 input/ranker input/prelabel output
+          python -m py_compile orbittrace_protected_prefix_fusion_cv_v1/evaluate.py
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (
+            cd frozen-v8
+            python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+            test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          )
+          test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-support-cut-bifiltration-internal-mass-v1
+          path: input/prelabel
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32041661731
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+
+      - name: Verify immutable pretruth inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/prelabel/SUPPORT_CUT_BIFILTRATION_INTERNAL_MASS_V1_PRELABEL.json | cut -d' ' -f1)" = '7b1ddfcd32cd0b52321e3b3dfc614a88dd9b973f947c1d4d0de74fddf26b59cd'
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b'
+          python - <<'PY'
+          import json
+          p=json.load(open('input/prelabel/SUPPORT_CUT_BIFILTRATION_INTERNAL_MASS_V1_PRELABEL.json'))
+          assert p['shower_truth_used'] is False
+          assert p['target_information_access'] is False
+          assert p['target_region_events_accessed'] is False
+          assert p['sonotaco_2013_2014_access'] is False
+          PY
+
+      - name: Execute binding cross-year held-out fusion benchmark
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_protected_prefix_fusion_cv_v1/evaluate.py \
+            --prelabel input/prelabel/SUPPORT_CUT_BIFILTRATION_INTERNAL_MASS_V1_PRELABEL.json \
+            --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --output output
+          cat output/PROTECTED_PREFIX_FUSION_CV_V1_GMN.json
+
+      - name: Enforce binding verdict and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/PROTECTED_PREFIX_FUSION_CV_V1_GMN.json'))
+          assert r['schema']=='ORBITTRACE_PROTECTED_PREFIX_FUSION_CV_V1_GMN'
+          assert r['scientific_role']=='TARGET_EXCLUDED_GMN_2022_2023_CROSS_YEAR_HELDOUT_FUSION_DEVELOPMENT'
+          assert r['verdict'] in {'PASS_PROTECTED_PREFIX_FUSION_CV_V1_GMN','FAIL_PROTECTED_PREFIX_FUSION_CV_V1_GMN'}
+          assert r['source_prelabel_sha256']=='7b1ddfcd32cd0b52321e3b3dfc614a88dd9b973f947c1d4d0de74fddf26b59cd'
+          assert len(r['heldout_panels'])==16 and len(r['gates'])==10 and len(r['selections'])==4
+          assert r['test_year_used_for_configuration_selection'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['sonotaco_2013_2014_access'] is False
+          assert r['asfn_efn_event_level_access'] is False
+          assert r['amos_scientific_access'] is False and r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['post_result_parameter_search'] is False
+          print(r['verdict'])
+          print(json.dumps({'selections':r['selections'],'scales':r['scale_aggregates'],'gates':r['gates']},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum orbittrace_protected_prefix_fusion_cv_v1/PROTOCOL.md orbittrace_protected_prefix_fusion_cv_v1/evaluate.py input/prelabel/SUPPORT_CUT_BIFILTRATION_INTERNAL_MASS_V1_PRELABEL.json output/PROTECTED_PREFIX_FUSION_CV_V1_GMN.json > output/provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-protected-prefix-fusion-cv-v1-binding-${{ github.run_id }}
+          path: output
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1368 --repo "${{ github.repository }}" --body "ORBITTRACE_PROTECTED_PREFIX_CV_RUN_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1368 --repo "${{ github.repository }}" --body "ORBITTRACE_PROTECTED_PREFIX_CV_RUN_FAILED=${GITHUB_RUN_ID}"
