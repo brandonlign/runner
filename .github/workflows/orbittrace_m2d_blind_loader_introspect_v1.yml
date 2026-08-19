@@ -1,0 +1,47 @@
+name: OrbitTrace M2D blind loader introspection v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-m2d-blind-rediscovery-v1
+    paths:
+      - .github/workflows/orbittrace_m2d_blind_loader_introspect_v1.yml
+      - orbittrace_m2d_blind_rediscovery_v1/INTROSPECT_RUN.md
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode source and inspect loader interfaces only
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/introspection.txt
+          import ast, base64, gzip, inspect, importlib.util, pathlib, sys
+          p=pathlib.Path('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64')
+          raw=gzip.decompress(base64.b64decode(''.join(p.read_text().split()), validate=True))
+          text=raw.decode()
+          forbidden=['april_candidate_members.csv','247.17','-14.34','37.62','OrbitTrace-April-36.9']
+          hit=[x for x in forbidden if x in text]
+          if hit: raise RuntimeError(f'target strings in blind source: {hit}')
+          q=pathlib.Path('/tmp/blind_scan.py'); q.write_bytes(raw)
+          spec=importlib.util.spec_from_file_location('blind_scan',q); mod=importlib.util.module_from_spec(spec); sys.modules['blind_scan']=mod; spec.loader.exec_module(mod)
+          print('SOURCE_BYTES',len(raw))
+          for name in ['parse_catalogue','read_gmn_frame','scan_year','build_families','main']:
+              obj=getattr(mod,name)
+              print('\n###',name,inspect.signature(obj))
+              src=inspect.getsource(obj)
+              print(src[:12000])
+          PY
+          cat /tmp/introspection.txt
+      - name: Comment PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1378 --repo "$GITHUB_REPOSITORY" --body-file /tmp/introspection.txt
