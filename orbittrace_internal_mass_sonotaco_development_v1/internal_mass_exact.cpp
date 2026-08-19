@@ -58,8 +58,11 @@ int main(int argc,char**argv){
         };
         long double total=0.0L;
         for(size_t bi=0;bi<blevels.size();bi++){
-            int b=blevels[bi]; while(ep<es.size() && es[ep].b>=b){ addForestEdge(es[ep]); ep++; }
+            int b=blevels[bi]; while(ep<es.size() && es[ep].b>=b){ // because no skipped levels before current; process newly eligible
+                addForestEdge(es[ep]); ep++;
+            }
             int bnext=(bi+1<blevels.size()?blevels[bi+1]:0); long double wb=(long double)(b-bnext)/(long double)N14;
+            // Inner critical levels and event buckets.
             vector<int> alevels; alevels.reserve(n+xs.size());
             for(uint32_t u=0;u<n;u++) if(d14[u]>=b && d13[u]>0) alevels.push_back(d13[u]);
             for(auto &xe:xs) if(xe.b>=b && xe.a>0) alevels.push_back(xe.a);
