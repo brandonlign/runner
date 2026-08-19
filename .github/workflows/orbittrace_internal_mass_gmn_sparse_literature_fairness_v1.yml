@@ -3,12 +3,16 @@ name: OrbitTrace internal-mass sparse GMN literature fairness v1
 on:
   push:
     branches: [agent/orbittrace-internal-mass-gmn-sparse-literature-fairness-v1]
-    paths: ['orbittrace_internal_mass_gmn_sparse_literature_fairness_v1/ACTIVATE.md']
+    paths:
+      - 'orbittrace_internal_mass_gmn_sparse_literature_fairness_v1/ACTIVATE.md'
+      - 'orbittrace_internal_mass_gmn_sparse_literature_fairness_v1/VISIBLE_RUN.md'
   workflow_dispatch:
 
 permissions:
   contents: read
   actions: read
+  issues: write
+  pull-requests: write
 
 env:
   PYTHONUNBUFFERED: '1'
@@ -124,6 +128,18 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Report technical pretruth failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1377,
+              body: `GMN_SPARSE_FAIRNESS_STATUS: TECHNICAL_PRETRUTH_FAILURE\nworkflow_run_id: ${context.runId}\nNo binding scientific result was produced in this job.`
+            });
+
   truth:
     needs: pretruth
     runs-on: ubuntu-22.04
@@ -224,3 +240,41 @@ jobs:
           path: output/truth
           if-no-files-found: error
           retention-days: 90
+
+      - name: Report binding result
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const path = 'output/truth/GMN_INTERNAL_MASS_SPARSE_LITERATURE_FAIRNESS_V1_RESULT.json';
+            const raw = fs.readFileSync(path);
+            const r = JSON.parse(raw.toString('utf8'));
+            const h = crypto.createHash('sha256').update(raw).digest('hex');
+            const s = r.aggregates.sugar2017;
+            const d = r.aggregates.hdbscan2025;
+            const body = [
+              'GMN_SPARSE_FAIRNESS_STATUS: BINDING_RESULT',
+              `workflow_run_id: ${context.runId}`,
+              `verdict: ${r.verdict}`,
+              `result_sha256: ${h}`,
+              '',
+              `Sugar — M2D mean macro-F1 ${s.successor.mean_macro_f1} vs ${s.comparator.mean_macro_f1}; recovered>0.5 ${s.successor.total_recovered_f1_gt_05} vs ${s.comparator.total_recovered_f1_gt_05}; panels W/T/L ${s.panel_relations.wins}/${s.panel_relations.ties}/${s.panel_relations.losses}`,
+              `HDBSCAN — M2D mean macro-F1 ${d.successor.mean_macro_f1} vs ${d.comparator.mean_macro_f1}; recovered>0.5 ${d.successor.total_recovered_f1_gt_05} vs ${d.comparator.total_recovered_f1_gt_05}; panels W/T/L ${d.panel_relations.wins}/${d.panel_relations.ties}/${d.panel_relations.losses}`,
+              '',
+              `interpretation: ${r.interpretation_boundary}`
+            ].join('\n');
+            await github.rest.issues.createComment({owner: context.repo.owner, repo: context.repo.repo, issue_number: 1377, body});
+
+      - name: Report technical truth failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1377,
+              body: `GMN_SPARSE_FAIRNESS_STATUS: TECHNICAL_TRUTH_FAILURE\nworkflow_run_id: ${context.runId}\nA binding scientific result was not successfully serialized/reported by this job.`
+            });
