@@ -1,4 +1,4 @@
-name: OrbitTrace DMS full-header-only diagnostic relay
+name: OrbitTrace DMS date-derived solar-longitude coverage v1
 
 on:
   issue_comment:
@@ -10,48 +10,82 @@ permissions:
   actions: read
 
 jobs:
-  diagnose:
+  audit:
     if: >-
       github.event.issue.number == 1374 &&
       github.event.comment.user.login == 'brandonlign' &&
-      github.event.comment.body == 'DIAG_ORBITTRACE_DMS_FULL_HEADER_ONLY_V1'
+      github.event.comment.body == 'RUN_ORBITTRACE_DMS_DATE_DERIVED_LS_COVERAGE_V1_BINDING'
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Announce exact run
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_FULL_HEADER_STARTED=${GITHUB_RUN_ID}"
+        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_DATE_LS_COVERAGE_STARTED=${GITHUB_RUN_ID}"
 
-      - name: Read exactly two DMS header rows, no data values
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-dms-date-derived-ls-coverage-v1
+          fetch-depth: 1
+
+      - name: Bind frozen coverage source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'f79eff566e679d6ce6dafb20d0054f0bed754b1b'
+          test "$(git hash-object orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py)" = '8e519aa54b8f45e5fecc5d81cb4c20f2d5178685'
+          test "$(git hash-object orbittrace_dms_date_derived_ls_coverage_v1/PROTOCOL.md)" = '7e6d824f08b69399bba1c5be842415a0bb48ce3f'
+          test "$(git hash-object orbittrace_dms_date_derived_ls_coverage_v1/run_coverage.py)" = '6d7b6db4256500fc3c73c63dfb0cec3c63173214'
+          PYTHONPATH=. python -m py_compile orbittrace_dms_date_derived_ls_coverage_v1/run_coverage.py
+
+      - name: Run binding coverage audit
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          PYTHONPATH=. python -u orbittrace_dms_date_derived_ls_coverage_v1/run_coverage.py --output output/dms_date_ls_coverage_v1.json
+
+      - name: Enforce firewall and verdict
         run: |
           set -euo pipefail
           python - <<'PY'
-          import csv,io,json,urllib.request,zipfile
-          from html.parser import HTMLParser
-          from urllib.parse import urljoin
-          PAGE='https://ceres.ta3.sk/iaumdcdb/home/catalog/video';ANCHOR='DMS1991-1998 - ZIP archive'
-          class P(HTMLParser):
-              def __init__(self):super().__init__();self.h=None;self.p=[];self.a=[]
-              def handle_starttag(self,t,attrs):
-                  if t.lower()=='a':self.h=dict(attrs).get('href');self.p=[]
-              def handle_data(self,d):
-                  if self.h is not None:self.p.append(d)
-              def handle_endtag(self,t):
-                  if t.lower()=='a' and self.h is not None:self.a.append((''.join(self.p).strip(),self.h));self.h=None;self.p=[]
-          def get(u):
-              r=urllib.request.Request(u,headers={'User-Agent':'OrbitTrace-DMS-header-only/1.0'})
-              with urllib.request.urlopen(r,timeout=60) as f:return f.read()
-          page=get(PAGE);p=P();p.feed(page.decode());links=[h for text,h in p.a if text==ANCHOR];assert len(links)==1
-          raw=get(urljoin(PAGE,links[0]))
-          with zipfile.ZipFile(io.BytesIO(raw)) as z:
-              names=[i.filename for i in z.infolist() if not i.is_dir()];assert len(names)==1;text=z.read(names[0]).decode('utf-8-sig')
-          rows=[r for r in csv.reader(io.StringIO(text),delimiter=';') if r and any(c.strip() for c in r)]
-          assert len(rows)==910 and len(rows[0])==len(rows[1])==42
-          print(json.dumps([{'index':i,'header0':rows[0][i].strip(),'header1':rows[1][i].strip()} for i in range(42)],indent=2))
+          import json
+          r=json.load(open('output/dms_date_ls_coverage_v1.json'))
+          assert r['catalogue']=='DMS1991-1998'
+          assert r['parsed_row_count']==908
+          assert r['allowed_data_fields']==['Yr','Mn','Day']
+          assert r['scientific_fields_accessed'] is False
+          assert r['radiant_accessed'] is False
+          assert r['velocity_accessed'] is False
+          assert r['orbital_elements_accessed'] is False
+          assert r['shower_labels_accessed'] is False
+          assert r['comparators_executed'] is False and r['v15_executed'] is False
+          assert r['orbittrace_target_information_access'] is False
+          assert r['verdict'] in {'ELIGIBLE_DMS_PAIR_RESERVED_PRE_SCIENCE','INELIGIBLE_DMS_NO_ADEQUATE_CONSECUTIVE_PAIR'}
+          print(json.dumps({'verdict':r['verdict'],'reserved_pair':r['reserved_pair'],'years':r['years']},indent=2,sort_keys=True))
           PY
 
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/source_commit.txt
+          sha256sum orbittrace_v15_dms_coverage_eligibility_v1/audit_coverage.py orbittrace_dms_date_derived_ls_coverage_v1/PROTOCOL.md orbittrace_dms_date_derived_ls_coverage_v1/run_coverage.py output/dms_date_ls_coverage_v1.json > output/provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-dms-date-derived-ls-coverage-v1-${{ github.run_id }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Report success
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_FULL_HEADER_SUCCESS=${GITHUB_RUN_ID}"
+        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_DATE_LS_COVERAGE_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1374 --repo "${{ github.repository }}" --body "ORBITTRACE_DMS_DATE_LS_COVERAGE_FAILED=${GITHUB_RUN_ID}"
