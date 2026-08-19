@@ -1,0 +1,144 @@
+name: OrbitTrace RC-EOM v1 pretruth relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-rc-eom-v1-pretruth
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  BENCH_BRANCH: agent/orbittrace-recurrent-constrained-eom-v1
+  FROZEN_HEAD: 67909c87b26eb751bee8fc17670c8692c72d423a
+
+jobs:
+  pretruth:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1363 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_RC_EOM_V1_PRETRUTH'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1363 --repo "${{ github.repository }}" --body "ORBITTRACE_RC_EOM_V1_PRETRUTH_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind frozen scientific state
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${FROZEN_HEAD}"
+          test ! -e orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH.json
+          test ! -e orbittrace_recurrent_constrained_eom_v1/RESULT.json
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_recurrent_constrained_eom_v1/PROTOCOL.md').read_text()
+          assert 'annual support value `4`' in p
+          assert 'exact current paper benchmark' in p
+          assert 'symmetric-tuning benchmark as the primary paper endpoint' in p
+          print('PASS_FROZEN_PROTOCOL_GUARD')
+          PY
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python -m py_compile \
+            orbittrace_recurrent_constrained_eom_v1/rc_eom.py \
+            orbittrace_recurrent_constrained_eom_v1/build_pretruth.py
+          mkdir -p input/rows output/pretruth
+
+      - name: Download exact paper label-free rows
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Execute truth-blind RC-EOM activity audit
+        run: |
+          set -euo pipefail
+          python -u orbittrace_recurrent_constrained_eom_v1/build_pretruth.py \
+            --rows-root input/rows \
+            --output output/pretruth
+          test -f output/pretruth/RC_EOM_V1_PRETRUTH.json
+          sha256sum output/pretruth/RC_EOM_V1_PRETRUTH.json | tee output/pretruth/RC_EOM_V1_PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/pretruth/RC_EOM_V1_PRETRUTH.json'))
+          assert p['truth_accessed'] is False
+          assert p['shower_label_fields_accessed'] is False
+          assert p['mechanism_active_any_route'] is True
+          assert p['method']['annual_support'] == 4
+          print('PASS_RC_EOM_V1_PRETRUTH', {
+              r: {
+                  'ordinary': x['ordinary_candidate_count'],
+                  'rc': x['rc_eom_candidate_count'],
+                  'ordinary_ineligible': x['ordinary_ineligible_selected_count'],
+                  'ordinary_only': x['ordinary_only_node_count'],
+                  'rc_only': x['rc_only_node_count'],
+                  'topk': x['topk_exact_membership_overlap'],
+              }
+              for r,x in p['routes'].items()
+          })
+          PY
+
+      - name: Upload immutable pretruth
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-rc-eom-v1-pretruth-${{ github.run_id }}
+          path: output/pretruth
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit immutable pretruth to method branch
+        run: |
+          set -euo pipefail
+          cp output/pretruth/RC_EOM_V1_PRETRUTH.json orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH.json
+          cp output/pretruth/RC_EOM_V1_PRETRUTH_SHA256.txt orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH.json orbittrace_recurrent_constrained_eom_v1/RC_EOM_V1_PRETRUTH_SHA256.txt
+          git commit -m 'Record RC-EOM v1 label-free pretruth'
+          git push origin HEAD:"${BENCH_BRANCH}"
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1363 --repo "${{ github.repository }}" --body "ORBITTRACE_RC_EOM_V1_PRETRUTH_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1363 --repo "${{ github.repository }}" --body "ORBITTRACE_RC_EOM_V1_PRETRUTH_FAILED=${GITHUB_RUN_ID}"
