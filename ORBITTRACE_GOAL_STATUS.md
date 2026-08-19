@@ -1,10 +1,12 @@
-# OrbitTrace goal status — literature superiority + external generalization
+# OrbitTrace goal status — final paper-facing state
 
-## Target claim
+## Final project claim
 
-The project goal tracked here is deliberately narrower than “best algorithm ever”:
+The final OrbitTrace claim is deliberately bounded:
 
-> A frozen meteor-stream detection methodology outperforms relevant published unsupervised comparator implementations under fair fixed-capacity evaluation and demonstrates that its improvement transfers to a genuinely unseen meteor survey without post-result method changes.
+> A frozen recurrence-aware HDBSCAN extraction method outperforms the tested relevant unsupervised comparator implementations under fair fixed-capacity evaluation on GMN and an exposed SonotaCo benchmark, while a separate fixed-scale TopoModal method improves sparse-sample robustness and a separately frozen fixed-4° detector independently recovers the canonical OrbitTrace candidate. Pristine cross-survey generalization is not claimed.
+
+This is the final paper-facing scientific scope. Algorithm development is closed.
 
 ## A. Literature superiority — PAPER METHOD: COMPLETE for tested major unsupervised comparators
 
@@ -47,7 +49,7 @@ This shows that the literature advantage is not fragile to the small recurrent-v
 
 ## C. Sample-size generalization — SPARSE TOPOMODAL: STRONG WITHIN-GMN EVIDENCE
 
-Fixed-scale native TopoModal remains the sparse-survey flagship.
+Fixed-scale native TopoModal remains the sparse-survey/sample-size robustness method.
 
 Frozen GMN sparse-stress evidence shows large gains versus fixed-support HDBSCAN/recurrent-EOM across ~5.8k and ~0.7k sample scales, including:
 
@@ -56,7 +58,7 @@ Frozen GMN sparse-stress evidence shows large gains versus fixed-support HDBSCAN
 - no qualified-recovery loss in the frozen 16 bucket-year panels;
 - 4/4 cross-scale structural wins.
 
-This is **sample-size robustness**, not yet cross-survey external validation.
+This is **sample-size robustness**, not cross-survey external validation.
 
 Attempts to extend the sparse recurrent–TopoModal Pareto architecture cleanly to denser d=64 panels failed frozen structural/truth gates. Those failures are preserved and prohibit claiming general full-scale TopoModal portability.
 
@@ -80,58 +82,58 @@ Every application year 2022–2026 produced nominally significant recovery.
 
 This strongly links the independently developed fixed-4° detector to the canonical OrbitTrace structure under a frozen targeted application. It is **not** the historical discovery method, **not** a blind catalogue rediscovery, and **not** evidence used to select or tune recurrent-EOM.
 
-## E. Pristine cross-survey generalization — NOT YET ESTABLISHED
+## E. Cross-survey transport — MIXED; pristine generalization not established
 
-### Existing evidence
+Existing evidence:
 
 - NASA ASFN 2018/2019: binding negative for recurrent-EOM; recurrent mechanism inactive and superiority not established.
 - EFN 2017/2018: mechanism inactive at pretruth; labels left unopened.
-- SonotaCo: useful exposed benchmark, not pristine external validation.
-- AMOS 2023/2024: still pristine; no event row or shower association has been opened.
+- SonotaCo 2013/2014: positive exposed benchmark, not pristine external validation.
+- AMOS 2023/2024: never accessed; historical preregistration remains unexecuted.
 
-Therefore the paper method currently **cannot** claim pristine cross-survey generalization.
+Therefore the paper method **cannot and will not claim pristine cross-survey generalization**.
 
-## F. AMOS one-shot readiness
+This is a final limitation, not an invitation to search for another survey or alter the method.
 
-Primary historical endpoint remains the pre-data density-sync AMOS pipeline frozen in PR #1268, preserving the earlier no-method-switch governance. Its pretruth already contains ordinary HDBSCAN, recurrent-EOM and density-sync candidate catalogues before labels.
+## F. Historical AMOS endpoint — ABANDONED / UNEXECUTED
 
-A pre-data secondary recurrent-EOM characterization is frozen in PR #1351. It consumes only the single #1268 post-freeze result JSON—never raw AMOS geometry or labels—and applies the exact recurrent-EOM development gate on the same one-shot receipt:
+PR #1268 froze a prospective density-sync AMOS endpoint and PR #1351 froze a recurrent-EOM secondary characterization before any AMOS scientific access. Those documents remain valid provenance for what would have been tested.
 
-- five annual no-regression conditions in each of 2023 and 2024: @50, @100, top-100 precision, MRR, fragmentation;
-- strict @100 improvement in at least one year;
-- recurrent mechanism active versus ordinary EOM;
-- 12/12 booleans required.
+Project decision now closes that lane:
 
-Positive token:
+- no AMOS event row or shower association was opened;
+- no provider request was sent;
+- no AMOS result exists;
+- no AMOS outreach or execution is authorized as part of the current paper;
+- no replacement external survey is authorized to rescue the missing pristine-generalization claim.
 
-`PASS_RECURRENT_EOM_HDBSCAN_V1_AMOS_2023_2024_EXTERNAL_CHARACTERIZATION`
+The correct manuscript treatment is simply that pristine cross-survey validation was not established.
 
-Negative token:
+## G. Method-search closure
 
-`FAIL_RECURRENT_EOM_HDBSCAN_V1_AMOS_2023_2024_EXTERNAL_CHARACTERIZATION`
+No new algorithm version is justified or authorized for the current paper.
 
-A valid FAIL closes pristine generalization for recurrent-EOM and does not authorize another survey.
+Do not launch:
 
-## G. Acquisition blocker
+- recurrent-EOM successors;
+- density-sync successors;
+- dense-scale TopoModal rescue variants;
+- another external-survey search;
+- post-target-reveal tuning;
+- gate relaxation after a negative result.
 
-No current public source was found that satisfies the exact frozen AMOS 2023/2024 complete multi-station field/sample contract. EDMOND cannot silently substitute for AMOS under the frozen survey definition.
-
-Current official provider contact checked 2026-08-18:
-
-- Prof. RNDr. Juraj Tóth, PhD.
-- AMOS Principal Investigator, Comenius University in Bratislava
-- `Juraj.Toth@fmph.uniba.sk`
-
-The staged request is ready but has not yet been sent from the repository workflow state.
+The remaining work is evidence presentation and writing only.
 
 ## Firewall clarification
 
-The target interval `[20°,55°]` is **not globally unopened**. It was accessed only for the frozen PR #153 targeted fixed-4° application. Recurrent-EOM development/selection and all literature/AMOS gates remain target-excluded: no target event, target label, target coordinate, or target result may alter the selected paper method or its external-validation endpoint. AMOS rows/labels, MAARSY, and DMS remain unopened.
+The target interval `[20°,55°]` is **not globally unopened**. It was accessed only for the frozen PR #153 targeted fixed-4° application. Recurrent-EOM development/selection and all literature comparisons remained target-excluded: no target event, target label, target coordinate, or target result was allowed to alter the selected paper method or its gates. AMOS rows/labels, MAARSY, and DMS were not opened.
 
 ## Bottom line
 
 - **Beats tested literature fairly:** YES, binding 4/4 for the selected recurrent-EOM paper method.
 - **Generalizes across sample size:** YES for fixed-scale TopoModal on frozen GMN sparse stress.
 - **Independently recovers the canonical OrbitTrace target under a frozen targeted test:** YES for the separately frozen fixed-4° detector.
-- **Generalizes to a pristine independent survey:** NOT YET.
-- **Remaining scientific blocker:** obtain the frozen AMOS 2023/2024 staged transfer and execute the already-frozen one-shot endpoint plus recurrent-EOM secondary adjudication. No further method search is justified before that test.
+- **Generalizes to a pristine independent survey:** NO CLAIM; not established.
+- **Algorithm development:** CLOSED.
+- **Remaining scientific blocker for the bounded paper claim:** NONE.
+- **Remaining project work:** figures, tables, manuscript integration, and final claim-to-evidence audit.
