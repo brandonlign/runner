@@ -20,7 +20,7 @@ env:
   OPENBLAS_NUM_THREADS: '1'
   MKL_NUM_THREADS: '1'
   NUMEXPR_NUM_THREADS: '1'
-  RANK_RUN_ID: '32288839233'
+  RANK_RUN_ID: '32312758548'
 
 jobs:
   evaluate:
@@ -50,13 +50,15 @@ jobs:
           mkdir -p input/rows input/pretruth input/ranked output
           test ! -e input/truth
 
-      - name: Wait only for the predeclared zero-truth ranking run
+      - name: Wait only for the frozen audit-repaired zero-truth ranking run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RANK_RUN_ID}" --jq '.head_sha')"
-          test "$head_sha" = '6d36a9fb2eca1d3d9b8d11866e8910b287e449ba'
+          workflow_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RANK_RUN_ID}" --jq '.workflow_id')"
+          test "$head_sha" = 'c488dcaa00e90a6304adecd7d05cc963893119db'
+          test "$workflow_id" = '338196258'
           for i in $(seq 1 180); do
             status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RANK_RUN_ID}" --jq '.status')"
             conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RANK_RUN_ID}" --jq '.conclusion // ""')"
@@ -88,11 +90,11 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: orbittrace-m2d-support-pruned-cut-v1-sonotaco-ranked-pretruth
+          name: orbittrace-m2d-support-pruned-cut-v1-sonotaco-ranked-pretruth-r2
           path: input/ranked
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: 32288839233
+          run-id: 32312758548
 
       - name: Verify complete ranking seal before truth exists
         run: |
@@ -110,10 +112,11 @@ jobs:
           assert r['support_pretruth_sha256']=='6ae27f985340eaa41870ab4c4f8cd15d6a1cd97e03ef828254f4c24d7896176a'
           assert r['candidate_count']==907 and len(r['candidates'])==907
           assert [int(x['internal_mass_rank']) for x in r['candidates']]==list(range(1,908))
+          assert [x['candidate'] for x in r['accelerator_audit']]==[28,55,93,165,211]
           assert r['truth_artifact_downloaded'] is False
           assert r['truth_used'] is False and r['shower_labels_accessed'] is False
           assert r['post_result_parameter_search'] is False
-          print('SEALED_RANKING_VERIFIED_WITH_TRUTH_ABSENT')
+          print('SEALED_RANKING_R2_VERIFIED_WITH_TRUTH_ABSENT')
           PY
           echo "RANKED_SHA=$RANKED_SHA" >> "$GITHUB_ENV"
 
@@ -184,7 +187,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: orbittrace-m2d-support-pruned-cut-v1-sonotaco-result
+          name: orbittrace-m2d-support-pruned-cut-v1-sonotaco-result-r2
           path: output
           if-no-files-found: error
           retention-days: 90
