@@ -25,13 +25,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Decode source and inspect loader interfaces only
+      - name: Decode audited four-part blind source and inspect loader interfaces only
         run: |
           set -euo pipefail
           python - <<'PY' > /tmp/introspection.txt
           import base64, gzip, inspect, importlib.util, pathlib, sys
-          p=pathlib.Path('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64')
-          raw=gzip.decompress(base64.b64decode(''.join(p.read_text().split()), validate=True))
+          root=pathlib.Path('orbittrace_fixed4_blind_catalogue/source_parts')
+          parts=sorted(root.glob('part*.b64'))
+          if [p.name for p in parts] != [f'part{i:02d}.b64' for i in range(4)]:
+              raise RuntimeError(f'wrong source parts: {[p.name for p in parts]}')
+          enc=''.join(''.join(p.read_text().split()) for p in parts)
+          raw=gzip.decompress(base64.b64decode(enc, validate=True))
           text=raw.decode()
           forbidden=['april_candidate_members.csv','247.17','-14.34','37.62','OrbitTrace-April-36.9']
           hit=[x for x in forbidden if x in text]
