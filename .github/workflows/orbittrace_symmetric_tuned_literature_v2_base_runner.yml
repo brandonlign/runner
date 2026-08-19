@@ -1,0 +1,123 @@
+name: OrbitTrace symmetric tuned literature benchmark v2 PR runner
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-sonotaco-temporal-fairness-correction-v1
+    paths:
+      - 'orbittrace_symmetric_tuned_literature_v2/PROTOCOL.md'
+      - 'orbittrace_symmetric_tuned_literature_v2/run_benchmark.py'
+      - 'orbittrace_symmetric_tuned_literature_v2/run_exact.py'
+      - 'orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py'
+
+concurrency:
+  group: orbittrace-symmetric-tuned-literature-v2-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  benchmark:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frozen numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          mkdir -p input/rows input/sources input/truth output
+          test "$(git hash-object orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          python -m py_compile \
+            orbittrace_symmetric_tuned_literature_v2/run_benchmark.py \
+            orbittrace_symmetric_tuned_literature_v2/run_exact.py \
+            orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-comparator-source-export-v1
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31346168826
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Execute symmetric tuned benchmark
+        working-directory: orbittrace_symmetric_tuned_literature_v2
+        run: |
+          set -euo pipefail
+          python -u run_exact.py \
+            --rows-root ../input/rows \
+            --sources ../input/sources \
+            --truth-root ../input/truth \
+            --recurrent-kernel recurrent_eom.py \
+            --output ../output
+          cat ../output/SYMMETRIC_TUNED_RESULT.json
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum \
+            orbittrace_symmetric_tuned_literature_v2/PROTOCOL.md \
+            orbittrace_symmetric_tuned_literature_v2/run_benchmark.py \
+            orbittrace_symmetric_tuned_literature_v2/run_exact.py \
+            orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - name: Commit result to benchmark branch
+        if: success()
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          cp output/SYMMETRIC_TUNED_RESULT.json orbittrace_symmetric_tuned_literature_v2/RESULT.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_symmetric_tuned_literature_v2/RESULT.json
+          git commit -m 'Record symmetric tuned literature benchmark v2 result'
+          git push origin HEAD:"${HEAD_BRANCH}"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-symmetric-tuned-literature-v2-pr-${{ github.event.pull_request.number }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
