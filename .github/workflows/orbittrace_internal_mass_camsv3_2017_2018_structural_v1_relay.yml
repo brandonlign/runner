@@ -1,0 +1,97 @@
+name: OrbitTrace internal-mass CAMSv3 2017-2018 structural v1
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: orbittrace-internal-mass-camsv3-2017-2018-structural-v1
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.event.issue.number == 1375 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_INTERNAL_MASS_CAMSV3_2017_2018_STRUCTURAL_V1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1375 --repo "${{ github.repository }}" --body "ORBITTRACE_CAMSV3_2017_2018_STRUCTURAL_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-internal-mass-camsv3-2017-2018-structural-v1
+          fetch-depth: 1
+
+      - name: Bind exact frozen structural source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '19aca86c3b087488b3ee7ce8189e8828e4d6c015'
+          test "$(git hash-object orbittrace_internal_mass_camsv3_2017_2018_structural_v1/PROTOCOL.md)" = '5a0925db5be6ba944b70c6a22f1af9aa83e2aea9'
+          test "$(git hash-object orbittrace_internal_mass_camsv3_2017_2018_structural_v1/run_structural.py)" = 'cc2e1bfd0032d566d693919321716e7070b35e44'
+          python -m py_compile orbittrace_internal_mass_camsv3_2017_2018_structural_v1/run_structural.py
+
+      - name: Run structural transport gate only
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python -u orbittrace_internal_mass_camsv3_2017_2018_structural_v1/run_structural.py --output output
+
+      - name: Enforce pre-science firewall and verdict
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/CAMSV3_2017_2018_STRUCTURAL_TRANSPORT_V1.json'))
+          assert r['scientific_role']=='STRUCTURAL_TRANSPORT_ONLY_PRE_SCIENCE'
+          assert r['verdict'] in {'PASS_CAMSV3_2017_2018_STRUCTURAL_TRANSPORT_V1','FAIL_CAMSV3_2017_2018_STRUCTURAL_TRANSPORT_V1'}
+          assert r['catalogue_values_accessed'] is False
+          assert r['scientific_values_read'] is False
+          assert r['label_values_read'] is False
+          assert r['target_information_access'] is False
+          assert r['method_executed'] is False
+          assert r['comparator_executed'] is False
+          assert r['freshness_audit_run']==31204903047
+          assert r['freshness_audit_artifact']==9004313104
+          print(json.dumps({'verdict':r['verdict'],'gates':r['gates'],'years':[{k:v for k,v in y.items() if k!='header'} for y in r['years']]},indent=2,sort_keys=True))
+          PY
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/source_commit.txt
+          python --version > output/python_version.txt
+          sha256sum \
+            orbittrace_internal_mass_camsv3_2017_2018_structural_v1/PROTOCOL.md \
+            orbittrace_internal_mass_camsv3_2017_2018_structural_v1/run_structural.py \
+            output/CAMSV3_2017_2018_STRUCTURAL_TRANSPORT_V1.json > output/provenance_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-internal-mass-camsv3-2017-2018-structural-v1-${{ github.run_id }}
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1375 --repo "${{ github.repository }}" --body "ORBITTRACE_CAMSV3_2017_2018_STRUCTURAL_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1375 --repo "${{ github.repository }}" --body "ORBITTRACE_CAMSV3_2017_2018_STRUCTURAL_FAILED=${GITHUB_RUN_ID}"
