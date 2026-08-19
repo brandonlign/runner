@@ -5,12 +5,12 @@ on:
     branches:
       - agent/orbittrace-sonotaco-temporal-fairness-correction-v1
     paths:
-      - 'orbittrace_temporal_fair_literature_v1/**'
+      - 'orbittrace_temporal_fair_literature_v1/run_fair_benchmark.py'
       - '.github/workflows/orbittrace_temporal_fair_literature_v1.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 env:
@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sonotaco-temporal-fairness-correction-v1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -77,6 +79,16 @@ jobs:
           python -u orbittrace_temporal_fair_literature_v1/run_fair_benchmark.py evaluate \
             --pretruth output/POOLED_FAIR_PRETRUTH.json --truth-root input/truth --output output
           cat output/POOLED_FAIR_RESULT.json
+      - name: Commit immutable result back to branch
+        run: |
+          set -euo pipefail
+          cp output/POOLED_FAIR_RESULT.json orbittrace_temporal_fair_literature_v1/RESULT.json
+          cp output/PRETRUTH_SHA256.txt orbittrace_temporal_fair_literature_v1/PRETRUTH_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_temporal_fair_literature_v1/RESULT.json orbittrace_temporal_fair_literature_v1/PRETRUTH_SHA256.txt
+          git commit -m 'Record temporal-fair literature benchmark result'
+          git push origin HEAD:agent/orbittrace-sonotaco-temporal-fairness-correction-v1
       - name: Preserve provenance
         if: always()
         run: |
