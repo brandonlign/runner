@@ -1,0 +1,171 @@
+name: OrbitTrace density-sync symmetric challenge v1 relay
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-density-sync-symmetric-challenge-v1
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  BENCH_BRANCH: agent/orbittrace-density-sync-symmetric-tuned-literature-v1
+
+jobs:
+  challenge:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1362 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_DENSITY_SYNC_SYMMETRIC_CHALLENGE_V1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Announce exact run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1362 --repo "${{ github.repository }}" --body "ORBITTRACE_DENSITY_SYNC_SYMMETRIC_RUN_STARTED=${GITHUB_RUN_ID}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BENCH_BRANCH }}
+          fetch-depth: 1
+
+      - name: Bind pre-test scientific state
+        id: guard
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 'b5ded793b46f095ebb46f943022ba7512dd3608e'
+          test ! -e orbittrace_density_sync_symmetric_tuned_literature_v1/RESULT.json
+          test "$(git hash-object orbittrace_density_sync_symmetric_tuned_literature_v1/density_synchronous_eom.py)" = '587a304f451e41b9503272f1783a6c6ebb295000'
+          test "$(git hash-object orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test -f orbittrace_symmetric_tuned_literature_v2/RESULT.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frozen numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python -m py_compile \
+            orbittrace_density_sync_symmetric_tuned_literature_v1/run_challenge.py \
+            orbittrace_density_sync_symmetric_tuned_literature_v1/density_synchronous_eom.py \
+            orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py
+          mkdir -p input/rows input/sources input/truth output/pretruth output/result
+
+      - name: Download label-free common-row payload
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - name: Download frozen comparator source payload for GEO6 transform
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-comparator-source-export-v1
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31346168826
+
+      - name: Build and freeze all density-sync candidates before truth exists
+        run: |
+          set -euo pipefail
+          test ! -d input/truth || test -z "$(find input/truth -type f -print -quit)"
+          python -u orbittrace_density_sync_symmetric_tuned_literature_v1/run_challenge.py pretruth \
+            --rows-root input/rows \
+            --sources input/sources \
+            --parent-kernel orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py \
+            --sync-kernel orbittrace_density_sync_symmetric_tuned_literature_v1/density_synchronous_eom.py \
+            --output output/pretruth
+          sha256sum output/pretruth/DENSITY_SYNC_PRETRUTH.json | tee output/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/pretruth/DENSITY_SYNC_PRETRUTH.json'))
+          assert p['truth_accessed'] is False
+          assert p['pooled_common_event_count']==29246
+          assert len(p['outputs'])==13
+          print('PASS_PRETRUTH_FIREWALL', p['candidate_counts'])
+          PY
+
+      - name: Upload immutable pretruth before label access
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-density-sync-symmetric-v1-pretruth-${{ github.run_id }}
+          path: |
+            output/pretruth/DENSITY_SYNC_PRETRUTH.json
+            output/PRETRUTH_SHA256.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Download truth only after pretruth freeze
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Score frozen density-sync candidates under symmetric v2 protocol
+        run: |
+          set -euo pipefail
+          python -u orbittrace_density_sync_symmetric_tuned_literature_v1/run_challenge.py score \
+            --pretruth output/pretruth/DENSITY_SYNC_PRETRUTH.json \
+            --truth-root input/truth \
+            --frozen-v2-result orbittrace_symmetric_tuned_literature_v2/RESULT.json \
+            --output output/result
+          cat output/result/RESULT.json
+
+      - name: Commit immutable result
+        if: success()
+        run: |
+          set -euo pipefail
+          cp output/result/RESULT.json orbittrace_density_sync_symmetric_tuned_literature_v1/RESULT.json
+          cp output/PRETRUTH_SHA256.txt orbittrace_density_sync_symmetric_tuned_literature_v1/PRETRUTH_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_density_sync_symmetric_tuned_literature_v1/RESULT.json orbittrace_density_sync_symmetric_tuned_literature_v1/PRETRUTH_SHA256.txt
+          git commit -m 'Record density-sync symmetric tuned challenge result'
+          git push origin HEAD:"${BENCH_BRANCH}"
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-density-sync-symmetric-v1-result-${{ github.run_id }}
+          path: output
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Report success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1362 --repo "${{ github.repository }}" --body "ORBITTRACE_DENSITY_SYNC_SYMMETRIC_RUN_SUCCESS=${GITHUB_RUN_ID}"
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1362 --repo "${{ github.repository }}" --body "ORBITTRACE_DENSITY_SYNC_SYMMETRIC_RUN_FAILED=${GITHUB_RUN_ID}"
