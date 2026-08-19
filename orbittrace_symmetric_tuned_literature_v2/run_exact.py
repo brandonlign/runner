@@ -61,6 +61,21 @@ def sugar_candidate_output_exact(
     )
 
 
+# Final pre-result symmetric search spaces.  Both HDBSCAN-based methods receive
+# the identical finite-support grid, including the literature configuration at
+# min_cluster_size=min_samples=100.  Sugar receives a deliberately broad
+# dataset-level epsilon-percentile search while retaining its exact frozen core.
+benchmark.SUPPORT_GRID = (
+    (5, 5),
+    (10, 5), (10, 10),
+    (20, 10), (20, 20),
+    (40, 20), (40, 40),
+    (50, 25), (50, 50),
+    (80, 40), (80, 80),
+    (100, 50), (100, 100),
+)
+benchmark.SUGAR_PERCENTILES = (5.0, 10.0, 15.0, 20.0, 23.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0)
+
 # hdbscan 0.8.44 uses the newer ensure_all_finite keyword while the frozen
 # scikit-learn 1.4.2 runtime uses force_all_finite. Apply the same compatibility
 # bridge before recurrent-EOM or catalogue-HDBSCAN performs its first fit.
