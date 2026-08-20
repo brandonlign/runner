@@ -38,7 +38,7 @@ For each M2D parent and each year independently, enumerate every SACV-admissible
 1. descending `excess`;
 2. descending `parent_support`;
 3. ascending `contamination`;
-4. descending radius;
+4. ascending radius;
 5. ascending center event ID.
 
 This is exactly equivalent to maximizing frozen SACV-v1 key `(excess, parent_support, -contamination, -radius)` with event-ID tie break. Ranks must form a permutation `1..N_y` for that parent's annual hypotheses.
