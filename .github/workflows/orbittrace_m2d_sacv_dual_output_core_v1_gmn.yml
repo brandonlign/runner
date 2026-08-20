@@ -1,0 +1,97 @@
+name: OrbitTrace M2D SACV dual-output core v1 GMN development
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-fallback-recurrence-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_dual_output_core_v1/**'
+      - '.github/workflows/orbittrace_m2d_sacv_dual_output_core_v1_gmn.yml'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-m2d-sacv-dual-output-core-v1-gmn-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reconstruct and verify exact frozen dual-output executable
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec.b64
+          test "$(wc -c < /tmp/ec.b64)" = '16844'
+          base64 -d /tmp/ec.b64 > /tmp/ec.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec.tgz
+          echo 'f6c5b2a89d70003b058e772b753c531cb5072b2c1eb52d77166d7a5cbd566ca7  orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py' | sha256sum -c -
+          python orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py >/tmp/parent-hashes.txt
+          cp orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_fallback_recurrence_v1/build_pretruth.py
+          cp orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py orbittrace_m2d_sacv_fallback_recurrence_v1/evaluate_truth.py
+          cp orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh orbittrace_m2d_sacv_fallback_recurrence_v1/run_binding.sh
+          echo 'f0fa84f5062c4719433727719b8451404db9ef9c3f5b4892f591dbeb898173c2  orbittrace_m2d_sacv_dual_output_core_v1/PROTOCOL.md' | sha256sum -c -
+          echo '93944133a1dad77d19238ace58ec0c7301a6ad5461268188ccfadefb6e074e22  orbittrace_m2d_sacv_dual_output_core_v1/build_pretruth.py' | sha256sum -c -
+          echo '3e71fe4ea4b75922ea24cefe61fdc14c76003bbe9a83dc9a4519c9333d3f9b6d  orbittrace_m2d_sacv_dual_output_core_v1/evaluate_truth.py' | sha256sum -c -
+          echo 'ac7960c944b881b02e47572e767e97eaafde1074831446be3a410f9a87e0ae0a  orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py' | sha256sum -c -
+          python -m py_compile orbittrace_m2d_sacv_fallback_recurrence_v1/build_pretruth.py orbittrace_m2d_sacv_fallback_recurrence_v1/evaluate_truth.py orbittrace_m2d_sacv_dual_output_core_v1/build_pretruth.py orbittrace_m2d_sacv_dual_output_core_v1/evaluate_truth.py orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py
+          python orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py
+          echo '9e0d533ddfd89bfa9a53fbbedafcb11a62bf4e33e69d7c31a9500633f8c5d8c0  orbittrace_m2d_sacv_dual_output_core_v1/run_binding.generated.sh' | sha256sum -c -
+          bash -n orbittrace_m2d_sacv_dual_output_core_v1/run_binding.generated.sh
+          echo PASS_FROZEN_DUAL_OUTPUT_CORE_EXECUTABLE
+      - name: Execute one-shot target-excluded GMN dual-output core v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash orbittrace_m2d_sacv_dual_output_core_v1/run_binding.generated.sh | tee /tmp/run.log
+      - name: Publish binding scientific result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          P=output/m2d-sacv-dual-output-core-v1-gmn/truth/M2D_SACV_DUAL_OUTPUT_CORE_V1_GMN_RESULT.json
+          if [ -f "$P" ]; then
+            python - <<'PY' > /tmp/result.md
+          import hashlib,json
+          from pathlib import Path
+          p=Path('output/m2d-sacv-dual-output-core-v1-gmn/truth/M2D_SACV_DUAL_OUTPUT_CORE_V1_GMN_RESULT.json');r=json.loads(p.read_text())
+          print('## M2D SACV dual-output recurrent-core v1 — binding target-excluded GMN development')
+          print();print(f"Verdict: **`{r['verdict']}`**")
+          print(f"- result SHA-256: `{hashlib.sha256(p.read_bytes()).hexdigest()}`")
+          print(f"- primary exact-ID equality: `{r['primary_oracle_exact_id_equal_occurrences']}/328`")
+          print(f"- nested-core parent occurrences: `{r['nested_core_occurrences']}`")
+          for comp in ('sugar2017','hdbscan2025'):
+              a=r['aggregates'][comp];p0=a['primary_same_discovery'];c=a['nested_core'];cs=c['paired_same_discovery']
+              print(f"- {comp} primary: precision `{p0['extraction_mean_precision']:.6f}`, F1 `{p0['extraction_mean_f1']:.6f}`; core paired n `{cs['count']}`; core status `{c['status']}`; primary/core precision `{cs['parent_mean_precision']:.6f} / {cs['extraction_mean_precision']:.6f}`; primary/core F1 `{cs['parent_mean_f1']:.6f} / {cs['extraction_mean_f1']:.6f}`")
+          print('- OrbitTrace target information accessed: `false`')
+          print('- SonotaCo scientific access: `false`')
+          PY
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Dual-output recurrent-core v1 ended before a valid scientific result. Treat as technical no-result only; frozen science remains unchanged."
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-dual-output-core-v1-gmn-development
+          path: output/m2d-sacv-dual-output-core-v1-gmn
+          if-no-files-found: warn
+          retention-days: 90
