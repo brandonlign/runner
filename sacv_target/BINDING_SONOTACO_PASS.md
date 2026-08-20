@@ -1,4 +1,4 @@
 PASS_M2D_SACV_V1_SONOTACO_EXPOSED_TRANSFER
-Frozen result SHA-256: 1116d680db0eb00719e21e41799519b95117e831eea69e3257d3f28bc5c44e37
+Frozen result SHA-256: 2a8199ae140e18019239c13f36992651719a6b3f598421701162931debb909a0
 Scientific rule changed after truth: false
 OrbitTrace target access: false
