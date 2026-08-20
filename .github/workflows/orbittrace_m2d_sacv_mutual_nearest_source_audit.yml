@@ -1,0 +1,48 @@
+name: OrbitTrace SACV mutual-nearest source audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-mutual-nearest-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_mutual_nearest_v1/AUDIT_ACTIVATE.md'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Reconstruct exact edge-consensus source and print recurrence implementation only
+        run: |
+          set -euo pipefail
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec_source.tgz.b64
+          test "$(wc -c < /tmp/ec_source.tgz.b64)" = '16844'
+          base64 -d /tmp/ec_source.tgz.b64 > /tmp/ec_source.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec_source.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec_source.tgz
+          echo '=== build_pretruth.py SHA ==='
+          sha256sum orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py
+          echo '=== recurrence-relevant source ==='
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py')
+          s=p.read_text()
+          tree=ast.parse(s)
+          for node in tree.body:
+              if isinstance(node,(ast.FunctionDef,ast.ClassDef)):
+                  seg=ast.get_source_segment(s,node) or ''
+                  low=seg.lower()
+                  if any(k in low for k in ('edge','component','hypoth','recurr','membership','validate')):
+                      print(f'--- {getattr(node,"name","?")} lines {node.lineno}-{getattr(node,"end_lineno",node.lineno)} ---')
+                      print(seg)
+          PY
+          echo PASS_SOURCE_ONLY_AUDIT
