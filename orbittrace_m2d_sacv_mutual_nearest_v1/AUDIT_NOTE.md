@@ -1,0 +1,1 @@
+The source audit is non-scientific and exposes only recurrence implementation source from the hash-pinned #1412 bundle.
