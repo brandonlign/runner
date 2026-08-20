@@ -1,0 +1,35 @@
+name: OrbitTrace M2D SACV Pareto-pair catalogue v1 binding relay
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-m2d-sacv-pareto-pair-catalogue-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_pareto_pair_catalogue_v1/ACTIVATE_BINDING.md'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  binding:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-m2d-sacv-pareto-pair-catalogue-v1
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Execute exact repaired binding runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash orbittrace_m2d_sacv_pareto_pair_catalogue_v1/run_binding.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-pareto-pair-catalogue-v1-gmn-binding-relay
+          path: output/m2d-sacv-pareto-pair-catalogue-v1-gmn
+          if-no-files-found: warn
+          retention-days: 90
