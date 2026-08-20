@@ -1,0 +1,56 @@
+name: OrbitTrace M2D SACV reciprocal-nearest v1 source freeze
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-edge-consensus-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py'
+      - '.github/workflows/orbittrace_m2d_sacv_reciprocal_nearest_v1_source_freeze.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  freeze:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Reassemble exact failed edge-consensus source
+        run: |
+          set -euo pipefail
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec_source.tgz.b64
+          test "$(wc -c < /tmp/ec_source.tgz.b64)" = '16844'
+          base64 -d /tmp/ec_source.tgz.b64 > /tmp/ec_source.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec_source.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec_source.tgz
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py | cut -d' ' -f1)" = 'd4634839cc35dffa0cf8965923b21b048125844900c7a911515a389063067948'
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py | cut -d' ' -f1)" = 'b082a003030309ec55ea16add7195829b876b680e1c449224c89d33c192465e6'
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh | cut -d' ' -f1)" = '6d18d9326e985e3a0c765eecb149ae745a98769708d15f2d73face2e6f9305f4'
+          echo PASS_PARENT_SOURCE_IDENTITY
+
+      - name: Apply and inspect frozen transformation without data
+        run: |
+          set -euo pipefail
+          test "$(sha256sum orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py | cut -d' ' -f1)" = '$(sha256sum orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py | cut -d' ' -f1)'
+          python orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py | tee /tmp/hashes.txt
+          python -m py_compile orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py
+          bash -n orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh
+          grep -n -A18 -B3 'Reciprocal-nearest association' orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py
+          grep -n 'architecture\|membership\|scientific_role' orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py
+          echo PASS_PATCH_COMPILES
+
+      - name: Record firewall
+        run: |
+          echo 'ZERO_DATA_SOURCE_FREEZE=true'
+          echo 'GMN_CATALOGUE_ACCESSED=false'
+          echo 'SHOWER_TRUTH_ACCESSED=false'
+          echo 'ORBITTRACE_TARGET_INFORMATION_ACCESSED=false'
+          echo 'SONOTACO_ACCESSED=false'
