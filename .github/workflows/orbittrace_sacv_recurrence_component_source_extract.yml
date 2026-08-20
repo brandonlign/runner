@@ -1,9 +1,10 @@
 name: OrbitTrace SACV recurrence-component source extract
 
 on:
-  push:
+  pull_request:
+    types: [opened, synchronize, reopened]
     branches:
-      - agent/orbittrace-m2d-sacv-recurrence-components-v1
+      - agent/orbittrace-m2d-sacv-v1-gmn-development
     paths:
       - '.github/workflows/orbittrace_sacv_recurrence_component_source_extract.yml'
 
@@ -15,6 +16,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Verify and extract frozen SACV source
         run: |
           set -euo pipefail
