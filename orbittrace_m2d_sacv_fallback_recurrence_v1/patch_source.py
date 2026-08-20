@@ -17,6 +17,10 @@ s=s.replace('M2D_SACV_EDGE_CONSENSUS_V1','M2D_SACV_FALLBACK_RECURRENCE_V1')
 s=s.replace('m2d-sacv-edge-consensus-v1','m2d-sacv-fallback-recurrence-v1')
 s=s.replace('edge_consensus_v1','fallback_recurrence_v1')
 s=s.replace("'edge_consensus_v1'","'fallback_recurrence_v1'")
+old_role='TARGET_EXCLUDED_SACV_EDGE_CONSENSUS_MEMBERSHIPS_FROZEN_BEFORE_SHOWER_TRUTH'
+new_role='TARGET_EXCLUDED_SACV_FALLBACK_RECURRENCE_MEMBERSHIPS_FROZEN_BEFORE_SHOWER_TRUTH'
+assert s.count(old_role)==1, s.count(old_role)
+s=s.replace(old_role,new_role,1)
 p.write_text(s)
 
 for name in ['evaluate_truth.py','run_binding.sh']:
