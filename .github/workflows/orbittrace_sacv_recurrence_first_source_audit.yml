@@ -1,0 +1,77 @@
+name: OrbitTrace SACV recurrence-first source audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-v1-gmn-development]
+    paths:
+      - '.github/workflows/orbittrace_sacv_recurrence_first_source_audit.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Verify and decode exact frozen SACV source
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          test "$(sha256sum orbittrace_m2d_sacv_v1/build_pretruth.py | cut -d' ' -f1)" = 'cd5a7505c1d095e03de683f78dce8af5cb465ba32ca1dfa3e8b9eb3e78d0fd64'
+          test "$(sha256sum orbittrace_m2d_sacv_v1/evaluate_truth.py | cut -d' ' -f1)" = '19555373ccca6cff7c4d47e40f8b980afa04b5859dd16a1935baf49b02d9f34d'
+      - name: Print callable and data-flow interface without scientific data
+        run: |
+          python - <<'PY' > /tmp/AUDIT.txt
+          import ast, pathlib
+          for path in [pathlib.Path('orbittrace_m2d_sacv_v1/build_pretruth.py'), pathlib.Path('orbittrace_m2d_sacv_v1/evaluate_truth.py')]:
+              src=path.read_text(); tree=ast.parse(src)
+              print('===', path, '===')
+              print('SHA/source lines', len(src.splitlines()))
+              for node in tree.body:
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
+                      print(type(node).__name__, node.name, 'line', node.lineno)
+                      if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                          print('  args:', [a.arg for a in node.args.args])
+                      if isinstance(node,ast.ClassDef):
+                          for ch in node.body:
+                              if isinstance(ch,ast.FunctionDef): print('  method', ch.name, [a.arg for a in ch.args.args], 'line', ch.lineno)
+              print('\n--- main/data-flow-relevant source ---')
+              lines=src.splitlines()
+              names={'main','extract','extract_parent','select','score','score_center','Runtime','load','load_fair','load_geometry','paired','evaluate','aggregate'}
+              for node in ast.walk(tree):
+                  if isinstance(node,(ast.FunctionDef,ast.ClassDef)) and (node.name in names or any(k in node.name.lower() for k in ['parent','extract','runtime','fair','truth','geometry','load'])):
+                      lo=max(1,node.lineno); hi=getattr(node,'end_lineno',lo)
+                      print(f'### {node.name} lines {lo}-{hi}')
+                      print('\n'.join(lines[lo-1:hi]))
+          PY
+          cat /tmp/AUDIT.txt
+      - name: Post compact source audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          python - <<'PY' > /tmp/post.md
+          from pathlib import Path
+          t=Path('/tmp/AUDIT.txt').read_text().splitlines()
+          print('## SACV recurrence-first zero-data source audit')
+          print()
+          print('Exact frozen SACV source hashes verified. No catalogue, shower truth, OrbitTrace target information, or scientific score was accessed.')
+          print('```')
+          for line in t:
+              if line.startswith(('FunctionDef','ClassDef','  method','===','SHA/source')): print(line)
+          print('```')
+          PY
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/post.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sacv-recurrence-first-source-audit
+          path: /tmp/AUDIT.txt
+          retention-days: 30
