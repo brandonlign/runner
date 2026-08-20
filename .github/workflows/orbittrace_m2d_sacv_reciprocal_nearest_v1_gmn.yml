@@ -48,14 +48,22 @@ jobs:
           echo '232215ac7d79dbc97c7878e43d28a7149d1281496dd923130b6f2826cc0bacc1  orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh' | sha256sum -c -
           echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
           tar -xzf orbittrace_m2d_sacv_v1_source.tgz
-          python -m py_compile orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py
-          bash -n orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh
-          echo PASS_FROZEN_RECIPROCAL_NEAREST_SOURCE
+          cp orbittrace_m2d_sacv_edge_consensus_v1/PROTOCOL.md orbittrace_m2d_sacv_reciprocal_nearest_v1/PROTOCOL.md
+          cp orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_reciprocal_nearest_v1/build_pretruth.py
+          cp orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py orbittrace_m2d_sacv_reciprocal_nearest_v1/evaluate_truth.py
+          cp orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh
+          echo 'bc80af108daad50ab69bc41cda171719b49e0ab8d8e4f9a226e1dd91c8a91420  orbittrace_m2d_sacv_reciprocal_nearest_v1/PROTOCOL.md' | sha256sum -c -
+          echo '185b3a5941d73f007b1ea156c3f0b4e0aeb46780846e32aa89d50f98ab5c0d86  orbittrace_m2d_sacv_reciprocal_nearest_v1/build_pretruth.py' | sha256sum -c -
+          echo '0c45ca8c871bd6452eba2e71a6bbc19297a6c26dd1b115cb85fbe5751792c133  orbittrace_m2d_sacv_reciprocal_nearest_v1/evaluate_truth.py' | sha256sum -c -
+          echo '232215ac7d79dbc97c7878e43d28a7149d1281496dd923130b6f2826cc0bacc1  orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh' | sha256sum -c -
+          python -m py_compile orbittrace_m2d_sacv_reciprocal_nearest_v1/build_pretruth.py orbittrace_m2d_sacv_reciprocal_nearest_v1/evaluate_truth.py
+          bash -n orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh
+          echo PASS_FROZEN_RECIPROCAL_NEAREST_SOURCE_AND_PATH_REPAIR
 
       - name: Execute one-shot target-excluded GMN reciprocal-nearest v1
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh | tee /tmp/rnn-run.log
+        run: bash orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh | tee /tmp/rnn-run.log
 
       - name: Publish binding scientific result
         if: always()
