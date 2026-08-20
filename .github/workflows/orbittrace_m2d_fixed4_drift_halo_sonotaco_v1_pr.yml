@@ -1,0 +1,88 @@
+name: OrbitTrace M2D fixed4-drift halo SonotaCo transfer v1
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-fixed4-drift-halo-v1]
+    paths:
+      - 'orbittrace_m2d_fixed4_drift_halo_v1/**'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  execute:
+    if: github.head_ref == 'agent/orbittrace-m2d-fixed4-drift-halo-sonotaco-freeze-v1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Source-only transfer authorization
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_fixed4_drift_halo_v1/SONOTACO_TRANSFER_PROTOCOL.md)" = 'd4e925951a1a001bcb1b11e98378d9c92d845215'
+          test "$(git hash-object orbittrace_m2d_fixed4_drift_halo_v1/build_pretruth.py)" = '3d2d47c72f703a95713c4f17979f38a8aa3ac75c'
+          test "$(git hash-object orbittrace_m2d_fixed4_drift_halo_v1/build_sonotaco_pretruth.py)" = 'a280bb4ffc40b68069e6614cba1ea75b5226844f'
+          test "$(git hash-object orbittrace_m2d_fixed4_drift_halo_v1/evaluate_sonotaco_truth.py)" = '3d4bbfd979e503c62b972253ce3e8613f3d8c9df'
+          test "$(git hash-object orbittrace_m2d_fixed4_drift_halo_v1/run_sonotaco_transfer.sh)" = '6bed832e7abebea1212bc5fc25eba1264ba75c7d'
+          test "$(cat orbittrace_m2d_fixed4_drift_halo_v1/SONOTACO_ACTIVATE.md)" = 'RUN_M2D_FIXED4_DRIFT_HALO_V1_SONOTACO_TRANSFER'
+          python -m py_compile orbittrace_m2d_fixed4_drift_halo_v1/build_sonotaco_pretruth.py orbittrace_m2d_fixed4_drift_halo_v1/evaluate_sonotaco_truth.py
+
+      - name: Stage exact inherited v3 import helper
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > multi_anchor_energy_v3.py
+          test "$(git hash-object multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+
+      - name: Execute sealed pretruth then one-shot transfer evaluation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash orbittrace_m2d_fixed4_drift_halo_v1/run_sonotaco_transfer.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-fixed4-drift-halo-v1-sonotaco-transfer
+          path: output/m2d-fixed4-drift-halo-sonotaco-v1
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post binding result
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY' > /tmp/result.md
+          import hashlib,json
+          pre='output/m2d-fixed4-drift-halo-sonotaco-v1/pretruth/M2D_FIXED4_DRIFT_HALO_V1_SONOTACO_PRETRUTH.json'
+          res='output/m2d-fixed4-drift-halo-sonotaco-v1/truth/M2D_FIXED4_DRIFT_HALO_V1_SONOTACO_RESULT.json'
+          q=json.load(open(pre)); r=json.load(open(res))
+          print('## M2D fixed4-seeded drift halo v1 — binding SonotaCo transfer')
+          print()
+          print('Verdict: **`%s`**' % r['verdict'])
+          print('- pretruth SHA-256: `%s`' % hashlib.sha256(open(pre,'rb').read()).hexdigest())
+          s=q['summary']
+          print('- structural membership: nonempty seed `%d/%d`; nonempty halo `%d/%d`; strict seed regrowth `%d`; mean members `%.3f envelope / %.3f seed / %.3f halo`' % (s['nonempty_seed_count'],s['candidate_count'],s['nonempty_halo_count'],s['candidate_count'],s['halo_strictly_regrows_seed_count'],s['mean_envelope_members'],s['mean_seed_members'],s['mean_halo_members']))
+          a=r['routes']['tuned_hdbscan_comparison']['paired_same_discovery']
+          print('- paired transfer: n `%d`; nonempty `%.3f`; precision parent/seed/halo `%.6f / %.6f / %.6f`; F1 `%.6f / %.6f / %.6f`; halo precision nonregression `%.3f`' % (a['count'],a['nonempty_fraction'],a['parent_mean_precision'],a['seed_mean_precision'],a['halo_mean_precision'],a['parent_mean_f1'],a['seed_mean_f1'],a['halo_mean_f1'],a['nonempty_precision_nonregression_fraction']))
+          print('- result SHA-256: `%s`' % hashlib.sha256(open(res,'rb').read()).hexdigest())
+          PY
+          gh pr comment 1402 --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md || true
+
+      - name: Record technical no-result
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1402 --repo "$GITHUB_REPOSITORY" --body "M2D fixed4-seeded drift halo v1 SonotaCo transfer ended technically before a valid scientific result. No scientific method, threshold, parent ranking, or gate is changed by this no-result." || true
