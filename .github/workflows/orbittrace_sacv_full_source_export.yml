@@ -1,0 +1,31 @@
+name: OrbitTrace SACV frozen source export
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-v1-gmn-development]
+    paths: ['.github/workflows/orbittrace_sacv_full_source_export.yml']
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ github.event.pull_request.head.sha }}', fetch-depth: 1}
+      - name: Verify and export source only
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          test "$(sha256sum orbittrace_m2d_sacv_v1/build_pretruth.py | cut -d' ' -f1)" = 'cd5a7505c1d095e03de683f78dce8af5cb465ba32ca1dfa3e8b9eb3e78d0fd64'
+          test "$(sha256sum orbittrace_m2d_sacv_v1/evaluate_truth.py | cut -d' ' -f1)" = '19555373ccca6cff7c4d47e40f8b980afa04b5859dd16a1935baf49b02d9f34d'
+          mkdir source-export
+          cp orbittrace_m2d_sacv_v1/build_pretruth.py source-export/
+          cp orbittrace_m2d_sacv_v1/evaluate_truth.py source-export/
+          cp orbittrace_m2d_sacv_v1/run_binding.sh source-export/
+          cp orbittrace_m2d_sacv_v1/PROTOCOL.md source-export/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sacv-frozen-source-text
+          path: source-export
+          retention-days: 30
