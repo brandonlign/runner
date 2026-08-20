@@ -9,7 +9,7 @@ mkdir -p "$OUT/pretruth" "$OUT/truth" "$IN/fair" "$IN/ranker" "$IN/v8" "$IN/v3" 
 # Frozen scientific source. This runner is transport/provenance only.
 test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/PROTOCOL.md)" = '67dcab7a002f945170124a5355c62ffb21c896ed'
 test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/build_prelabel.py)" = '733bc8a7d8dcbbea601647b643edf722d6f7bdbd'
-test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/evaluate_truth.py)" = '86d0cbaaa3a8245a5a7afdf5b838d90fe988d362'
+test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/evaluate_truth.py)" = 'bf0e832f5c694879e688da4098fa80186e20854d'
 test "$(git hash-object orbittrace_m2d_sacv_pair_v2/build_pretruth.py)" = '1cd766ad29d1f78a26f92365bb8a588f3e794d36'
 python -m py_compile orbittrace_m2d_sacv_pareto_pair_catalogue_v1/build_prelabel.py orbittrace_m2d_sacv_pareto_pair_catalogue_v1/evaluate_truth.py orbittrace_m2d_sacv_pair_v2/build_pretruth.py
 
