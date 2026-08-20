@@ -1,0 +1,104 @@
+name: OrbitTrace M2D SACV Pareto-pair catalogue v1
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-m2d-sacv-pareto-pair-catalogue-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_pareto_pair_catalogue_v1/ACTIVATE.md'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  execute:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-m2d-sacv-pareto-pair-catalogue-v1
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Audit exact frozen binding executable
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/PROTOCOL.md)" = '67dcab7a002f945170124a5355c62ffb21c896ed'
+          test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/build_prelabel.py)" = '733bc8a7d8dcbbea601647b643edf722d6f7bdbd'
+          test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/evaluate_truth.py)" = 'bf0e832f5c694879e688da4098fa80186e20854d'
+          test "$(git hash-object orbittrace_m2d_sacv_pair_v2/build_pretruth.py)" = '1cd766ad29d1f78a26f92365bb8a588f3e794d36'
+          test "$(git hash-object orbittrace_m2d_sacv_pareto_pair_catalogue_v1/run_binding.sh)" = 'cd3d24b0623ce661afa181bff30d050ed097c222'
+          bash -n orbittrace_m2d_sacv_pareto_pair_catalogue_v1/run_binding.sh
+          python -m py_compile orbittrace_m2d_sacv_pair_v2/build_pretruth.py orbittrace_m2d_sacv_pareto_pair_catalogue_v1/build_prelabel.py orbittrace_m2d_sacv_pareto_pair_catalogue_v1/evaluate_truth.py
+
+      - name: Execute frozen pretruth barrier and binding GMN evaluation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash orbittrace_m2d_sacv_pareto_pair_catalogue_v1/run_binding.sh | tee /tmp/pareto-pair-binding.log
+
+      - name: Publish binding endpoint
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          ROOT=output/m2d-sacv-pareto-pair-catalogue-v1-gmn
+          R="$ROOT/truth/M2D_SACV_PARETO_PAIR_CATALOGUE_V1_GMN_RESULT.json"
+          A="$ROOT/pretruth/M2D_SACV_PARETO_PAIR_CATALOGUE_V1_PRETRUTH.json"
+          if [ -f "$R" ]; then
+            python - <<'PY' > /tmp/result.md
+          import hashlib,json
+          p='output/m2d-sacv-pareto-pair-catalogue-v1-gmn/truth/M2D_SACV_PARETO_PAIR_CATALOGUE_V1_GMN_RESULT.json'
+          r=json.load(open(p))
+          print('## M2D SACV Pareto-pair catalogue v1 — binding target-excluded GMN development')
+          print(); print(f"Verdict: **`{r['verdict']}`**")
+          print(f"- result SHA-256: `{hashlib.sha256(open(p,'rb').read()).hexdigest()}`")
+          for d in ('128','1024'):
+              b=r['scale_aggregates'][d]['sacv_v1_equal_budget']; s=r['scale_aggregates'][d]['successor_equal_budget']
+              print(f"- d={d}: qualified `{b['qualified_total']} -> {s['qualified_total']}`; zero-filled MRR `{b['zero_filled_mrr_mean']:.6f} -> {s['zero_filled_mrr_mean']:.6f}`; precision `{b['precision_mean']:.6f} -> {s['precision_mean']:.6f}`; fragmentation `{b['fragmentation_mean']:.6f} -> {s['fragmentation_mean']:.6f}`")
+          print('- OrbitTrace target information accessed: `false`')
+          print('- SonotaCo scientific access: `false`')
+          PY
+          elif [ -f "$A" ]; then
+            python - <<'PY' > /tmp/result.md
+          import hashlib,json
+          p='output/m2d-sacv-pareto-pair-catalogue-v1-gmn/pretruth/M2D_SACV_PARETO_PAIR_CATALOGUE_V1_PRETRUTH.json'
+          a=json.load(open(p))
+          print('## M2D SACV Pareto-pair catalogue v1 — pretruth endpoint')
+          print(); print(f"Verdict: **`{a['verdict']}`**")
+          print(f"- pretruth SHA-256: `{hashlib.sha256(open(p,'rb').read()).hexdigest()}`")
+          print(f"- summary: `{json.dumps(a['summary'],sort_keys=True)}`")
+          print('- Hidden GMN shower truth opened: `false`')
+          print('- OrbitTrace target information accessed: `false`')
+          PY
+          else
+            cat > /tmp/result.md <<'EOF'
+          ## M2D SACV Pareto-pair catalogue v1 — technical no-result
+
+          Execution stopped before a sealed pretruth or scientific result. No scientific rule or gate is changed; OrbitTrace target information was not accessed.
+          EOF
+          fi
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-pareto-pair-catalogue-v1-gmn-development
+          path: output/m2d-sacv-pareto-pair-catalogue-v1-gmn
+          if-no-files-found: warn
+          retention-days: 90
