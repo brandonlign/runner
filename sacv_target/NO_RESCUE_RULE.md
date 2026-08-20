@@ -1,0 +1,1 @@
+If the first technically valid Stage-B result is PARTIAL or NO, SACV v1 is frozen for OrbitTrace. Do not change contamination, radius, physical scales, support, annual validation, fallback, parent rank, family selection, merge logic, or membership after target reveal.
