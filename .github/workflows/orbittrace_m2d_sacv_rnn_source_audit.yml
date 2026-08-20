@@ -1,0 +1,65 @@
+name: OrbitTrace M2D SACV reciprocal-nearest source audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-edge-consensus-v1]
+    paths:
+      - '.github/workflows/orbittrace_m2d_sacv_rnn_source_audit.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Reassemble exact frozen edge-consensus source
+        run: |
+          set -euo pipefail
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec_source.tgz.b64
+          test "$(wc -c < /tmp/ec_source.tgz.b64)" = '16844'
+          base64 -d /tmp/ec_source.tgz.b64 > /tmp/ec_source.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec_source.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec_source.tgz
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py | cut -d' ' -f1)" = 'd4634839cc35dffa0cf8965923b21b048125844900c7a911515a389063067948'
+          echo PASS_EXACT_EDGE_CONSENSUS_SOURCE
+
+      - name: Print recurrence and membership control flow only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py')
+          s=p.read_text()
+          tree=ast.parse(s)
+          lines=s.splitlines()
+          print('SOURCE_SHA256=d4634839cc35dffa0cf8965923b21b048125844900c7a911515a389063067948')
+          for node in ast.walk(tree):
+              if isinstance(node,(ast.FunctionDef,ast.ClassDef)):
+                  print(type(node).__name__, getattr(node,'name',''), getattr(node,'lineno',None), getattr(node,'end_lineno',None))
+          print('--- recurrence/membership references ---')
+          keys=('edge','component','member','mutual','recurr','intersect','distance','output_ids')
+          for i,line in enumerate(lines,1):
+              if any(k in line.lower() for k in keys):
+                  lo=max(1,i-2); hi=min(len(lines),i+3)
+                  print(f'@@ {lo}:{hi}')
+                  for j in range(lo,hi+1): print(f'{j:04d}: {lines[j-1]}')
+          PY
+
+      - name: Record audit boundary
+        run: |
+          echo 'ZERO_DATA_AUDIT_ONLY=true'
+          echo 'GMN_CATALOGUE_ACCESSED=false'
+          echo 'SHOWER_TRUTH_ACCESSED=false'
+          echo 'ORBITTRACE_TARGET_INFORMATION_ACCESSED=false'
+          echo 'SONOTACO_ACCESSED=false'
