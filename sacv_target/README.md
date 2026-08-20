@@ -1,0 +1,1 @@
+SACV v1 final blind target package. Scientific membership rule is inherited byte-for-byte from the binding GMN development source; this package only applies it to the already-blind top-100 M2D ranking and reveals exact target-ID intersections after Stage-A sealing.
