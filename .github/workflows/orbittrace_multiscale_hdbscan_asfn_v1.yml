@@ -34,7 +34,10 @@ jobs:
       - name: Install frozen runtime
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          # Transport-only compatibility repair after run 32410362206 stopped on
+          # hdbscan 0.8.44's ensure_all_finite/check_array interface before any
+          # scientific catalogue or truth result. No method parameter changes.
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.7.1'
           python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
           python -m py_compile orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py
           mkdir -p input/historical output
