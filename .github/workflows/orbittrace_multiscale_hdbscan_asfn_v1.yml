@@ -78,8 +78,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if test -f output/RESULT.json; then
-            { echo 'ASFN_GENERALIZATION_RESULT'; echo '```json'; cat output/RESULT.json; echo '```'; } > output/pr_comment.md
+            { echo "ASFN_GENERALIZATION_RESULT run=${GITHUB_RUN_ID} job=${GITHUB_JOB}"; echo '```json'; cat output/RESULT.json; echo '```'; } > output/pr_comment.md
           else
-            echo 'ASFN_GENERALIZATION_TECHNICAL_FAILURE: result artifact missing; inspect workflow logs.' > output/pr_comment.md
+            echo "ASFN_GENERALIZATION_TECHNICAL_FAILURE run=${GITHUB_RUN_ID} job=${GITHUB_JOB}: result artifact missing; inspect workflow logs." > output/pr_comment.md
           fi
           gh pr comment 1434 --body-file output/pr_comment.md
