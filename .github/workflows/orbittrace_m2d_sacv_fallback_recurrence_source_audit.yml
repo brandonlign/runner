@@ -1,0 +1,49 @@
+name: OrbitTrace M2D SACV fallback-recurrence source audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-edge-consensus-v1]
+    paths:
+      - '.github/workflows/orbittrace_m2d_sacv_fallback_recurrence_source_audit.yml'
+      - 'orbittrace_m2d_sacv_fallback_recurrence_v1/**'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Reconstruct, transform, and audit exact source without scientific data
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec.b64
+          test "$(wc -c < /tmp/ec.b64)" = '16844'
+          base64 -d /tmp/ec.b64 > /tmp/ec.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec.tgz
+          echo PATCH_SOURCE_SHA256=$(sha256sum orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py | cut -d' ' -f1)
+          python orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py | tee /tmp/transformed-hashes.txt
+          python -m py_compile orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py
+          bash -n orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py')
+          s=p.read_text(); t=ast.parse(s)
+          assert "top_ref=bool(top22 and top23 and any(e['a']==top22['id'] and e['b']==top23['id'] for e in edges))" in s
+          assert "o=sorted(set(top22['members'])|set(top23['members']));ref=True;route='sacv_v1_success';win=None" in s
+          assert "win=comps[0];o=list(win['member_ids']);ref=True;route='recurrence_fallback'" in s
+          assert "win=None;o=ids;ref=False;route='parent_fallback'" in s
+          assert 'consensus.update' not in s
+          assert 'M2D_SACV_FALLBACK_RECURRENCE_V1' in s
+          print('PASS_EXACT_FALLBACK_CONTROL_FLOW_AST')
+          PY
+          echo PASS_SOURCE_ONLY_FALLBACK_RECURRENCE_FREEZE
