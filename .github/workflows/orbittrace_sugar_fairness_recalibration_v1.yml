@@ -1,6 +1,12 @@
 name: OrbitTrace Sugar fairness recalibration v1
 
 on:
+  push:
+    branches:
+      - agent/orbittrace-sugar-fairness-recalibration-v1-pr
+    paths:
+      - 'orbittrace_sugar_fairness_recalibration_v1/**'
+      - '.github/workflows/orbittrace_sugar_fairness_recalibration_v1.yml'
   pull_request:
     branches:
       - main
@@ -89,8 +95,6 @@ jobs:
           sha256sum output/${{ matrix.eval_year }}/PRETRUTH_${{ matrix.eval_year }}.json \
             > output/${{ matrix.eval_year }}/PRETRUTH_SHA256.txt
 
-      # Evaluation-year truth is deliberately unavailable until the complete
-      # calibrated Sugar catalogue above has been frozen.
       - uses: actions/download-artifact@v4
         with:
           name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
