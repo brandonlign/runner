@@ -1,0 +1,34 @@
+name: OrbitTrace reciprocal-nearest runner audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-edge-consensus-v1]
+    paths:
+      - '.github/workflows/orbittrace_m2d_sacv_reciprocal_nearest_runner_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Print exact inherited and transformed runner
+        run: |
+          set -euo pipefail
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec.b64
+          base64 -d /tmp/ec.b64 > /tmp/ec.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec.tgz
+          echo '=== ORIGINAL RUNNER ==='
+          cat orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh
+          python orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py >/tmp/patch-hashes.txt
+          echo '=== TRANSFORMED RUNNER ==='
+          cat orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh
+          echo '=== PATCH HASHES ==='
+          cat /tmp/patch-hashes.txt

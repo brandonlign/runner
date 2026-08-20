@@ -1,0 +1,123 @@
+name: OrbitTrace M2D SACV reciprocal-nearest v1 GMN development
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-edge-consensus-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py'
+      - '.github/workflows/orbittrace_m2d_sacv_reciprocal_nearest_v1_gmn.yml'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-m2d-sacv-rnn-v1-gmn-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reassemble parent and derive exact frozen reciprocal-nearest source
+        run: |
+          set -euo pipefail
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec_source.tgz.b64
+          test "$(wc -c < /tmp/ec_source.tgz.b64)" = '16844'
+          base64 -d /tmp/ec_source.tgz.b64 > /tmp/ec_source.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec_source.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec_source.tgz
+          echo '198a16e91735e472cd2b8dcafac5571c521074a1cc260af3f9b9820a9ff239cf  orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py' | sha256sum -c -
+          python orbittrace_m2d_sacv_reciprocal_nearest_v1/patch_source.py
+          echo '185b3a5941d73f007b1ea156c3f0b4e0aeb46780846e32aa89d50f98ab5c0d86  orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py' | sha256sum -c -
+          echo '0c45ca8c871bd6452eba2e71a6bbc19297a6c26dd1b115cb85fbe5751792c133  orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py' | sha256sum -c -
+          echo '232215ac7d79dbc97c7878e43d28a7149d1281496dd923130b6f2826cc0bacc1  orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh' | sha256sum -c -
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          cp orbittrace_m2d_sacv_edge_consensus_v1/PROTOCOL.md orbittrace_m2d_sacv_reciprocal_nearest_v1/PROTOCOL.md
+          cp orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_reciprocal_nearest_v1/build_pretruth.py
+          cp orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py orbittrace_m2d_sacv_reciprocal_nearest_v1/evaluate_truth.py
+          cp orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh
+          echo 'bc80af108daad50ab69bc41cda171719b49e0ab8d8e4f9a226e1dd91c8a91420  orbittrace_m2d_sacv_reciprocal_nearest_v1/PROTOCOL.md' | sha256sum -c -
+          echo '185b3a5941d73f007b1ea156c3f0b4e0aeb46780846e32aa89d50f98ab5c0d86  orbittrace_m2d_sacv_reciprocal_nearest_v1/build_pretruth.py' | sha256sum -c -
+          echo '0c45ca8c871bd6452eba2e71a6bbc19297a6c26dd1b115cb85fbe5751792c133  orbittrace_m2d_sacv_reciprocal_nearest_v1/evaluate_truth.py' | sha256sum -c -
+          echo '232215ac7d79dbc97c7878e43d28a7149d1281496dd923130b6f2826cc0bacc1  orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh' | sha256sum -c -
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh')
+          s=p.read_text()
+          repl={
+            'd1a29d1403194557019ba69fc1e1acb6314cd97cd81e88a8a66c9872fb72cab1':'bc80af108daad50ab69bc41cda171719b49e0ab8d8e4f9a226e1dd91c8a91420',
+            'd4634839cc35dffa0cf8965923b21b048125844900c7a911515a389063067948':'185b3a5941d73f007b1ea156c3f0b4e0aeb46780846e32aa89d50f98ab5c0d86',
+            'b082a003030309ec55ea16add7195829b876b680e1c449224c89d33c192465e6':'0c45ca8c871bd6452eba2e71a6bbc19297a6c26dd1b115cb85fbe5751792c133',
+          }
+          for old,new in repl.items():
+              assert s.count(old)==1,(old,s.count(old))
+              s=s.replace(old,new,1)
+          p.write_text(s)
+          print('RUNNER_SELF_CHECK_REPLACEMENTS',len(repl))
+          PY
+          python -m py_compile orbittrace_m2d_sacv_reciprocal_nearest_v1/build_pretruth.py orbittrace_m2d_sacv_reciprocal_nearest_v1/evaluate_truth.py
+          bash -n orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh
+          sha256sum orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh
+          echo PASS_FROZEN_RECIPROCAL_NEAREST_SOURCE_AND_TRANSPORT_REPAIR
+
+      - name: Execute one-shot target-excluded GMN reciprocal-nearest v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash orbittrace_m2d_sacv_reciprocal_nearest_v1/run_binding.sh | tee /tmp/rnn-run.log
+
+      - name: Publish binding scientific result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          P=output/m2d-sacv-reciprocal-nearest-v1-gmn/truth/M2D_SACV_RECIPROCAL_NEAREST_V1_GMN_RESULT.json
+          if [ -f "$P" ]; then
+            python - <<'PY' > /tmp/result-comment.md
+          import hashlib,json
+          from pathlib import Path
+          p=Path('output/m2d-sacv-reciprocal-nearest-v1-gmn/truth/M2D_SACV_RECIPROCAL_NEAREST_V1_GMN_RESULT.json')
+          r=json.loads(p.read_text())
+          print('## M2D SACV reciprocal-nearest v1 — binding target-excluded GMN development')
+          print()
+          print(f"Verdict: **`{r['verdict']}`**")
+          print(f"- result SHA-256: `{hashlib.sha256(p.read_bytes()).hexdigest()}`")
+          for comp in ('sugar2017','hdbscan2025'):
+              s=r['aggregates'][comp]['paired_same_discovery']
+              g=r['aggregates'][comp]['gates']
+              print(f"- {comp}: paired n `{s['count']}`; precision parent/RNN `{s['parent_mean_precision']:.6f} / {s['extraction_mean_precision']:.6f}`; F1 `{s['parent_mean_f1']:.6f} / {s['extraction_mean_f1']:.6f}`; refined `{s['strict_refined_assignment_count']}`; SACV-v1 precision nonregression `{g['precision_nonregression_vs_frozen_sacv_v1']}`; F1 nonregression `{g['f1_nonregression_vs_frozen_sacv_v1']}`")
+          print('- OrbitTrace target information accessed: `false`')
+          print('- SonotaCo scientific access: `false`')
+          print('- Scientific role: `post-target-reveal target-excluded development`; cannot retroactively alter #1406.')
+          PY
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result-comment.md
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Reciprocal-nearest v1 execution ended before a valid scientific result. Treat as technical no-result only; the frozen scientific rule/gates remain unchanged."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-reciprocal-nearest-v1-gmn-development
+          path: output/m2d-sacv-reciprocal-nearest-v1-gmn
+          if-no-files-found: warn
+          retention-days: 90
