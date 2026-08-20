@@ -1,0 +1,80 @@
+name: OrbitTrace M2D x fixed4 consensus core v1 PR runner
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-internal-mass-gmn-sparse-literature-fairness-v1]
+    paths:
+      - 'orbittrace_m2d_fixed4_consensus_core_v1/**'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  execute:
+    if: github.head_ref == 'agent/orbittrace-m2d-fixed4-consensus-core-v1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Source-only execution authorization
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_fixed4_consensus_core_v1/PROTOCOL.md)" = 'ed62d5149cde2c2070eb21520e77503e719ba9e0'
+          test "$(git hash-object orbittrace_m2d_fixed4_consensus_core_v1/build_pretruth.py)" = '140f21736ea6615fe111e02d91eaa99b19422da7'
+          test "$(git hash-object orbittrace_m2d_fixed4_consensus_core_v1/evaluate_truth.py)" = 'da56bcac1fc78ade58b4323179a5a980f3b1566e'
+          test "$(git hash-object orbittrace_m2d_fixed4_consensus_core_v1/run_binding.sh)" = '36ba655384389c807d5198cde4d3eb128f5ddb64'
+          test "$(cat orbittrace_m2d_fixed4_consensus_core_v1/ACTIVATE.md)" = 'RUN_M2D_FIXED4_CONSENSUS_CORE_V1'
+
+      - name: Execute pretruth seal then binding paired-utility evaluation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash orbittrace_m2d_fixed4_consensus_core_v1/run_binding.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-fixed4-consensus-core-v1-binding
+          path: output/m2d-fixed4-consensus-core-v1
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post binding result
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY' > /tmp/result.md
+          import json,hashlib
+          pre='output/m2d-fixed4-consensus-core-v1/pretruth/M2D_FIXED4_CONSENSUS_CORE_V1_PRETRUTH.json'
+          res='output/m2d-fixed4-consensus-core-v1/truth/M2D_FIXED4_CONSENSUS_CORE_V1_RESULT.json'
+          q=json.load(open(pre)); r=json.load(open(res))
+          print('## M2D x fixed4 consensus core v1 — binding GMN development')
+          print()
+          print('Verdict: **`%s`**' % r['verdict'])
+          print('- pretruth SHA-256: `%s`' % hashlib.sha256(open(pre,'rb').read()).hexdigest())
+          s=q['overall_summary']
+          print('- structural core: nonempty `%d/%d`; mean members `%.3f -> %.3f`; max `%d -> %d`' % (s['nonempty_core_count'],s['candidate_count'],s['mean_envelope_members'],s['mean_core_members'],s['max_envelope_members'],s['max_core_members']))
+          for comp in ('sugar2017','hdbscan2025'):
+              a=r['aggregates'][comp]['paired_same_discovery']
+              print('- %s paired: n `%d`; nonempty `%.3f`; precision `%.6f -> %.6f`; F1 `%.6f -> %.6f`; nonempty precision nonregression `%.3f`' % (comp,a['count'],a['nonempty_fraction'],a['parent_mean_precision'],a['core_mean_precision'],a['parent_mean_f1'],a['core_mean_f1'],a['nonempty_precision_nonregression_fraction']))
+          print('- result SHA-256: `%s`' % hashlib.sha256(open(res,'rb').read()).hexdigest())
+          PY
+          gh pr comment 1398 --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md || true
+
+      - name: Record technical no-result
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1398 --repo "$GITHUB_REPOSITORY" --body "M2D x fixed4 consensus core v1 ended technically before a valid binding scientific result. No scientific rule or gate is changed by this no-result." || true

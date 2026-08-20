@@ -1,0 +1,80 @@
+name: OrbitTrace M2D cross-year recurrence core v1 PR runner
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-internal-mass-gmn-sparse-literature-fairness-v1]
+    paths:
+      - 'orbittrace_m2d_crossyear_recurrence_core_v1/**'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  execute:
+    if: github.head_ref == 'agent/orbittrace-m2d-crossyear-recurrence-core-v1'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Source-only execution authorization
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_crossyear_recurrence_core_v1/PROTOCOL.md)" = '067b2868d898438a0b320b29d1c4c622115b7320'
+          test "$(git hash-object orbittrace_m2d_crossyear_recurrence_core_v1/build_pretruth.py)" = 'd3dde3ac8b0a1168a8b6d4632f5169ce631f7810'
+          test "$(git hash-object orbittrace_m2d_crossyear_recurrence_core_v1/evaluate_truth.py)" = '7b102ce826428cccdc860f455653dc7180530c2a'
+          test "$(git hash-object orbittrace_m2d_crossyear_recurrence_core_v1/run_binding.sh)" = '293166900056a514f6e2cba1c4b5aab7a835b296'
+          test "$(git hash-object orbittrace_topomodal_hierarchy_scale_v1/run_diagnostic.py)" = 'c1efa8da34dea140726a4c2fe4943eb29a304538'
+          test "$(cat orbittrace_m2d_crossyear_recurrence_core_v1/ACTIVATE.md)" = 'RUN_M2D_CROSSYEAR_RECURRENCE_CORE_V1'
+
+      - name: Execute pretruth seal then binding truth evaluation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash orbittrace_m2d_crossyear_recurrence_core_v1/run_binding.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-crossyear-recurrence-core-v1-binding
+          path: output/m2d-crossyear-recurrence-core-v1
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post binding result
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY' > /tmp/result.md
+          import json,hashlib
+          p='output/m2d-crossyear-recurrence-core-v1/truth/M2D_CROSSYEAR_RECURRENCE_CORE_V1_RESULT.json'; r=json.load(open(p))
+          pre='output/m2d-crossyear-recurrence-core-v1/pretruth/M2D_CROSSYEAR_RECURRENCE_CORE_V1_PRETRUTH.json'; q=json.load(open(pre))
+          print('## M2D cross-year recurrence core v1 — binding GMN development')
+          print()
+          print('Verdict: **`%s`**' % r['verdict'])
+          print('- pretruth SHA-256: `%s`' % hashlib.sha256(open(pre,'rb').read()).hexdigest())
+          s=q['overall_summary']
+          print('- structural extraction: mean members `%.3f -> %.3f`, max `%d -> %d`, nonempty cores `%d/%d`' % (s['envelope_mean_member_count'],s['core_mean_member_count'],s['envelope_max_member_count'],s['core_max_member_count'],s['nonempty_core_count'],s['candidate_count']))
+          for comp in ('sugar2017','hdbscan2025'):
+              a=r['aggregates'][comp]
+              print('- %s: macro-F1 `%.9f -> %.9f`; precision `%.9f -> %.9f`; recovered>0.5 `%d -> %d`; paired F1 `%.9f -> %.9f`' % (comp,a['envelope']['mean_macro_f1'],a['core']['mean_macro_f1'],a['envelope']['mean_macro_precision'],a['core']['mean_macro_precision'],a['envelope']['total_recovered_f1_gt_05'],a['core']['total_recovered_f1_gt_05'],a['paired']['parent_mean_f1'],a['paired']['core_mean_f1']))
+          print('- result SHA-256: `%s`' % hashlib.sha256(open(p,'rb').read()).hexdigest())
+          PY
+          gh pr comment 1397 --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md || true
+
+      - name: Record technical no-result
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 1397 --repo "$GITHUB_REPOSITORY" --body "M2D cross-year recurrence core v1 ended technically before a valid binding scientific result. No scientific rule or gate is changed by this no-result." || true
