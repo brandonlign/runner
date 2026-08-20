@@ -1,0 +1,95 @@
+name: OrbitTrace M2D SACV edge-consensus v1 GMN development
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-v1-gmn-development]
+    paths:
+      - 'orbittrace_m2d_sacv_edge_consensus_v1/source_parts/**'
+      - '.github/workflows/orbittrace_m2d_sacv_edge_consensus_v1_gmn.yml'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-m2d-sacv-edge-consensus-v1-gmn-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reassemble and verify frozen edge-consensus source
+        run: |
+          set -euo pipefail
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec_source.tgz.b64
+          test "$(wc -c < /tmp/ec_source.tgz.b64)" = '16844'
+          base64 -d /tmp/ec_source.tgz.b64 > /tmp/ec_source.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec_source.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec_source.tgz
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/PROTOCOL.md | cut -d' ' -f1)" = 'd1a29d1403194557019ba69fc1e1acb6314cd97cd81e88a8a66c9872fb72cab1'
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py | cut -d' ' -f1)" = 'd4634839cc35dffa0cf8965923b21b048125844900c7a911515a389063067948'
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py | cut -d' ' -f1)" = 'b082a003030309ec55ea16add7195829b876b680e1c449224c89d33c192465e6'
+          test "$(sha256sum orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh | cut -d' ' -f1)" = '6d18d9326e985e3a0c765eecb149ae745a98769708d15f2d73face2e6f9305f4'
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          python -m py_compile orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py
+          bash -n orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh
+          echo PASS_SOURCE_AND_TRANSPORT_FREEZE
+
+      - name: Execute one-shot target-excluded GMN edge-consensus v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh | tee /tmp/ec-run.log
+
+      - name: Publish binding scientific result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          P=output/m2d-sacv-edge-consensus-v1-gmn/truth/M2D_SACV_EDGE_CONSENSUS_V1_GMN_RESULT.json
+          if [ -f "$P" ]; then
+            python - <<'PY' > /tmp/result-comment.md
+          import hashlib,json
+          from pathlib import Path
+          p=Path('output/m2d-sacv-edge-consensus-v1-gmn/truth/M2D_SACV_EDGE_CONSENSUS_V1_GMN_RESULT.json')
+          r=json.loads(p.read_text())
+          print('## M2D SACV edge-consensus v1 — binding target-excluded GMN development')
+          print()
+          print(f"Verdict: **`{r['verdict']}`**")
+          print(f"- result SHA-256: `{hashlib.sha256(p.read_bytes()).hexdigest()}`")
+          for comp in ('sugar2017','hdbscan2025'):
+              s=r['aggregates'][comp]['paired_same_discovery']
+              g=r['aggregates'][comp]['gates']
+              print(f"- {comp}: paired n `{s['count']}`; precision parent/EC `{s['parent_mean_precision']:.6f} / {s['extraction_mean_precision']:.6f}`; F1 `{s['parent_mean_f1']:.6f} / {s['extraction_mean_f1']:.6f}`; refined `{s['strict_refined_assignment_count']}`; SACV-v1 nonregression `{g['precision_nonregression_vs_frozen_sacv_v1'] and g['f1_nonregression_vs_frozen_sacv_v1']}`")
+          print('- OrbitTrace target information accessed: `false`')
+          print('- Scientific role: `post-target-reveal development`; this cannot retroactively alter #1406.')
+          PY
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result-comment.md
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Edge-consensus v1 execution ended before a valid scientific result. Treat as technical no-result only; scientific rule/gates remain frozen."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-edge-consensus-v1-gmn-development
+          path: output/m2d-sacv-edge-consensus-v1-gmn
+          if-no-files-found: warn
+          retention-days: 90
