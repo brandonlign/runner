@@ -35,14 +35,18 @@ jobs:
           import ast
           from pathlib import Path
           p=Path('orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py')
-          s=p.read_text()
-          tree=ast.parse(s)
+          s=p.read_text(); tree=ast.parse(s)
           for node in tree.body:
               if isinstance(node,(ast.FunctionDef,ast.ClassDef)):
                   seg=ast.get_source_segment(s,node) or ''
-                  low=seg.lower()
-                  if any(k in low for k in ('edge','component','hypoth','recurr','membership','validate')):
-                      print(f'--- {getattr(node,"name","?")} lines {node.lineno}-{getattr(node,"end_lineno",node.lineno)} ---')
-                      print(seg)
+                  if any(k in seg.lower() for k in ('edge','component','hypoth','recurr','membership','validate')):
+                      print(f'--- {getattr(node,"name","?")} lines {node.lineno}-{getattr(node,"end_lineno",node.lineno)} ---'); print(seg)
           PY
+          tar -czf /tmp/reconstructed-ec-source.tgz orbittrace_m2d_sacv_edge_consensus_v1
+          sha256sum /tmp/reconstructed-ec-source.tgz
           echo PASS_SOURCE_ONLY_AUDIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reconstructed-edge-consensus-source
+          path: /tmp/reconstructed-ec-source.tgz
+          retention-days: 7
