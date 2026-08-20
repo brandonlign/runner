@@ -68,9 +68,10 @@ jobs:
           set -euo pipefail
           python -m pip install 'gudhi==3.12.0'
           python - <<'PY'
-          import gudhi
-          assert gudhi.__version__ == '3.12.0', gudhi.__version__
-          print('GUDHI_VERSION', gudhi.__version__)
+          from importlib.metadata import version
+          v = version('gudhi')
+          assert v == '3.12.0', v
+          print('GUDHI_PACKAGE_VERSION', v)
           PY
       - name: Execute one-shot target-excluded GMN binding
         env:
