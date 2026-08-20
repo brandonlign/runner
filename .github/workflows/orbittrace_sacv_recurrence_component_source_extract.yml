@@ -1,0 +1,29 @@
+name: OrbitTrace SACV recurrence-component source extract
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-m2d-sacv-recurrence-components-v1
+    paths:
+      - '.github/workflows/orbittrace_sacv_recurrence_component_source_extract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and extract frozen SACV source
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          mkdir extracted
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz -C extracted
+          find extracted -type f -print -exec sha256sum {} \;
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sacv-v1-frozen-source-extracted
+          path: extracted
+          retention-days: 30
