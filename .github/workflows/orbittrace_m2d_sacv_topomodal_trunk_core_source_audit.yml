@@ -55,7 +55,6 @@ jobs:
           before=Path('/tmp/fallback-before-instrument.py').read_text()
           after=Path('orbittrace_m2d_sacv_fallback_recurrence_v1/build_pretruth.py').read_text()
           assert before != after
-          # Existing scientific route and output construction must survive verbatim.
           for literal in [
               "top_ref=bool(top22 and top23 and any(e['a']==top22['id'] and e['b']==top23['id'] for e in edges))",
               "o=sorted(set(top22['members'])|set(top23['members']));ref=True;route='sacv_v1_success';win=None",
@@ -88,10 +87,23 @@ jobs:
             "primary_ids == oracle_ids",
           ]
           for x in required: assert x in b, x
-          assert 'base.core_gates' not in e  # wrapper reuses base.main wholesale
+          assert 'base.core_gates' not in e
           assert 'base.main()' in e and 'VERDICT_MAP' in e
           print('PASS_TOPOMODAL_SOURCE_CONTRACT')
           PY
+      - name: Audit complete generated binding runner
+        run: |
+          set -euo pipefail
+          echo 'ac7960c944b881b02e47572e767e97eaafde1074831446be3a410f9a87e0ae0a  orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py' | sha256sum -c -
+          python orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py
+          echo '9e0d533ddfd89bfa9a53fbbedafcb11a62bf4e33e69d7c31a9500633f8c5d8c0  orbittrace_m2d_sacv_dual_output_core_v1/run_binding.generated.sh' | sha256sum -c -
+          echo '9ef6b20bda4acb27a317ef440db25fbd8c2137d01d5847ef6d80cd931985079d  orbittrace_m2d_sacv_topomodal_trunk_core_v1/make_runner.py' | sha256sum -c -
+          python -m py_compile orbittrace_m2d_sacv_topomodal_trunk_core_v1/make_runner.py
+          python orbittrace_m2d_sacv_topomodal_trunk_core_v1/make_runner.py | tee /tmp/generated-runner-hash.txt
+          bash -n orbittrace_m2d_sacv_topomodal_trunk_core_v1/run_binding.generated.sh
+          grep -F 'PASS_AUDITED_INSTRUMENTED_FALLBACK_RUNTIME' orbittrace_m2d_sacv_topomodal_trunk_core_v1/run_binding.generated.sh
+          grep -F 'TARGET_EXCLUDED_SACV_PRIMARY_PLUS_TOPOMODAL_TRUNK_RECURRENT_CORE_FROZEN_BEFORE_SHOWER_TRUTH' orbittrace_m2d_sacv_topomodal_trunk_core_v1/run_binding.generated.sh
+          echo PASS_TOPOMODAL_GENERATED_RUNNER_AUDIT
       - name: Record zero-data audit boundary
         run: |
           echo 'ZERO_DATA_AUDIT_ONLY=true'
