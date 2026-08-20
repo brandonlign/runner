@@ -1,0 +1,208 @@
+name: OrbitTrace pair-Pareto v1 pretruth diagnostic
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-m2d-sacv-pair-pareto-catalogue-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_pair_pareto_catalogue_v1/PRETRUTH_DIAG.md'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-m2d-sacv-pair-pareto-catalogue-v1
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: agent/orbittrace-recurrent-local-topomodal-trunk-v1
+          path: local-trunk-src
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct exact frozen scientific runtime
+        id: source
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_sacv_pair_pareto_catalogue_v1/PROTOCOL.md)" = cfca4d2b219732b2a3b8eedcea8e7746ad4b9e3a
+          test "$(git hash-object orbittrace_m2d_sacv_pair_pareto_catalogue_v1/instrument_runtime.py)" = e4ff0108d6c5989a5e00bfc92b76154863e22e68
+          test "$(git hash-object orbittrace_m2d_sacv_pair_pareto_catalogue_v1/build_pretruth.py)" = 35eced550f1e67652bd4f217a80b2dff435f9e89
+          test "$(git hash-object orbittrace_m2d_sacv_pair_pareto_catalogue_v1/evaluate_truth.py)" = 77e94d894d1f02de0d90c2be3aff39244628d7d6
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec.b64
+          test "$(wc -c < /tmp/ec.b64)" = 16844
+          base64 -d /tmp/ec.b64 > /tmp/ec.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec.tgz
+          echo 'f6c5b2a89d70003b058e772b753c531cb5072b2c1eb52d77166d7a5cbd566ca7  orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py' | sha256sum -c -
+          python orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py
+          echo '435db7a53d4a78547f910d5e1a836bc399a7bd77b227056b4a1c12665d10b13a  orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py' | sha256sum -c -
+          cp orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_fallback_recurrence_v1/build_pretruth.py
+          python orbittrace_m2d_sacv_pair_pareto_catalogue_v1/instrument_runtime.py
+          python -m py_compile orbittrace_m2d_sacv_pair_pareto_catalogue_v1/*.py orbittrace_m2d_sacv_fallback_recurrence_v1/build_pretruth.py
+
+      - name: Install frozen runtime
+        id: install
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --upgrade pip >/dev/null
+          python -m pip install --disable-pip-version-check -r frozen-v8/ghoststream_fixed4_application/requirements.txt >/dev/null
+          python -m pip install --disable-pip-version-check --no-deps gmn-python-api==0.0.13 >/dev/null
+          python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0' >/dev/null
+          mkdir -p input/internal input/ranker input/v8 input/v3 input/fair input/sacv output/geometry output/pretruth
+          git -C frozen-v8 fetch -q --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = 2ba4835db23f8f623cdd28d0a4e6113b7954ecb2
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py >/dev/null && test "$(cat output/development_source_sha256.txt)" = ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51)
+
+      - uses: actions/download-artifact@v4
+        id: internal
+        with:
+          name: orbittrace-support-cut-bifiltration-internal-mass-v1
+          path: input/internal
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32041661731
+      - uses: actions/download-artifact@v4
+        id: ranker
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        id: v8
+        with:
+          name: orbittrace-pooled-year-centroid-v8-development
+          path: input/v8
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31217916558
+      - uses: actions/download-artifact@v4
+        id: fair
+        with:
+          name: orbittrace-internal-mass-gmn-sparse-literature-fairness-v1-pretruth
+          path: input/fair
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32268943692
+      - uses: actions/download-artifact@v4
+        id: sacv
+        with:
+          name: orbittrace-m2d-sacv-v1-gmn-development
+          path: input/sacv
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 32325172601
+
+      - name: Verify immutable inputs
+        id: inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/internal/SUPPORT_CUT_BIFILTRATION_INTERNAL_MASS_V1_PRELABEL.json | cut -d' ' -f1)" = 7b1ddfcd32cd0b52321e3b3dfc614a88dd9b973f947c1d4d0de74fddf26b59cd
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990
+          test "$(sha256sum input/v8/pooled_year_centroid_v8_development.json | cut -d' ' -f1)" = fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b
+          test "$(sha256sum input/fair/GMN_INTERNAL_MASS_SPARSE_LITERATURE_FAIRNESS_V1_PRETRUTH.json | cut -d' ' -f1)" = 8b0f4629659c1bfd750747303ad04ff67355adf66d4dbe474ce7fba788f5bae5
+          test "$(sha256sum input/sacv/pretruth/M2D_SACV_V1_GMN_PRETRUTH.json | cut -d' ' -f1)" = 77528fbec227bf8d8d311b9054c46db43668d7f12e9460b85db680c4a6ce927b
+
+      - name: Export exact target-excluded label-free geometry
+        id: geometry
+        env:
+          PYTHONPATH: input/ranker:.:orbittrace_recurrent_eom_hdbscan_v1:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3
+        run: |
+          set -euo pipefail
+          python -u local-trunk-src/orbittrace_recurrent_local_topomodal_trunk_v1/export_geometry.py --parent-runner orbittrace_recurrent_eom_hdbscan_v1/run_development.py --quality-source input/ranker/run_urc_union_ranker.py --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 --v8-result-json input/v8/pooled_year_centroid_v8_development.json --output output/geometry/GMN_LABEL_FREE_GEOMETRY.json
+          test "$(sha256sum output/geometry/GMN_LABEL_FREE_GEOMETRY.json | cut -d' ' -f1)" = 1fd5cd0577d88784845e0d367ef35491d6afb7caa78bb06fa05d72048daec384
+
+      - name: Build and seal exact pair catalogue before truth
+        id: pretruth
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python -u orbittrace_m2d_sacv_pair_pareto_catalogue_v1/build_pretruth.py --fair-pretruth input/fair/GMN_INTERNAL_MASS_SPARSE_LITERATURE_FAIRNESS_V1_PRETRUTH.json --geometry output/geometry/GMN_LABEL_FREE_GEOMETRY.json --sacv-v1-pretruth input/sacv/pretruth/M2D_SACV_V1_GMN_PRETRUTH.json --output output/pretruth/M2D_SACV_PAIR_PARETO_CATALOGUE_V1_GMN_PRETRUTH.json
+          sha256sum output/pretruth/M2D_SACV_PAIR_PARETO_CATALOGUE_V1_GMN_PRETRUTH.json | tee output/pretruth/PRETRUTH_SHA256.txt
+          python - <<'PY'
+          import json
+          r=json.load(open('output/pretruth/M2D_SACV_PAIR_PARETO_CATALOGUE_V1_GMN_PRETRUTH.json'))
+          assert r['shower_truth_used'] is False and r['target_information_access'] is False and r['sonotaco_scientific_access'] is False
+          assert all(all(v==0 for v in s['capacity_shortfall'].values()) for s in r['subsets'])
+          print('PRETRUTH_SEALED',r['summary'])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-pair-pareto-catalogue-v1-pretruth-diagnostic
+          path: output/pretruth
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Comment pretruth diagnostic
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          S_SOURCE: ${{ steps.source.outcome }}
+          S_INSTALL: ${{ steps.install.outcome }}
+          S_INTERNAL: ${{ steps.internal.outcome }}
+          S_RANKER: ${{ steps.ranker.outcome }}
+          S_V8: ${{ steps.v8.outcome }}
+          S_FAIR: ${{ steps.fair.outcome }}
+          S_SACV: ${{ steps.sacv.outcome }}
+          S_INPUTS: ${{ steps.inputs.outcome }}
+          S_GEOMETRY: ${{ steps.geometry.outcome }}
+          S_PRETRUTH: ${{ steps.pretruth.outcome }}
+        run: |
+          {
+            echo '## Pair-Pareto v1 pretruth diagnostic'
+            echo
+            echo "- source reconstruction: \`$S_SOURCE\`"
+            echo "- dependency/runtime install: \`$S_INSTALL\`"
+            echo "- internal artifact: \`$S_INTERNAL\`"
+            echo "- ranker artifact: \`$S_RANKER\`"
+            echo "- v8 artifact: \`$S_V8\`"
+            echo "- fair-pretruth artifact: \`$S_FAIR\`"
+            echo "- SACV-v1 artifact: \`$S_SACV\`"
+            echo "- immutable input hashes: \`$S_INPUTS\`"
+            echo "- exact label-free geometry: \`$S_GEOMETRY\`"
+            echo "- pair catalogue seal: \`$S_PRETRUTH\`"
+            if [ -f output/pretruth/M2D_SACV_PAIR_PARETO_CATALOGUE_V1_GMN_PRETRUTH.json ]; then
+              python - <<'PY'
+          import hashlib,json
+          p='output/pretruth/M2D_SACV_PAIR_PARETO_CATALOGUE_V1_GMN_PRETRUTH.json';r=json.load(open(p))
+          print(f"- sealed pretruth SHA-256: `{hashlib.sha256(open(p,'rb').read()).hexdigest()}`")
+          print(f"- sealed summary: `{r['summary']}`")
+          PY
+            fi
+            echo '- Hidden GMN shower truth opened: `false`'
+            echo '- OrbitTrace target information accessed: `false`'
+            echo '- SonotaCo scientific access: `false`'
+          } > /tmp/comment.md
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
