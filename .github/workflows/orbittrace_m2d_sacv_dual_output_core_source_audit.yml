@@ -1,0 +1,49 @@
+name: OrbitTrace M2D SACV dual-output core source audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-fallback-recurrence-v1]
+    paths:
+      - '.github/workflows/orbittrace_m2d_sacv_dual_output_core_source_audit.yml'
+      - 'orbittrace_m2d_sacv_dual_output_core_v1/**'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Reconstruct exact failed #1417 source and print transform interfaces only
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec.b64
+          test "$(wc -c < /tmp/ec.b64)" = '16844'
+          base64 -d /tmp/ec.b64 > /tmp/ec.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec.tgz
+          echo 'f6c5b2a89d70003b058e772b753c531cb5072b2c1eb52d77166d7a5cbd566ca7  orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py' | sha256sum -c -
+          python orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py >/tmp/hashes.txt
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          for path in ['orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py','orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py']:
+              s=Path(path).read_text(); t=ast.parse(s)
+              print('===',path,'===')
+              wanted={'proc','main','aggregate','paired_summary','exact_parent'}
+              for n in t.body:
+                  if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in wanted:
+                      print(ast.get_source_segment(s,n)); print('\n---')
+                  if isinstance(n,ast.ClassDef) and n.name=='Runtime':
+                      for m in n.body:
+                          if isinstance(m,ast.FunctionDef) and m.name=='proc':
+                              print(ast.get_source_segment(s,m)); print('\n---')
+          PY
+          echo PASS_ZERO_DATA_DUAL_OUTPUT_INTERFACE_AUDIT
