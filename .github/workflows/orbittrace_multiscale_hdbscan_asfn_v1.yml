@@ -14,6 +14,8 @@ on:
 permissions:
   contents: read
   actions: read
+  issues: write
+  pull-requests: write
 env:
   PYTHONUNBUFFERED: '1'
   OMP_NUM_THREADS: '1'
@@ -70,3 +72,14 @@ jobs:
           path: output
           if-no-files-found: error
           retention-days: 90
+      - name: Publish binding result to PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -f output/RESULT.json; then
+            { echo 'ASFN_GENERALIZATION_RESULT'; echo '```json'; cat output/RESULT.json; echo '```'; } > output/pr_comment.md
+          else
+            echo 'ASFN_GENERALIZATION_TECHNICAL_FAILURE: result artifact missing; inspect workflow logs.' > output/pr_comment.md
+          fi
+          gh pr comment 1434 --body-file output/pr_comment.md
