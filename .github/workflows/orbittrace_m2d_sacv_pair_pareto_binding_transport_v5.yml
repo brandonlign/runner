@@ -1,0 +1,69 @@
+name: OrbitTrace pair-Pareto v1 traced transport binding
+
+on:
+  pull_request:
+    branches: [agent/orbittrace-m2d-sacv-pair-pareto-catalogue-v1]
+    paths:
+      - 'orbittrace_m2d_sacv_pair_pareto_catalogue_v1/ACTIVATE_BINDING_V5.md'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  binding:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 8053680f03d5d0dfa86d1bec0ba3d1bbd31169f7
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Execute traced exact frozen sibling
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash -n orbittrace_m2d_sacv_pair_pareto_catalogue_v1/run_binding_transport_v5.sh
+          bash orbittrace_m2d_sacv_pair_pareto_catalogue_v1/run_binding_transport_v5.sh
+      - name: Comment binding outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          P=output/m2d-sacv-pair-pareto-catalogue-v1-gmn/truth/M2D_SACV_PAIR_PARETO_CATALOGUE_V1_GMN_RESULT.json
+          if [ -f "$P" ]; then
+            python - <<'PY' > /tmp/result.md
+          import hashlib,json
+          p='output/m2d-sacv-pair-pareto-catalogue-v1-gmn/truth/M2D_SACV_PAIR_PARETO_CATALOGUE_V1_GMN_RESULT.json'; r=json.load(open(p))
+          print('## Pair-Pareto catalogue v1 — binding GMN fairness')
+          print(); print(f"Verdict: **`{r['verdict']}`**")
+          print(f"- result SHA-256: `{hashlib.sha256(open(p,'rb').read()).hexdigest()}`")
+          for c in ('sugar2017','hdbscan2025'):
+              g=r['gates'][c]; z=r['aggregates'][c]['panel_relations']
+              print(f"- {c}: macro-F1 `{g['successor_mean_macro_f1']:.6f}` vs `{g['comparator_mean_macro_f1']:.6f}`; recovered `{g['successor_total_recovered_f1_gt_05']}` vs `{g['comparator_total_recovered_f1_gt_05']}`; gate `{g['passed']}`; W/T/L `{z['wins']}/{z['ties']}/{z['losses']}`")
+          print('- OrbitTrace target access: `false`; SonotaCo scientific access: `false`')
+          PY
+            gh pr comment 1420 --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md
+          else
+            gh pr comment 1420 --repo "$GITHUB_REPOSITORY" --body 'Pair-Pareto transport-v5 ended before a binding truth result; technical/pretruth no-result only. No target or SonotaCo scientific access.'
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-pair-pareto-catalogue-v1-gmn-transport-v5
+          path: output/m2d-sacv-pair-pareto-catalogue-v1-gmn
+          if-no-files-found: warn
+          retention-days: 90
