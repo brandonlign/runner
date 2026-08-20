@@ -37,6 +37,15 @@ python -m pip install --disable-pip-version-check -r frozen-v8/ghoststream_fixed
 python -m pip install --disable-pip-version-check --no-deps gmn-python-api==0.0.13 >/dev/null
 python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0' >/dev/null
 
+# Engineering-only repair after binding run 32316234675 stopped before any halo
+# construction: decode and independently verify the exact frozen catalogue-v3
+# runtime required by load_frozen_runtime(). This is the identical source-audit
+# operation used by the binding GMN execution; it changes no scientific byte.
+rm -f /tmp/run_wavelet_catalogue_v3_development.py
+(cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py >/dev/null && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+test -s /tmp/run_wavelet_catalogue_v3_development.py
+test "$(sha256sum /tmp/run_wavelet_catalogue_v3_development.py | cut -d' ' -f1)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
 # Exact GMN PASS is a hard prerequisite. No SonotaCo scientific truth has been downloaded.
 GH_TOKEN="${GH_TOKEN:?}" gh run download 32315704010 --repo "$GITHUB_REPOSITORY" --name orbittrace-m2d-fixed4-drift-halo-v1-binding --dir "$IN/gmn"
 test "$(sha256sum "$IN/gmn/pretruth/M2D_FIXED4_DRIFT_HALO_V1_PRETRUTH.json" | cut -d' ' -f1)" = '3e0af5135a1c3562ccdc25be25f1ed89480b62f541c8c8d0de159dcb084ef9a8'
