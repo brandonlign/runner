@@ -1,0 +1,1 @@
+The first technically valid Stage-B result is binding. Technical failures before Stage-B may be repaired only if the scientific rule, frozen Stage-A membership semantics, rank order, and reveal gate remain unchanged.

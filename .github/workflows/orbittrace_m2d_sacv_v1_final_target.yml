@@ -1,0 +1,235 @@
+name: OrbitTrace M2D SACV v1 final blind target
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - agent/orbittrace-m2d-sacv-v1-gmn-development
+    paths:
+      - 'sacv_target/FINAL_TARGET_PROTOCOL.md'
+      - 'sacv_target/build_target_pretruth.py'
+      - 'sacv_target/reveal_target.py'
+      - '.github/workflows/orbittrace_m2d_sacv_v1_final_target.yml'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-m2d-sacv-v1-final-target-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  execute:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Freeze binding execution identity before outcome
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/binding.md <<EOF
+          ### SACV v1 final blind target execution frozen before outcome
+
+          BINDING_SACV_FINAL_TARGET_RUN: \`${GITHUB_RUN_ID}\`
+
+          Head: \`${GITHUB_SHA}\`. Stage A freezes all original M2D ranks 1-100 under exact SACV v1 before any canonical target package access. Stage B is exact-ID intersection only. The first technically valid Stage-B PASS/PARTIAL/NO result is binding; no target rescue/tuning is authorized.
+          EOF
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/binding.md
+
+      - name: Restore exact frozen SACV source and target firewall
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          test "$(sha256sum orbittrace_m2d_sacv_v1/build_pretruth.py | cut -d' ' -f1)" = 'cd5a7505c1d095e03de683f78dce8af5cb465ba32ca1dfa3e8b9eb3e78d0fd64'
+          test "$(sha256sum orbittrace_m2d_sacv_v1/SONOTACO_ONE_SHOT_RESULT.json | cut -d' ' -f1)" = '2a8199ae140e18019239c13f36992651719a6b3f598421701162931debb909a0'
+          test "$(sha256sum sacv_target/build_target_pretruth.py | cut -d' ' -f1)" = 'db8bb8fc755737941529b1d79f4699a7a334851ca679a05078fb8be676c8ea48'
+          test "$(sha256sum sacv_target/reveal_target.py | cut -d' ' -f1)" = '9843147565c6a733b54f81715bfb15a336a8dfc41941b36c8313ae8280f129d5'
+          test "$(sha256sum sacv_target/FINAL_TARGET_PROTOCOL.md | cut -d' ' -f1)" = '69e0722aeddaa49523521dde1b6f47b5e89cc69adb787826824d714200d81b47'
+          python -m py_compile sacv_target/build_target_pretruth.py sacv_target/reveal_target.py orbittrace_m2d_sacv_v1/build_pretruth.py
+
+      - name: Require binding SACV GMN PASS and frozen SonotaCo check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf input output frozen-v8
+          mkdir -p input/gmn input/baseline input/ranker input/v8 input/v3 output/sacv-final-target/pretruth output/sacv-final-target/reveal
+          gh run download 32324386269 --repo "$GITHUB_REPOSITORY" --name orbittrace-m2d-sacv-v1-gmn-development --dir input/gmn
+          test "$(sha256sum input/gmn/pretruth/M2D_SACV_V1_GMN_PRETRUTH.json | cut -d' ' -f1)" = '77528fbec227bf8d8d311b9054c46db43668d7f12e9460b85db680c4a6ce927b'
+          test "$(sha256sum input/gmn/truth/M2D_SACV_V1_GMN_RESULT.json | cut -d' ' -f1)" = 'b9dedd36f0d409bbd31654c986354bcae43a64aa123c47bc19c3ccd221f86a36'
+          python - <<'PY'
+          import json
+          g=json.load(open('input/gmn/truth/M2D_SACV_V1_GMN_RESULT.json'))
+          s=json.load(open('orbittrace_m2d_sacv_v1/SONOTACO_ONE_SHOT_RESULT.json'))
+          assert g['verdict']=='PASS_M2D_SACV_V1_GMN_DEVELOPMENT' and all(g['gates'].values())
+          assert s['verdict']=='PASS_M2D_SACV_V1_SONOTACO_EXPOSED_TRANSFER'
+          assert s['post_truth_parameter_change'] is False and s['orbittrace_target_access'] is False
+          print('PASS_SACV_FINAL_TARGET_PREREQUISITES')
+          PY
+
+      - name: Retrieve exact frozen 8,469-candidate blind baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+          curl --fail-with-body -L -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9376851894/zip" -o input/baseline/pretruth.zip
+          echo '5f5b4c1b76a17828e96ccba59415fdf2a4e428ae1f14fb10f8bf86dc678a2c59  input/baseline/pretruth.zip' | sha256sum -c -
+          python - <<'PY'
+          import gzip,hashlib,json,zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('input/baseline/pretruth.zip') as z:
+              hits=[n for n in z.namelist() if Path(n).name=='orbittrace_m2d_blind_ranked_pretruth.json.gz']
+              assert len(hits)==1,hits
+              gz=z.read(hits[0])
+          assert hashlib.sha256(gz).hexdigest()=='6d72b0f9558b89228953dd73b3760c61df039b713f233473079ae4fac563a100'
+          raw=gzip.decompress(gz)
+          assert hashlib.sha256(raw).hexdigest()=='7ff3b13bc45e19b4b886453b4d8cc3b4f18090bf8a2291e39850540fd69b5e53'
+          r=json.loads(raw); assert r['candidate_count']==8469 and r['event_count']==549636
+          assert r['orbittrace_target_information_access'] is False and r['orbittrace_canonical_members_access'] is False and r['prior_orbittrace_reveal_access'] is False
+          Path('input/baseline/orbittrace_m2d_blind_ranked_pretruth.json.gz').write_bytes(gz)
+          print('PASS_EXACT_BLIND_8469_BASELINE')
+          PY
+
+      - name: Install exact blind-catalogue runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+          python -m pip install --disable-pip-version-check --upgrade pip >/dev/null
+          git clone -q --no-checkout "https://github.com/${GITHUB_REPOSITORY}.git" frozen-v8
+          git -C frozen-v8 fetch -q --no-tags --depth=1 origin c9d6c44704013ba0c9430100e98a29a56b453304
+          git -C frozen-v8 checkout -q FETCH_HEAD
+          python -m pip install --disable-pip-version-check -r frozen-v8/ghoststream_fixed4_application/requirements.txt >/dev/null
+          python -m pip install --disable-pip-version-check --no-deps gmn-python-api==0.0.13 >/dev/null
+          python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.7.1' 'hdbscan==0.8.43' 'gudhi==3.12.0' >/dev/null
+          git -C frozen-v8 fetch -q --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py >/dev/null && test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51')
+          test -s /tmp/run_wavelet_catalogue_v3_development.py
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+
+      - name: Stage A - freeze all rank 1-100 SACV memberships before target access
+        env:
+          PYTHONPATH: .:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3
+        run: |
+          set -euo pipefail
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+          python -u sacv_target/build_target_pretruth.py \
+            --baseline-pretruth input/baseline/orbittrace_m2d_blind_ranked_pretruth.json.gz \
+            --blind-source-parts orbittrace_fixed4_blind_catalogue/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --sacv-source orbittrace_m2d_sacv_v1/build_pretruth.py \
+            --scratch-loader input/decoded_blind_catalogue_loader.py \
+            --output output/sacv-final-target/pretruth/M2D_SACV_V1_FINAL_TARGET_PRETRUTH.json
+          sha256sum output/sacv-final-target/pretruth/M2D_SACV_V1_FINAL_TARGET_PRETRUTH.json > output/sacv-final-target/pretruth/STAGE_A_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/sacv-final-target/pretruth/M2D_SACV_V1_FINAL_TARGET_PRETRUTH.json'))
+          assert p['frozen_candidate_count']==len(p['extractions'])==100
+          assert [x['rank'] for x in p['extractions']]==list(range(1,101))
+          assert p['target_reference_access'] is False and p['canonical_target_ids_accessed'] is False and p['prior_target_reveal_artifact_accessed'] is False
+          print('PASS_SACV_STAGE_A_FROZEN_BEFORE_TARGET')
+          PY
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+
+      - name: Upload immutable Stage-A seal before canonical access
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-m2d-sacv-v1-final-target-stage-a
+          path: output/sacv-final-target/pretruth
+          retention-days: 90
+
+      - name: Stage B transport - retrieve exact canonical package only after Stage A seal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s output/sacv-final-target/pretruth/M2D_SACV_V1_FINAL_TARGET_PRETRUTH.json
+          test -s output/sacv-final-target/pretruth/STAGE_A_SHA256.txt
+          curl --fail-with-body -L -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8814798136/zip" -o input/canonical_outer.zip
+          echo '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5  input/canonical_outer.zip' | sha256sum -c -
+          rm -rf input/canonical_outer && mkdir -p input/canonical_outer
+          unzip -q input/canonical_outer.zip -d input/canonical_outer
+          test -f input/canonical_outer/ghoststream_final_expert_bundle/GhostStream_Expert_Review_Bundle.zip
+          cp input/canonical_outer/ghoststream_final_expert_bundle/GhostStream_Expert_Review_Bundle.zip input/canonical_bundle.zip
+          echo '60c0a77ed8852277f949a0296ccafc91ae4947277011cb1d6247b9be4b173e22  input/canonical_bundle.zip' | sha256sum -c -
+          echo 'PASS_CANONICAL_TRANSPORT_AFTER_STAGE_A'
+
+      - name: Stage B - exact-ID reveal only
+        run: |
+          set -euo pipefail
+          python -u sacv_target/reveal_target.py \
+            --stage-a output/sacv-final-target/pretruth/M2D_SACV_V1_FINAL_TARGET_PRETRUTH.json \
+            --stage-a-sha256 output/sacv-final-target/pretruth/STAGE_A_SHA256.txt \
+            --canonical-zip input/canonical_bundle.zip \
+            --output output/sacv-final-target/reveal/M2D_SACV_V1_FINAL_TARGET_RESULT.json
+          sha256sum output/sacv-final-target/reveal/M2D_SACV_V1_FINAL_TARGET_RESULT.json > output/sacv-final-target/reveal/RESULT_SHA256.txt
+
+      - name: Publish binding result to PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -f output/sacv-final-target/reveal/M2D_SACV_V1_FINAL_TARGET_RESULT.json ]; then
+            python - <<'PY' > /tmp/result.md
+          import json,hashlib
+          from pathlib import Path
+          p=Path('output/sacv-final-target/reveal/M2D_SACV_V1_FINAL_TARGET_RESULT.json'); r=json.loads(p.read_text()); s=r['selected_candidate']
+          print('## M2D SACV v1 — binding final blind OrbitTrace exact-ID reveal')
+          print(); print(f"Verdict: **`{r['verdict']}`**")
+          print(f"- Stage-A SHA-256: `{r['stage_a_sha256']}`")
+          print(f"- result SHA-256: `{hashlib.sha256(p.read_bytes()).hexdigest()}`")
+          print(f"- first support-passing original rank: `{r['first_original_rank_with_support_gate']}`")
+          print(f"- first clean-success original rank: `{r['first_original_rank_with_clean_success_gate']}`")
+          if s:
+              q=s['extraction']; print(f"- selected original rank: `{s['rank']}`; parent/SACV members `{s['parent_member_count']} / {s['extraction_member_count']}`; exact overlap `2022 {q['overlap_2022']}/10`, `2023 {q['overlap_2023']}/8`, total `{q['overlap_total']}/18`; precision/recall/F1 `{q['precision']:.6f} / {q['recall']:.6f} / {q['f1']:.6f}`")
+          print('- Reveal operation: exact trajectory-ID intersection only; no membership recomputation, reranking, parent switching, merging, or tuning after reveal.')
+          PY
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "SACV v1 final target execution ended technically before a valid Stage-B scientific verdict. No scientific rule, membership, rank, threshold, or target gate is changed."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-sacv-v1-final-target-result
+          path: output/sacv-final-target
+          if-no-files-found: warn
+          retention-days: 90

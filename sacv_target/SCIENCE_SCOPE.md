@@ -1,0 +1,1 @@
+This PR does not modify M2D discovery, SACV v1 scientific membership logic, benchmark gates, SonotaCo transfer result, or OrbitTrace success criteria. It only applies the already-frozen SACV v1 extraction rule to the already-blind top-100 M2D ranking under a two-stage target firewall.

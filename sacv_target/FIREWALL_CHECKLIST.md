@@ -1,0 +1,1 @@
+Stage A: no canonical target artifact, no target IDs, no target coordinates, no prior reveal artifact. Freeze all top-100 memberships and upload SHA. Stage B: exact-ID intersections only. No reranking, merging, parent switching, or tuning.
