@@ -33,13 +33,17 @@ jobs:
           python orbittrace_m2d_sacv_fallback_recurrence_v1/patch_source.py >/tmp/parent-hashes.txt
           cp orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py orbittrace_m2d_sacv_fallback_recurrence_v1/build_pretruth.py
           cp orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py orbittrace_m2d_sacv_fallback_recurrence_v1/evaluate_truth.py
+          cp orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh orbittrace_m2d_sacv_fallback_recurrence_v1/run_binding.sh
           python -m py_compile orbittrace_m2d_sacv_fallback_recurrence_v1/build_pretruth.py orbittrace_m2d_sacv_fallback_recurrence_v1/evaluate_truth.py
-          python -m py_compile orbittrace_m2d_sacv_dual_output_core_v1/build_pretruth.py orbittrace_m2d_sacv_dual_output_core_v1/evaluate_truth.py
+          python -m py_compile orbittrace_m2d_sacv_dual_output_core_v1/build_pretruth.py orbittrace_m2d_sacv_dual_output_core_v1/evaluate_truth.py orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py
+          python orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py | tee /tmp/dual-runner-hash.txt
+          bash -n orbittrace_m2d_sacv_dual_output_core_v1/run_binding.generated.sh
           python - <<'PY'
           from pathlib import Path
           import hashlib
           b=Path('orbittrace_m2d_sacv_dual_output_core_v1/build_pretruth.py').read_text()
           e=Path('orbittrace_m2d_sacv_dual_output_core_v1/evaluate_truth.py').read_text()
+          r=Path('orbittrace_m2d_sacv_dual_output_core_v1/run_binding.generated.sh').read_text()
           assert "PRIMARY_SACV_V1_ID_MISMATCH" in b
           assert "recurrent_core_ids" in b
           assert "route == 'recurrence_fallback'" in b
@@ -48,7 +52,9 @@ jobs:
           assert "nested_core_changes_primary_matching" in e
           assert "power_eligible = cps['count'] >= 20" in e
           assert "candidate_by_label" in e
-          for p in ['orbittrace_m2d_sacv_dual_output_core_v1/PROTOCOL.md','orbittrace_m2d_sacv_dual_output_core_v1/build_pretruth.py','orbittrace_m2d_sacv_dual_output_core_v1/evaluate_truth.py']:
+          assert r.count('--sacv-v1-pretruth') == 2
+          assert '77528fbec227bf8d8d311b9054c46db43668d7f12e9460b85db680c4a6ce927b' in r
+          for p in ['orbittrace_m2d_sacv_dual_output_core_v1/PROTOCOL.md','orbittrace_m2d_sacv_dual_output_core_v1/build_pretruth.py','orbittrace_m2d_sacv_dual_output_core_v1/evaluate_truth.py','orbittrace_m2d_sacv_dual_output_core_v1/make_runner.py','orbittrace_m2d_sacv_dual_output_core_v1/run_binding.generated.sh']:
               q=Path(p);print(q.name,hashlib.sha256(q.read_bytes()).hexdigest(),q.stat().st_size)
-          print('PASS_DUAL_OUTPUT_PRIMARY_ORACLE_AND_SAME_PARENT_CORE_SOURCE_AUDIT')
+          print('PASS_DUAL_OUTPUT_PRIMARY_ORACLE_SAME_PARENT_CORE_AND_RUNNER_AUDIT')
           PY
