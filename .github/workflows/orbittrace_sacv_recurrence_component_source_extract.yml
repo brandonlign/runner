@@ -34,7 +34,7 @@ jobs:
       - name: Execute frozen target-excluded recurrence-component v1
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash orbittrace_m2d_sacv_rc_v1/run_binding.sh | tee /tmp/rc-v1.log
+        run: bash orbittrace_m2d_sacv_rc_v1/run_binding_fast.sh | tee /tmp/rc-v1.log
       - name: Publish binding result
         if: always()
         env:
@@ -46,7 +46,7 @@ jobs:
             python - <<'PY' > /tmp/comment.md
           import json,hashlib
           p='output/m2d-sacv-rc-v1-gmn/truth/M2D_SACV_RC_V1_GMN_RESULT.json';r=json.load(open(p))
-          print('## SACV recurrence-component v1 — binding target-excluded GMN development')
+          print('## SACV recurrence-component v1 — target-excluded GMN development')
           print();print(f"Verdict: **`{r['verdict']}`**");print(f"- result SHA-256: `{hashlib.sha256(open(p,'rb').read()).hexdigest()}`")
           for c in ('sugar2017','hdbscan2025'):
               s=r['aggregates'][c]['paired_same_discovery'];b=r['aggregates'][c]['sacv_v1_baseline']
