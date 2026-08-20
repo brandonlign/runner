@@ -1,1 +1,1 @@
-Placeholder; child PR will modify this file to trigger the source-only audit.
+Trigger source-only reconstruction of the hash-pinned #1412 recurrence implementation. No scientific data or truth access.
