@@ -1,4 +1,4 @@
-name: OrbitTrace SACV recurrence-component source extract
+name: OrbitTrace SACV recurrence-component v1 binding
 
 on:
   pull_request:
@@ -7,26 +7,60 @@ on:
       - agent/orbittrace-m2d-sacv-v1-gmn-development
     paths:
       - '.github/workflows/orbittrace_sacv_recurrence_component_source_extract.yml'
+      - 'orbittrace_m2d_sacv_rc_v1/**'
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-sacv-rc-v1-binding-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
-  extract:
+  execute:
+    if: github.event.pull_request.user.login == github.repository_owner
     runs-on: ubuntu-22.04
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - name: Verify and extract frozen SACV source
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Execute frozen target-excluded recurrence-component v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash orbittrace_m2d_sacv_rc_v1/run_binding.sh | tee /tmp/rc-v1.log
+      - name: Publish binding result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
-          mkdir extracted
-          tar -xzf orbittrace_m2d_sacv_v1_source.tgz -C extracted
-          find extracted -type f -print -exec sha256sum {} \;
+          if [ -f output/m2d-sacv-rc-v1-gmn/truth/M2D_SACV_RC_V1_GMN_RESULT.json ]; then
+            python - <<'PY' > /tmp/comment.md
+          import json,hashlib
+          p='output/m2d-sacv-rc-v1-gmn/truth/M2D_SACV_RC_V1_GMN_RESULT.json';r=json.load(open(p))
+          print('## SACV recurrence-component v1 — binding target-excluded GMN development')
+          print();print(f"Verdict: **`{r['verdict']}`**");print(f"- result SHA-256: `{hashlib.sha256(open(p,'rb').read()).hexdigest()}`")
+          for c in ('sugar2017','hdbscan2025'):
+              s=r['aggregates'][c]['paired_same_discovery'];b=r['aggregates'][c]['sacv_v1_baseline']
+              print(f"- {c}: precision `{s['extraction_mean_precision']:.6f}` vs SACV `{b['precision']:.6f}`; F1 `{s['extraction_mean_f1']:.6f}` vs SACV `{b['f1']:.6f}`; refined `{s['strict_refined_assignment_count']}`")
+          print('- OrbitTrace target information accessed: `false`')
+          PY
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
+          else
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "RC-v1 ended technically before a valid scientific result; no scientific gate or rule has been changed."
+          fi
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: sacv-v1-frozen-source-extracted
-          path: extracted
-          retention-days: 30
+          name: orbittrace-m2d-sacv-rc-v1-gmn-development
+          path: output/m2d-sacv-rc-v1-gmn
+          if-no-files-found: warn
+          retention-days: 90
