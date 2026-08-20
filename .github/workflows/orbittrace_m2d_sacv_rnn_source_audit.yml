@@ -40,9 +40,7 @@ jobs:
           import ast
           from pathlib import Path
           p=Path('orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py')
-          s=p.read_text()
-          tree=ast.parse(s)
-          lines=s.splitlines()
+          s=p.read_text(); tree=ast.parse(s); lines=s.splitlines()
           print('SOURCE_SHA256=d4634839cc35dffa0cf8965923b21b048125844900c7a911515a389063067948')
           for node in ast.walk(tree):
               if isinstance(node,(ast.FunctionDef,ast.ClassDef)):
@@ -55,6 +53,14 @@ jobs:
                   print(f'@@ {lo}:{hi}')
                   for j in range(lo,hi+1): print(f'{j:04d}: {lines[j-1]}')
           PY
+
+      - name: Print binding wrapper controls
+        run: |
+          set -euo pipefail
+          echo '--- run_binding.sh ---'
+          nl -ba orbittrace_m2d_sacv_edge_consensus_v1/run_binding.sh
+          echo '--- evaluator headers and gates ---'
+          grep -nE 'SHA|sha|build_pretruth|pretruth|verdict|gate|SACV|precision|f1|target|truth' orbittrace_m2d_sacv_edge_consensus_v1/evaluate_truth.py || true
 
       - name: Record audit boundary
         run: |
