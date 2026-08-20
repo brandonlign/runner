@@ -1,0 +1,67 @@
+name: OrbitTrace multiscale HDBSCAN ASFN generalization v1
+on:
+  push:
+    branches: [agent/orbittrace-multiscale-hdbscan-asfn-generalization-v1]
+    paths:
+      - 'orbittrace_multiscale_hdbscan_asfn_v1/**'
+      - '.github/workflows/orbittrace_multiscale_hdbscan_asfn_v1.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+jobs:
+  transfer:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python -m py_compile orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py
+          mkdir -p input/historical output
+      - name: Acquire exact frozen NASA archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --max-time 120 --user-agent 'OrbitTrace-Multiscale-ASFN/1.0' \
+            'https://fireballs.ndc.nasa.gov/public_data/nasfn_2013-2019.zip' -o input/nasfn_2013-2019.zip
+          test "$(sha256sum input/nasfn_2013-2019.zip | cut -d' ' -f1)" = 'c091b0f3f87f10badbe5fa38e6c45ba818af99f1c27c2fd6a23be286074c89a4'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-asfn-2018-2019-network-transport-retry-v1
+          path: input/historical
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31850437866
+      - name: Run frozen cross-survey transfer
+        run: |
+          set -euo pipefail
+          python -u orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py \
+            --archive input/nasfn_2013-2019.zip \
+            --historical-prelabel input/historical/RECURRENT_EOM_ASFN_2018_2019_PRELABEL.json \
+            --output output
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_multiscale_hdbscan_asfn_v1/PROTOCOL.md orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py output/PRETRUTH.json output/RESULT.json > output/sha256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-multiscale-hdbscan-asfn-generalization-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
