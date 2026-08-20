@@ -77,7 +77,6 @@ def main() -> int:
             recurrent_core_ids: list[str] = []
             selected_component = raw.get('selected_component')
             if route == 'recurrence_fallback':
-                # #1417's frozen single-output fallback result is exactly the nested core.
                 recurrent_core_ids = sorted(map(str, raw['output_ids']))
                 primary_ids = parent_ids
                 primary_refined = False
@@ -173,6 +172,7 @@ def main() -> int:
         'primary_output_exact_sacv_v1': True,
         'primary_discovery_membership_changed': False,
         'primary_discovery_rank_changed': False,
+        'parent_rank_changed': False,
         'nested_core_changes_primary_matching': False,
         'shower_truth_used': False,
         'target_information_access': False,
