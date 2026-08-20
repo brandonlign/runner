@@ -1,0 +1,43 @@
+name: OrbitTrace M2D SACV fallback-recurrence source audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [agent/orbittrace-m2d-sacv-edge-consensus-v1]
+    paths:
+      - '.github/workflows/orbittrace_m2d_sacv_fallback_recurrence_source_audit.yml'
+      - 'orbittrace_m2d_sacv_fallback_recurrence_v1/**'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Reconstruct exact SACV v1 and edge-consensus source; print proc control flow only
+        run: |
+          set -euo pipefail
+          echo 'd75b76a36911c916620da5e029f82c7987718b1610eb6bd61922015b5ab50d4a  orbittrace_m2d_sacv_v1_source.tgz' | sha256sum -c -
+          tar -xzf orbittrace_m2d_sacv_v1_source.tgz
+          cat orbittrace_m2d_sacv_edge_consensus_v1/source_parts/part*.b64 > /tmp/ec.b64
+          base64 -d /tmp/ec.b64 > /tmp/ec.tgz
+          echo 'f7d9fc168fb5f8a589a5d965252979951ae9659ded4dc6662a562276c6273d28  /tmp/ec.tgz' | sha256sum -c -
+          tar -xzf /tmp/ec.tgz
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          for path in ['orbittrace_m2d_sacv_v1/build_pretruth.py','orbittrace_m2d_sacv_edge_consensus_v1/build_pretruth.py']:
+              s=Path(path).read_text(); t=ast.parse(s)
+              print('===',path,'===')
+              for n in ast.walk(t):
+                  if isinstance(n,ast.FunctionDef) and n.name=='proc':
+                      print(ast.get_source_segment(s,n))
+                      break
+          PY
+          echo PASS_SOURCE_ONLY_FALLBACK_AUDIT
