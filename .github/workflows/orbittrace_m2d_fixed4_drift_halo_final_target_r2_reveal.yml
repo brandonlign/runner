@@ -1,0 +1,191 @@
+name: OrbitTrace M2D fixed4 drift halo final target R2 reveal-only
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-m2d-fixed4-drift-halo-target-freeze-v1
+    paths:
+      - '.github/workflows/orbittrace_m2d_fixed4_drift_halo_final_target_r2_reveal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: orbittrace-m2d-fixed4-drift-halo-final-target-r2-reveal
+  cancel-in-progress: false
+
+jobs:
+  reveal-only-r2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-m2d-fixed4-drift-halo-target-freeze-v1
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify R2 is reveal-only technical repair
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_m2d_fixed4_drift_halo_v1/FINAL_BLIND_TARGET_PROTOCOL.md)" = 'f435d306f118c32d718aa953952dabbcfc6619f2'
+          test "$(git hash-object orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py)" = '8ee54399bd15965f7961b6d42ddf0b63f75149eb'
+          python -m py_compile orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py
+          grep -F 'EXPECTED_STAGE_A_SHA256 = "f306e1bea864b6ff1f75fddc85f607e92c62487b452ddf041804f4e62cea670a"' orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py
+          grep -F '"scientific_scan_reexecuted": False' orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py
+          grep -F '"reveal_repair_only": True' orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py
+          grep -F 'exact trajectory-ID set intersection only against already-frozen parent/seed/halo memberships' orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py
+
+      - name: Freeze R2 execution identity before reveal outcome
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/r2.md <<EOF
+          ### R2 reveal-only execution identity frozen before outcome
+
+          FINAL_TARGET_R2_RUN: \`${GITHUB_RUN_ID}\`
+
+          Head: \`${GITHUB_SHA}\`. This run does not execute Stage A. It consumes only the immutable R1 Stage-A artifact `9389238713` / Stage-A SHA-256 `f306e1bea864b6ff1f75fddc85f607e92c62487b452ddf041804f4e62cea670a`, applies the already-established #1378 canonical historical-row packaging convention, and performs the unchanged exact-ID reveal. The first technically valid Stage-B classification is binding.
+          EOF
+          gh pr comment 1403 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r2.md
+
+      - name: Retrieve exact immutable R1 Stage-A seal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf input output
+          mkdir -p input/stage-a output/r2
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9389238713/zip" \
+            -o input/stage-a.zip
+          echo '86d4bacdf57098f5f02ade13bf0fbfcd31a328ebff11d37a84c4fdd32d2ac7af  input/stage-a.zip' | sha256sum -c -
+          unzip -q input/stage-a.zip -d input/stage-a
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('input/stage-a')
+          js=[p for p in root.rglob('M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_PRETRUTH.json')]
+          hs=[p for p in root.rglob('STAGE_A_SHA256.txt')]
+          assert len(js)==1 and len(hs)==1,(js,hs)
+          actual=hashlib.sha256(js[0].read_bytes()).hexdigest()
+          assert actual=='f306e1bea864b6ff1f75fddc85f607e92c62487b452ddf041804f4e62cea670a'
+          recorded=hs[0].read_text().strip().split()[0]
+          assert recorded==actual
+          Path('input/stage-a/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_PRETRUTH.json').write_bytes(js[0].read_bytes()) if js[0] != Path('input/stage-a/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_PRETRUTH.json') else None
+          Path('input/stage-a/STAGE_A_SHA256.txt').write_text(hs[0].read_text()) if hs[0] != Path('input/stage-a/STAGE_A_SHA256.txt') else None
+          print('IMMUTABLE_R1_STAGE_A_VERIFIED',actual)
+          PY
+
+      - name: Retrieve exact canonical package after Stage-A verification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s input/stage-a/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_PRETRUTH.json
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8814798136/zip" \
+            -o input/canonical_outer.zip
+          echo '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5  input/canonical_outer.zip' | sha256sum -c -
+          python - <<'PY'
+          import hashlib,zipfile
+          from pathlib import Path
+          wanted='ghoststream_final_expert_bundle/GhostStream_Expert_Review_Bundle.zip'
+          with zipfile.ZipFile('input/canonical_outer.zip') as z:
+              assert wanted in z.namelist()
+              data=z.read(wanted)
+          assert hashlib.sha256(data).hexdigest()=='60c0a77ed8852277f949a0296ccafc91ae4947277011cb1d6247b9be4b173e22'
+          Path('input/canonical_bundle.zip').write_bytes(data)
+          print('CANONICAL_PACKAGE_VERIFIED')
+          PY
+
+      - name: R2 Stage B - exact trajectory-ID intersection only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py \
+            --stage-a input/stage-a/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_PRETRUTH.json \
+            --stage-a-sha256 input/stage-a/STAGE_A_SHA256.txt \
+            --canonical-zip input/canonical_bundle.zip \
+            --output output/r2/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_REVEAL_R2.json
+          python - <<'PY'
+          import json
+          p='output/r2/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_REVEAL_R2.json'
+          r=json.load(open(p))
+          assert r['scientific_scan_reexecuted'] is False
+          assert r['reveal_repair_only'] is True
+          assert r['stage_a_sha256']=='f306e1bea864b6ff1f75fddc85f607e92c62487b452ddf041804f4e62cea670a'
+          assert r['candidate_count']==8469
+          assert r['verdict'] in {
+              'CLEAN_M2D_FIXED4_DRIFT_HALO_ORBITTRACE_REDISCOVERY',
+              'PARTIAL_M2D_FIXED4_DRIFT_HALO_ORBITTRACE_RECOVERY',
+              'NO_M2D_FIXED4_DRIFT_HALO_ORBITTRACE_RECOVERY',
+          }
+          assert r['reveal_operation']=='exact trajectory-ID set intersection only against already-frozen parent/seed/halo memberships'
+          assert r['membership_recomputed_after_reveal'] is False
+          assert r['parent_switched_after_reveal'] is False
+          assert r['family_merge_used'] is False
+          assert r['reranking_used'] is False
+          assert r['parameter_tuning_after_reveal'] is False
+          print('FINAL_BINDING_R2_VERDICT',r['verdict'])
+          print(json.dumps(r['selected_candidate'],sort_keys=True))
+          PY
+
+      - name: Preserve R2 provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/r2/execution_commit.txt
+          python --version > output/r2/python_version.txt
+          sha256sum \
+            orbittrace_m2d_fixed4_drift_halo_v1/FINAL_BLIND_TARGET_PROTOCOL.md \
+            orbittrace_m2d_fixed4_drift_halo_v1/reveal_final_target_exact_ids_repair.py \
+            input/stage-a.zip \
+            input/stage-a/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_PRETRUTH.json \
+            input/canonical_outer.zip \
+            input/canonical_bundle.zip \
+            output/r2/M2D_FIXED4_DRIFT_HALO_V1_FINAL_TARGET_REVEAL_R2.json \
+            > output/r2/SHA256SUMS.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-m2d-fixed4-drift-halo-final-target-r2-reveal
+          path: output/r2
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Post binding R2 result to PR 1403
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          {
+            echo '### PR #1403 binding R2 reveal-only result'
+            echo
+            echo "Workflow run: \`${GITHUB_RUN_ID}\`; head: \`${GITHUB_SHA}\`."
+            echo
+            cat output/r2/FINAL_BLIND_TARGET_REVEAL_R2.md
+          } > /tmp/result.md
+          gh pr comment 1403 --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md
+
+      - name: Record R2 technical no-result only
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment 1403 --repo "$GITHUB_REPOSITORY" --body "R2 reveal-only workflow \`${GITHUB_RUN_ID}\` ended technically before a valid Stage-B classification. The immutable R1 Stage-A halo seal remains unchanged; no scientific scan, membership, ranking, threshold, or target gate was modified." || true
