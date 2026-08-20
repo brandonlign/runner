@@ -39,7 +39,7 @@ jobs:
           # scientific catalogue or truth result. No method parameter changes.
           python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.7.1'
           python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
-          python -m py_compile orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py
+          python -m py_compile orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py orbittrace_multiscale_hdbscan_asfn_v1/run_transport_repair.py
           mkdir -p input/historical output
       - name: Acquire exact frozen NASA archive
         run: |
@@ -55,9 +55,11 @@ jobs:
           repository: ${{ github.repository }}
           run-id: 31850437866
       - name: Run frozen cross-survey transfer
+        env:
+          ORBITTRACE_ASFN_HISTORICAL_PRELABEL: input/historical/RECURRENT_EOM_ASFN_2018_2019_PRELABEL.json
         run: |
           set -euo pipefail
-          python -u orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py \
+          python -u orbittrace_multiscale_hdbscan_asfn_v1/run_transport_repair.py \
             --archive input/nasfn_2013-2019.zip \
             --historical-prelabel input/historical/RECURRENT_EOM_ASFN_2018_2019_PRELABEL.json \
             --output output
@@ -65,7 +67,7 @@ jobs:
         if: always()
         run: |
           set +e
-          sha256sum orbittrace_multiscale_hdbscan_asfn_v1/PROTOCOL.md orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py output/PRETRUTH.json output/RESULT.json > output/sha256.txt 2>/dev/null || true
+          sha256sum orbittrace_multiscale_hdbscan_asfn_v1/PROTOCOL.md orbittrace_multiscale_hdbscan_asfn_v1/run_generalization.py orbittrace_multiscale_hdbscan_asfn_v1/run_transport_repair.py output/PRETRUTH.json output/RESULT.json > output/sha256.txt 2>/dev/null || true
           git rev-parse HEAD > output/execution_commit.txt
           python -m pip freeze > output/environment.txt
       - uses: actions/upload-artifact@v4
