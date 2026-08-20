@@ -74,6 +74,7 @@ jobs:
           git fetch -q --no-tags --depth=1 origin agent/orbittrace-symmetric-tuned-literature-benchmark-v2
           git show FETCH_HEAD:orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py > input/recurrent_eom.py
           test "$(git hash-object input/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test -f frozen-v8/orbittrace_fixed4_blind_catalogue/source_parts/part00.b64
           test ! -e input/canonical_outer.zip
           test ! -e input/canonical_bundle.zip
 
@@ -83,7 +84,7 @@ jobs:
           test ! -e input/canonical_outer.zip
           test ! -e input/canonical_bundle.zip
           python -u orbittrace_multiscale_hdbscan_final_blind_v1/build_stage_a.py \
-            --blind-source-parts orbittrace_fixed4_blind_catalogue/source_parts \
+            --blind-source-parts frozen-v8/orbittrace_fixed4_blind_catalogue/source_parts \
             --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
             --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
             --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
