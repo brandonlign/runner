@@ -1,0 +1,44 @@
+name: OrbitTrace EDMOND 2018-2023 repo freshness audit
+on:
+  pull_request:
+    branches: [agent/orbittrace-edmond-2018-2023-freshness-audit]
+    paths: ['orbittrace_edmond_2018_2023_freshness_audit/RUN.md']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Fetch all refs
+        run: git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+      - name: Run history-only audit
+        run: |
+          set -euo pipefail
+          test ! -e input
+          python orbittrace_edmond_2018_2023_freshness_audit/audit_history.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/edmond_2018_2023_repo_freshness_audit.json').read_text())
+          assert r['verdict']=='PASS_EDMOND_2018_2023_REPO_SCIENTIFIC_FRESHNESS_AUDIT'
+          for y in range(2018,2024):
+              assert not r['targets'][str(y)]['potential_exposure_hits']
+          assert r['positive_control_2017_spent_detected'] is True
+          assert r['catalogue_access_this_audit'] is False and r['scientific_value_access_this_audit'] is False
+          assert r['label_access_this_audit'] is False and r['target_information_access'] is False
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          git rev-parse HEAD > output/audit_commit.txt
+          sha256sum orbittrace_edmond_2018_2023_freshness_audit/audit_history.py > output/audit_source_sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-edmond-2018-2023-freshness-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90
