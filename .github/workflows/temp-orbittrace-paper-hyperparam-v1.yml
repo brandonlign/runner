@@ -1,6 +1,10 @@
 name: Temporary OrbitTrace paper hyperparameter robustness relay
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-paper-hyperparam-v1.yml'
   issue_comment:
     types: [created]
 
@@ -12,9 +16,10 @@ permissions:
 jobs:
   robustness:
     if: >-
-      github.event.issue.pull_request &&
-      github.event.issue.number == 1441 &&
-      github.event.comment.body == 'RUN_ORBITTRACE_HYPERPARAM_V1'
+      github.event_name == 'push' ||
+      (github.event.issue.pull_request &&
+       github.event.issue.number == 1441 &&
+       github.event.comment.body == 'RUN_ORBITTRACE_HYPERPARAM_V1')
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
