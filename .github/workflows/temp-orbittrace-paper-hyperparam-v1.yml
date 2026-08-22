@@ -1,21 +1,21 @@
 name: Temporary OrbitTrace paper hyperparameter robustness relay
-# trigger: 2026-08-22-v2
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/temp-orbittrace-paper-hyperparam-v1.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'orbittrace_paper_hyperparam_robustness_v1/**'
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   robustness:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 1441 &&
+      github.event.comment.user.login == 'brandonlign' &&
+      github.event.comment.body == 'RUN_ORBITTRACE_HYPERPARAM_V1'
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
@@ -70,3 +70,21 @@ jobs:
           name: orbittrace-paper-hyperparam-robustness-v1
           path: orbittrace_paper_hyperparam_robustness_v1/output
           if-no-files-found: error
+
+      - name: Report result to PR
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          BODY="$(cat orbittrace_paper_hyperparam_robustness_v1/output/RESULT.md)"
+          gh api "repos/$GH_REPO/issues/1441/comments" -f body="$BODY"
+
+      - name: Report concrete failure to PR
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/$GH_REPO/issues/1441/comments" -f body='ORBITTRACE_HYPERPARAM_V1_FAILED — inspect the workflow job log before any scientific setting is changed.'
