@@ -1,0 +1,69 @@
+name: OrbitTrace paper clustering robustness
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - 'orbittrace_paper_robustness/**'
+      - '.github/workflows/orbittrace_paper_robustness.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  shard:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned analysis dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy<2' 'pandas<3' 'scikit-learn<1.7' 'scipy<1.15' 'hdbscan==0.8.40' 'gmn-python-api==0.0.13'
+      - name: Execute frozen sensitivity shard
+        env:
+          PYTHONHASHSEED: '0'
+        run: |
+          python orbittrace_paper_robustness/run_clustering_sensitivity.py \
+            --out orbittrace_paper_robustness/shard-${{ matrix.shard }} \
+            --shard-index ${{ matrix.shard }} --shard-count 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-paper-robustness-shard-${{ matrix.shard }}
+          path: orbittrace_paper_robustness/shard-${{ matrix.shard }}
+          if-no-files-found: error
+
+  aggregate:
+    needs: shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install aggregation dependencies
+        run: python -m pip install 'numpy<2' 'pandas<3'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-paper-robustness-shard-*
+          path: orbittrace_paper_robustness/downloaded
+      - name: Aggregate full frozen grid
+        run: |
+          python orbittrace_paper_robustness/run_clustering_sensitivity.py \
+            --out orbittrace_paper_robustness/results \
+            --aggregate orbittrace_paper_robustness/downloaded
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-paper-robustness-results
+          path: orbittrace_paper_robustness/results
+          if-no-files-found: error
