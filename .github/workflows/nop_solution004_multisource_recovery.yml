@@ -1,0 +1,146 @@
+name: NOP solution 004 final multisource recovery
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - nop_solution004_multisource_recovery/**
+      - .github/workflows/nop_solution004_multisource_recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nop-solution004-multisource-recovery
+  cancel-in-progress: true
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      LOOKUP_ARTIFACT_ID: '8874517049'
+      LOOKUP_ARTIFACT_SHA256: '2707a7be1152967960703245e62049e74f4eb778c84098f27c2486385acd512c'
+      GMN_ARTIFACT_ID: '8874644285'
+      GMN_ARTIFACT_SHA256: 'a823c88444645bfb255ce0eea35ff5f1eae9d7e009b0a35babc5f11f6e4f96a0'
+      CAMS_ARTIFACT_ID: '8875056837'
+      CAMS_ARTIFACT_SHA256: 'da4c1eecf3092536e0b4fe93fb04c124807fe22586e61cfa4a150f46783b3fd4'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/nop-solution004-multisource-recovery
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: nop_solution004_multisource_recovery/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r nop_solution004_multisource_recovery/requirements.txt
+      - name: Download exact prior evidence artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p nop_solution004_multisource_recovery/input/lookup \
+                   nop_solution004_multisource_recovery/input/gmn \
+                   nop_solution004_multisource_recovery/input/cams \
+                   nop_solution004_multisource_recovery/cache \
+                   nop_solution004_multisource_recovery/results
+          for spec in \
+            "lookup:${LOOKUP_ARTIFACT_ID}:${LOOKUP_ARTIFACT_SHA256}" \
+            "gmn:${GMN_ARTIFACT_ID}:${GMN_ARTIFACT_SHA256}" \
+            "cams:${CAMS_ARTIFACT_ID}:${CAMS_ARTIFACT_SHA256}"
+          do
+            IFS=: read -r name artifact_id expected_sha <<< "${spec}"
+            curl --fail-with-body -L \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              -o "nop_solution004_multisource_recovery/input/${name}_artifact.zip"
+            echo "${expected_sha}  nop_solution004_multisource_recovery/input/${name}_artifact.zip" | sha256sum -c -
+            unzip -q "nop_solution004_multisource_recovery/input/${name}_artifact.zip" \
+              -d "nop_solution004_multisource_recovery/input/${name}"
+          done
+          lookup="$(find nop_solution004_multisource_recovery/input/lookup -name '0149NOP_004.csv' -print -quit)"
+          gmn="$(find nop_solution004_multisource_recovery/input/gmn -name 'matched_gmn_orbits.csv' -print -quit)"
+          cams="$(find nop_solution004_multisource_recovery/input/cams -name 'matched_cams_orbits.csv' -print -quit)"
+          test -n "${lookup}" && test -n "${gmn}" && test -n "${cams}"
+          cp "${lookup}" nop_solution004_multisource_recovery/input/0149NOP_004.csv
+          cp "${gmn}" nop_solution004_multisource_recovery/input/matched_gmn_orbits.csv
+          cp "${cams}" nop_solution004_multisource_recovery/input/matched_cams_orbits.csv
+          echo "9ec720202966f1eda18c99c8decaa338d9be0bae913be4c2ff6ed34f2661282e  nop_solution004_multisource_recovery/input/0149NOP_004.csv" | sha256sum -c -
+      - name: Compile multisource recovery audit
+        run: |
+          python -m py_compile \
+            nop_solution004_multisource_recovery/recover_multisource_orbits.py \
+            nop_solution004_multisource_recovery/run_multisource_recovery.py
+      - name: Run frozen multisource gate
+        shell: bash
+        run: |
+          set -o pipefail
+          python nop_solution004_multisource_recovery/run_multisource_recovery.py \
+            --lookup nop_solution004_multisource_recovery/input/0149NOP_004.csv \
+            --gmn-matches nop_solution004_multisource_recovery/input/matched_gmn_orbits.csv \
+            --cams-matches nop_solution004_multisource_recovery/input/matched_cams_orbits.csv \
+            --cache nop_solution004_multisource_recovery/cache \
+            --output nop_solution004_multisource_recovery/results \
+            2>&1 | tee nop_solution004_multisource_recovery/results/execution.log
+      - name: Preserve archive structures and headers
+        if: always()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          root = Path('nop_solution004_multisource_recovery/cache')
+          output = Path('nop_solution004_multisource_recovery/results/archive_probe.txt')
+          output.parent.mkdir(parents=True, exist_ok=True)
+          chunks = []
+          for archive in sorted(root.glob('*.zip')):
+              chunks.append(f'ARCHIVE {archive.name} {archive.stat().st_size} bytes')
+              try:
+                  with zipfile.ZipFile(archive) as bundle:
+                      for member in bundle.infolist():
+                          chunks.append(
+                              f'MEMBER {member.filename!r} compressed={member.compress_size} uncompressed={member.file_size}'
+                          )
+                          if member.is_dir():
+                              continue
+                          with bundle.open(member) as handle:
+                              sample = handle.read(4096)
+                          chunks.append('SAMPLE_HEX ' + sample[:128].hex())
+                          chunks.append('SAMPLE_TEXT_START')
+                          chunks.append(sample.decode('utf-8-sig', 'replace'))
+                          chunks.append('SAMPLE_TEXT_END')
+              except Exception as exc:
+                  chunks.append(f'ARCHIVE_ERROR {type(exc).__name__}: {exc}')
+          output.write_text('\n'.join(chunks), encoding='utf-8')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p nop_solution004_multisource_recovery/results
+          sha256sum \
+            nop_solution004_multisource_recovery/recover_multisource_orbits.py \
+            nop_solution004_multisource_recovery/run_multisource_recovery.py \
+            nop_solution004_multisource_recovery/MULTISOURCE_GATE.md \
+            nop_solution004_multisource_recovery/requirements.txt \
+            > nop_solution004_multisource_recovery/results/source_sha256.txt
+          find nop_solution004_multisource_recovery/input -maxdepth 1 -type f -print0 | sort -z | xargs -0 -r sha256sum \
+            > nop_solution004_multisource_recovery/results/input_sha256.txt
+          find nop_solution004_multisource_recovery/cache -type f -print0 | sort -z | xargs -0 -r sha256sum \
+            > nop_solution004_multisource_recovery/results/archive_sha256.txt
+          python --version > nop_solution004_multisource_recovery/results/python_version.txt
+          python -m pip freeze > nop_solution004_multisource_recovery/results/environment.txt
+      - name: Upload multisource recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nop-solution004-final-multisource-recovery
+          path: nop_solution004_multisource_recovery/results
+          if-no-files-found: error
+          retention-days: 90
