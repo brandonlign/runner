@@ -1,0 +1,58 @@
+name: Real-shower meta-learning audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - real_shower_meta_audit/**
+      - .github/workflows/real_shower_meta_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: real-shower-meta-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/real-shower-meta-audit
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile audit source
+        run: python -m py_compile real_shower_meta_audit/audit.py
+      - name: Audit official GMN shower-label data
+        run: python real_shower_meta_audit/audit.py
+      - name: Record provenance
+        run: |
+          sha256sum real_shower_meta_audit/audit.py real_shower_meta_audit/BOUNDARY.md > real_shower_meta_audit/results/source_sha256.txt
+          python --version > real_shower_meta_audit/results/python_version.txt
+      - name: Upload audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-shower-meta-audit
+          path: real_shower_meta_audit/results
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve audit result
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add real_shower_meta_audit/results
+          if git diff --cached --quiet; then
+            echo 'No result changes to commit.'
+          else
+            git commit -m 'Preserve real-shower meta-learning audit'
+            git pull --rebase origin agent/real-shower-meta-audit
+            git push origin HEAD:agent/real-shower-meta-audit
+          fi
