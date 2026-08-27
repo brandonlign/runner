@@ -1,0 +1,170 @@
+name: OrbitTrace P18 matched pretruth checkpoint transform
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/MATCHED_PRETRUTH_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p18-matched-pretruth-transform
+  cancel-in-progress: false
+
+jobs:
+  transform:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Bind exact successful P17 artifact and freeze P18 checkpoints only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          marker_path=orbittrace_p17_rank_halo_membership_p18/MATCHED_PRETRUTH_RUN.md
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = "$marker_path"
+          marker="$(git show "$HEAD_SHA:$marker_path")"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P18_PRETRUTH_TRANSFORM'
+          P17_RUN="$(printf '%s\n' "$marker" | sed -n '2p')"
+          P17_ARTIFACT="$(printf '%s\n' "$marker" | sed -n '3p')"
+          P17_DIGEST="$(printf '%s\n' "$marker" | sed -n '4p')"
+          HDB_SHA="$(printf '%s\n' "$marker" | sed -n '5p')"
+          SUGAR_SHA="$(printf '%s\n' "$marker" | sed -n '6p')"
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 6
+          [[ "$P17_RUN" =~ ^[0-9]+$ ]]
+          [[ "$P17_ARTIFACT" =~ ^[0-9]+$ ]]
+          [[ "$P17_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$HDB_SHA" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$SUGAR_SHA" =~ ^[0-9a-f]{64}$ ]]
+          git checkout --detach "$BASE_SHA"
+          test ! -e "$marker_path"
+          test "$(git hash-object orbittrace_p17_rank_halo_membership_p18/promote_p17_checkpoint_to_p18.py)" = '3f53e1ffeabb1b32d2de124cbf903d193012b9af'
+          python -m py_compile orbittrace_p17_rank_halo_membership_p18/promote_p17_checkpoint_to_p18.py
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/runs/$P17_RUN" -o /tmp/p17-run.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/artifacts/$P17_ARTIFACT" -o /tmp/p17-meta.json
+          python - "$P17_RUN" "$P17_ARTIFACT" "$P17_DIGEST" <<'PY_META'
+          import json,sys
+          run,aid,digest=sys.argv[1:]
+          r=json.load(open('/tmp/p17-run.json')); a=json.load(open('/tmp/p17-meta.json'))
+          assert r['id']==int(run) and r['status']=='completed' and r['conclusion']=='success',r
+          assert r['name']=='OrbitTrace P17 main-base activation relay',r
+          assert r['event']=='pull_request',r
+          assert r['head_branch']=='agent/orbittrace-p17-main-activation-run-v1',r
+          assert a['id']==int(aid) and a['name']=='orbittrace-p17-matched-pretruth-checkpoints-main-relay',a
+          assert a['digest']==digest and not a['expired'],a
+          assert a['workflow_run']['id']==int(run),a
+          print('PASS_P18_EXACT_SUCCESSFUL_P17_MAIN_RELAY_ARTIFACT_METADATA')
+          PY_META
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/artifacts/$P17_ARTIFACT/zip" -o /tmp/p17.zip
+          printf '%s  %s\n' "${P17_DIGEST#sha256:}" /tmp/p17.zip | sha256sum -c -
+          rm -rf /tmp/p17 && mkdir -p /tmp/p17
+          unzip -q /tmp/p17.zip -d /tmp/p17
+          mapfile -t manifests < <(find /tmp/p17 -type f -name P17_MANIFEST.json -print | sort)
+          test "${#manifests[@]}" -eq 1
+          manifest="${manifests[0]}"
+          python - "$manifest" "$HDB_SHA" "$SUGAR_SHA" <<'PY_MANIFEST'
+          import json,sys
+          path,hdb,sugar=sys.argv[1:]
+          m=json.load(open(path))
+          assert m['classification']=='P17_MATCHED_PRETRUTH',m
+          assert m['matched_source_sha256']=='c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a',m
+          assert m['competitor_cluster_values_accessed'] is False and m['known_shower_truth_accessed'] is False,m
+          assert m['external_data_access'] is False and m['target_information_access'] is False,m
+          assert m['panels']['hdbscan']['checkpoint_sha256']==hdb,m
+          assert m['panels']['sugar']['checkpoint_sha256']==sugar,m
+          for panel in ('hdbscan','sugar'):
+              assert isinstance(m['panels'][panel]['closure_count'],int) and m['panels'][panel]['closure_count']>=0,m
+              assert len(m['panels'][panel]['closure_sha256'])==64,m
+          print('PASS_P18_P17_MANIFEST_PRETRUTH_FIREWALL')
+          PY_MANIFEST
+
+          mkdir -p pretruth/p17 pretruth/p18 output
+          for panel in hdbscan sugar; do
+            mapfile -t hits < <(find /tmp/p17 -type f -path "*/checkpoints/${panel}.pkl" -print | sort)
+            test "${#hits[@]}" -eq 1
+            cp "${hits[0]}" "pretruth/p17/${panel}.pkl"
+            cp "${hits[0]}.sha256" "pretruth/p17/${panel}.pkl.sha256"
+          done
+          printf '%s  %s\n' "$HDB_SHA" pretruth/p17/hdbscan.pkl | sha256sum -c -
+          printf '%s  %s\n' "$SUGAR_SHA" pretruth/p17/sugar.pkl | sha256sum -c -
+          test "$(cat pretruth/p17/hdbscan.pkl.sha256)" = "$HDB_SHA"
+          test "$(cat pretruth/p17/sugar.pkl.sha256)" = "$SUGAR_SHA"
+
+          for panel in hdbscan sugar; do
+            python orbittrace_p17_rank_halo_membership_p18/promote_p17_checkpoint_to_p18.py \
+              --input "pretruth/p17/${panel}.pkl" --output "pretruth/p18/${panel}.pkl"
+          done
+          python - <<'PY_CP'
+          import hashlib,json,pickle
+          from pathlib import Path
+          panels={}
+          for panel in ('hdbscan','sugar'):
+              p=Path(f'pretruth/p18/{panel}.pkl'); raw=p.read_bytes(); cp=pickle.loads(raw)
+              digest=hashlib.sha256(raw).hexdigest()
+              assert p.with_suffix(p.suffix+'.sha256').read_text().strip()==digest
+              assert cp['panel']==panel and cp['years']==[2023,2025] and cp['blind_exclusion']==[20.0,55.0]
+              assert cp['competitor_cluster_values_accessed'] is False and cp['known_shower_truth_accessed'] is False
+              assert cp['p18_architecture']=='P18_P17_RANK_LABEL_FREE_HALO_MEMBERSHIP'
+              assert cp['p18_primary_candidate_for_matched_verdict'] is True
+              assert cp['p18_p17_core_only_is_diagnostic_ablation'] is True
+              assert cp['p18_core_order_unchanged'] is True and cp['p18_membership_frozen_before_truth'] is True
+              assert cp['p18_no_new_detector_score_distance_threshold_family_proposal_growth_merge_or_rank'] is True
+              assert cp['p18_new_members_can_seed_growth'] is False
+              assert cp['p17_architecture']=='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'
+              assert cp['p17_reciprocal_closure_frozen_before_truth'] is True
+              panels[panel]={
+                'p17_checkpoint_sha256':hashlib.sha256(Path(f'pretruth/p17/{panel}.pkl').read_bytes()).hexdigest(),
+                'p18_checkpoint_sha256':digest,
+                'core_order_sha256':cp['p18_core_order_pretruth_sha256'],
+                'reported_membership_sha256':cp['p18_reported_membership_pretruth_sha256'],
+                'core_halo_correspondence_sha256':cp['p18_core_halo_correspondence_sha256'],
+                'already_frozen_halo_additions':cp['p18_total_already_frozen_halo_additions'],
+                'p17_closure_count':cp['p17_reciprocal_closure_count'],
+                'p17_closure_sha256':cp['p17_reciprocal_closure_sha256'],
+                'p17_closure_snapshot_sha256':cp['p18_p17_closure_snapshot_sha256'],
+              }
+          out={
+            'classification':'P18_MATCHED_PRETRUTH',
+            'p17_matched_source_sha256':'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a',
+            'p18_transform_blob':'3f53e1ffeabb1b32d2de124cbf903d193012b9af',
+            'primary_matched_challenger':'P18 only; P17 core-only diagnostic ablation',
+            'family_existence_and_rank_core_only':True,
+            'reported_membership_exact_frozen_label_free_halo':True,
+            'new_detector_score_distance_threshold_family_proposal_growth_merge_or_rank':False,
+            'competitor_cluster_values_accessed':False,
+            'known_shower_truth_accessed':False,
+            'external_data_access':False,
+            'target_information_access':False,
+            'panels':panels,
+          }
+          Path('output/P18_MANIFEST.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          print('PASS_P18_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH')
+          PY_CP
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p18-matched-pretruth-checkpoints
+          path: |
+            pretruth/p18
+            output/P18_MANIFEST.json
+          if-no-files-found: error
+          retention-days: 90

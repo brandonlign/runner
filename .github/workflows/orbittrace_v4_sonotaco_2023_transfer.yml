@@ -1,0 +1,234 @@
+name: OrbitTrace v4 SonotaCo 2023 transfer
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v4-decision-base
+    paths:
+      - .github/workflows/orbittrace_v4_sonotaco_2023_transfer.yml
+      - orbittrace_fpr_budgeted_v4/**
+      - orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-v4-sonotaco-2023-transfer
+  cancel-in-progress: true
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fpr-budgeted-dual-channel-v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Retrieve exact validated SonotaCo 2023 benchmark source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin e23c7859bbcaf57b72be67c6ec834c496671c90d --depth=1
+          rm -rf /tmp/orbittrace-2023
+          git worktree add --detach /tmp/orbittrace-2023 e23c7859bbcaf57b72be67c6ec834c496671c90d
+          test "$(git -C /tmp/orbittrace-2023 rev-parse HEAD)" = "e23c7859bbcaf57b72be67c6ec834c496671c90d"
+          test "$(git -C /tmp/orbittrace-2023 hash-object orbittrace_literature_comparison/wavelet_episode_comparator.py)" = "493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8"
+          test "$(git -C /tmp/orbittrace-2023 hash-object orbittrace_literature_comparison/build_wavelet_2023_runner.py)" = "169c4d03ffcb179951197a0f93c4bc5d63354748"
+          test "$(git -C /tmp/orbittrace-2023 hash-object .github/workflows/orbittrace_sonotaco_2023_wavelet_episode_transfer.yml)" = "57091e1ec5606cf2c7bab1697264d248f9214509"
+
+      - name: Install exact benchmark dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r /tmp/orbittrace-2023/real_shower_meta_stage0/requirements.txt
+
+      - name: Audit frozen v3 ranking and v4 decision before 2023 data access
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_multi_anchor_energy_v3:${{ github.workspace }}/orbittrace_fpr_budgeted_v4
+        run: |
+          set -euo pipefail
+          mkdir -p input/repaired output/benchmark output/transfer
+          test "$(git hash-object orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py)" = "2ba4835db23f8f623cdd28d0a4e6113b7954ecb2"
+          test "$(git hash-object orbittrace_fpr_budgeted_v4/decision_v4.py)" = "de44823204263fbb547f9ed03ba12b51d3062e5d"
+          python -m py_compile \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_fpr_budgeted_v4/decision_v4.py \
+            orbittrace_fpr_budgeted_v4/build_v3_2023_runner.py \
+            orbittrace_fpr_budgeted_v4/evaluate_2023_transfer.py
+          python - <<'PY'
+          import multi_anchor_energy_v3 as v3
+          import decision_v4 as decision
+          assert all(v3.self_test().values()), v3.self_test()
+          assert all(decision.self_test().values()), decision.self_test()
+          assert decision.V3_MAX_RANK == 3
+          assert decision.FIXED4_MAX_RANK == 4
+          assert decision.CALIBRATION_DENOMINATOR == 129
+          text = open('orbittrace_fpr_budgeted_v4/FROZEN_DECISION.md').read()
+          assert 'Selection workflow: `31146852225`' in text
+          assert 'Selection artifact: `8981784838`' in text
+          assert 'p_v3 <= 3/129' in text
+          assert 'p_fixed4 <= 4/129' in text
+          print('PASS_PRE_2023_V4_FREEZE')
+          PY
+          sha256sum \
+            orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py \
+            orbittrace_fpr_budgeted_v4/decision_v4.py \
+            orbittrace_fpr_budgeted_v4/FROZEN_DECISION.md \
+            orbittrace_fpr_budgeted_v4/build_v3_2023_runner.py \
+            orbittrace_fpr_budgeted_v4/evaluate_2023_transfer.py \
+            | tee output/v4_2023_source_sha256.txt
+          git rev-parse HEAD | tee output/v4_2023_commit.txt
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Reconstruct exact successful 2023 wavelet runner and add frozen v3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: /tmp:/tmp/orbittrace-2023/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          gh api \
+            "repos/$GITHUB_REPOSITORY/contents/orbittrace_literature_comparison/literature_comparators.py?ref=eddcf9bb432b92e4f9707d0b2ce58ca21b4faf34" \
+            --jq .content \
+            | tr -d '\n' \
+            | base64 -d \
+            > /tmp/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  /tmp/literature_comparators.py' | sha256sum -c -
+
+          echo '0e3af3c5f2b8f2265f5f67cbbd3e43616e3ccc7ca7cd3b5ebfe01f920fbb18ca  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part00.b64' | sha256sum -c -
+          echo 'ccfbed79a2c50f0e9768badb58700696ce6401961d1e85f412d3962211d2b8f1  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub00.b64' | sha256sum -c -
+          echo '2904c359c237671e4a20d3d18606f7a4ca91b472d1298c8c5d8c5c6d4753c5aa  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub01.b64' | sha256sum -c -
+          echo '721719076fd28015b2ff7ff0d299b69b77e3bd774fc9adf1705cbfce52702a3c  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub02.b64' | sha256sum -c -
+          echo '8bfbfd7e5deb22d64c1687767b9c7a10ecb28573c6b4dac01548e7d9102a54d1  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part01_sub03.b64' | sha256sum -c -
+          echo 'a1c0da4f5a52ff9495b578e6becd4e58bb902b3b38251ffd04cb1fbc31f463e0  /tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts/part02.b64' | sha256sum -c -
+
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+          root = Path('/tmp/orbittrace-2023/orbittrace_literature_freeze/sonotaco_2023_runner_parts')
+          names = (
+              'part00.b64',
+              'part01_sub00.b64', 'part01_sub01.b64', 'part01_sub02.b64', 'part01_sub03.b64',
+              'part02.b64',
+          )
+          encoded = ''.join(''.join((root / name).read_text().split()) for name in names)
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          if digest != '582c2bc4c9d947d3d0b86aaf201e30b57eb85d24fd587dbbcd49b483065fc747':
+              raise RuntimeError(f'2023 base runner mismatch: {digest}')
+          Path('/tmp/run_sonotaco_2023_literature_comparison.py').write_bytes(source)
+          compile(source, 'run_sonotaco_2023_literature_comparison.py', 'exec')
+          print('PASS_RECONSTRUCT_2023_BASE', digest)
+          PY
+
+          python /tmp/orbittrace-2023/orbittrace_literature_comparison/build_wavelet_2023_runner.py \
+            --base /tmp/run_sonotaco_2023_literature_comparison.py \
+            --output /tmp/run_sonotaco_2023_wavelet_episode_transfer.py
+          python orbittrace_fpr_budgeted_v4/build_v3_2023_runner.py \
+            --base /tmp/run_sonotaco_2023_wavelet_episode_transfer.py \
+            --output /tmp/run_sonotaco_2023_v3_transfer.py
+          python -m py_compile /tmp/run_sonotaco_2023_v3_transfer.py
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('/tmp/run_sonotaco_2023_v3_transfer.py').read_text()
+          assert source.count('orbittrace_multi_anchor_wavelet_energy_v3') >= 3
+          assert 'v3.multi_anchor_energy_episode_score(episode)' in source
+          assert 'multi_anchor_energy_v3_parameters_unchanged' in source
+          print('PASS_ADAPTED_2023_V3_RUNNER_AUDIT')
+          PY
+          sha256sum \
+            /tmp/run_sonotaco_2023_literature_comparison.py \
+            /tmp/run_sonotaco_2023_wavelet_episode_transfer.py \
+            /tmp/run_sonotaco_2023_v3_transfer.py \
+            | tee output/adapted_2023_runner_sha256.txt
+
+      - name: Retrieve exact repaired 2023 parser and confirmation source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30920687116 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name sonotaco-2023-confirmation-source-repair-v2 \
+            --dir input/repaired
+          echo '9619dfc0b339b39d287833778769f12a643e2b0157fdcd6115cd9c40be528322  input/repaired/audit_sonotaco_2023_v2.py' | sha256sum -c -
+          echo 'bc2636005cc25da33e8accb6bdb70beea6ab900862cd1e6342a481395ac8f3e6  input/repaired/run_sonotaco_2023_fixed4_confirmation.py' | sha256sum -c -
+          echo '882c21f2ac48689ab7a0d7a990496f7e055ab571b10c6f00bb63d8a18f8f7b3f  input/repaired/sonotaco_2023_confirmation_source_repair_v2.json' | sha256sum -c -
+
+      - name: Retrieve exact GMN-MDC mapping audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+
+      - name: Download exact SonotaCo 2023 replacement archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/023a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/023a.zip
+          echo '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430  input/023a.zip' | sha256sum -c -
+
+      - name: Execute unchanged frozen v3 on SonotaCo 2023
+        env:
+          PYTHONPATH: /tmp:/tmp/orbittrace-2023/orbittrace_literature_comparison:${{ github.workspace }}/orbittrace_multi_anchor_energy_v3
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_2023_v3_transfer.py \
+            --archive input/023a.zip \
+            --audit input/audit.json \
+            --baseline-payload /tmp/orbittrace-2023/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts /tmp/orbittrace-2023/mondrian_clique_development/source_parts_v2 \
+            --confirmation-source input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            --freeze /tmp/orbittrace-2023/orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json \
+            --workers 4 \
+            --output output/benchmark
+          cat output/benchmark/SONOTACO_2023_LITERATURE_TRANSFER.md
+
+      - name: Apply frozen v4 decision without reselection
+        env:
+          PYTHONPATH: ${{ github.workspace }}/orbittrace_fpr_budgeted_v4
+        run: |
+          set -euo pipefail
+          python orbittrace_fpr_budgeted_v4/evaluate_2023_transfer.py \
+            --benchmark output/benchmark/sonotaco_2023_literature_transfer.json \
+            --negative-records output/benchmark/negative_literature_records.jsonl.gz \
+            --positive-records output/benchmark/positive_literature_records.jsonl.gz \
+            --output output/transfer
+          cat output/transfer/V4_SONOTACO_2023_TRANSFER.md
+
+      - name: Record immutable provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum \
+            input/audit.json input/023a.zip \
+            input/repaired/run_sonotaco_2023_fixed4_confirmation.py \
+            /tmp/literature_comparators.py \
+            /tmp/orbittrace-2023/orbittrace_literature_freeze/SONOTACO_2025_WAVELET_EPISODE_FREEZE.json \
+            >> output/v4_2023_source_sha256.txt 2>/dev/null || true
+
+      - name: Upload v4 2023 transfer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v4-sonotaco-2023-transfer
+          path: output
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,260 @@
+name: OrbitTrace P12 drift-conditioned development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p12-drift-conditioned-freeze
+    paths:
+      - orbittrace_drift_conditioned_p12/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p12-drift-conditioned-development
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require one-file child and authoritative P11 scientific no-go
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_drift_conditioned_p12/RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_drift_conditioned_p12/RUN.md)"
+          test "$(printf '%s\n' "$content" | sed -n '1p')" = 'EXECUTE_P12_AFTER_AUTHORITATIVE_P11_SCIENTIFIC_NO_GO'
+          test "$(printf '%s\n' "$content" | sed -n '2p')" = '31301133527'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9034719798" -o /tmp/p11-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('/tmp/p11-meta.json').read_text())
+          assert m['id']==9034719798,m
+          assert m['name']=='orbittrace-density-contrast-order-stat-membership-p11-development',m
+          assert m['workflow_run']['id']==31301133527,m
+          assert m['digest']=='sha256:797de87a9e047fa153e3d567bd56deb050a738c71d5848f8c21e2f8e30f2e555',m
+          assert not m['expired'],m
+          print('PASS_P12_P11_ARTIFACT_METADATA')
+          PY
+          rm -rf /tmp/p11-prereq && mkdir -p /tmp/p11-prereq
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9034719798/zip" -o /tmp/p11-prereq.zip
+          echo '797de87a9e047fa153e3d567bd56deb050a738c71d5848f8c21e2f8e30f2e555  /tmp/p11-prereq.zip' | sha256sum -c -
+          unzip -q /tmp/p11-prereq.zip -d /tmp/p11-prereq
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/p11-prereq/density_contrast_order_stat_membership_p11_development.json').read_text())
+          assert r['verdict']=='FAIL_DENSITY_CONTRAST_ORDER_STAT_MEMBERSHIP_P11_NO_GO'
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert abs(r['baseline_v8']['macro_f1']-0.1736657194465356)<1e-12
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert abs(r['baseline_v8']['mrr']-0.045531138942766655)<1e-15
+          assert r['p11']['qualified_matches']==90
+          assert r['p11']['recovered_at_100']==57
+          assert r['p11']['recovered_at_500']==90
+          assert abs(r['p11']['macro_f1']-0.3760503749690251)<1e-12
+          assert abs(r['p11']['top100_dominant_precision']-0.6965562269712011)<1e-12
+          assert abs(r['p11_large_shower']['mean_recall']-0.23601991763182276)<1e-12
+          assert abs(r['p11_large_shower']['mean_precision']-0.8865823139648731)<1e-12
+          assert r['diagnostics']['assigned_nonseed_events']==16132
+          assert r['diagnostics']['proposal_events']==16170
+          assert r['diagnostics']['conflicted_proposal_events']==138
+          assert r['diagnostics']['p11_density_eligible_directions']==436
+          assert r['diagnostics']['p11_density_rejected_inside_p10']==3702
+          assert r['gates']['qualified_matches_no_regression'] is False
+          assert r['gates']['recovery_at_100_no_regression'] is False
+          for k in ('top100_dominant_precision_at_least_065','macro_f1_gain_at_least_008','large_shower_mean_recall_at_least_15x_v8','large_shower_mean_precision_at_least_085','p11_density_pretruth_frozen_before_truth','p11_candidate_self_exclusion_frozen','p11_every_surviving_proposal_passes_density_veto'):
+              assert r['gates'][k] is True,k
+          assert r['density_pretruth_sha256']=='6e0f516604686ec2416424f8b02067ec8d6fb3535bd5198c53855064481f3196'
+          assert r['crossfit_pretruth_sha256']=='ccea6c1ca99109e6e4d95c98d9485147e0498cf2714ecd1b2f326cfe357f52a4'
+          assert r['model_pretruth_sha256']=='8ac8b13ab025a636884d44a2b19d478c9de5c138c3da190f3dfe3d73490257eb'
+          assert r['membership_pretruth_sha256']=='b4e3e49d77389af6858dc5531a657fa5ee795639e37f0e72010280052e0510e5'
+          assert r['decisions_pretruth_sha256']=='8ebe0f5ce7e2964e03ed19a93da571e7ad69614b950edaba630ebeb4edf8739c'
+          print('PASS_P12_AUTHORITATIVE_P11_SCIENTIFIC_NO_GO')
+          PY
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_drift_conditioned_p12/RUN.md
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact audited P12 and frozen inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,v6,v8,dsh} output
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/p5.py' | sha256sum -c -
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          echo 'd32648136b58e2f777912d6403d9de3cbd091a8c23e16aedcda0b146f09f38c2  /tmp/p6.py' | sha256sum -c -
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          echo '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54  /tmp/p7.py' | sha256sum -c -
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          echo 'd3bdcdaf18639e36cc02f5106b3a3c816f5e51eb19543f425717ba1c48a26470  /tmp/p8.py' | sha256sum -c -
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          echo '58330c61cf4039f07e80a9746d00eb7281b4e28e674a131d6333e6378695ae31  /tmp/p9.py' | sha256sum -c -
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/p10.py
+          echo '638b4f41e51955436557a99f1142c3d3cea91e12a66e2f74925c6bfb79d5e50d  /tmp/p10.py' | sha256sum -c -
+          python orbittrace_density_contrast_p11/apply_p11_patch.py /tmp/p10.py /tmp/p11.py
+          echo '914913d0462ea6793af3836cef945f14a03cca205ac0755ed6cdadb63b8752f9  /tmp/p11.py' | sha256sum -c -
+          python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/run_p12.py
+          echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/run_p12.py' | sha256sum -c -
+          PYTHONPATH=. python -m py_compile /tmp/run_p12.py orbittrace_drift_conditioned_p12/run_header_compatible.py
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          cp exact-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+          test "$(git hash-object input/v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+          echo 'f76b8448f299ccf078fc5978c0890b9a084f131080db8d2136b5e6dba77edc7b  input/v6/label_free_sparse_support_v6_families.json.gz' | sha256sum -c -
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo '88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip' | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+          echo 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b  input/v8/pooled_year_centroid_v8_development.json' | sha256sum -c -
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py' | sha256sum -c -
+          python -m py_compile input/dsh/literature_comparators.py
+          echo PASS_P12_EXACT_INPUT_IDENTITIES
+
+      - name: Execute one-shot target-excluded P12 development
+        env:
+          PYTHONPATH: exact-v8:input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_drift_conditioned_p12/run_header_compatible.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --v6-structural-families-json-gz input/v6/label_free_sparse_support_v6_families.json.gz \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --dsh-comparator input/dsh/literature_comparators.py \
+            --output output
+          cat output/DRIFT_CONDITIONED_TWO_VIEW_MEMBERSHIP_P12_DEVELOPMENT.md
+
+      - name: Enforce frozen P12 result and truth firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/drift_conditioned_two_view_membership_p12_development.json').read_text())
+          assert r['verdict'] in {'PASS_DRIFT_CONDITIONED_TWO_VIEW_MEMBERSHIP_P12_DEVELOPMENT','FAIL_DRIFT_CONDITIONED_TWO_VIEW_MEMBERSHIP_P12_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          assert r['configuration']['features'][0].endswith('d_drift')
+          assert r['configuration']['p12_ols_rcond'] is None
+          assert r['configuration']['p12_static_d_obs_retained'] is False
+          assert r['configuration']['p12_new_numeric_thresholds'] is False
+          assert r['configuration']['p12_parameter_search'] is False
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert abs(r['baseline_v8']['macro_f1']-0.1736657194465356)<1e-12
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert abs(r['baseline_v8']['mrr']-0.045531138942766655)<1e-15
+          scientific={
+              'qualified_matches_no_regression','recovery_at_100_no_regression','top100_dominant_precision_at_least_065',
+              'macro_f1_gain_at_least_008','large_shower_mean_recall_at_least_15x_v8','large_shower_mean_precision_at_least_085',
+          }
+          assert all(bool(v) for k,v in r['gates'].items() if k not in scientific), {k:v for k,v in r['gates'].items() if k not in scientific and not bool(v)}
+          assert r['gates']['p12_drift_pretruth_frozen_before_truth'] is True
+          assert r['gates']['p12_source_year_only_drift_fit'] is True
+          assert r['gates']['p12_exact_ols_rule_or_rank_fallback'] is True
+          assert r['gates']['p12_three_dimensional_drift_covariance'] is True
+          assert r['gates']['p12_drift_nonvacuous'] is True
+          assert r['diagnostics']['p12_drift_nonzero_slope_directions']>0
+          assert len(r['drift_pretruth_sha256'])==64
+          assert len(r['crossfit_pretruth_sha256'])==64
+          assert len(r['model_pretruth_sha256'])==64
+          assert len(r['density_pretruth_sha256'])==64
+          assert len(r['membership_pretruth_sha256'])==64
+          assert len(r['decisions_pretruth_sha256'])==64
+          assert all(a['label_value_accessed'] is False for a in r['geometry_audits'])
+          assert all(a['label_value_accessed_only_after_blind_and_dedup'] is True for a in r['truth_audits'])
+          print('ORBITTRACE_P12_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'baseline_v8':r['baseline_v8'],'p12':r['p12'],'baseline_large_shower':r['baseline_large_shower'],'p12_large_shower':r['p12_large_shower'],'gates':r['gates'],'diagnostics':r['diagnostics'],'hashes':{'drift':r['drift_pretruth_sha256'],'crossfit':r['crossfit_pretruth_sha256'],'model':r['model_pretruth_sha256'],'density':r['density_pretruth_sha256'],'membership':r['membership_pretruth_sha256'],'decisions':r['decisions_pretruth_sha256']}},indent=2,sort_keys=True))
+          print('ORBITTRACE_P12_RESULT_END')
+          PY
+
+      - name: Record immutable environment
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum /tmp/run_p12.py orbittrace_drift_conditioned_p12/PROTOCOL.md orbittrace_drift_conditioned_p12/apply_p12_patch.py orbittrace_drift_conditioned_p12/PATCH_B64.txt orbittrace_drift_conditioned_p12/run_header_compatible.py orbittrace_drift_conditioned_p12/SOURCE_SHA256 input/dsh/literature_comparators.py > output/source_sha256.txt 2>/dev/null || true
+          git -C exact-v8 rev-parse HEAD > output/exact_v8_commit.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-drift-conditioned-two-view-membership-p12-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90

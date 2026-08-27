@@ -1,0 +1,47 @@
+name: Real-shower meta-learning data audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - real_shower_meta_stage0/**
+      - .github/workflows/real_shower_meta_data_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-shower-meta-data-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/real-shower-meta-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile frozen audit
+        run: python -m py_compile real_shower_meta_stage0/audit_real_shower_data.py
+      - name: Audit all frozen GMN months and MDC complexes
+        run: python real_shower_meta_stage0/audit_real_shower_data.py
+      - name: Record provenance
+        run: |
+          sha256sum \
+            real_shower_meta_stage0/audit_real_shower_data.py \
+            real_shower_meta_stage0/PROTOCOL.md \
+            > real_shower_meta_stage0/results/data_audit/source_sha256.txt
+          python --version > real_shower_meta_stage0/results/data_audit/python_version.txt
+      - name: Upload data-gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: real_shower_meta_stage0/results/data_audit
+          if-no-files-found: error
+          retention-days: 90

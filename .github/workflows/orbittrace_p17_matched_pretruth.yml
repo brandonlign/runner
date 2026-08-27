@@ -1,0 +1,159 @@
+name: OrbitTrace P17 matched pretruth checkpoints
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p17-matched-pretruth
+  cancel-in-progress: false
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Bind exact P17 development PASS, freeze both checkpoints, stop pretruth
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 2
+          test "${files[0]}" = '.github/workflows/orbittrace_p17_matched_pretruth.yml'
+          test "${files[1]}" = 'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md'
+          git show "$BASE_SHA":.github/workflows/orbittrace_p17_matched_pretruth.yml > /tmp/p17_base_workflow.yml
+          git show "$HEAD_SHA":.github/workflows/orbittrace_p17_matched_pretruth.yml > /tmp/p17_child_workflow.yml
+          test "$(tail -n 1 /tmp/p17_child_workflow.yml)" = '# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1'
+          head -n -1 /tmp/p17_child_workflow.yml > /tmp/p17_child_without_nonce.yml
+          cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml
+          echo PASS_P17_CHILD_WORKFLOW_DIFF_IS_INERT_NONCE_ONLY
+          marker="$(git show "$HEAD_SHA":orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md)"
+          test "$(printf '%s\n' "$marker" | sed -n '1p')" = 'EXECUTE_P17_MATCHED_PRETRUTH'
+          test "$(printf '%s\n' "$marker" | sed -n '2p')" = '31332157812'
+          test "$(printf '%s\n' "$marker" | sed -n '3p')" = '9043232586'
+          test "$(printf '%s\n' "$marker" | sed -n '4p')" = 'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd'
+          test "$(printf '%s\n' "$marker" | sed -n '5p')" = 'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a'
+          test "$(printf '%s\n' "$marker" | wc -l)" -eq 5
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md
+          test "$(git hash-object .github/workflows/orbittrace_p17_matched_pretruth.yml)" = "$(git hash-object /tmp/p17_base_workflow.yml)"
+
+          # Require exact promoted P17 source and exact artifact-only development vacuity PASS.
+          test "$(git hash-object orbittrace_reciprocal_support_closure_p17/apply_p17_reciprocal_support_closure.py)" = '60d371b46d330ccbd59a08598fd36be88881c23d'
+          test "$(git hash-object orbittrace_reciprocal_support_closure_p17/adjudicate_p17_development_vacuity.py)" = '5400c522b60dfaec7afcb803859b829e8582b279'
+          test "$(git hash-object orbittrace_reciprocal_support_closure_p17/augment_pretruth_checkpoint_p17.py)" = '89a2e408aca91261eb5c5e1d5e5a5490d7e50b1e'
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/runs/31332157812" -o /tmp/p17dev-run.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/artifacts/9043232586" -o /tmp/p17dev-meta.json
+          python - <<'PY_META'
+          import json
+          r=json.load(open('/tmp/p17dev-run.json')); a=json.load(open('/tmp/p17dev-meta.json'))
+          assert r['id']==31332157812 and r['status']=='completed' and r['conclusion']=='success',r
+          assert r['head_sha']=='c42278e2cf24452ef68d0006bd8e94073037831b',r
+          assert r['head_branch']=='agent/orbittrace-p17-reciprocal-support-closure-freeze',r
+          assert a['id']==9043232586 and a['name']=='orbittrace-p17-reciprocal-support-closure-development-vacuity',a
+          assert a['digest']=='sha256:f89e1330da616e4224bec063e82194042f6e5625cf02cf851f8d6e511d408852' and not a['expired'],a
+          assert a['workflow_run']['id']==31332157812 and a['workflow_run']['head_sha']=='c42278e2cf24452ef68d0006bd8e94073037831b',a
+          print('PASS_P17_EXACT_DEVELOPMENT_VACUITY_ARTIFACT_METADATA')
+          PY_META
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPO/actions/artifacts/9043232586/zip" -o /tmp/p17dev.zip
+          echo 'f89e1330da616e4224bec063e82194042f6e5625cf02cf851f8d6e511d408852  /tmp/p17dev.zip' | sha256sum -c -
+          rm -rf /tmp/p17dev && mkdir -p /tmp/p17dev
+          unzip -q /tmp/p17dev.zip -d /tmp/p17dev
+          dev=/tmp/p17dev/p17_reciprocal_support_closure_development_vacuity.json
+          echo 'cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd  '"$dev" | sha256sum -c -
+          test "$(cat "$dev.sha256")" = '2e5daddd8c0d25032a759a7b77c834a25f5a5f511c429adb375b4ab02c564999'
+          python - "$dev" <<'PY_DEV'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r['verdict']=='PASS_P17_RECIPROCAL_SUPPORT_CLOSURE_DEVELOPMENT_VACUITY',r
+          assert r['canonical_direction_count']==452 and r['canonical_minimum_negative_count']==2197,r
+          assert r['canonical_unavailable_direction_count']==0,r
+          assert r['p17_reciprocal_closure_branch_vacuous_on_development'] is True,r
+          assert r['p17_changes_p9_threshold'] is False and r['p17_missing_reciprocal_creates_positive_evidence'] is False,r
+          assert r['fresh_development_rerun_used'] is False and r['post_result_numeric_tolerance_used'] is False,r
+          assert r['matched_comparator_access'] is False and r['external_data_access'] is False and r['target_information_access'] is False,r
+          print('PASS_P17_DEVELOPMENT_VACUITY_GATE')
+          PY_DEV
+
+          python orbittrace_reciprocal_support_closure_p17/generate_matched_pretruth_p17.py \
+            orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p17_pretruth.sh
+          bash -n /tmp/p17_pretruth.sh
+          for x in \
+            'PASS_P15_OUTER_ONE_FILE_ACTIVATION_ALREADY_VERIFIED' \
+            'PASS_P15_MATCHED_SUPPORT_SAFE_HALO_SOURCE_ACTIVE' \
+            'PASS_P17_MATCHED_SOURCE_ACTIVE' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES' \
+            'exit 0'; do grep -F "$x" /tmp/p17_pretruth.sh; done
+          if grep -Eq 'OPEN TRUTH \+ COMPETITOR CLUSTER VALUES EXACTLY ONCE|evaluate_frozen_blindsafe.py|finalize_p3_evaluator_result.py|OrbitTrace-April|target_coordinate' /tmp/p17_pretruth.sh; then
+            echo 'posttruth/target surface survived P17 pretruth generation' >&2
+            exit 1
+          fi
+          chmod +x /tmp/p17_pretruth.sh
+          /tmp/p17_pretruth.sh
+
+          # P15 barrier has frozen both checkpoint objects. Add only P17 fail-closed
+          # closure provenance from each still-pretruth halo object.
+          for panel in hdbscan sugar; do
+            mapfile -t halos < <(find "pretruth/$panel" -type f -name '*halo_pretruth.pkl' -print | sort)
+            test "${#halos[@]}" -eq 1
+            python orbittrace_reciprocal_support_closure_p17/augment_pretruth_checkpoint_p17.py \
+              --checkpoint "pretruth/checkpoints/$panel.pkl" --halo-pretruth "${halos[0]}"
+          done
+          python - <<'PY_CP'
+          import hashlib,pickle,json
+          from pathlib import Path
+          manifest={}
+          for panel in ('hdbscan','sugar'):
+              p=Path(f'pretruth/checkpoints/{panel}.pkl'); raw=p.read_bytes(); cp=pickle.loads(raw)
+              digest=hashlib.sha256(raw).hexdigest()
+              assert p.with_suffix(p.suffix+'.sha256').read_text().strip()==digest
+              assert cp['competitor_cluster_values_accessed'] is False and cp['known_shower_truth_accessed'] is False
+              assert cp['p17_architecture']=='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'
+              assert cp['p17_bidirectional_reliability_threshold_changed'] is False
+              assert cp['p17_missing_reciprocal_creates_positive_evidence'] is False
+              assert cp['p17_reciprocal_closure_frozen_before_truth'] is True
+              assert cp['p3_diagnostics']['p17_fail_closed_no_proposals'] is True
+              for x in cp['p17_reciprocal_closures']:
+                  assert x['reciprocal_reliability_available'] is False and x['reciprocal_direction_unavailable'] is True
+                  assert x['p17_reciprocal_fail_closed'] is True
+                  assert x['p9_reliable'] is False and x['proposal_count']==0
+              manifest[panel]={'checkpoint_sha256':digest,'closure_count':cp['p17_reciprocal_closure_count'],'closure_sha256':cp['p17_reciprocal_closure_sha256']}
+              print('P17_PRETRUTH_PANEL_VALID',panel,'closures',cp['p17_reciprocal_closure_count'],'sha',digest)
+          Path('pretruth/P17_MANIFEST.json').write_text(json.dumps({'classification':'P17_MATCHED_PRETRUTH','matched_source_sha256':'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a','competitor_cluster_values_accessed':False,'known_shower_truth_accessed':False,'external_data_access':False,'target_information_access':False,'panels':manifest},indent=2,sort_keys=True)+'\n')
+          print('PASS_P17_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH')
+          PY_CP
+          echo NO_COMPARATOR_CLUSTER_VALUES_NO_KNOWN_SHOWER_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS > pretruth/P17_FIREWALL.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p17-matched-pretruth-checkpoints
+          path: pretruth
+          if-no-files-found: warn
+          retention-days: 90

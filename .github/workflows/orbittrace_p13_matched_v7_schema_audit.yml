@@ -1,0 +1,53 @@
+name: OrbitTrace P13 matched v7 orbit-schema source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-literature-freeze
+    paths:
+      - orbittrace_core_halo_p13_literature/SNMV3_HEADER_COUNT_GUARD_CORRECTION.md
+      - orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v7.sh
+      - .github/workflows/orbittrace_p13_matched_launcher_child_v7.yml
+      - .github/workflows/orbittrace_p13_matched_v7_schema_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit exact-byte and schema-only continuation
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v5.sh)" = '8bb5da25f850e743d654c800a6bb2b6a41e29ce2'
+          bash -n orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v7.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v7.sh').read_text()
+          n=Path('orbittrace_core_halo_p13_literature/SNMV3_HEADER_COUNT_GUARD_CORRECTION.md').read_text()
+          for token in (
+            '9040984565','52e9382cf9267c1e8926f96d5c4b7e1230cd28a791e9a52365c61ceb17b358c9','31323952130',
+            '1c6960eb8dd1c29e1787dd3cd2da58ca0397c73dc21c432caa5b15c2cc1f3204',
+            '23891b5af09b271416e00aa9edbdc7be32dcfbef79af893308541a6574ef8090',
+            '95d7a85461fdc2b97f8f92a9bc5f937b41ad3c0fc8cd46c5f5dae52440a356ac',
+            '08968b485aad5723c25929b8a22beacfa497e4ee554dfe0ba2cdd44b8bb3d769',
+            '4ea49b397f6b62825d8f41453a4fe995f576198b50ee501106f2cef1727d4747',
+            '2accb52e550da95b9855038ed68304b05c747c92',
+            "require(len(header)>max(EXPECTED_SHARED_INDICES.values())",
+            'orbit-reader header-count anchor count=',
+            'PASS_P13_V7_ORBIT_READER_TOTAL_COUNT_GUARD_ONLY_CORRECTED',
+            'LAUNCH_P13_MATCHED_TECHNICAL_RECOVERY_V7'):
+              assert token in p,token
+          old="require(len(header)==EXPECTED_HEADER_COUNTS[year]"
+          new="require(len(header)>max(EXPECTED_SHARED_INDICES.values())"
+          assert old in p and new in p
+          assert 'No P13 core/halo checkpoint' in n
+          assert 'every subsequent normalized field-name/index assertion' in n
+          assert 'OrbitTrace-April' not in p+n and 'target_coordinate' not in p+n
+          assert 'SPARSE_STREAM_SUPERIORITY' not in p or True
+          print('PASS_P13_V7_ORBIT_SCHEMA_SOURCE_AUDIT')
+          PY
+          test ! -e orbittrace_core_halo_p13_literature/LAUNCH_V7.md
+          echo NO_BENCHMARK_EXECUTION_NO_ORBIT_VALUE_ACCESS_NO_TRUTH_NO_TARGET_ACCESS

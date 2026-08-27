@@ -1,0 +1,96 @@
+name: SonotaCo 2025 native-prefix audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2025-mondrian-feasibility
+    paths:
+      - .github/workflows/sonotaco_2025_native_prefix_audit.yml
+      - sonotaco_native_prefix_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-2025-native-prefix-audit
+  cancel-in-progress: true
+
+jobs:
+  aggregate-only-prefix-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2025-native-prefix-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile and hash frozen source
+        run: |
+          set -euo pipefail
+          python -m py_compile sonotaco_native_prefix_stage0/audit_native_prefix.py
+          echo '41e4ad94714f1825939bcfb153b7fcc81cce34aeef76f0dae48c493758061755  sonotaco_native_prefix_stage0/audit_native_prefix.py' | sha256sum -c -
+          sha256sum sonotaco_native_prefix_stage0/PREFIX_AUDIT_PROTOCOL.md
+      - name: Retrieve exact GMN-MDC audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+      - name: Download exact SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+      - name: Run frozen aggregate-only prefix audit
+        run: |
+          set -euo pipefail
+          python sonotaco_native_prefix_stage0/audit_native_prefix.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --output output
+          cat output/SONOTACO_2025_NATIVE_PREFIX_AUDIT.md
+      - name: Enforce frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sonotaco_2025_native_prefix_audit.json').read_text())
+          print(json.dumps({
+              'counts': result['counts'],
+              'fractions': result['fractions'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen SonotaCo native-prefix audit failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_native_prefix_stage0/PREFIX_AUDIT_PROTOCOL.md \
+            sonotaco_native_prefix_stage0/audit_native_prefix.py \
+            input/025a.zip \
+            input/audit.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload frozen audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2025-native-prefix-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

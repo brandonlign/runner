@@ -1,0 +1,173 @@
+name: OrbitTrace fixed4 blind catalogue execution
+
+on:
+  pull_request:
+    branches:
+      - agent/ghoststream-fixed4-frozen-application
+    paths:
+      - orbittrace_blind_catalogue/**
+      - .github/workflows/orbittrace_fixed4_blind_catalogue_execution.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-blind-catalogue-execution
+  cancel-in-progress: false
+
+jobs:
+  blind-catalogue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      BLIND_SOURCE_SHA256: '78dc5e40c508ffbfd30f637137d1af82ca3d85a899eec03cdbb887ad04c5fe75'
+      BLIND_SOURCE_BYTES: '30962'
+      BLIND_ENCODED_LENGTH: '11764'
+      REVEAL_SOURCE_SHA256: '3fa601ed15d523c01c669a1814b2c16d9091791b71f26c59ff4f0caba3f69411'
+      REVEAL_SOURCE_BYTES: '11070'
+      REVEAL_ENCODED_LENGTH: '4788'
+      CANONICAL_ARTIFACT_ID: '8814798136'
+      CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-blind-catalogue-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: orbittrace_blind_catalogue/requirements.txt
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r orbittrace_blind_catalogue/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python - <<'PY'
+          from gmn_python_api import data_directory, meteor_trajectory_reader
+          print('GMN adapter import passed')
+          PY
+      - name: Decode and verify blind and reveal programs
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/orbittrace-blind blind_output reveal_output input
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import os
+          from pathlib import Path
+
+          specs = [
+              ('blind', Path('orbittrace_blind_catalogue/run_blind_scan.py.gz.b64'), Path('/tmp/orbittrace-blind/run_blind_scan.py')),
+              ('reveal', Path('orbittrace_blind_catalogue/reveal_orbittrace.py.gz.b64'), Path('/tmp/orbittrace-blind/reveal_orbittrace.py')),
+          ]
+          for prefix, payload, destination in specs:
+              encoded = ''.join(payload.read_text(encoding='ascii').split())
+              expected_length = int(os.environ[f'{prefix.upper()}_ENCODED_LENGTH'])
+              if len(encoded) != expected_length:
+                  raise RuntimeError(f'{prefix} encoded length mismatch: {len(encoded)}')
+              source = gzip.decompress(base64.b64decode(encoded, validate=True))
+              expected_bytes = int(os.environ[f'{prefix.upper()}_SOURCE_BYTES'])
+              if len(source) != expected_bytes:
+                  raise RuntimeError(f'{prefix} source byte mismatch: {len(source)}')
+              digest = hashlib.sha256(source).hexdigest()
+              if digest != os.environ[f'{prefix.upper()}_SOURCE_SHA256']:
+                  raise RuntimeError(f'{prefix} source mismatch: {digest}')
+              destination.write_bytes(source)
+              print(prefix, len(source), digest)
+          PY
+          python -m py_compile /tmp/orbittrace-blind/*.py
+      - name: Enforce target-free blind source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('/tmp/orbittrace-blind/run_blind_scan.py').read_text(encoding='utf-8')
+          forbidden = [
+              'OrbitTrace', 'GhostStream', 'ghoststream', 'orbittrace',
+              '8814798136', '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5',
+              'april_candidate_members', 'GHOSTSTREAM_CANONICAL_FROZEN',
+              '247.17', '-14.34', '37.62', '36.9',
+          ]
+          found = [token for token in forbidden if token in text]
+          if found:
+              raise RuntimeError(f'target information in blind source: {found}')
+          print('target-free source audit passed')
+          PY
+      - name: Run frozen target-free catalogue scan
+        run: |
+          set -euo pipefail
+          python /tmp/orbittrace-blind/run_blind_scan.py \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --output blind_output
+          cat blind_output/BLIND_SCAN.md
+      - name: Record pre-reveal provenance
+        run: |
+          set -euo pipefail
+          sha256sum \
+            orbittrace_blind_catalogue/AUDIT_PROTOCOL.md \
+            orbittrace_blind_catalogue/EXECUTION_PROTOCOL.md \
+            orbittrace_blind_catalogue/run_blind_scan.py.gz.b64 \
+            orbittrace_blind_catalogue/reveal_orbittrace.py.gz.b64 \
+            orbittrace_blind_catalogue/requirements.txt \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part*.b64 \
+            > blind_output/source_and_protocol_sha256.txt
+          python --version > blind_output/python_version.txt
+          python -m pip freeze > blind_output/environment.txt
+          cat blind_output/blind_scan.sha256
+      - name: Upload immutable pre-reveal scan
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-blind-scan-pre-reveal
+          path: blind_output
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retrieve canonical evidence only after blind freeze
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" \
+            -o input/orbittrace-canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/orbittrace-canonical.zip" | sha256sum -c -
+      - name: Reveal OrbitTrace identity against frozen ranking
+        run: |
+          set -euo pipefail
+          python /tmp/orbittrace-blind/reveal_orbittrace.py \
+            --blind-scan blind_output/blind_scan.json \
+            --blind-sha256 blind_output/blind_scan.sha256 \
+            --catalogue-ids blind_output/catalogue_ids.txt.gz \
+            --canonical-zip input/orbittrace-canonical.zip \
+            --output reveal_output
+          cat reveal_output/ORBITTRACE_BLIND_REVEAL.md
+      - name: Record final provenance
+        if: always()
+        run: |
+          mkdir -p reveal_output
+          sha256sum blind_output/blind_scan.json blind_output/blind_scan.sha256 \
+            input/orbittrace-canonical.zip \
+            orbittrace_blind_catalogue/reveal_orbittrace.py.gz.b64 \
+            > reveal_output/final_input_sha256.txt 2>/dev/null || true
+      - name: Upload blind catalogue result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-blind-catalogue-result
+          path: |
+            blind_output/BLIND_SCAN.md
+            blind_output/blind_scan.json
+            blind_output/blind_scan.sha256
+            blind_output/source_and_protocol_sha256.txt
+            reveal_output
+          if-no-files-found: error
+          retention-days: 90

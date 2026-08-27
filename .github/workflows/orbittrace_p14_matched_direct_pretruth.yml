@@ -1,0 +1,50 @@
+name: OrbitTrace P14 direct matched pretruth checkpoints
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p14-matched-literature-freeze
+    paths:
+      - orbittrace_support_safe_rank_p14/LAUNCH_PRETRUTH.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p14-matched-pretruth
+  cancel-in-progress: false
+
+jobs:
+  pretruth:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Generate direct shell and freeze both P14 checkpoints only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          cp orbittrace_support_safe_rank_p14/run_matched_pretruth_direct_v1.sh /tmp/run_p14_direct.sh
+          chmod +x /tmp/run_p14_direct.sh
+          /tmp/run_p14_direct.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p14-matched-direct-pretruth-checkpoints
+          path: pretruth
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,125 @@
+name: OrbitTrace P21 singleton-anchor source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p21_singleton_anchor_recurrence/P21_PROTOCOL.md
+      - orbittrace_p21_singleton_anchor_recurrence/run_development.py
+      - .github/workflows/orbittrace_p21_singleton_anchor_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove exact P21 singleton science freeze and target firewall
+        run: |
+          set -euo pipefail
+          s=orbittrace_p21_singleton_anchor_recurrence/run_development.py
+          p=orbittrace_p21_singleton_anchor_recurrence/P21_PROTOCOL.md
+          test "$(git hash-object "$s")" = 'a1a89caf4641320b24ae14043bf2d47b87a2455d'
+          test "$(git hash-object "$p")" = '3714675d87bbc9d3fc964d667f91fe9edca17a3c'
+          test ! -e orbittrace_p21_singleton_anchor_recurrence/RUN.md
+          python -m py_compile "$s"
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          s=Path('orbittrace_p21_singleton_anchor_recurrence/run_development.py').read_text()
+          tree=ast.parse(s)
+          defs={n.name:n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef)}
+          for name in ('scan_year_with_singletons','nearest_other_year','hard_family_covers_pair','build_p21_families','main'):
+              assert name in defs, name
+          scan=ast.get_source_segment(s,defs['scan_year_with_singletons'])
+          near=ast.get_source_segment(s,defs['nearest_other_year'])
+          cover=ast.get_source_segment(s,defs['hard_family_covers_pair'])
+          build=ast.get_source_segment(s,defs['build_p21_families'])
+          main=ast.get_source_segment(s,defs['main'])
+
+          for x in (
+              'YEARS = (2022, 2023)',
+              'BLIND = (20.0, 55.0)',
+              'LINK_RADIUS = 1.5',
+              'FIRST_SHORTLIST = 64',
+              'AUDIT_SHORTLIST = 128',
+              'RETAINED_MIN_ANCHOR_COUNT = 2',
+              'SINGLETON_ANCHOR_COUNT = 1',
+              'PER_BIN_CAP = 512',
+              'EXPECTED_V8_FAMILIES = 226',
+              'EXPECTED_V8_RESULT_SHA256 = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"',
+          ):
+              assert x in s, x
+
+          # Below-gate proposal generation and all cross-year construction are label-free.
+          for segment in (scan,near,cover,build):
+              assert 'hidden_labels' not in segment
+          assert 'local_dedup' in scan
+          assert 'int(r["anchor_count"]) == SINGLETON_ANCHOR_COUNT' in scan
+          assert 'retained_event_ids' in scan
+          assert 'if any(eid in retained_event_ids for eid in ids)' in scan
+          assert 'eligible = eligible[:PER_BIN_CAP]' in scan
+          assert 'd > LINK_RADIUS' in near
+          assert 'd22 <= LINK_RADIUS and d23 <= LINK_RADIUS' in cover
+          assert 'if m23.get(q23_id) != q22_id' in build
+          assert 'if covered:' in build
+          assert 'len(event_ids) == 8' in build
+          assert '"membership_expansion": False' in build
+          assert '"recursion": False' in build
+          assert '"new_scientific_radius": False' in build
+          assert 'cross_year_distance_then_min_quartet_score_then_stable_id' in build
+
+          # Exact v8 backbone is rebuilt before P21.
+          assert 'support.build_families(components, base)' in main
+          assert 'repair_year_centroids' in main
+          assert 'mult.score_families' in main
+          assert 'hard_multiplicity = mult.rank_scored' in main
+          assert 'p21_order = hard_multiplicity +' in main
+          assert 'p21_order[:len(hard_multiplicity)] == hard_multiplicity' in main
+
+          # Complete candidate payload is frozen before first truth evaluation.
+          assert 'prelabel_sha = sha256_json(prelabel_payload)' in main
+          assert main.index('prelabel_sha = sha256_json(prelabel_payload)') < main.index('baseline = mult.evaluate_order(hidden_labels')
+
+          for x in (
+              '"parameter_search": False', '"threshold_search": False',
+              '"radius_search": False', '"cap_search": False',
+              '"variant_search": False', '"no_target_information_access": True',
+          ):
+              assert x in main, x
+
+          imported=set()
+          for node in ast.walk(tree):
+              if isinstance(node,ast.Import):
+                  imported.update(a.name.split('.')[0] for a in node.names)
+              elif isinstance(node,ast.ImportFrom) and node.module:
+                  imported.add(node.module.split('.')[0])
+          assert not (imported & {'requests','urllib','httpx','h5py','pandas','subprocess'}), imported
+          for x in (
+              'F0059','247.17','-14.34','37.62','OrbitTrace-April','target_coordinate',
+              '013a.zip','014a.zip','SNMv3/013','SNMv3/014','zenodo.org','kep_collect.h5',
+              'matched_2023','matched_2025','P18_MATCHED_TRUTH',
+          ):
+              assert x not in s, x
+          print('PASS_P21_EXACT_SINGLETON_ANCHOR_GATE')
+          print('PASS_P21_RETAINED_EVENT_EXCLUSION')
+          print('PASS_P21_MUTUAL_RECURRENCE_AND_HARD_NOVELTY')
+          print('PASS_P21_PRELABEL_HASH_FIREWALL')
+          print('PASS_P21_NO_EXTERNAL_OR_TARGET_IO')
+          PY
+          grep -F 'while the exact P20 one-shot development run is still in progress' "$p"
+          grep -F 'A P20 PASS leaves P21 unexecuted.' "$p"
+          grep -F 'anchor_count == 1' "$p"
+          grep -F '512 singleton proposals per bin' "$p"
+          grep -F 'Hard-family novelty veto' "$p"
+          grep -F 'PASS_P21_SINGLETON_ANCHOR_RECURRENCE_DEVELOPMENT' "$p"
+          echo PASS_P21_SINGLETON_ANCHOR_SOURCE_FREEZE
+          echo SONOTACO_2013_2014_AND_MAARSY_VALUES_UNOPENED
+          echo TARGET_REGION_UNAVAILABLE

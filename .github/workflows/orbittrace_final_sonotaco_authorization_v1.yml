@@ -1,0 +1,52 @@
+name: OrbitTrace final SonotaCo authorization v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_execution_v1/final_test_authorization_manifest_v1.json'
+      - '.github/workflows/orbittrace_final_sonotaco_authorization_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify no final-test or target data surface
+        run: |
+          set -euo pipefail
+          test -f orbittrace_final_sonotaco_execution_v1/final_test_authorization_manifest_v1.json
+          test -f orbittrace_final_sonotaco_execution_v1/authorize_final_test_v1.py
+          if grep -Eiq 'OrbitTrace-April|target_ra|target_dec|target_member|013a\.zip|014a\.zip|requests\.|urllib|curl |wget ' orbittrace_final_sonotaco_execution_v1/final_test_authorization_manifest_v1.json; then
+            echo 'forbidden final-data/target surface in authorization manifest' >&2
+            exit 1
+          fi
+      - name: Run frozen authorization adjudicator
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python orbittrace_final_sonotaco_execution_v1/authorize_final_test_v1.py \
+            --manifest orbittrace_final_sonotaco_execution_v1/final_test_authorization_manifest_v1.json \
+            --output output/final_sonotaco_authorization_v1.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('output/final_sonotaco_authorization_v1.json').read_text())
+          assert p['state']=='AUTHORIZED_FINAL_SONOTACO_2013_2014_EXECUTION', p
+          assert p['sonotaco_2013_2014_scientific_access_authorized'] is True
+          assert p['maarsy_scientific_access_authorized'] is False
+          assert p['target_access_authorized'] is False
+          print('PASS_FINAL_SONOTACO_2013_2014_AUTHORIZATION')
+          print('SONOTACO_ONLY_MAARSY_FALSE_TARGET_FALSE')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-authorization-v1
+          path: output/final_sonotaco_authorization_v1.json
+          if-no-files-found: error
+          retention-days: 90

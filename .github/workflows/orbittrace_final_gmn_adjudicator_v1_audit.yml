@@ -1,0 +1,56 @@
+name: OrbitTrace final GMN adjudicator v1 synthetic audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_urc_final_gmn_selection/ADJUDICATOR_V1.md'
+      - 'orbittrace_urc_final_gmn_selection/adjudicate_v1.py'
+      - 'orbittrace_urc_final_gmn_selection/test_adjudicate_v1.py'
+      - '.github/workflows/orbittrace_final_gmn_adjudicator_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and run synthetic state tests
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_urc_final_gmn_selection/adjudicate_v1.py orbittrace_urc_final_gmn_selection/test_adjudicate_v1.py
+          python orbittrace_urc_final_gmn_selection/test_adjudicate_v1.py
+      - name: Prove no data transport or target surface
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast, pathlib
+          p=pathlib.Path('orbittrace_urc_final_gmn_selection/adjudicate_v1.py')
+          tree=ast.parse(p.read_text()); imports=set()
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports.update(x.name.split('.')[0] for x in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module: imports.add(n.module.split('.')[0])
+          assert not imports.intersection({'requests','urllib','http','socket','subprocess','gmn_python_api'}), imports
+          low=p.read_text().lower()
+          for x in ('orbittrace-april','target_ra','target_dec','target_member'):
+              assert x not in low
+          print('PASS_FINAL_GMN_ADJUDICATOR_NO_TRANSPORT_NO_TARGET_SURFACE')
+          PY
+      - name: Record source hashes
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum orbittrace_urc_final_gmn_selection/ADJUDICATOR_V1.md orbittrace_urc_final_gmn_selection/adjudicate_v1.py orbittrace_urc_final_gmn_selection/test_adjudicate_v1.py > output/source_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-gmn-adjudicator-v1-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

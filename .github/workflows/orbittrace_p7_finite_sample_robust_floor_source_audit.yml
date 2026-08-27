@@ -1,0 +1,139 @@
+name: OrbitTrace P7 finite-sample robust floor source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p6-same-model-crossfit-freeze
+    paths:
+      - orbittrace_finite_sample_robust_floor_p7/**
+      - .github/workflows/orbittrace_p7_finite_sample_robust_floor_source_audit.yml
+      - .github/workflows/orbittrace_p7_finite_sample_robust_floor_development.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact P6 and audit finite-sample P7 transform
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py \
+            /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py \
+            /tmp/run_p3.py /tmp/run_p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/run_p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py \
+            /tmp/run_p4.py /tmp/run_p5.py
+          echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/run_p5.py' | sha256sum -c -
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py \
+            /tmp/run_p5.py /tmp/run_p6.py
+          echo 'd32648136b58e2f777912d6403d9de3cbd091a8c23e16aedcda0b146f09f38c2  /tmp/run_p6.py' | sha256sum -c -
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py \
+            /tmp/run_p6.py /tmp/run_p7.py
+          expected_p7="$(tr -d '[:space:]' < orbittrace_finite_sample_robust_floor_p7/SOURCE_SHA256)"
+          test "$expected_p7" = '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54'
+          echo "$expected_p7  /tmp/run_p7.py" | sha256sum -c -
+          python -m py_compile /tmp/run_p7.py orbittrace_finite_sample_robust_floor_p7/run_header_compatible.py
+
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/run_p7.py').read_text()
+          protocol=Path('orbittrace_finite_sample_robust_floor_p7/PROTOCOL.md').read_text()
+          wrapper=Path('orbittrace_finite_sample_robust_floor_p7/run_header_compatible.py').read_text()
+          workflow=Path('.github/workflows/orbittrace_p7_finite_sample_robust_floor_development.yml').read_text()
+          required=(
+              'P7_ROBUST_FLOOR_MIN_SEEDS = 19',
+              'membership_floor_rank = 2 if len(sorted_seed_probabilities) >= P7_ROBUST_FLOOR_MIN_SEEDS else 1',
+              'membership_floor = float(sorted_seed_probabilities[membership_floor_rank - 1])',
+              'membership_floor_allowed = probabilities >= float(gate["membership_floor"])',
+              'allowed = membership_floor_allowed & jointly_supported',
+              '"membership_floor": float(gate["membership_floor"])',
+              'p7_exact_robust_floor_min_seeds',
+              'p7_sparse_directions_keep_inherited_minimum_floor',
+              'p7_supported_directions_use_second_order_statistic',
+              'p7_every_surviving_proposal_meets_membership_floor',
+              'p7_no_p6_unreliable_direction_can_propose',
+              'PASS_FINITE_SAMPLE_ROBUST_FLOOR_MEMBERSHIP_P7_DEVELOPMENT',
+              'FAIL_FINITE_SAMPLE_ROBUST_FLOOR_MEMBERSHIP_P7_NO_GO',
+              '"p7_parameter_search": False',
+              'finite_sample_robust_floor_membership_p7_development.json',
+              'p7_membership_pretruth.sha256',
+              'p7_decisions_pretruth.sha256',
+          )
+          for token in required:
+              assert token in p, token
+          inherited=(
+              'P3_FOLD_COUNT = 5',
+              'P3_NEGATIVE_TAIL_MAX = 0.10',
+              'P3_SEED_FLOOR_MIN = 0.5',
+              'RESPONSIBILITY_THRESHOLD = 0.5',
+              'p4_two_view_seed_envelope',
+              'p5_joint_seed_support',
+              'scoring_scaler, scoring_classifier = crossfit_runtime_models[scoring_fold]',
+              'probabilities = scoring_classifier.predict_proba(scoring_scaler.transform(features))[:, 1]',
+              'new_members_can_seed_growth',
+              'ranking_after_membership',
+          )
+          for token in inherited:
+              assert token in p, token
+          protocol_required=(
+              '50/439 reliable directions',
+              'approximately 68.51% of P6 additions',
+              '2/(n+1) <= 0.10',
+              'n >= 19',
+              'qualified known-shower matches >=95',
+              'Sparse-stream superiority against both Sugar and HDBSCAN',
+              'There is exactly one primary P7 configuration',
+          )
+          for token in protocol_required:
+              assert token in protocol, token
+          wrapper_required=(
+              "EXPECTED_P7_SOURCE = Path('/tmp/run_p7.py')",
+              "spec_from_file_location('orbittrace_p7_runtime', EXPECTED_P7_SOURCE)",
+              'module.exact_header_positions = compatible_exact_header_positions',
+              'PASS_P7_HEADER_WHITESPACE_COMPAT_SELF_TEST',
+          )
+          for token in wrapper_required:
+              assert token in wrapper, token
+          workflow_required=(
+              'EXECUTE_P7_AFTER_AUTHORITATIVE_P6_SCIENTIFIC_NO_GO',
+              '31294809555',
+              '9032829183',
+              '619d69f2c08cda4520610b8248f0ecede4a3d3e92a65e5c1d97a00ed1d05bec8',
+              '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54',
+              'orbittrace_finite_sample_robust_floor_p7/run_header_compatible.py',
+              'FINITE_SAMPLE_ROBUST_FLOOR_MEMBERSHIP_P7_DEVELOPMENT.md',
+              'p7_second_order_statistic_reliable_directions',
+              'orbittrace-finite-sample-robust-floor-membership-p7-development',
+          )
+          for token in workflow_required:
+              assert token in workflow, token
+          forbidden=('OrbitTrace-April','target_coordinate')
+          for token in forbidden:
+              assert token not in p, token
+              assert token not in workflow, token
+          # P7 must not revert the P6 same-model correction.
+          assert 'probabilities = classifier.predict_proba(scaler.transform(features))[:, 1]' not in p
+          # P7 leaves inherited P3 reliability at the original minimum seed floor.
+          assert 'negative_tail = float(np.mean(pn >= seed_floor))' in p
+          assert '"reliable": bool(len(xp) >= 4 and seed_floor > P3_SEED_FLOOR_MIN and negative_tail <= P3_NEGATIVE_TAIL_MAX)' in p
+          print('PASS_P7_FINITE_SAMPLE_ROBUST_FLOOR_FULL_FREEZE_AUDIT')
+          PY
+          sha256sum /tmp/run_p7.py orbittrace_finite_sample_robust_floor_p7/PROTOCOL.md orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py orbittrace_finite_sample_robust_floor_p7/run_header_compatible.py orbittrace_finite_sample_robust_floor_p7/SOURCE_SHA256 .github/workflows/orbittrace_p7_finite_sample_robust_floor_development.yml
+
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_finite_sample_robust_floor_p7/RUN.md
+          test ! -e target
+          echo NO_P7_TRUTH_EXECUTION_NO_TARGET_ACCESS

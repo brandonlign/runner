@@ -1,0 +1,70 @@
+name: OrbitTrace P15 matched evaluator source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p14-matched-literature-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py
+      - orbittrace_support_safe_halo_p15/finalize_p15_matched_result.py
+      - .github/workflows/orbittrace_p15_matched_evaluator_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove P15 evaluator layer changes provenance/availability only
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py)" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py)" = 'd1ce98f443b2039d70421e76dadb6ada77d1b0d5'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/prepare_transport_compatible_p13_finalizer.py)" = 'ee932b83ad63d10fb81c5b8c85bb151c4467f8f7'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/validate_transport_v3_pretruth_checkpoint.py)" = '92c47a977645dbe02ac3fab859b52ac146fff0cc'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py)" = '1e9160c7beb5bc7651dc2b9f03db6211bc639ac6'
+          python -m py_compile orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py orbittrace_support_safe_halo_p15/finalize_p15_matched_result.py
+          python - <<'PY'
+          from pathlib import Path
+          v=Path('orbittrace_support_safe_halo_p15/validate_p15_pretruth_checkpoints.py').read_text()
+          f=Path('orbittrace_support_safe_halo_p15/finalize_p15_matched_result.py').read_text()
+          for x in (
+              '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6',
+              'P15_SUPPORT_SAFE_SECONDARY_HALO_AVAILABILITY',
+              'p15_halo_availability_frozen_before_truth',
+              'p15_unavailable_directions',
+              'p15_availability_sha256',
+              'p15_no_padding_resampling_or_relaxation',
+              'competitor_cluster_values_accessed',
+              'known_shower_truth_accessed',
+          ): assert x in v,x
+          for x in (
+              'PASS_P14_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS',
+              'FAIL_P14_MATCHED_SPARSE_SUPERIORITY_NO_GO',
+              'PASS_P15_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS',
+              'FAIL_P15_MATCHED_SPARSE_SUPERIORITY_NO_GO',
+              'sparse_superiority_required_against_both_comparators_in_both_years',
+              'pairwise_only_no_cross_denominator_comparison',
+              'broad_only_does_not_authorize_external',
+              'target_access_authorized',
+              'p15_pretruth_availability',
+          ): assert x in f,x
+          # P15 wrappers may not introduce new metric thresholds, pairwise gates,
+          # comparator selection, or target-specific discovery logic.
+          forbidden=(
+              'four_to_nine_gain_ge_0_10 =',
+              'four_to_twentyfour_gain_ge_0_10 =',
+              'macro_f1_not_more_than_0_10_lower =',
+              'retain_at_least_80pct_f1_gt_0_5_count =',
+              'OrbitTrace-April','target_coordinate','nearest_neighbor','d_criterion',
+          )
+          for x in forbidden: assert x not in v+f,x
+          assert "out['external_validation_authorized']=passed" in f
+          assert "out['target_access_authorized']=False" in f
+          print('PASS_P15_MATCHED_EVALUATOR_PROVENANCE_ONLY_SOURCE_AUDIT')
+          PY
+          echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS
