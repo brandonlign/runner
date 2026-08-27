@@ -1,0 +1,162 @@
+name: OrbitTrace Sugar fairness recalibration v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-sugar-fairness-recalibration-v1-pr
+    paths:
+      - 'orbittrace_sugar_fairness_recalibration_v1/**'
+      - '.github/workflows/orbittrace_sugar_fairness_recalibration_v1.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'orbittrace_sugar_fairness_recalibration_v1/**'
+      - '.github/workflows/orbittrace_sugar_fairness_recalibration_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  calibrated-sugar-panel:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - eval_year: 2013
+            percentile: '38.63636363636363'
+          - eval_year: 2014
+            percentile: '40.36377293701041'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m py_compile orbittrace_sugar_fairness_recalibration_v1/run_benchmark.py
+          mkdir -p input/rows input/sources input/recurrent input/truth output/${{ matrix.eval_year }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-comparator-source-export-v1
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31346168826
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/recurrent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+
+      - name: Build calibrated Sugar catalogue before evaluation-year truth
+        run: |
+          set -euo pipefail
+          test -f input/sources/sugar_uncertainty_core.py
+          test -f input/recurrent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json
+          test "$(sha256sum input/sources/sugar_uncertainty_core.py | cut -d' ' -f1)" = \
+            '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb'
+          python -u orbittrace_sugar_fairness_recalibration_v1/run_benchmark.py pretruth \
+            --eval-year ${{ matrix.eval_year }} \
+            --percentile ${{ matrix.percentile }} \
+            --clones 1000 \
+            --rows-root input/rows \
+            --sugar-source input/sources/sugar_uncertainty_core.py \
+            --recurrent input/recurrent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --output output/${{ matrix.eval_year }}
+          sha256sum output/${{ matrix.eval_year }}/PRETRUTH_${{ matrix.eval_year }}.json \
+            > output/${{ matrix.eval_year }}/PRETRUTH_SHA256.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+
+      - name: Evaluate fixed-capacity fairness panel
+        run: |
+          set -euo pipefail
+          python -u orbittrace_sugar_fairness_recalibration_v1/run_benchmark.py evaluate \
+            --pretruth output/${{ matrix.eval_year }}/PRETRUTH_${{ matrix.eval_year }}.json \
+            --truth-root input/truth \
+            --output output/${{ matrix.eval_year }}
+          cat output/${{ matrix.eval_year }}/RESULT_${{ matrix.eval_year }}.json
+
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/${{ matrix.eval_year }}/execution_commit.txt
+          sha256sum orbittrace_sugar_fairness_recalibration_v1/PROTOCOL.md \
+            orbittrace_sugar_fairness_recalibration_v1/run_benchmark.py \
+            > output/${{ matrix.eval_year }}/source_sha256.txt
+          python --version > output/${{ matrix.eval_year }}/python_version.txt
+          python -m pip freeze > output/${{ matrix.eval_year }}/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-sugar-fairness-panel-${{ matrix.eval_year }}
+          path: output/${{ matrix.eval_year }}
+          if-no-files-found: error
+          retention-days: 90
+
+  summarize:
+    needs: calibrated-sugar-panel
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install evaluator runtime
+        run: python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-sugar-fairness-panel-*
+          path: input/results
+          merge-multiple: true
+      - name: Produce joint verdict
+        run: |
+          set -euo pipefail
+          mkdir -p output/summary
+          python orbittrace_sugar_fairness_recalibration_v1/run_benchmark.py summarize \
+            --results-root input/results \
+            --output output/summary
+          cat output/summary/SUMMARY.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-sugar-fairness-summary-v1
+          path: output/summary
+          if-no-files-found: error
+          retention-days: 90
