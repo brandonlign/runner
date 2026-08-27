@@ -1,0 +1,127 @@
+name: OrbitTrace v15 canonical GMN implementation equivalence v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_v15_canonical_equivalence_v1/**'
+      - '.github/workflows/orbittrace_v15_canonical_gmn_equivalence_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  PYTHONPATH: .:frozen-v5/orbittrace_wavelet_catalogue_v3:frozen-v5/orbittrace_sparse_support_multiplicity_v5:input/v3
+
+jobs:
+  equivalence:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v5/ghoststream_fixed4_application/requirements.txt
+      - name: Verify frozen source identities before repeated GMN development access
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-v5 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
+          test "$(git -C frozen-v5 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout_loader_corrected.py)" = 'c6dadb21009a8859b9376b490590f26ff8df46a6'
+          test "$(git -C frozen-v5 hash-object orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py)" = '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8'
+          test "$(git hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '674eaec2acd8bf908bde797243c9414f0fa9559d'
+          python -m py_compile \
+            orbittrace_v15_canonical_events_v1/canonical.py \
+            orbittrace_v15_canonical_application_v1/application.py \
+            orbittrace_v15_canonical_equivalence_v1/verify_gmn.py
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_v15_canonical_equivalence_v1/verify_gmn.py').read_text()
+          for token in (
+              'EXPECTED_FAMILY_COUNT = 92',
+              '486690de951d63a40e0c1682531a0a8d0ba3fcd17f1b026c6c3b2b8559350a7a',
+              '37d7617ba00998611bdb4709cde25df538ddab4cdaef74f37b8ac2a83fa8ac13',
+              '56ed642de5edea87523244440d560ee0d2fecdcada46a120ab31314a6ce4cb04',
+              'ee6b5313c9beeea8fc584a307e5b0b93d37f00fc823295eb899eb87bf667492f',
+              'b080d8d6407823091f937a5701047922455d70f729402f15aad14515ac14084f',
+              '_hidden_labels_never_read',
+              'external_data_access": False',
+          ):
+              assert token in p, token
+          assert 'sonotaco' not in p.lower().split('summary = {')[0]
+          assert 'maarsy' not in p.lower().split('summary = {')[0]
+          print('PASS_CANONICAL_GMN_EQUIVALENCE_PREACCESS_SOURCE_GUARD')
+          PY
+      - name: Install exact inherited runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v5/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Restore exact multi-anchor and catalogue runtime
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/support_audit input/factorization output
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          python frozen-v5/orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          rm -f output/development_source_sha256.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-multiplicity-v5-source-audit
+          path: input/support_audit
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31195349735
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v3-factorization-diagnostic
+          path: input/factorization
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31193870638
+      - name: Execute exact canonical-format GMN equivalence
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v15_canonical_equivalence_v1/verify_gmn.py \
+            --support-source-parts frozen-v5/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v5/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v5/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v5/mondrian_clique_development/source_parts_v2 \
+            --source-audit-json input/support_audit/support_source_audit.json \
+            --factorization-json input/factorization/v3_factorization_diagnostic.json \
+            --output output/equivalence
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('output/equivalence/equivalence.json').read_text())
+          assert d['verdict']=='PASS_V15_CANONICAL_GMN_IMPLEMENTATION_EQUIVALENCE'
+          assert d['family_count']==92
+          assert d['hidden_label_mapping_read'] is False
+          assert d['external_data_access'] is False
+          assert d['target_information_access'] is False
+          print('PASS_EXACT_CANONICAL_GMN_V15_EQUIVALENCE_GATE')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v15-canonical-gmn-equivalence-v1
+          path: output/equivalence
+          if-no-files-found: warn
+          retention-days: 90

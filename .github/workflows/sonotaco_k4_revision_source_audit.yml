@@ -1,0 +1,78 @@
+name: SonotaCo k4 revision source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2025-mondrian-development
+    paths:
+      - .github/workflows/sonotaco_k4_revision_source_audit.yml
+      - sonotaco_k4_revision/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decode-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-k4-revision-source-audit-v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decode and verify exact sources
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          def decode(parts, output, expected):
+              encoded = ''.join(''.join(Path(p).read_text().split()) for p in parts)
+              raw = gzip.decompress(base64.b64decode(encoded, validate=True))
+              digest = hashlib.sha256(raw).hexdigest()
+              if digest != expected:
+                  raise RuntimeError(f'{output}: expected {expected}, observed {digest}')
+              Path(output).write_bytes(raw)
+              print(output, len(raw), digest)
+
+          decode(
+              ['sonotaco_mondrian_development/source_parts/part00.b64'],
+              'output/run_sonotaco_mondrian_development.py',
+              '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518',
+          )
+          decode(
+              [str(p) for p in sorted(Path('mondrian_clique_development/source_parts_v2').glob('part*.b64'))],
+              'output/run_mondrian_clique_development.py',
+              'f1c121e97a660a3820a11814c4325eb3ab33d34a031e83bdfb03b4b392e259b8',
+          )
+          decode(
+              ['real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64'],
+              'output/run_baseline_ceiling.py',
+              '7718ac5229475f4240305ad9c1e073c49702c771df36612d9be5baa877b46a50',
+          )
+          PY
+          python -m py_compile output/*.py
+          sha256sum output/*.py sonotaco_k4_revision/SOURCE_AUDIT_PROTOCOL.md > output/source_sha256.txt
+      - name: Record source audit result
+        run: |
+          cat > output/SOURCE_AUDIT_RESULT.md <<'EOF'
+          # SonotaCo k=4 revision source audit result
+
+          All three exact sources decoded, matched their frozen SHA-256 values, and compiled. No meteor archive or prior result artifact was downloaded, and no detector or score was executed.
+
+          Verdict: `PASS_SONOTACO_K4_REVISION_SOURCE_AUDIT`.
+          EOF
+      - name: Upload exact audited sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-k4-revision-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

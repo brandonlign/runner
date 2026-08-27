@@ -1,0 +1,491 @@
+name: OrbitTrace v15 exposed matched SonotaCo literature benchmark v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+    paths:
+      - 'orbittrace_v15_sonotaco_matched_literature_v1/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  preflight:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact dormant execution parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+          fetch-depth: 0
+      - name: Require exact one-file execution child
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$HEAD_REF" "$BASE_REF"
+          mapfile -t changed < <(git diff --name-only "origin/$BASE_REF...origin/$HEAD_REF")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'orbittrace_v15_sonotaco_matched_literature_v1/RUN.md'
+          test "$(git show "origin/$HEAD_REF:orbittrace_v15_sonotaco_matched_literature_v1/RUN.md")" = 'EXECUTE_V15_EXPOSED_MATCHED_SONOTACO_LITERATURE_BENCHMARK_V1'
+          test "$(git hash-object orbittrace_v15_sonotaco_matched_literature_v1/run_candidate_pretruth.py)" = 'ee963149ff39d5fe9bbdbb776b339de6b5f0e404'
+          test "$(git hash-object orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py)" = '744bd2195c81ae8032564d5bd0b98560ad65fa7f'
+          test "$(git hash-object orbittrace_v15_sonotaco_matched_literature_v1/PROTOCOL.md)" = '39fd4693bc1631f4cbee926ce9425b2e0958895e'
+          test "$(git hash-object orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py)" = '150a3a476a2bf3aff6dc63d81052f855561a9dfc'
+          test "$(git hash-object orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py)" = '3f720bd754f18dd7600a292c7f3336f08658110a'
+          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          test "$(git hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '502ed92fcf362f324ee644a0fcb962f7cf8d7eef'
+          echo PASS_V15_MATCHED_BENCHMARK_ONE_FILE_GUARD
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require exact qualification and SonotaCo applicability PASS before benchmark input access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/qualification input/applicability output/preflight
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9066146284/zip" -o input/qualification.zip
+          echo 'f21de7957b9b94cffbf11845e3d0cad7e86ee2fa70ab0a1530659f36d9a7608d  input/qualification.zip' | sha256sum -c -
+          unzip -q input/qualification.zip -d input/qualification
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9066290529/zip" -o input/applicability.zip
+          echo 'f861febeb51ef06d8fdbba316d864fcc5bbfe32f7e36c4157cadf1b592ea2d54  input/applicability.zip' | sha256sum -c -
+          unzip -q input/applicability.zip -d input/applicability
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          q=json.loads(Path('input/qualification/qualification.json').read_text())
+          a=json.loads(Path('input/applicability/applicability.json').read_text())
+          assert q['verdict']=='PASS_V15_LABEL_FREE_V8_DEPLOYMENT_QUALIFICATION',q['verdict']
+          assert q['years']==[2022,2023]
+          assert q['family_count']==226
+          assert q['label_dependent_calibration_used'] is False
+          assert q['sonotaco_access'] is False and q['maarsy_event_access'] is False
+          assert q['target_information_access'] is False
+          assert all(q['direct_v8_identity_gates'].values())
+          assert all(q['v15_preservation_gates'].values())
+          assert a['verdict']=='PASS_V15_SONOTACO_2013_2014_ENGINEERING_APPLICABILITY',a['verdict']
+          assert a['years']==[2013,2014]
+          assert a['truth_mapping_accessed'] is False
+          assert a['comparator_output_accessed'] is False
+          assert a['maarsy_event_access'] is False and a['target_information_access'] is False
+          assert a['family_count']==25
+          gate={
+              'verdict':'PASS_V15_MATCHED_BENCHMARK_PREREQUISITES',
+              'qualification_run_id':31394545821,
+              'qualification_artifact_id':9066146284,
+              'applicability_run_id':31397586004,
+              'applicability_artifact_id':9066290529,
+              'qualification_pass':True,
+              'applicability_pass':True,
+              'sonotaco_truth_access':False,
+              'maarsy_event_access':False,
+              'target_information_access':False,
+          }
+          Path('output/preflight/gate.json').write_text(json.dumps(gate,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(gate,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-matched-benchmark-preflight-v1
+          path: output/preflight/gate.json
+          if-no-files-found: error
+          retention-days: 90
+
+  candidate:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        comparator: [sugar, hdbscan]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      PYTHONPATH: .:input/v3:frozen-v8:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8/orbittrace_sparse_support_multiplicity_v5
+    steps:
+      - name: Check out exact dormant execution parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-matched-benchmark-preflight-v1
+          path: input/gate
+      - name: Recheck prerequisite gate locally
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          g=json.loads(Path('input/gate/gate.json').read_text())
+          assert g['verdict']=='PASS_V15_MATCHED_BENCHMARK_PREREQUISITES'
+          assert g['qualification_pass'] is True and g['applicability_pass'] is True
+          assert g['sonotaco_truth_access'] is False and g['maarsy_event_access'] is False and g['target_information_access'] is False
+          PY
+      - name: Restore exact exposed matched rows and promoted-v8 runtime inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/prepare input/v3 input/v6 input/centroid output
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9050107352/zip" -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+
+          test "$(git -C frozen-v8 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
+          test "$(git -C frozen-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git -C frozen-v8 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
+          python frozen-v8/orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
+          echo 'a1faacf51e1f4ca2a3a92b20e27d1f07f00e1d32ab33993916379ff36acea062  input/centroid.zip' | sha256sum -c -
+          unzip -q input/centroid.zip -d input/centroid
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('input/prepare/label_free_preparation_manifest.json').read_text())
+          assert p['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert p['shower_truth_accessed'] is False and p['target_information_access'] is False and p['maarsy_scientific_access'] is False
+          v=json.loads(Path('input/v6/label_free_sparse_support_v6_development.json').read_text())
+          assert v['verdict']=='PASS_LABEL_FREE_SPARSE_SUPPORT_V6_DEVELOPMENT' and v['family_count']==226
+          c=json.loads(Path('input/centroid/component_centroid_source_audit.json').read_text())
+          assert c['verdict']=='PASS_COMPONENT_CENTROID_SOURCE_AUDIT'
+          assert c['catalogue_access'] is False and c['scientific_value_access'] is False and c['target_information_access'] is False
+          PY
+      - name: Freeze v15 output on exact comparator-matched pair before truth
+        run: |
+          set -euo pipefail
+          rm -rf output/candidate && mkdir -p output/candidate
+          python -u orbittrace_v15_sonotaco_matched_literature_v1/run_candidate_pretruth.py \
+            --comparator '${{ matrix.comparator }}' \
+            --rows-2013 'input/prepare/${{ matrix.comparator }}_2013.json' \
+            --rows-2014 'input/prepare/${{ matrix.comparator }}_2014.json' \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v6-result-json input/v6/label_free_sparse_support_v6_development.json \
+            --centroid-audit-json input/centroid/component_centroid_source_audit.json \
+            --output output/candidate
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('output/candidate/candidate_pretruth_summary.json').read_text())
+          assert s['verdict']=='PASS_FINAL_PRETRUTH_V15_OUTPUT_FREEZE'
+          assert s['truth_accessed'] is False and s['target_information_access'] is False
+          assert s['family_count']>0
+          print(json.dumps(s,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-matched-candidate-${{ matrix.comparator }}-v1
+          path: output/candidate
+          if-no-files-found: error
+          retention-days: 90
+
+  comparator:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        comparator: [sugar, hdbscan]
+        year: [2013, 2014]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - name: Check out exact dormant execution parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-matched-benchmark-preflight-v1
+          path: input/gate
+      - name: Recheck gate and restore exact matched rows/comparator sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          g=json.loads(Path('input/gate/gate.json').read_text())
+          assert g['verdict']=='PASS_V15_MATCHED_BENCHMARK_PREREQUISITES'
+          PY
+          mkdir -p input/prepare input/comparator-source output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9050107352/zip" -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9047392743/zip" -o input/comparator-source.zip
+          echo '8acb1986561d44194e2b7ebf5eb725a115eff5ba10b9b5d30a74f63a71a93fbc  input/comparator-source.zip' | sha256sum -c -
+          unzip -q input/comparator-source.zip -d input/comparator-source
+      - name: Install exact comparator dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python - <<'PY'
+          import numpy,scipy,sklearn
+          from importlib.metadata import version
+          assert numpy.__version__=='1.26.4'
+          assert scipy.__version__=='1.11.4'
+          assert sklearn.__version__=='1.4.2'
+          assert version('hdbscan')=='0.8.44'
+          PY
+      - name: Freeze exact literature comparator output before truth
+        run: |
+          set -euo pipefail
+          if [ '${{ matrix.comparator }}' = sugar ]; then source='input/comparator-source/sugar_uncertainty_core.py'; else source='input/comparator-source/hdbscan_2025_runner.py'; fi
+          python -u orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py \
+            --comparator '${{ matrix.comparator }}' \
+            --year '${{ matrix.year }}' \
+            --rows 'input/prepare/${{ matrix.comparator }}_${{ matrix.year }}.json' \
+            --source "$source" \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('output/comparator_pretruth_summary.json').read_text())
+          assert s['verdict']=='PASS_FINAL_PRETRUTH_COMPARATOR_OUTPUT_FREEZE'
+          assert s['truth_accessed'] is False
+          print(json.dumps(s,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-matched-${{ matrix.comparator }}-${{ matrix.year }}-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  freeze:
+    needs: [candidate, comparator]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact dormant execution parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-candidate-sugar-v1, path: input/candidate-sugar}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-candidate-hdbscan-v1, path: input/candidate-hdbscan}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-sugar-2013-v1, path: input/sugar-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-sugar-2014-v1, path: input/sugar-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-hdbscan-2013-v1, path: input/hdbscan-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-hdbscan-2014-v1, path: input/hdbscan-2014}
+      - name: Restore exact matched rows and freeze every row/output/source hash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/prepare output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9050107352/zip" -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+          python -u orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py \
+            --prepare-dir input/prepare \
+            --candidate-sugar-dir input/candidate-sugar \
+            --candidate-hdbscan-dir input/candidate-hdbscan \
+            --comparator-sugar-2013-dir input/sugar-2013 \
+            --comparator-sugar-2014-dir input/sugar-2014 \
+            --comparator-hdbscan-2013-dir input/hdbscan-2013 \
+            --comparator-hdbscan-2014-dir input/hdbscan-2014 \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=json.loads(Path('output/pretruth_freeze_index.json').read_text())
+          assert f['verdict']=='PASS_FINAL_PRETRUTH_HASH_FREEZE'
+          assert f['truth_accessed'] is False and f['target_information_access'] is False
+          assert set(f['panels'])=={'sugar','hdbscan'}
+          assert all(set(v)=={'2013','2014'} for v in f['panels'].values())
+          print(json.dumps(f,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-matched-pretruth-freeze-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
+
+  truth_and_evaluate:
+    needs: freeze
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact dormant execution parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact frozen #854 numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1'
+          python - <<'PY'
+          import numpy,scipy
+          assert numpy.__version__=='2.1.3'
+          assert scipy.__version__=='1.14.1'
+          PY
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-candidate-sugar-v1, path: input/candidate-sugar}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-candidate-hdbscan-v1, path: input/candidate-hdbscan}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-sugar-2013-v1, path: input/sugar-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-sugar-2014-v1, path: input/sugar-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-hdbscan-2013-v1, path: input/hdbscan-2013}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-hdbscan-2014-v1, path: input/hdbscan-2014}
+      - uses: actions/download-artifact@v4
+        with: {name: orbittrace-v15-matched-pretruth-freeze-v1, path: input/freeze}
+      - uses: actions/download-artifact@v4
+        with:
+          name: real-shower-meta-data-audit
+          path: input/mapping
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 30855193522
+      - name: Restore exact exposed matched rows and identical frozen SonotaCo source bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/prepare input/archives input/csv output
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9050107352/zip" -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/013a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip'
+          curl --fail --location --retry 3 --retry-delay 2 -o input/archives/014a.zip 'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'
+          python - <<'PY'
+          import hashlib,io,json,zipfile
+          from pathlib import Path,PurePosixPath
+          frozen=json.loads(Path('input/prepare/source_integrity.json').read_text())
+          specs={2013:('input/archives/013a.zip','_U2_20130101_S.csv'),2014:('input/archives/014a.zip','_U2_20140101_S.csv')}
+          for year,(zpath,basename) in specs.items():
+              raw=Path(zpath).read_bytes(); expected=frozen['years'][str(year)]
+              assert hashlib.sha256(raw).hexdigest()==expected['archive_sha256']
+              with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                  matches=[n for n in z.namelist() if not n.endswith('/') and PurePosixPath(n).name==basename]
+                  assert matches==[expected['member_path']],(matches,expected['member_path'])
+                  data=z.read(matches[0])
+              assert hashlib.sha256(data).hexdigest()==expected['member_sha256']
+              Path(f'input/csv/{year}.csv').write_bytes(data)
+          print('PASS_IDENTICAL_EXPOSED_SONOTACO_SOURCE_REDOWNLOAD')
+          PY
+      - name: Verify exact mapping/evaluator identities
+        run: |
+          set -euo pipefail
+          mapfile -t audits < <(find input/mapping -type f -name audit.json)
+          test "${#audits[@]}" -eq 1
+          test "$(sha256sum "${audits[0]}" | cut -d' ' -f1)" = 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778'
+          cp "${audits[0]}" input/mapping_audit.json
+          base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > input/evaluator.py
+          test "$(sha256sum input/evaluator.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+      - name: Open truth only after every pretruth hash freeze and compute exact #854 verdict
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py \
+            --csv-2013 input/csv/2013.csv \
+            --csv-2014 input/csv/2014.csv \
+            --mapping-audit input/mapping_audit.json \
+            --evaluator-source input/evaluator.py \
+            --prepare-dir input/prepare \
+            --freeze-dir input/freeze \
+            --candidate-sugar-dir input/candidate-sugar \
+            --candidate-hdbscan-dir input/candidate-hdbscan \
+            --comparator-sugar-2013-dir input/sugar-2013 \
+            --comparator-sugar-2014-dir input/sugar-2014 \
+            --comparator-hdbscan-2013-dir input/hdbscan-2013 \
+            --comparator-hdbscan-2014-dir input/hdbscan-2014 \
+            --output output
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/V15_FINAL_LITERATURE_RESULT.json').read_text())
+          assert r['scientific_stage']=='V15_MATCHED_LITERATURE_TEST_SONOTACO_2013_2014'
+          assert r['final_candidate']=='OrbitTrace v15 label-free-v8 multiscale consensus'
+          assert r['verdict'] in {
+              'PASS_FINAL_BROAD_CATALOGUE_SUPERIORITY',
+              'PASS_FINAL_SPARSE_STREAM_SUPERIORITY',
+              'FAIL_FINAL_LITERATURE_SUPERIORITY',
+              'INVALID_FINAL_LITERATURE_TEST_INTEGRITY',
+          }
+          assert r['posttruth_method_mutation'] is False
+          assert r['maarsy_scientific_access'] is False and r['target_information_access'] is False
+          print('ORBITTRACE_V15_EXPOSED_MATCHED_LITERATURE_RESULT_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_V15_EXPOSED_MATCHED_LITERATURE_RESULT_END')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: output
+          if-no-files-found: warn
+          retention-days: 90

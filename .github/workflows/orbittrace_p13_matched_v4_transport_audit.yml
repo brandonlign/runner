@@ -1,0 +1,51 @@
+name: OrbitTrace P13 matched v4 transport source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-literature-freeze
+    paths:
+      - orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v4.sh
+      - .github/workflows/orbittrace_p13_matched_launcher_child_v4.yml
+      - .github/workflows/orbittrace_p13_matched_v4_transport_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit exact-artifact transport-only delta
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
+          bash -n orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v4.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v4.sh').read_text()
+          required={
+            '9012424187':'2a953a237d32abfed8cfef110689623ec47e9acc9ed15eddee23a39d358d1bd4',
+            '8955917326':'82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89',
+            '8957940764':'ea77c5111a7be51ff2bb45b16df934f7c808c695d08ac12003025de971df4fdf',
+            '8957263372':'9df4a48f4808180d534086e560e68ae56486f60171510207acd7bd6fedeebbc9',
+          }
+          for aid,zsha in required.items():
+              assert aid in p and zsha in p,(aid,zsha)
+          for sha in (
+            '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',
+            '8e7580c52e41e6996d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3',
+            '2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389',
+            '77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e'):
+              assert sha in p,sha
+          assert "src=src.replace(old_marker,new_marker,1)" in p
+          assert "src=src.replace(old_transport,new_transport,1)" in p
+          assert "v4 marker anchor count=" in p and "v4 transport anchor count=" in p
+          assert "LAUNCH_P13_MATCHED_TECHNICAL_RECOVERY_V4" in p
+          assert "31322983205" in p
+          assert "OrbitTrace-April" not in p and "target_coordinate" not in p
+          print('PASS_P13_V4_TRANSPORT_ONLY_SOURCE_AUDIT')
+          PY
+          test ! -e orbittrace_core_halo_p13_literature/LAUNCH_V4.md
+          echo NO_BENCHMARK_EXECUTION_NO_COMPARATOR_VALUES_NO_TARGET_ACCESS

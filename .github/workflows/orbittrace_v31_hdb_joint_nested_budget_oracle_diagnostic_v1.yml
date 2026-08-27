@@ -1,0 +1,130 @@
+name: OrbitTrace v31 HDB joint nested-budget oracle diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-hdb-joint-nested-budget-oracle-diagnostic-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: b1e257e9961c9240215a8ba2d64e1f7f8aa17a6e
+          path: frozen-v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin diagnostic source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'joblib==1.5.3' 'scikit-learn==1.5.2'
+          mkdir -p input/payload input/truth input/labelset output/diag
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/PROTOCOL.md)" = '8ea652f45a772760cb27743eebe52326fd067852'
+          test "$(git hash-object orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py)" = 'd2744036723bb8e66ee15a00dac8e940122d5700'
+          test "$(git -C frozen-v6 rev-parse HEAD)" = 'b1e257e9961c9240215a8ba2d64e1f7f8aa17a6e'
+          test "$(git -C frozen-v6 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
+          python -m py_compile orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py
+      - name: Restore immutable #950 pretruth memberships before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          python - <<'PY'
+          import json
+          f=json.load(open('input/payload/hdbscan/family_memberships.json'))
+          assert f['truth_accessed'] is False and len(f['families'])==229
+          print('PASS_JOINT_NESTED_ORACLE_IMMUTABLE_PRETRUTH_MEMBERSHIPS')
+          PY
+      - name: Restore authoritative #1053 label-set diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9086565923/zip' -o input/labelset.zip
+          echo 'e5eb4de0938320d0b82063ddf5cd4a682a1164110eef0b33deebdf2b61fbef1a  input/labelset.zip' | sha256sum -c -
+          unzip -q input/labelset.zip -d input/labelset
+          python - <<'PY'
+          import json
+          r=json.load(open('input/labelset/diag/V31_HDB_LABELSET_SUBSTITUTION_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_HDB_LABELSET_SUBSTITUTION_DIAGNOSTIC'
+          assert r['deployable_rank_selected'] is False and r['candidate_membership_changed'] is False
+          PY
+      - name: Load immutable exposed truth only after pretruth identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Solve minimum-correction joint nested oracle and exact evaluator
+        env:
+          PYTHONPATH: frozen-v6:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py \
+            --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth \
+            --labelset-result input/labelset/diag/V31_HDB_LABELSET_SUBSTITUTION_DIAGNOSTIC.json \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_HDB_JOINT_NESTED_BUDGET_ORACLE_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_HDB_JOINT_NESTED_BUDGET_ORACLE_DIAGNOSTIC'
+          assert r['scientific_role']=='POST_RESULT_TRUTH_AWARE_ORACLE_DIAGNOSTIC_FORMALIZING_ALREADY_OBSERVED_EXPLORATORY_RESULT'
+          assert r['independent_confirmation'] is False
+          assert r['candidate_universe_size']==229 and r['budgets']=={'2013':11,'2014':9}
+          assert r['joint_nested_can_clear_both_hdb_pair_gates'] is True
+          assert r['2013_top11']['pair_gate_pass'] is True and r['2014_top9']['pair_gate_pass'] is True
+          assert r['oracle_identities_promotable'] is False and r['deployable_rank_selected'] is False and r['successor_selected'] is False
+          for k in ('feature_search','model_search','rank_search','threshold_search','fusion_search','source_quota_selected','post_result_second_search'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/PROTOCOL.md orbittrace_v31_hdb_joint_nested_budget_oracle_diagnostic_v1/diagnose.py orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py input/labelset.zip > output/V31_HDB_JOINT_NESTED_BUDGET_ORACLE_SOURCE_SHA256.txt 2>/dev/null || true
+          git -C frozen-v6 rev-parse HEAD > output/frozen_v6_execution_commit.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-hdb-joint-nested-budget-oracle-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,225 @@
+name: OrbitTrace v45 Pareto-frontier component placement v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v45_pareto_frontier_component_placement_v1/**'
+      - '.github/workflows/orbittrace_v45_pareto_frontier_component_placement_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v45-pareto-frontier-component-placement-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c8882d6ac31fc8d21841f9710ccb85d5a3dbc349
+          path: frozen-v44
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and pin runtime and scientific sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/gate input/placement input/frontier input/truth output/pretruth output/result
+          test "$(git hash-object orbittrace_v45_pareto_frontier_component_placement_v1/PROTOCOL.md)" = 'fd2e73e84183eea9d22bad577a39d65b5cde1c3f'
+          test "$(git hash-object orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py)" = '2fff090ef8847f7f11d593cc1123cf7e54aed840'
+          test "$(git -C frozen-v44 rev-parse HEAD)" = 'c8882d6ac31fc8d21841f9710ccb85d5a3dbc349'
+          test "$(git -C frozen-v44 hash-object orbittrace_v44_joint_component_best_placement_v1/train_evaluate.py)" = 'fe58c85c0b2c65d64656c4e4622dcea455bdd58a'
+          test "$(git -C frozen-v44 hash-object orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py)" = 'ad76d79abb9eb0fe82d7d2a7869a446814e6e3a4'
+          test "$(git -C frozen-v44 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
+          python -m py_compile orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable #839 ranker
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+
+      - name: Restore immutable #950 payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route,n in (('sugar',267),('hdbscan',229)):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and f['truth_accessed'] is False
+              assert m['feature_dimension']==71 and len(m['family_ids'])==n
+              assert m['target_information_access'] is False
+              assert m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_V45_IMMUTABLE_PRETRUTH_PAYLOAD')
+          PY
+
+      - name: Reproduce exact graph/components before truth
+        env:
+          PYTHONPATH: frozen-v44/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v44:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan --output output/pretruth
+          echo '2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json' | sha256sum -c -
+          echo 'c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json' | sha256sum -c -
+
+      - name: Restore exact #1091 gate authorizer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088402091/zip' -o input/gate.zip
+          echo 'd1943f629964633f44e154252a225f7171c380674ae6e60e5fcbbd3f8b890dd7  input/gate.zip' | sha256sum -c -
+          unzip -p input/gate.zip diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json > input/gate/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json
+          echo '2edb949dbab2d7cbf6ed5e808e2a049116eb0934b25b356572463b615d730842  input/gate/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json' | sha256sum -c -
+
+      - name: Restore exact #1113 component-priority authorizer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088994714/zip' -o input/placement.zip
+          echo '5bddfbe4abda60006757561d4c6477102317e02f5fb9555330e0b62eaf3353df  input/placement.zip' | sha256sum -c -
+          unzip -p input/placement.zip diag/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json > input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json
+          echo '939f4288a5f0d2de84ef566bb93713da664230deb65777c422795c93fba10c6d  input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json' | sha256sum -c -
+
+      - name: Restore exact #1126 frozen frontier vector and authorizer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9089357860/zip' -o input/frontier.zip
+          echo 'ce055dc38f5f56d82e6330590fa30becaf6896ab4323de7e1d4abf4644e97a9a  input/frontier.zip' | sha256sum -c -
+          unzip -p input/frontier.zip freeze/V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR.json > input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR.json
+          unzip -p input/frontier.zip diag/V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC.json > input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC.json
+          echo '5ca5cab6f6a47c05d013237190ad21b247a13e22fa06988ee36dc0832a37fc02  input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR.json' | sha256sum -c -
+          echo 'c114464d7798d7b765d365f2e3979c35128794173ccc712b120d5955361db6e1  input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          v=json.load(open('input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR.json'))
+          r=json.load(open('input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC.json'))
+          assert v['verdict']=='PASS_V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR_FREEZE'
+          assert v['scientific_role']=='FIXED_60_JOINT_FAMILY_PARETO_FRONTIER_FROZEN_BEFORE_OUTCOME_TRUTH_OR_1113_AUTHORIZATION'
+          assert v['canonical_sha256_without_self_field']=='8373f4946e7f84c7c3ee0ac51167881722d4f8b78c34383400f1967824df6798'
+          assert v['joint_family_count']==60 and 1 <= v['frontier_family_count'] < 60
+          assert r['verdict']=='PASS_V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC'
+          assert r['frontier_priority_supported_both_years_both_levels'] is True
+          print('PASS_V45_FRONTIER_PIN',v['frontier_family_count'])
+          PY
+
+      - name: Load immutable exposed truth only after all v45 rule inputs are pinned
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+
+      - name: Reproduce exact v31 and evaluate sole v45 order
+        env:
+          PYTHONPATH: frozen-v44/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v44:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py evaluate \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --graph-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
+            --component-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
+            --authorizing-diagnostic input/gate/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json \
+            --placement-diagnostic input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json \
+            --frontier-vector input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR.json \
+            --frontier-result input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC.json \
+            --output output/result
+
+      - name: Enforce v45 scientific/result firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_RESULT.json'))
+          assert r['verdict'] in {'PASS_V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT','FAIL_V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT'}
+          assert r['parent_v31_reproduction_pass'] is True and len(r['parent_v31_controls'])==4
+          assert r['pretruth_graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['pretruth_component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          assert r['frontier_source_run']==31459760333 and r['frontier_source_artifact']==9089357860
+          assert r['frontier_vector_sha256']=='5ca5cab6f6a47c05d013237190ad21b247a13e22fa06988ee36dc0832a37fc02'
+          assert r['frontier_vector_canonical_sha256']=='8373f4946e7f84c7c3ee0ac51167881722d4f8b78c34383400f1967824df6798'
+          assert r['joint_positive_candidate_count']==60 and 1 <= r['frontier_family_count'] < 60
+          assert r['sugar_rule']=='exact v31 unchanged'
+          assert r['order_diagnostics']['sugar']['exact_v31_unchanged'] is True
+          assert len(r['hdb_candidate_rows'])==229 and len(r['panels'])==4
+          for row in r['hdb_candidate_rows']:
+              ph=float(row['v31_percentile']); key=float(row['v45_placement_key'])
+              if row['pareto_frontier_record']:
+                  assert row['joint_gate'] is True
+                  assert abs(key-float(row['component_best_v31_percentile']))<1e-15
+              else:
+                  assert abs(key-ph)<1e-15
+          for k in ('frontier_cardinality_used_as_parameter','top_k_selected','threshold_search','quantile_search','rank_window_selected','budget_specific_rule','year_specific_rule','second_pareto_layer_evaluated','relaxed_dominance_evaluated','epsilon_dominance_evaluated','quality_rank_placement_used','quality_component_blend_search','promotion_coefficient_search','promotion_bonus_search','promotion_cap_search','alternate_component_statistic_search','component_size_search','q_calibration_search','graph_or_component_redefinition','candidate_generation_changed','candidate_membership_changed','feature_search','model_search','k_search','scaling_search','diversity_search','fusion_search','source_quota_selected','oracle_identity_used_for_ranking','truth_aware_group_identity_used_for_ranking','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'],r['panel_wins'],r['frontier_family_count'])
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v45_pareto_frontier_component_placement_v1/PROTOCOL.md orbittrace_v45_pareto_frontier_component_placement_v1/train_evaluate.py \
+            input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_VECTOR.json input/frontier/V31_JOINT_COMPONENT_PARETO_FRONTIER_DIAGNOSTIC.json \
+            input/gate/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json input/placement/V42_JOINT_COMPONENT_PLACEMENT_DIAGNOSTIC.json \
+            output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
+            > output/V45_PARETO_FRONTIER_COMPONENT_PLACEMENT_SOURCE_SHA256.txt 2>/dev/null || true
+          git -C frozen-v44 rev-parse HEAD > output/frozen_v44_execution_commit.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v45-pareto-frontier-component-placement-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

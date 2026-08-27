@@ -1,0 +1,79 @@
+name: OrbitTrace P18 matched evaluator source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py
+      - orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py
+      - .github/workflows/orbittrace_p18_matched_evaluator_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove P18 evaluator changes only membership diagnostics/provenance and preserves inherited gate math
+        run: |
+          set -euo pipefail
+          prep=orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py
+          final=orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py
+          test "$(git hash-object "$prep")" = 'cb5a66e7481fa4542b28135dc4c8c89ef33b276f'
+          test "$(git hash-object "$final")" = '9f7b8ea6279434e7243ac9debdbf5d5a4a33aadd'
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py)" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py)" = '1e9160c7beb5bc7651dc2b9f03db6211bc639ac6'
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py)" = 'd1ce98f443b2039d70421e76dadb6ada77d1b0d5'
+          python -m py_compile "$prep" "$final"
+          python "$prep" orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py /tmp/p18_p13_finalizer.py
+          python -m py_compile /tmp/p18_p13_finalizer.py
+          python - <<'PY'
+          from pathlib import Path
+          old=Path('orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py').read_text()
+          new=Path('/tmp/p18_p13_finalizer.py').read_text()
+          parent="P13_TRANSPORT_SOURCE_SHA256='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'\n"
+          tech="P13_TRANSPORT_SOURCE_SHA256='55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415'\n"
+          olddiag="        require(q['p3_diagnostics']['primary_candidate_is_core_only'] is True and q['p3_diagnostics']['halo_can_affect_primary_evaluation'] is False,f'halo entered primary evaluator {panel}')\n"
+          newdiag="        require(q['p3_diagnostics']['primary_candidate_is_core_only'] is False and q['p3_diagnostics']['halo_can_affect_primary_evaluation'] is True and q['p3_diagnostics']['family_existence_and_rank_core_only'] is True and q['p3_diagnostics']['reported_membership_is_exact_label_free_halo'] is True and q['p3_diagnostics']['p18_no_new_member_proposal'] is True,f'P18 output semantics changed {panel}')\n"
+          assert new.replace(newdiag,olddiag,1).replace(tech,parent,1)==old
+          gates=(
+            'four_to_nine_gain_ge_0_10','four_to_twentyfour_gain_ge_0_10',
+            'macro_f1_not_more_than_0_10_lower','retain_at_least_80pct_f1_gt_0_5_count',
+            'PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS',
+            'FAIL_P13_MATCHED_SPARSE_SUPERIORITY_NO_GO',
+          )
+          assert all(new.count(x)==old.count(x)>0 for x in gates)
+          f=Path('orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py').read_text()
+          required=(
+            "P18_RULE='P18_P17_RANK_LABEL_FREE_HALO_MEMBERSHIP'",
+            "P17_RULE='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'",
+            "P17_MATCHED_SOURCE='c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a'",
+            "cp.get('p18_primary_candidate_for_matched_verdict') is True",
+            "cp.get('p18_p17_core_only_is_diagnostic_ablation') is True",
+            "cp.get('p18_no_new_detector_score_distance_threshold_family_proposal_growth_merge_or_rank') is True",
+            "cp.get('p18_new_members_can_seed_growth') is False",
+            "cp.get('p17_reciprocal_closure_sha256')==canonical_sha(closures)",
+            "x['p17_reciprocal_fail_closed'] is True and x['p9_reliable'] is False and int(x['proposal_count'])==0",
+            "'PASS_P14_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS'",
+            "'FAIL_P14_MATCHED_SPARSE_SUPERIORITY_NO_GO'",
+            "'PASS_P18_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS'",
+            "'FAIL_P18_MATCHED_SPARSE_SUPERIORITY_NO_GO'",
+            "out['external_validation_authorized']=passed",
+            "out['target_access_authorized']=False",
+            "out['p18_no_posttruth_core_halo_switch']=True",
+          )
+          for x in required: assert x in f,x
+          forbidden=(
+            'four_to_nine_gain_ge_0_10 =','four_to_twentyfour_gain_ge_0_10 =',
+            'macro_f1_not_more_than_0_10_lower =','retain_at_least_80pct_f1_gt_0_5_count =',
+            'OrbitTrace-April','target_coordinate','nearest_neighbor','d_criterion',
+          )
+          for x in forbidden: assert x not in f,x
+          print('PASS_P18_MATCHED_EVALUATOR_GATE_MATH_AND_PRETRUTH_PROVENANCE_SOURCE_AUDIT')
+          PY
+          echo NO_COMPARATOR_ARTIFACT_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS

@@ -1,0 +1,42 @@
+name: OrbitTrace P15 artifact-only development adjudication
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/P15_DEVELOPMENT_ARTIFACT_ADJUDICATION_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p15-development-artifact-adjudication
+  cancel-in-progress: false
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Verify marker-only child and adjudicate immutable canonical artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          chmod +x orbittrace_support_safe_halo_p15/run_development_artifact_adjudication.sh
+          orbittrace_support_safe_halo_p15/run_development_artifact_adjudication.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p15-support-safe-halo-development-artifact-adjudication
+          path: output
+          if-no-files-found: error
+          retention-days: 90

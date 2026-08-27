@@ -1,0 +1,99 @@
+name: OrbitTrace v15 canonical application v1 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_v15_canonical_application_v1/**'
+      - '.github/workflows/orbittrace_v15_canonical_application_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-multiscale-consensus-v15-development
+          path: frozen-v15
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: agent/orbittrace-density-capped-multiplicity-v13-development
+          path: frozen-v13
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install minimal synthetic dependency
+        run: python -m pip install --disable-pip-version-check numpy==2.1.3
+      - name: Run common-application synthetic tests
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v15_canonical_application_v1/application.py \
+            orbittrace_v15_canonical_application_v1/test_application.py
+          PYTHONPATH=. python orbittrace_v15_canonical_application_v1/test_application.py
+      - name: Prove exact frozen-method lineage and source-only boundary
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-v15 hash-object orbittrace_multiscale_consensus_v15/rank_pretruth.py)" = '47e47f48efe149811f836a825d460081246fcbf2'
+          test "$(git -C frozen-v15 hash-object orbittrace_multiscale_consensus_v15/generate_pretruth_cap.py)" = 'e0b37b0c19aaf827be9bfcaea7cb380e7a3deca6'
+          test "$(git -C frozen-v13 hash-object orbittrace_density_capped_multiplicity_v13/run_cap_stress.py)" = '039f1462bdc5e1c4d5030a63c84fcae832f34654'
+          test "$(git -C frozen-v5 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          app=Path('orbittrace_v15_canonical_application_v1/application.py')
+          protocol=Path('orbittrace_v15_canonical_application_v1/PROTOCOL.md')
+          src=app.read_text(); doc=protocol.read_text(); low=src.lower()
+          tree=ast.parse(src); imports=set()
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports.update(x.name.split('.')[0] for x in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module: imports.add(n.module.split('.')[0])
+          forbidden={'requests','urllib','http','socket','subprocess','h5py','tarfile','zipfile','pandas','gmn_python_api'}
+          assert not imports.intersection(forbidden), imports.intersection(forbidden)
+          for name in ('gmn','sonotaco','maarsy','dms1991'):
+              assert name not in low, name
+          for literal in (
+              'FINAL_NOMINAL_CAP = 128',
+              'COMPONENT_CAPS = (128, 96, 64)',
+              'k = min(int(cap), len(window_events))',
+              '-float(row["multiplicity_worst_year"])',
+              '-float(row["multiplicity_geometric_mean"])',
+              'median_rank = float(statistics.median(ranks))',
+          ):
+              assert literal in src, literal
+
+          v15=Path('frozen-v15/orbittrace_multiscale_consensus_v15/rank_pretruth.py').read_text()
+          v13=Path('frozen-v13/orbittrace_density_capped_multiplicity_v13/run_cap_stress.py').read_text()
+          v5=Path('frozen-v5/orbittrace_sparse_support_multiplicity_v5/run_holdout.py').read_text()
+          assert '128: (128, 96, 64)' in v15
+          assert 'median_rank = float(statistics.median((r1, r2, r3)))' in v15
+          assert 'k = min(cap, len(window_events))' in v13
+          assert '-float(row["multiplicity_worst_year"])' in v5
+          assert '-float(row["multiplicity_geometric_mean"])' in v5
+          assert 'source-only freeze' in doc.lower()
+          assert 'no survey-name branch' in doc.lower()
+          assert not Path('orbittrace_v15_canonical_application_v1/RUN.md').exists()
+          assert not Path('orbittrace_v15_canonical_application_v1/EXTERNAL_RUN.md').exists()
+          print('PASS_ORBITTRACE_V15_CANONICAL_APPLICATION_SOURCE_AUDIT')
+          print('NO_CATALOGUE_ACCESS_NO_TRUTH_NO_TARGET_ACCESS')
+          PY
+      - name: Record source identities
+        run: |
+          sha256sum \
+            orbittrace_v15_canonical_application_v1/PROTOCOL.md \
+            orbittrace_v15_canonical_application_v1/application.py \
+            orbittrace_v15_canonical_application_v1/test_application.py

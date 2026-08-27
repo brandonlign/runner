@@ -1,0 +1,118 @@
+name: OrbitTrace P3 cross-fit seed-floor implementation audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py
+      - orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py
+      - orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py
+      - .github/workflows/orbittrace_p3_crossfit_seed_floor_implementation_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct exact canonical P2 and transform to P3
+        run: |
+          set -euo pipefail
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2_canonical_v2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          python -m py_compile /tmp/p3.py orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py
+
+      - name: Prove exact P3 science, truth ordering and unchanged promotion bars
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('/tmp/p3.py').read_text()
+          patch=Path('orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch.py').read_text()
+          patch2=Path('orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py').read_text()
+          protocol=Path('orbittrace_crossfit_seed_floor_membership_p3/PROTOCOL.md').read_text()
+          for token in (
+              'P3_FOLD_COUNT = 5','P3_NEGATIVE_TAIL_MAX = 0.10','P3_SEED_FLOOR_MIN = 0.5',
+              'hashlib.sha256(str(f["family_id"]).encode("utf-8")).digest()[:8]',
+              'family_fold[str(d["family_id"])] != held_fold','seed_floor = float(np.min(pp))',
+              'negative_tail = float(np.mean(pn >= seed_floor))','seed_floor > P3_SEED_FLOOR_MIN',
+              'negative_tail <= P3_NEGATIVE_TAIL_MAX','allowed = probabilities >= float(gate["seed_floor"])',
+              'denom = 1.0 + float(sum(p["odds"] for p in proposals))','RESPONSIBILITY_THRESHOLD = 0.5',
+              'LOGISTIC_C = 1.0','LOGISTIC_MAX_ITER = 1000','LOGISTIC_TOL = 1e-10',
+              'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT','FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
+              'p3_crossfit_pretruth.json','positive_scores_float64_sha256','negative_scores_float64_sha256',
+              'p3_decisions_pretruth.json.gz','p3_membership_pretruth.sha256','p3_parse_geometry_only',
+              'p3_parse_truth_after_freeze','hidden_labels = None','FIRST known-shower label-value access in P3',
+              'p3_label_values_unread_until_membership_freeze',
+          ):
+              assert token in p, token
+          for token in ('qualified_matches_no_regression','recovery_at_100_no_regression','top100_dominant_precision_at_least_065','macro_f1_gain_at_least_008','large_shower_mean_recall_at_least_15x_v8','large_shower_mean_precision_at_least_085'):
+              assert token in p, token
+          assert 'support.parse_catalogue(base)' not in p
+          assert 'valid_nonseed_by_year' not in p and 'nonseed_events_by_year' in p
+          assert 'frame.iloc[int(index)][columns["label"]]' in p
+          assert 'set(family_fold.values()) == set(range(P3_FOLD_COUNT))' in p
+          assert 'not (set(train_family_ids) & set(heldout_family_ids))' in p
+          assert 'p3_every_surviving_proposal_meets_seed_floor' in p
+          geom_start=p.index('def p3_parse_geometry_only'); truth_start=p.index('def p3_parse_truth_after_freeze'); geom=p[geom_start:truth_start]
+          assert 'frame.iloc' not in geom and 'normalize_label' not in geom
+          freeze_membership=p.index('(args.output / "p3_membership_pretruth.sha256")'); freeze_decisions=p.index('(args.output / "p3_decisions_pretruth.sha256")'); truth=p.index('# FIRST known-shower label-value access in P3')
+          assert freeze_membership < truth and freeze_decisions < truth
+          assert "EXPECTED_P2_SHA256 = \"f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb\"" in patch
+          assert 'five-fold held-out seed-floor reliability gate only' in patch
+          assert 'does not override any v1 scientific anchor' in patch2
+          assert 'before the authoritative P2 development result is known' in protocol
+          assert 'No P2 outcome, P2 per-label result' in protocol
+          tree=ast.parse(p); names={n.id for n in ast.walk(tree) if isinstance(n,ast.Name)}
+          assert {'crossfit_payload','reliability','family_fold','truth_audits','geometry_audits','decision_sha'} <= names
+          print('PASS_P3_IMPLEMENTATION_SOURCE_AUDIT')
+          PY
+
+      - name: Prove header repair is whitespace-only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          w=Path('orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py').read_text()
+          assert "EXPECTED_P3_SOURCE = Path('/tmp/run_p3.py')" in w
+          assert "line = raw_line.lstrip('\\ufeff \\t')" in w
+          for name in ('Unique trajectory','Sol lon','q','e','i','peri','node','Q'):
+              assert repr(name) in w or f'\"{name}\"' in w
+          for token in ('LogisticRegression','seed_floor','negative_tail','RESPONSIBILITY_THRESHOLD','evaluate_order'):
+              assert token not in w, token
+          tree=ast.parse(w); funcs={n.name for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert funcs=={'require','compatible_exact_header_positions','load_p3','self_test','main'},funcs
+          print('PASS_P3_HEADER_COMPATIBILITY_SCOPE_AUDIT')
+          PY
+          cp /tmp/p3.py /tmp/run_p3.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          path=Path('orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py')
+          spec=importlib.util.spec_from_file_location('p3wrap',path); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          m.self_test()
+          PY
+          rm -f /tmp/run_p3.py
+
+      - name: Assert no-data/no-target boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_P3_SCIENCE_NO_TARGET_ACCESS

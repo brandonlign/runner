@@ -1,0 +1,57 @@
+name: OrbitTrace P2 header-compat recovery source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/run_header_compatible.py
+      - .github/workflows/orbittrace_crossyear_two_view_p2_header_recovery.yml
+      - .github/workflows/orbittrace_p2_header_compat_recovery_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove compatibility wrapper changes schema whitespace only
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_crossyear_two_view_membership_p2/run_header_compatible.py
+          python - <<'PY'
+          import ast, importlib.util
+          from pathlib import Path
+          p=Path('orbittrace_crossyear_two_view_membership_p2/run_header_compatible.py')
+          text=p.read_text(); tree=ast.parse(text)
+          funcs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          assert set(funcs) >= {'compatible_exact_header_positions','load_canonical','self_test','main'}
+          compat=ast.get_source_segment(text,funcs['compatible_exact_header_positions']) or ''
+          main=ast.get_source_segment(text,funcs['main']) or ''
+          assert "raw_line.lstrip('\\ufeff \\t')" in compat
+          assert "line[1:].strip()" in compat
+          assert "fields[0] == 'Unique trajectory'" in compat
+          for exact in ("exact('Sol lon')","exact('q')","exact('e')","exact('i')","exact('peri')","exact('node')"):
+              assert exact in compat,exact
+          assert "field == 'Q'" in compat and "q/Q schema identity changed" in compat
+          assert 'module.exact_header_positions = compatible_exact_header_positions' in main
+          assert 'return int(module.main())' in main
+          for forbidden in ('INNER_PROB','OUTER_PROB','responsibility_threshold','WINDOW_HALF_WIDTH','NEGATIVE_MINIMUM','rank_scored','evaluate_families','BLIND_LOW','BLIND_HIGH','D_SH'):
+              assert forbidden not in text,forbidden
+
+          spec=importlib.util.spec_from_file_location('p2_header_compat',p)
+          module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          module.self_test()
+          assert not module.EXPECTED_CANONICAL_SOURCE.exists()
+          print('PASS_P2_HEADER_COMPAT_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e /tmp/run_p2_canonical_v2.py
+          echo NO_GMN_VALUES_NO_P2_SCIENCE_NO_TARGET_ACCESS

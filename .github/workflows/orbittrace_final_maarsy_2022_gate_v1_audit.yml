@@ -1,0 +1,60 @@
+name: OrbitTrace final MAARSY 2022 gate source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_final_external_validation_v1/**
+      - .github/workflows/orbittrace_final_maarsy_2022_gate_v1_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify frozen protocol and synthetic adjudicator
+        run: |
+          set -euo pipefail
+          d=orbittrace_final_external_validation_v1/FINAL_MAARSY_2022_GATE_V1.md
+          a=orbittrace_final_external_validation_v1/adjudicate_maarsy_2022_v1.py
+          for x in \
+            'unlabeled recurrence-support scan only' \
+            'sole scored external-validation year' \
+            'B >= 100' \
+            'at least **30** eligible 2022 known showers' \
+            'at least **10** eligible showers are in the 4–24 sparse/weak stratum' \
+            'hard-v8 has at least **10** qualified recoveries at rank 100' \
+            'max(2, ceil(0.10 * hard_v8_r100))' \
+            'URC_r25 >= hard_v8_r25' \
+            'URC_r50 >= hard_v8_r50' \
+            'URC_sparse_r100 >= hard_v8_sparse_r100 + 1' \
+            'URC_macro_f1_B >= hard_v8_macro_f1_B - 0.02' \
+            '10,000-replicate paired stratified bootstrap' \
+            'seed `20260809`' \
+            'PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION'; do
+            grep -F "$x" "$d"
+          done
+          for x in \
+            'PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION' \
+            'POWER_INCONCLUSIVE_FINAL_MAARSY_2022' \
+            'EXTERNAL_ARCHITECTURE_INCOMPATIBLE_FINAL_MAARSY_2022' \
+            'INVALID_FINAL_MAARSY_2022_INTEGRITY' \
+            'max(2, int(math.ceil(0.10 * hard["r100"])))' \
+            'urc["macro_f1_B"] >= hard["macro_f1_B"] - 0.02' \
+            'lower > 0.0'; do
+            grep -F "$x" "$a"
+          done
+          if grep -Eiq 'OrbitTrace-April|rank 59|target_coordinate|2021.*truth.*allowed|2020/2021.*validation|MAARSY 2020' "$d" "$a"; then
+            echo 'forbidden target/stale-panel material in final MAARSY gate' >&2
+            exit 1
+          fi
+          cd orbittrace_final_external_validation_v1
+          python test_adjudicate_maarsy_2022_v1.py
+          test ! -e RUN.md
+          test ! -e EXTERNAL_RUN.md
+          echo PASS_FINAL_MAARSY_2022_GATE_SOURCE_FREEZE
+          echo NO_MAARSY_EVENT_NO_SONOTACO_RESULT_NO_TARGET_ACCESS

@@ -1,0 +1,168 @@
+name: OrbitTrace v31 HDB component-surprise outer-fence diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-hdb-component-surprise-outer-fence-diagnostic-v1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and pin diagnostic source
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3'
+          mkdir -p input/v40 input/closure output/freeze output/diag
+          test "$(git hash-object orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/PROTOCOL.md)" = '1f0f92708b871e799823af740d33e8e1949d1f8a'
+          test "$(git hash-object orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/freeze_outliers.py)" = 'bf66f0a05bede9f8ebc4124e476a01e10f73a9a8'
+          test "$(git hash-object orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/diagnose.py)" = 'c50f11e7a5a0d836ff07001e51c8632aa0bff338'
+          python -m py_compile \
+            orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/freeze_outliers.py \
+            orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/diagnose.py
+
+      - name: Restore authoritative v40 result only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9087888653/zip' \
+            -o input/v40.zip
+          echo 'f74cb12bd5b1c958720bd6f1cd5a2d373dc3398e354053ada7a130822505c5d3  input/v40.zip' | sha256sum -c -
+          unzip -q input/v40.zip -d input/v40
+          echo 'd2b022a07b6650e1a1b7d8eb1621a845125c76a7b159568bd8d493224053be5d  input/v40/result/V40_COMPONENT_BEST_EVIDENCE_REPRESENTATIVE_RESULT.json' | sha256sum -c -
+
+      - name: Freeze truth-blind sparse outer-fence set before closure truth
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/freeze_outliers.py \
+            --v40-result input/v40/result/V40_COMPONENT_BEST_EVIDENCE_REPRESENTATIVE_RESULT.json \
+            --output output/freeze
+          echo 'c1c57ebdf4f4cd81c3e7bd1eca3d01441dd730fe41796a0d07dea1f50efe3d9d  output/freeze/V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_FREEZE.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('output/freeze/V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_FREEZE.json'))
+          assert r['verdict']=='PASS_V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_FREEZE'
+          assert r['truth_accessed'] is False and r['surfaced_missed_truth_accessed'] is False
+          assert r['hdb_route_component_count']==138
+          assert r['q1']==0.0
+          assert abs(r['q3']-0.05654761904761905)<1e-15
+          assert abs(r['iqr']-0.05654761904761905)<1e-15
+          assert r['outer_fence_multiplier']==3.0
+          assert abs(r['outer_fence_threshold']-0.2261904761904762)<1e-15
+          assert r['extreme_component_count']==9
+          assert r['threshold_search'] is False and r['alternative_outlier_rule_search'] is False
+          assert r['successor_evaluated'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_OUTER_FENCE_SET_FROZEN_BEFORE_TRUTH')
+          PY
+
+      - name: Restore authoritative exposed #1072 diagnostic only after freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9087743465/zip' \
+            -o input/closure.zip
+          echo '8c45c00fd70300efb2f6f32bbb339141f8c34884ee5b1098c1bbb45ccf1a59cc  input/closure.zip' | sha256sum -c -
+          unzip -q input/closure.zip -d input/closure
+          echo 'a886977139074a1c2e8beaca54c065fd16fed5bce4c00e888ac2081dabed7222  input/closure/diag/V31_CROSSROUTE_COMPONENT_CLOSURE_DIAGNOSTIC.json' | sha256sum -c -
+
+      - name: Diagnose sparse extreme-surprise enrichment
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/diagnose.py \
+            --freeze output/freeze/V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_FREEZE.json \
+            --closure-result input/closure/diag/V31_CROSSROUTE_COMPONENT_CLOSURE_DIAGNOSTIC.json \
+            --output output/diag
+
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_DIAGNOSTIC.json'))
+          assert r['verdict'] in {
+            'PASS_V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_DIAGNOSTIC',
+            'FAIL_V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_DIAGNOSTIC',
+          }
+          assert r['hdb_route_component_count']==138 and r['extreme_component_count']==9
+          assert r['outer_fence_multiplier']==3.0
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          for y in ('2013','2014'):
+              a=r['annual_diagnostics'][y]
+              assert a['surfaced_recoverable_group_count']==9
+              assert a['missed_recoverable_group_count']==9
+          for k in (
+              'successor_selected','successor_evaluated','new_rank_or_score_evaluated',
+              'replacement_rule_evaluated','promotion_position_selected',
+              'oracle_identity_hardcoded','threshold_search','alternative_outlier_rule_search',
+              'top_k_selected','rank_window_selected','budget_specific_rule','year_specific_rule',
+              'route_specific_rule','component_evidence_aggregation_search','radius_search',
+              'metric_search','graph_pruning','graph_expansion','component_definition_search',
+              'candidate_generation_changed','membership_changed','feature_search','model_search',
+              'k_search','scaling_search','annual_combiner_search','diversity_search',
+              'fusion_search','source_quota_selected','post_result_second_search'
+          ):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'])
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/PROTOCOL.md \
+            orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/freeze_outliers.py \
+            orbittrace_v31_hdb_component_surprise_outer_fence_diagnostic_v1/diagnose.py \
+            output/freeze/V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_FREEZE.json \
+            input/v40/result/V40_COMPONENT_BEST_EVIDENCE_REPRESENTATIVE_RESULT.json \
+            input/closure/diag/V31_CROSSROUTE_COMPONENT_CLOSURE_DIAGNOSTIC.json \
+            > output/V31_HDB_COMPONENT_SURPRISE_OUTER_FENCE_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-hdb-component-surprise-outer-fence-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
