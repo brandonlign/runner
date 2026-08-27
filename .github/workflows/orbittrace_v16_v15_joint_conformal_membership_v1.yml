@@ -1,0 +1,136 @@
+name: OrbitTrace v16 joint-conformal membership exposed development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+    paths:
+      - 'orbittrace_v16_v15_joint_conformal_membership_v1/**'
+      - '.github/workflows/orbittrace_v16_v15_joint_conformal_membership_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v16-v15-joint-conformal-membership-sonotaco-dev-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==2.1.3' 'scipy==1.14.1'
+          python - <<'PY'
+          import numpy,scipy
+          assert numpy.__version__=='2.1.3'
+          assert scipy.__version__=='1.14.1'
+          PY
+      - name: Restore exposed label-free rows and immutable v15 candidate cores only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/prepare input/candidate-sugar input/candidate-hdbscan output/sugar output/hdbscan
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9050107352/zip' -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069319593/zip' -o input/candidate-sugar.zip
+          echo 'd6eccbcb50b10915ccbf15cd382a86f20a91e02fe80236a0124a5beb66427a3e  input/candidate-sugar.zip' | sha256sum -c -
+          unzip -q input/candidate-sugar.zip -d input/candidate-sugar
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069319220/zip' -o input/candidate-hdbscan.zip
+          echo '2378a976318905c1e746aff157f5a2bbbf5687cc41ae9efe06a79a84e616e12f  input/candidate-hdbscan.zip' | sha256sum -c -
+          unzip -q input/candidate-hdbscan.zip -d input/candidate-hdbscan
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('input/prepare/label_free_preparation_manifest.json').read_text())
+          assert m['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert m['shower_truth_accessed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False
+          for p in ['input/candidate-sugar/candidate_primary_output.json','input/candidate-hdbscan/candidate_primary_output.json']:
+              c=json.loads(Path(p).read_text()); assert c['truth_accessed'] is False and c['target_information_access'] is False
+          PY
+      - name: Freeze v16 membership outputs before loading exposed truth files
+        run: |
+          set -euo pipefail
+          python orbittrace_v16_v15_joint_conformal_membership_v1/expand_candidate.py --rows-2013 input/prepare/sugar_2013.json --rows-2014 input/prepare/sugar_2014.json --candidate input/candidate-sugar/candidate_primary_output.json --output output/sugar
+          python orbittrace_v16_v15_joint_conformal_membership_v1/expand_candidate.py --rows-2013 input/prepare/hdbscan_2013.json --rows-2014 input/prepare/hdbscan_2014.json --candidate input/candidate-hdbscan/candidate_primary_output.json --output output/hdbscan
+          sha256sum output/sugar/candidate_primary_output.json output/hdbscan/candidate_primary_output.json > output/V16_PRETRUTH_OUTPUT_SHA256.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for panel in ['sugar','hdbscan']:
+              s=json.loads(Path(f'output/{panel}/v16_pretruth_summary.json').read_text())
+              assert s['verdict']=='PASS_V16_EXPOSED_DEVELOPMENT_OUTPUT_FREEZE'
+              assert s['truth_accessed'] is False and s['target_information_access'] is False and s['maarsy_access'] is False and s['dms_access'] is False
+          print(Path('output/V16_PRETRUTH_OUTPUT_SHA256.txt').read_text())
+          PY
+      - name: Load immutable exposed truth/evaluation record only after v16 freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v15-result
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/v15-result.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/v15-result.zip' | sha256sum -c -
+          unzip -q input/v15-result.zip -d input/v15-result
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/v15-result/V15_FINAL_LITERATURE_RESULT.json').read_text())
+          assert r['verdict']=='FAIL_FINAL_LITERATURE_SUPERIORITY'
+          assert r['posttruth_method_mutation'] is False and r['maarsy_scientific_access'] is False and r['target_information_access'] is False
+          PY
+      - name: Evaluate v16 with exact frozen one-to-one F1 semantics
+        run: |
+          set -euo pipefail
+          for comparator in sugar hdbscan; do
+            for year in 2013 2014; do
+              python orbittrace_v16_v15_joint_conformal_membership_v1/evaluate_exposed.py --candidate output/$comparator/candidate_primary_output.json --truth input/v15-result/truth_${comparator}_${year}.json --frozen-evaluation input/v15-result/evaluation_${comparator}_${year}.json --comparator $comparator --year $year --output output/evaluation_${comparator}_${year}.json
+            done
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          pairs=[]
+          for c in ['sugar','hdbscan']:
+            for y in [2013,2014]: pairs.append(json.loads(Path(f'output/evaluation_{c}_{y}.json').read_text()))
+          mechanism=all(p['membership_mechanism_improved'] for p in pairs)
+          literature=all(p['literature_macro_f1_beaten'] and p['literature_recovery_beaten_or_tied'] for p in pairs)
+          result={
+            'scientific_stage':'V16_EXPOSED_SONOTACO_SUCCESSOR_DEVELOPMENT',
+            'method':'v15 locator/ranking + pre-existing joint density-trajectory conformal membership',
+            'v15_frozen_result':'FAIL_FINAL_LITERATURE_SUPERIORITY',
+            'membership_mechanism_pass_all_four_pairs':mechanism,
+            'literature_superiority_pass_all_four_pairs':literature,
+            'pairs':[{k:v for k,v in p.items() if k!='per_shower'} for p in pairs],
+            'verdict':('PASS_V16_EXPOSED_LITERATURE_SUPERIORITY_DEVELOPMENT' if literature else ('PASS_V16_MEMBERSHIP_MECHANISM_BUT_FAIL_LITERATURE_SUPERIORITY_DEVELOPMENT' if mechanism else 'FAIL_V16_MEMBERSHIP_SUCCESSOR_DEVELOPMENT')),
+            'sonotaco_role':'EXPOSED_DEVELOPMENT_ONLY',
+            'maarsy_scientific_access':False,'dms_scientific_access':False,'target_information_access':False,
+            'post_result_parameter_tuning':False,
+            'next_if_not_superior':'candidate-universe architecture; do not tune membership constants',
+          }
+          Path('output/V16_EXPOSED_DEVELOPMENT_RESULT.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(result,indent=2,sort_keys=True))
+          assert mechanism
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v16-v15-joint-conformal-membership-exposed-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

@@ -1,0 +1,59 @@
+name: OrbitTrace P17 self-trigger activation source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_p17_matched_pretruth.yml
+      - .github/workflows/orbittrace_p17_self_trigger_activation_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Prove self-trigger delta is outer-guard only
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          wf=.github/workflows/orbittrace_p17_matched_pretruth.yml
+          git show "$BASE_SHA:$wf" > /tmp/base.yml
+          git show "$HEAD_SHA:$wf" > /tmp/head.yml
+          python - <<'PY'
+          from pathlib import Path
+          old=Path('/tmp/base.yml').read_text(); new=Path('/tmp/head.yml').read_text()
+          anchor="          # Require exact promoted P17 source and exact artifact-only development vacuity PASS.\n"
+          assert old.count(anchor)==1 and new.count(anchor)==1
+          # Every scientific/data step from the promoted-source gate onward is byte-identical.
+          assert old.split(anchor,1)[1]==new.split(anchor,1)[1]
+          required=(
+            'test "${#files[@]}" -eq 2',
+            "test \"${files[0]}\" = '.github/workflows/orbittrace_p17_matched_pretruth.yml'",
+            "test \"${files[1]}\" = 'orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md'",
+            "# P17_CHILD_ACTIVATION_NONCE=SELF_TRIGGER_V1",
+            'head -n -1 /tmp/p17_child_workflow.yml > /tmp/p17_child_without_nonce.yml',
+            'cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml',
+            'PASS_P17_CHILD_WORKFLOW_DIFF_IS_INERT_NONCE_ONLY',
+            'git checkout --detach "$BASE_SHA"',
+            'test ! -e orbittrace_reciprocal_support_closure_p17/MATCHED_PRETRUTH_RUN.md',
+          )
+          for x in required: assert x in new,x
+          assert new.index('cmp -s /tmp/p17_base_workflow.yml /tmp/p17_child_without_nonce.yml') < new.index('git checkout --detach "$BASE_SHA"') < new.index(anchor)
+          # Exact marker/development/source pins remain unchanged in the outer guard.
+          for x in (
+            '31332157812','9043232586','cac4c68e329ad06a802fbdc5ab12b7526f64720065000d5b3c094c49d57eb5dd',
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a',
+          ):
+              assert old.count(x)==new.count(x) and x in new,x
+          print('PASS_P17_SELF_TRIGGER_OUTER_GUARD_ONLY_SOURCE_AUDIT')
+          PY
+          echo SCIENTIFIC_AND_DATA_SUFFIX_BYTE_IDENTICAL_TO_PREVIOUS_AUDITED_WORKFLOW
+          echo NO_COMPARATOR_VALUES_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS

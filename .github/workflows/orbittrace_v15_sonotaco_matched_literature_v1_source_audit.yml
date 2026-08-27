@@ -1,0 +1,139 @@
+name: OrbitTrace v15 matched SonotaCo literature source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_v15_sonotaco_matched_literature_v1/**'
+      - '.github/workflows/orbittrace_v15_sonotaco_matched_literature_v1_source_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify exact frozen predecessor and evaluator identities
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin c9d6c44704013ba0c9430100e98a29a56b453304
+          git show FETCH_HEAD:orbittrace_label_free_sparse_support_v6/run_development.py > /tmp/v6.py
+          git show FETCH_HEAD:orbittrace_pooled_year_centroid_v8/run_development.py > /tmp/v8.py
+          test "$(git hash-object /tmp/v6.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
+          test "$(git hash-object /tmp/v8.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          test "$(git hash-object orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py)" = '150a3a476a2bf3aff6dc63d81052f855561a9dfc'
+          test "$(git hash-object orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py)" = '3f720bd754f18dd7600a292c7f3336f08658110a'
+          test "$(git hash-object orbittrace_governance/FINAL_LITERATURE_TEST_POLICY_V1.md)" = '197bb33442641265138f017ab02ce1abf33674b5'
+          test "$(git hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '502ed92fcf362f324ee644a0fcb962f7cf8d7eef'
+          test ! -e orbittrace_v15_sonotaco_matched_literature_v1/RUN.md
+          test ! -e orbittrace_v15_sonotaco_matched_literature_v1/EXECUTE.md
+      - name: Compile source-only candidate and truth adapters
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v15_sonotaco_matched_literature_v1/run_candidate_pretruth.py \
+            orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py \
+            orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py \
+            orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py
+      - name: Audit strict pretruth boundary and unchanged #854 semantics
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          root=Path('orbittrace_v15_sonotaco_matched_literature_v1')
+          cand=(root/'run_candidate_pretruth.py').read_text()
+          truth=(root/'open_truth_and_evaluate.py').read_text()
+          protocol=(root/'PROTOCOL.md').read_text()
+
+          # Candidate stage must not import or mention any truth reader/evaluator path.
+          ctree=ast.parse(cand)
+          imports=[]
+          for node in ast.walk(ctree):
+              if isinstance(node,ast.Import): imports += [a.name for a in node.names]
+              elif isinstance(node,ast.ImportFrom) and node.module: imports.append(node.module)
+          low_imports='\n'.join(imports).lower()
+          for token in ('truth_boundary','matched_evaluator','open_truth_and_evaluate'):
+              assert token not in low_imports, token
+          for token in (
+              'label_free_scan_year',
+              'repair_year_centroids',
+              'application.run_pretruth',
+              'EXPECTED_V6_BLOB = "7995fc6b75d1fd51eb4b304ace39db28a5a1e876"',
+              'EXPECTED_V8_BLOB = "f248df78e1258b132b41aecca6a985a5eb782654"',
+              'EXPECTED_COMMON_APP_BLOB = "5b3244dfbcc7bc931925aea42866edc8205113a8"',
+              '"label_dependent_calibration_used": False',
+              '"truth_accessed": False',
+          ):
+              assert token in cand, token
+          # runtime_helpers.load_support_base requires an object exposing `.mult`; the local
+          # P19Shim supplies only that transport attribute. Forbid actual P19/P20 science instead.
+          assert 'orbittrace_p19' not in low_imports
+          assert 'orbittrace_p20' not in low_imports
+          assert 'build_soft_recurrence' not in cand
+          assert 'build_p20' not in cand
+          assert 'score_and_rank' not in cand
+
+          # Truth stage may only consume already-frozen candidate/comparator outputs and exact #854.
+          assert 'EVALUATOR_SHA = "cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c"' in truth
+          assert 'evaluator.evaluate_pair(eval_payload)' in truth
+          assert 'evaluator.final_verdict(pair_results)' in truth
+          assert truth.index('freeze_path =') < truth.index('truth_reader.parse_truth_after_freeze')
+          assert truth.index('require(freeze["orbittrace_primary_output_sha256"]') < truth.index('truth_reader.parse_truth_after_freeze')
+          assert truth.index('require(freeze["comparator_primary_output_sha256"]') < truth.index('truth_reader.parse_truth_after_freeze')
+          for forbidden in ('fit(', 'partial_fit(', 'GridSearch', 'threshold_search', 'retune'):
+              assert forbidden not in truth, forbidden
+
+          # Protocol must preserve exposed evidence class and exact matched denominator logic.
+          assert 'EXPOSED_MATCHED_LITERATURE_BENCHMARK' in protocol
+          assert 'sugar_2013.json' in protocol and 'hdbscan_2014.json' in protocol
+          assert 'candidate budget equals the comparator' in protocol.lower()
+          assert '10,000-replicate' in protocol
+          assert 'MAARSY 2022' in protocol and 'MAARSY 2021' in protocol
+          assert 'not a new pristine external validation' in protocol
+          print('PASS_V15_MATCHED_SONOTACO_SOURCE_FIREWALL')
+          PY
+      - name: Record source identities without scientific access
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          paths=[
+              'orbittrace_v15_sonotaco_matched_literature_v1/PROTOCOL.md',
+              'orbittrace_v15_sonotaco_matched_literature_v1/run_candidate_pretruth.py',
+              'orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py',
+          ]
+          out={
+              'verdict':'PASS_V15_MATCHED_SONOTACO_SOURCE_AUDIT',
+              'files':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths},
+              'v6_git_blob':'7995fc6b75d1fd51eb4b304ace39db28a5a1e876',
+              'v8_git_blob':'f248df78e1258b132b41aecca6a985a5eb782654',
+              'common_application_git_blob':'5b3244dfbcc7bc931925aea42866edc8205113a8',
+              'evaluator_sha256':'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c',
+              'sonotaco_scientific_access':False,
+              'sonotaco_truth_access':False,
+              'maarsy_event_access':False,
+              'target_information_access':False,
+          }
+          Path('output/source_audit.json').write_text(json.dumps(out,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(out,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-v15-matched-sonotaco-source-audit
+          path: output/source_audit.json
+          if-no-files-found: error
+          retention-days: 90

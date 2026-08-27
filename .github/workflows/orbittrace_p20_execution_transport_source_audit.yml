@@ -1,0 +1,78 @@
+name: OrbitTrace P20 execution transport source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_p20_recurrent_isolated_quartet_development.yml
+      - .github/workflows/orbittrace_p20_execution_transport_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove P20 transport preserves frozen science and prerequisites
+        run: |
+          set -euo pipefail
+          w=.github/workflows/orbittrace_p20_recurrent_isolated_quartet_development.yml
+          s=orbittrace_p20_recurrent_isolated_quartet/run_development.py
+          p=orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md
+          stress=orbittrace_p20_recurrent_isolated_quartet/P20_STRESS_PROTOCOL.md
+
+          test "$(git hash-object "$s")" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          test "$(git hash-object "$p")" = '94b732a303bd03d74317cf1101a0af5816bc06fd'
+          test -f "$stress"
+          test ! -e orbittrace_p20_recurrent_isolated_quartet/RUN.md
+
+          for x in \
+            'RUN_FROZEN_P20_RECURRENT_ISOLATED_QUARTET' \
+            "test \"\$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)\" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'" \
+            "test \"\$(git hash-object orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md)\" = '94b732a303bd03d74317cf1101a0af5816bc06fd'" \
+            'ref: c9d6c44704013ba0c9430100e98a29a56b453304' \
+            'd8258581af143308495bd97bedcc142abbbd951a' \
+            '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2' \
+            '493fcc7f2d2cc75ee35acf17e142e7ce7c1e03e8' \
+            '7035daf3e670ab89c66c87035540419f549bab09' \
+            'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51' \
+            'run-id: 31217916558' \
+            'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b' \
+            'run-id: 31340446086' \
+            '6f1ad0626b8a8bda03f18e7f3435f0651af8bebf65cfd1d970a6b61a8ba52319' \
+            "assert r['verdict']=='FAIL_P19_SUBTHRESHOLD_RECIPROCAL_RECURRENCE_DEVELOPMENT'" \
+            "assert r['scientific_gates']['recovery_at_100_at_least_58'] is False" \
+            "assert r['scientific_gates']['sparse_4_9_mean_f1_gain_at_least_005_both_years'] is False" \
+            'PYTHONPATH: input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8' \
+            'orbittrace_p20_recurrent_isolated_quartet/run_development.py' \
+            'PASS_P20_EXACT_ANCESTRY_AND_PREREGISTRATION' \
+            'PASS_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT' \
+            'FAIL_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT'; do
+            grep -F "$x" "$w"
+          done
+
+          if grep -Eq 'workflow_dispatch|schedule:' "$w"; then
+            echo 'P20 execution workflow is independently dispatchable' >&2
+            exit 1
+          fi
+          for forbidden in \
+            '013a.zip' '014a.zip' 'SNMv3/013' 'SNMv3/014' \
+            'MAARSY' 'zenodo.org' 'silseth_thesis_data' 'kep_collect.h5' \
+            'OrbitTrace-April' 'target_coordinate' 'F0059' \
+            '247.17' '-14.34' '37.62'; do
+            if grep -Fq -- "$forbidden" "$w"; then
+              echo "final-test/external/target surface leaked into P20 transport: $forbidden" >&2
+              exit 1
+            fi
+          done
+          grep -F 'paths:' "$w"
+          grep -F 'orbittrace_p20_recurrent_isolated_quartet/RUN.md' "$w"
+          grep -F 'test "${#files[@]}" -eq 1' "$w"
+          echo PASS_P20_EXECUTION_TRANSPORT_SOURCE_FREEZE
+          echo P19_FAIL_REQUIRED_BEFORE_P20_DATA_ACCESS
+          echo SONOTACO_2013_2014_AND_MAARSY_VALUES_UNOPENED
+          echo TARGET_REGION_UNAVAILABLE

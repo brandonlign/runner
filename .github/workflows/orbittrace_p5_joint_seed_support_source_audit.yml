@@ -1,0 +1,104 @@
+name: OrbitTrace P5 joint seed-support source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p4-dual-view-seed-envelope-freeze
+    paths:
+      - orbittrace_joint_seed_support_p5/**
+      - .github/workflows/orbittrace_p5_joint_seed_support_source_audit.yml
+      - .github/workflows/orbittrace_p5_joint_seed_support_development.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact P4 and audit minimal P5 transform
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py \
+            /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py \
+            /tmp/run_p3.py /tmp/run_p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/run_p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py \
+            /tmp/run_p4.py /tmp/run_p5.py
+          expected_p5="$(tr -d '[:space:]' < orbittrace_joint_seed_support_p5/SOURCE_SHA256)"
+          test "$expected_p5" = 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456'
+          echo "$expected_p5  /tmp/run_p5.py" | sha256sum -c -
+          python -m py_compile /tmp/run_p5.py orbittrace_joint_seed_support_p5/run_header_compatible.py
+
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/run_p5.py').read_text()
+          protocol=Path('orbittrace_joint_seed_support_p5/PROTOCOL.md').read_text()
+          workflow=Path('.github/workflows/orbittrace_p5_joint_seed_support_development.yml').read_text()
+          required=(
+              'joint_seed_support = np.unique',
+              'candidate must be <= one actual support vector in both coordinates',
+              'jointly_supported = np.zeros(len(features), dtype=bool)',
+              'allowed = seed_floor_allowed & jointly_supported',
+              'p5_every_surviving_proposal_jointly_supported_by_one_heldout_seed',
+              'PASS_JOINT_SEED_SUPPORT_MEMBERSHIP_P5_DEVELOPMENT',
+              'FAIL_JOINT_SEED_SUPPORT_MEMBERSHIP_P5_NO_GO',
+              '"p5_parameter_search": False',
+              'joint_seed_support_membership_p5_development.json',
+              'p5_membership_pretruth.sha256',
+              'p5_decisions_pretruth.sha256',
+          )
+          for token in required:
+              assert token in p, token
+          protocol_required=(
+              'preserves every held-out recurrent seed by construction',
+              'introduces no new numeric threshold',
+              'qualified known-shower matches >=95',
+              'recovery@100 >=58',
+              'top-100 dominant precision >=0.65',
+              'large-shower mean precision >=0.85',
+              'There is exactly one primary P5 configuration',
+          )
+          for token in protocol_required:
+              assert token in protocol, token
+          workflow_required=(
+              'EXECUTE_P5_AFTER_AUTHORITATIVE_P4_SCIENTIFIC_NO_GO',
+              '31292258243',
+              '9032082647',
+              'c131740efc1d60e81ed73b01ebc1097d2006f804c70b82b88a22abb1f9593a5b',
+              'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456',
+              'Execute one-shot target-excluded P5 development',
+              'p5_parameter_search',
+              'orbittrace-joint-seed-support-membership-p5-development',
+          )
+          for token in workflow_required:
+              assert token in workflow, token
+          forbidden=('OrbitTrace-April','target_coordinate','20°–55° may be used')
+          for token in forbidden:
+              assert token not in p, token
+          assert 'RESPONSIBILITY_THRESHOLD = 0.5' in p
+          assert 'P3_FOLD_COUNT = 5' in p
+          assert 'P3_NEGATIVE_TAIL_MAX = 0.10' in p
+          assert 'P3_SEED_FLOOR_MIN = 0.5' in p
+          assert 'p4_two_view_seed_envelope' in p
+          assert 'new_members_can_seed_growth' in p
+          assert 'ranking_after_membership' in p
+          print('PASS_P5_MINIMAL_JOINT_SEED_SUPPORT_SOURCE_AUDIT')
+          PY
+          sha256sum /tmp/run_p5.py
+
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_joint_seed_support_p5/RUN.md
+          test ! -e target
+          echo NO_P5_TRUTH_EXECUTION_NO_TARGET_ACCESS

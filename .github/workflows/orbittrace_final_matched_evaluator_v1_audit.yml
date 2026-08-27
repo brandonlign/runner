@@ -1,0 +1,80 @@
+name: OrbitTrace final matched evaluator v1 synthetic audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_matched_evaluator_v1/**'
+      - '.github/workflows/orbittrace_final_matched_evaluator_v1_audit.yml'
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact evaluator numerical dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check numpy==2.1.3 scipy==1.14.1
+      - name: Decode and pin evaluator source
+        run: |
+          set -euo pipefail
+          base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/orbittrace_final_matched_evaluator_v1.py
+          test "$(sha256sum /tmp/orbittrace_final_matched_evaluator_v1.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          python -m py_compile /tmp/orbittrace_final_matched_evaluator_v1.py orbittrace_final_matched_evaluator_v1/self_test.py
+      - name: Prove evaluator has no data transport or target surface
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast, pathlib
+          p=pathlib.Path('/tmp/orbittrace_final_matched_evaluator_v1.py')
+          tree=ast.parse(p.read_text())
+          imports=set()
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports.update(a.name.split('.')[0] for a in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module: imports.add(n.module.split('.')[0])
+          forbidden={'requests','urllib','http','socket','subprocess','gmn_python_api','bs4'}
+          assert not (imports & forbidden), imports & forbidden
+          text=p.read_text().lower()
+          for token in ('orbittrace-april','target_ra','target_dec','target_member','maarsy_2020','maarsy_2021'):
+              assert token not in text, token
+          print('PASS_FINAL_MATCHED_EVALUATOR_NO_TRANSPORT_NO_TARGET_SURFACE')
+          PY
+      - name: Run synthetic scientific semantics tests only
+        run: |
+          set -euo pipefail
+          python orbittrace_final_matched_evaluator_v1/self_test.py
+      - name: Record frozen source identities
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum \
+            orbittrace_final_matched_evaluator_v1/PROTOCOL.md \
+            orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 \
+            orbittrace_final_matched_evaluator_v1/self_test.py \
+            /tmp/orbittrace_final_matched_evaluator_v1.py \
+            > output/source_sha256.txt
+          printf '%s\n' 'sonotaco_2013_2014_scientific_access=false' >> output/source_sha256.txt
+          printf '%s\n' 'maarsy_scientific_access=false' >> output/source_sha256.txt
+          printf '%s\n' 'target_information_access=false' >> output/source_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-matched-evaluator-v1-synthetic-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

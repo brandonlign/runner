@@ -1,0 +1,305 @@
+name: OrbitTrace v48 self-supported quality-component transfer v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v48_self_supported_quality_component_transfer_v1/**'
+      - '.github/workflows/orbittrace_v48_self_supported_quality_component_transfer_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v48-self-supported-quality-component-transfer-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 97e388bf8fdda6bbcf58d180285986e090046266
+          path: frozen-v42
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 31704c312c09be2765ad3f65a0685d1acfd2b055
+          path: frozen-v40
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and pin frozen scientific/runtime sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/auth1091 input/signal1098 input/auth1139 input/truth output/pretruth output/freeze output/result
+          test "$(git hash-object orbittrace_v48_self_supported_quality_component_transfer_v1/PROTOCOL.md)" = '7b5ec02d623b21e11b268e12bbc2a0d5ddd81b8f'
+          test "$(git hash-object orbittrace_v48_self_supported_quality_component_transfer_v1/train_evaluate.py)" = 'b0451ad5e04601ea698b1d43482fe7e65f2b4ed4'
+          test "$(git -C frozen-v42 rev-parse HEAD)" = '97e388bf8fdda6bbcf58d180285986e090046266'
+          test "$(git -C frozen-v42 hash-object orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py)" = 'ad76d79abb9eb0fe82d7d2a7869a446814e6e3a4'
+          test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
+          test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
+          test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          test "$(git -C frozen-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          python -m py_compile orbittrace_v48_self_supported_quality_component_transfer_v1/train_evaluate.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - name: Verify immutable pre-SonotaCo ranker source
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          echo PASS_V48_IMMUTABLE_RANKER_SOURCE
+
+      - name: Restore immutable #950 pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route,n in (('sugar',267),('hdbscan',229)):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and f['truth_accessed'] is False
+              assert m['feature_dimension']==71 and len(m['family_ids'])==n and len(f['families'])==n
+              assert [str(x['family_id']) for x in f['families']]==list(map(str,m['family_ids']))
+              assert m['target_information_access'] is False
+              assert m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          h=json.load(open('input/payload/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+          assert len(h['quality_order'])==229 and set(map(str,h['quality_order']))==set(map(str,h['family_ids']))
+          print('PASS_V48_IMMUTABLE_PRETRUTH_PAYLOAD')
+          PY
+
+      - name: Reproduce exact frozen graph/components before truth
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:frozen-v42:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v48_self_supported_quality_component_transfer_v1/train_evaluate.py pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --output output/pretruth
+          echo '2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json' | sha256sum -c -
+          echo 'c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json' | sha256sum -c -
+          echo PASS_V48_EXACT_GRAPH_COMPONENTS
+
+      - name: Restore and verify #1091 authorizer before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088402091/zip' -o input/auth1091.zip
+          echo 'd1943f629964633f44e154252a225f7171c380674ae6e60e5fcbbd3f8b890dd7  input/auth1091.zip' | sha256sum -c -
+          unzip -q input/auth1091.zip -d input/auth1091
+          echo '2edb949dbab2d7cbf6ed5e808e2a049116eb0934b25b356572463b615d730842  input/auth1091/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/auth1091/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC'
+          assert r['joint_direction_supported_both_years'] is True
+          assert r['new_rank_or_score_evaluated'] is False and r['selector_evaluated'] is False
+          assert r['replacement_rule_evaluated'] is False and r['successor_selected'] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_V48_1091_AUTHORIZER')
+          PY
+
+      - name: Restore and verify #1098 fixed joint universe before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088724826/zip' -o input/signal1098.zip
+          echo '11498b73237304f4175f37910596700ed78284bc6106d0c21dcaab66f97b7978  input/signal1098.zip' | sha256sum -c -
+          unzip -q input/signal1098.zip -d input/signal1098
+          echo 'a3bcea66b72003a38cc492ea3b182d92cd20f3d1b94a43acbc8a0cbdd465ed07  input/signal1098/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/signal1098/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json'))
+          assert r['verdict']=='PASS_V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL_FREEZE'
+          assert r['scientific_role']=='FULL_FIXED_HDB_FAMILY_SIGNAL_VECTOR_NO_OUTCOME_USED_FOR_DEFINITION'
+          assert r['family_count']==229 and len(r['families'])==229
+          assert sum(bool(x['joint_signal']) for x in r['families'])==60
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_V48_1098_FIXED_JOINT_UNIVERSE')
+          PY
+
+      - name: Restore and verify binding #1139 mechanism authorizer before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9099927842/zip' -o input/auth1139.zip
+          echo '67960fbd5fd76173da62c6d1823d507c99ee6431862ce56351aa7a194ec81e07  input/auth1139.zip' | sha256sum -c -
+          unzip -q input/auth1139.zip -d input/auth1139
+          echo 'c372b4aac0547198cb6ac4239d604fddc12fdd0f11a930ab39a1e46d01f5e461  input/auth1139/diag/V46_JOINT_INHERITANCE_GAP_DIAGNOSTIC.json' | sha256sum -c -
+          echo '145ceb528e66f924c00c152cf2e5a38a2424ffda8f0a39a7eb80680c1bd5dadd  input/auth1139/freeze/V46_JOINT_INHERITANCE_GAP_VECTOR.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/auth1139/diag/V46_JOINT_INHERITANCE_GAP_DIAGNOSTIC.json'))
+          v=json.load(open('input/auth1139/freeze/V46_JOINT_INHERITANCE_GAP_VECTOR.json'))
+          assert r['verdict']=='PASS_V46_JOINT_INHERITANCE_GAP_DIAGNOSTIC'
+          assert r['scientific_role']=='POST_V46_DIAGNOSTIC_ONLY_JOINT_INHERITANCE_GAP_NO_SUCCESSOR_EVALUATED'
+          assert r['direction_supported_both_years'] is True and r['joint_family_count']==60
+          assert r['vector_file_sha256']=='145ceb528e66f924c00c152cf2e5a38a2424ffda8f0a39a7eb80680c1bd5dadd'
+          assert r['vector_canonical_sha256']=='0a9eda015ca367697a1dca678a0e8f7d986880fc424a0cbf4573567ab8776672'
+          for k in ('new_rank_or_score_evaluated','selector_evaluated','replacement_rule_evaluated','successor_selected','threshold_search','quantile_search','top_k_search','rank_window_search','alternate_statistic_search','alternate_direction_test','pairwise_dominance_evaluated','boundary_identity_used','boundary_rescue_list_created','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          assert v['verdict']=='PASS_V46_JOINT_INHERITANCE_GAP_VECTOR_FREEZE'
+          assert v['scientific_role']=='EXACT_60_JOINT_FAMILY_INHERITANCE_GAP_FROZEN_BEFORE_OUTCOME_TRUTH'
+          assert v['joint_family_count']==60 and len(v['families'])==60
+          assert v['canonical_sha256_without_self_field']=='0a9eda015ca367697a1dca678a0e8f7d986880fc424a0cbf4573567ab8776672'
+          assert v['truth_accessed'] is False and v['literature_budget_used'] is False and v['boundary_identity_used'] is False
+          print('PASS_V48_1139_MECHANISM_AUTHORIZER')
+          PY
+
+      - name: Freeze complete v48 HDB order before truth
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:frozen-v42:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v48_self_supported_quality_component_transfer_v1/train_evaluate.py freeze-order \
+            --signal-file input/signal1098/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json \
+            --gap-result input/auth1139/diag/V46_JOINT_INHERITANCE_GAP_DIAGNOSTIC.json \
+            --gap-vector input/auth1139/freeze/V46_JOINT_INHERITANCE_GAP_VECTOR.json \
+            --output output/freeze
+          python - <<'PY'
+          import json
+          r=json.load(open('output/freeze/V48_SELF_SUPPORTED_ORDER_FREEZE.json'))
+          assert r['verdict']=='PASS_V48_SELF_SUPPORTED_ORDER_FREEZE'
+          assert r['scientific_role']=='V48_COMPLETE_HDB_ORDER_FROZEN_BEFORE_OUTCOME_TRUTH'
+          assert r['hdb_family_count']==229 and r['joint_positive_candidate_count']==60 and r['self_supported_candidate_count']==35
+          assert r['v31_hdb_order_sha256']=='85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d'
+          assert r['v48_hdb_order_sha256']=='62041ea9f6e094471a7decf02c71491fc553e93af86a655e21bf1035d0904db6'
+          assert r['self_supported_condition']=='joint_signal AND quality_percentile <= component_best_v31_percentile'
+          assert r['equivalent_gain_condition']=='quality_suppression >= inheritance_gap'
+          assert r['promotion_key']=='quality_rank if self_supported else exact_v31_rank'
+          assert r['truth_accessed'] is False and r['literature_budget_used'] is False
+          for k in ('year_specific_rule','budget_specific_rule','threshold_selected','top_k_selected','rank_window_selected','coefficient_selected','oracle_identity_used_for_ranking','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_V48_COMPLETE_ORDER_FREEZE_BEFORE_TRUTH',r['moved_candidate_count'])
+          PY
+
+      - name: Load immutable exposed truth only after all v48 freezes and authorizers pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+          echo PASS_V48_EXPOSED_TRUTH_LOADED_AFTER_ORDER_FREEZE
+
+      - name: Reproduce exact v31 and evaluate sole frozen v48 order
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:frozen-v42:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v48_self_supported_quality_component_transfer_v1/train_evaluate.py evaluate \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --graph-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
+            --component-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
+            --authorizing-1091 input/auth1091/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json \
+            --authorizing-1139 input/auth1139/diag/V46_JOINT_INHERITANCE_GAP_DIAGNOSTIC.json \
+            --vector-1139 input/auth1139/freeze/V46_JOINT_INHERITANCE_GAP_VECTOR.json \
+            --frozen-order output/freeze/V48_SELF_SUPPORTED_ORDER_FREEZE.json \
+            --output output/result
+
+      - name: Enforce binding v48 scientific/result firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V48_SELF_SUPPORTED_QUALITY_COMPONENT_TRANSFER_RESULT.json'))
+          assert r['verdict'] in {'PASS_V48_SELF_SUPPORTED_QUALITY_COMPONENT_TRANSFER_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT','FAIL_V48_SELF_SUPPORTED_QUALITY_COMPONENT_TRANSFER_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT'}
+          assert r['parent_v31_reproduction_pass'] is True and len(r['parent_v31_controls'])==4
+          assert r['pretruth_graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['pretruth_component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          assert r['sugar_rule']=='exact v31 unchanged' and r['sugar_modified'] is False
+          assert r['hdb_family_count']==229 and r['hdb_original_joint_candidate_count']==60 and r['hdb_self_supported_candidate_count']==35
+          assert r['hdb_self_supported_condition']=='joint_signal AND quality_percentile <= component_best_v31_percentile'
+          assert r['hdb_equivalent_gain_condition']=='quality_suppression >= inheritance_gap'
+          assert r['hdb_promotion_key']=='quality_rank if self_supported else exact_v31_rank'
+          assert r['v31_hdb_order_sha256']=='85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d'
+          assert r['v48_hdb_order_sha256']=='62041ea9f6e094471a7decf02c71491fc553e93af86a655e21bf1035d0904db6'
+          assert r['authorizing_1091_run']==31456963941 and r['authorizing_1091_artifact']==9088402091
+          assert r['authorizing_1139_run']==31488131546 and r['authorizing_1139_artifact']==9099927842
+          assert len(r['panels'])==4 and r['panel_wins']==sum(bool(x['superiority_pair_pass']) for x in r['panels'])
+          for k in ('alternate_balance_inequality_search','epsilon_or_tolerance_relaxation','inheritance_gap_threshold_search','quality_suppression_threshold_search','component_threshold_search','quantile_search','top_k_selected','rank_window_selected','budget_specific_rule','year_specific_rule','identity_exception_used','v47_gap_only_rescue','alternate_boolean_gate_search','or_rule_evaluated','coefficient_search','interpolation_search','bonus_or_cap_search','weighted_fusion_search','equal_ranksum_retry','pareto_layer_evaluated','pairwise_dominance_evaluated','component_representative_retry','component_best_placement_retry','alternate_quality_order_search','radius_search','metric_search','graph_pruning','graph_expansion','component_definition_search','candidate_generation_changed','candidate_membership_changed','feature_search','model_search','k_search','scaling_search','annual_combiner_search','diversity_search','fusion_search','source_quota_selected','oracle_identity_used_for_ranking','truth_aware_group_identity_used_for_ranking','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'],r['panel_wins'],r['panels'])
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v48_self_supported_quality_component_transfer_v1/PROTOCOL.md \
+            orbittrace_v48_self_supported_quality_component_transfer_v1/train_evaluate.py \
+            frozen-v42/orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py \
+            frozen-v40/orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py \
+            input/ranker/run_urc_union_ranker.py \
+            input/signal1098/diag/V31_QUALITY_COMPONENT_JOINT_UNIVERSE_SIGNAL.json \
+            input/auth1139/diag/V46_JOINT_INHERITANCE_GAP_DIAGNOSTIC.json \
+            input/auth1139/freeze/V46_JOINT_INHERITANCE_GAP_VECTOR.json \
+            output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
+            output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
+            output/freeze/V48_SELF_SUPPORTED_ORDER_FREEZE.json \
+            input/truth.zip > output/V48_SELF_SUPPORTED_TRANSFER_SOURCE_SHA256.txt 2>/dev/null || true
+          git -C frozen-v42 rev-parse HEAD > output/frozen_v42_execution_commit.txt 2>/dev/null || true
+          git -C frozen-v40 rev-parse HEAD > output/frozen_v40_execution_commit.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v48-self-supported-quality-component-transfer-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

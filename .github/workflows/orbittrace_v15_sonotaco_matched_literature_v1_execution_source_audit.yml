@@ -1,0 +1,97 @@
+name: OrbitTrace v15 matched SonotaCo execution firewall audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1
+    paths:
+      - '.github/workflows/orbittrace_v15_sonotaco_matched_literature_v1.yml'
+      - '.github/workflows/orbittrace_v15_sonotaco_matched_literature_v1_execution_source_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify dormant source identities
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_v15_sonotaco_matched_literature_v1/run_candidate_pretruth.py)" = 'ee963149ff39d5fe9bbdbb776b339de6b5f0e404'
+          test "$(git hash-object orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py)" = '744bd2195c81ae8032564d5bd0b98560ad65fa7f'
+          test "$(git hash-object orbittrace_v15_sonotaco_matched_literature_v1/PROTOCOL.md)" = '39fd4693bc1631f4cbee926ce9425b2e0958895e'
+          test "$(git hash-object orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py)" = '150a3a476a2bf3aff6dc63d81052f855561a9dfc'
+          test "$(git hash-object orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py)" = '3f720bd754f18dd7600a292c7f3336f08658110a'
+          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          test "$(git hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '502ed92fcf362f324ee644a0fcb962f7cf8d7eef'
+          test ! -e orbittrace_v15_sonotaco_matched_literature_v1/RUN.md
+      - name: Audit fail-closed workflow ordering without data access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/workflows/orbittrace_v15_sonotaco_matched_literature_v1.yml').read_text()
+
+          for token in (
+              'agent/orbittrace-v15-sonotaco-matched-literature-execution-freeze-v1',
+              "EXECUTE_V15_EXPOSED_MATCHED_SONOTACO_LITERATURE_BENCHMARK_V1",
+              '9066146284',
+              'f21de7957b9b94cffbf11845e3d0cad7e86ee2fa70ab0a1530659f36d9a7608d',
+              '9066290529',
+              'f861febeb51ef06d8fdbba316d864fcc5bbfe32f7e36c4157cadf1b592ea2d54',
+              '9050107352',
+              '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc',
+              'PASS_V15_LABEL_FREE_V8_DEPLOYMENT_QUALIFICATION',
+              'PASS_V15_SONOTACO_2013_2014_ENGINEERING_APPLICABILITY',
+              "q['direct_v8_identity_gates']",
+              "a['truth_mapping_accessed']",
+              "a['comparator_output_accessed']",
+              'orbittrace_v15_sonotaco_matched_literature_v1/run_candidate_pretruth.py',
+              'orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py',
+              'orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py',
+              'orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py',
+              'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c',
+          ):
+              assert token in p, token
+          assert "q['v8_identity_gates']" not in p
+          assert "a['truth_accessed']" not in p[p.index("a=json.loads(Path('input/applicability/applicability.json').read_text())"):p.index("gate={")]
+
+          truth_pos=p.index('\n  truth_and_evaluate:')
+          freeze_pos=p.index('\n  freeze:')
+          raw_pos=p.index("https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip")
+          raw2_pos=p.index("https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip")
+          truth_exec_pos=p.index('python -u orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py')
+          assert freeze_pos < truth_pos < raw_pos < raw2_pos < truth_exec_pos
+          assert p[p.index('\n  candidate:'):p.index('\n  comparator:')].count('iaumdcDB/PDA/SNMv3')==0
+          assert p[p.index('\n  comparator:'):freeze_pos].count('iaumdcDB/PDA/SNMv3')==0
+          assert p[freeze_pos:truth_pos].count('iaumdcDB/PDA/SNMv3')==0
+          assert 'needs: freeze' in p[truth_pos:]
+
+          first_prepare=p.index('9050107352')
+          assert p.index("q['verdict']=='PASS_V15_LABEL_FREE_V8_DEPLOYMENT_QUALIFICATION'") < first_prepare
+          assert p.index("a['verdict']=='PASS_V15_SONOTACO_2013_2014_ENGINEERING_APPLICABILITY'") < first_prepare
+
+          assert p.index('orbittrace-v15-matched-pretruth-freeze-v1') < raw_pos
+          assert p.index('freeze_pretruth_outputs.py') < raw_pos
+
+          low=p.lower()
+          for token in ('maarsy.h5', 'dms1991', 'orbittrace-april', 'target_ra', 'target_dec'):
+              assert token not in low, token
+          print('PASS_V15_MATCHED_EXECUTION_FIREWALL_SOURCE_AUDIT')
+          PY
+      - name: Compile benchmark source and record dormant workflow hash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_v15_sonotaco_matched_literature_v1/run_candidate_pretruth.py \
+            orbittrace_v15_sonotaco_matched_literature_v1/open_truth_and_evaluate.py
+          sha256sum .github/workflows/orbittrace_v15_sonotaco_matched_literature_v1.yml
+          echo NO_SCIENTIFIC_DATA_ACCESSED_BY_EXECUTION_SOURCE_AUDIT

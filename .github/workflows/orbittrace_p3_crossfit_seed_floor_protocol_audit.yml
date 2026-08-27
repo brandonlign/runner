@@ -1,0 +1,64 @@
+name: OrbitTrace P3 cross-fit seed-floor protocol audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - orbittrace_crossfit_seed_floor_membership_p3/PROTOCOL.md
+      - .github/workflows/orbittrace_p3_crossfit_seed_floor_protocol_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove fixed P3 succession, cross-fit rule and unchanged science gates
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_crossfit_seed_floor_membership_p3/PROTOCOL.md').read_text()
+          required=(
+            'before the authoritative P2 development result is known',
+            'FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO',
+            'technical/integrity P2 failure does not activate P3',
+            '226 promoted-v8 recurrent seed families',
+            'P2 feature definitions only',
+            'exact ±5° target-year nonseed windows',
+            'C=1.0',
+            'responsibility `>0.5`',
+            'exactly one of five folds',
+            "SHA256(family_id UTF-8)[:8]",
+            '`seed_floor_fd = min(p_cf(seed))`',
+            '`negative_tail_fd <= 0.10`',
+            '`seed_floor_fd > 0.5`',
+            '`probability >= seed_floor_fd`',
+            '`1 + sum(stream_odds)`',
+            'qualified matches >= promoted-v8 95',
+            'recovery@100 >= promoted-v8 58',
+            'top-100 dominant precision >=0.65',
+            'macro F1 >= promoted-v8 macro F1 +0.08 absolute',
+            'mean recall >=1.5× v8',
+            'large-shower mean precision >=0.85',
+            'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
+            'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
+          )
+          for token in required: assert token in p, token
+          assert 'No fold stratification, balancing, retry or search is permitted.' in p
+          assert 'No unreliable direction may add any member.' in p
+          assert 'No P2 outcome, P2 per-label result' in p
+          assert 'Solar longitude 20°–55° remains removed' in p
+          print('PASS_P3_CROSSFIT_SEED_FLOOR_PROTOCOL_AUDIT')
+          PY
+      - name: Assert no-data and no-result boundary
+        run: |
+          set -euo pipefail
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_P2_RESULT_NO_P3_SCIENCE_NO_TARGET_ACCESS
