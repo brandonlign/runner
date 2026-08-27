@@ -1,0 +1,83 @@
+name: Shared-network multiscale confirmation
+
+on:
+  push:
+    branches:
+      - agent/stream-fdr-stage0
+    paths:
+      - stream_fdr_stage0/shared_multiscale_confirmation.py
+      - stream_fdr_stage0/shared_scan_pilot.py
+      - stream_fdr_stage0/audit_multinetwork.py
+      - stream_fdr_stage0/requirements.txt
+      - stream_fdr_stage0/MULTISCALE_CONFIRMATION_PROTOCOL.md
+      - .github/workflows/shared_multiscale_confirmation.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - stream_fdr_stage0/shared_multiscale_confirmation.py
+      - stream_fdr_stage0/shared_scan_pilot.py
+      - stream_fdr_stage0/audit_multinetwork.py
+      - stream_fdr_stage0/requirements.txt
+      - stream_fdr_stage0/MULTISCALE_CONFIRMATION_PROTOCOL.md
+      - .github/workflows/shared_multiscale_confirmation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shared-network-multiscale-confirmation
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/stream-fdr-stage0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: stream_fdr_stage0/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip -r stream_fdr_stage0/requirements.txt
+      - name: Compile frozen confirmation
+        run: |
+          python -m py_compile stream_fdr_stage0/audit_multinetwork.py
+          python -m py_compile stream_fdr_stage0/shared_scan_pilot.py
+          python -m py_compile stream_fdr_stage0/shared_multiscale_confirmation.py
+      - name: Run multiscale confirmation
+        run: python stream_fdr_stage0/shared_multiscale_confirmation.py
+      - name: Record provenance
+        run: |
+          mkdir -p stream_fdr_stage0/results/shared_multiscale_confirmation
+          sha256sum stream_fdr_stage0/shared_multiscale_confirmation.py stream_fdr_stage0/shared_scan_pilot.py stream_fdr_stage0/audit_multinetwork.py stream_fdr_stage0/MULTISCALE_CONFIRMATION_PROTOCOL.md > stream_fdr_stage0/results/shared_multiscale_confirmation/source_sha256.txt
+          find stream_fdr_stage0/data/multinetwork -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > stream_fdr_stage0/results/shared_multiscale_confirmation/input_sha256.txt
+          python --version > stream_fdr_stage0/results/shared_multiscale_confirmation/python_version.txt
+          python -m pip freeze > stream_fdr_stage0/results/shared_multiscale_confirmation/environment.txt
+      - name: Upload confirmation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-network-multiscale-confirmation
+          path: stream_fdr_stage0/results/shared_multiscale_confirmation
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve results on runner branch
+        if: github.event_name == 'push'
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add stream_fdr_stage0/results/shared_multiscale_confirmation
+          if git diff --cached --quiet; then
+            echo 'No result changes to commit.'
+          else
+            git commit -m 'Preserve shared-network multiscale results'
+            git pull --rebase origin agent/stream-fdr-stage0
+            git push origin HEAD:agent/stream-fdr-stage0
+          fi

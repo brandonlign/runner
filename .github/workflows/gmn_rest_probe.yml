@@ -1,0 +1,44 @@
+name: GMN REST API probe
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - dynamics_rest_probe/**
+      - .github/workflows/gmn_rest_probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gmn-rest-api-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/stream-fdr-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile probe
+        run: python -m py_compile dynamics_rest_probe/probe_gmn_rest.py
+      - name: Probe documented REST endpoints
+        run: python dynamics_rest_probe/probe_gmn_rest.py
+      - name: Record provenance
+        run: |
+          sha256sum dynamics_rest_probe/probe_gmn_rest.py > dynamics_rest_probe/results/source_sha256.txt
+          python --version > dynamics_rest_probe/results/python_version.txt
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmn-rest-api-probe
+          path: dynamics_rest_probe/results
+          if-no-files-found: error
+          retention-days: 90
