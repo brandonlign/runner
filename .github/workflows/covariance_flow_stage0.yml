@@ -1,0 +1,83 @@
+name: Covariance-flow alignment Stage-0
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - covariance_flow_stage0/**
+      - .github/workflows/covariance_flow_stage0.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: covariance-flow-stage0
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      SOURCE_ARTIFACT_ID: '8869994126'
+      SOURCE_ARTIFACT_SHA256: 'bc6df6971b5d306af9836b2df71aebbacd6c3f4045ea1b8c1d5268caedc2c322'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/dynamical-coherence-stage0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: covariance_flow_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r covariance_flow_stage0/requirements.txt
+      - name: Download exact labeled data-gate artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p covariance_flow_stage0/input covariance_flow_stage0/results/stage0
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip" \
+            -o covariance_flow_stage0/input/data_gate.zip
+          echo "${SOURCE_ARTIFACT_SHA256}  covariance_flow_stage0/input/data_gate.zip" | sha256sum -c -
+          unzip -q covariance_flow_stage0/input/data_gate.zip -d covariance_flow_stage0/input/data_gate
+          test -s covariance_flow_stage0/input/data_gate/selected_events.jsonl.gz
+      - name: Compile frozen Stage-0
+        run: |
+          python -m py_compile dynamical_matching_stage0/run_static_matching.py
+          python -m py_compile covariance_flow_stage0/run_covariance_flow.py
+          python -m py_compile covariance_flow_stage0/run_covariance_flow_recording.py
+          python -m py_compile covariance_flow_stage0/run_covariance_flow_fresh_primary.py
+      - name: Run fresh-primary covariance-flow benchmark
+        run: |
+          python covariance_flow_stage0/run_covariance_flow_fresh_primary.py \
+            --events covariance_flow_stage0/input/data_gate/selected_events.jsonl.gz \
+            --output covariance_flow_stage0/results/stage0
+      - name: Record provenance
+        run: |
+          sha256sum \
+            covariance_flow_stage0/run_covariance_flow.py \
+            covariance_flow_stage0/run_covariance_flow_recording.py \
+            covariance_flow_stage0/run_covariance_flow_fresh_primary.py \
+            covariance_flow_stage0/PROTOCOL.md \
+            covariance_flow_stage0/requirements.txt \
+            dynamical_matching_stage0/run_static_matching.py \
+            > covariance_flow_stage0/results/stage0/source_sha256.txt
+          sha256sum covariance_flow_stage0/input/data_gate/selected_events.jsonl.gz \
+            > covariance_flow_stage0/results/stage0/input_sha256.txt
+          python --version > covariance_flow_stage0/results/stage0/python_version.txt
+          python -m pip freeze > covariance_flow_stage0/results/stage0/environment.txt
+      - name: Upload covariance-flow evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: covariance-flow-stage0
+          path: covariance_flow_stage0/results/stage0
+          if-no-files-found: error
+          retention-days: 90
