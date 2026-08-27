@@ -1,0 +1,124 @@
+name: OrbitTrace final SonotaCo one-shot v1 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_one_shot_v1/**'
+      - '.github/workflows/orbittrace_final_sonotaco_one_shot_v1.yml'
+      - '.github/workflows/orbittrace_final_sonotaco_one_shot_v1_source_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install source-test dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+      - name: Require dormant trigger and exact frozen execution provenance
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_final_sonotaco_one_shot_v1/RUN.md
+          w=.github/workflows/orbittrace_final_sonotaco_one_shot_v1.yml
+          c=orbittrace_final_sonotaco_one_shot_v1/run_candidate_pretruth.py
+          p=orbittrace_final_sonotaco_comparators_v1/pretruth_comparators.py
+          e=orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py
+          for x in \
+            "orbittrace_final_sonotaco_one_shot_v1/RUN.md" \
+            'EXECUTE_FINAL_SONOTACO_2013_2014_V1' \
+            '31349998268' \
+            '31346168826' \
+            '30855193522' \
+            'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778' \
+            'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c' \
+            "'numpy==2.1.3'" \
+            "'scipy==1.14.1'" \
+            'https://www.astro.sk/iaumdcDB/PDA/SNMv3/013a.zip' \
+            'https://www.astro.sk/iaumdcDB/PDA/SNMv3/014a.zip'; do
+            grep -F "$x" "$w" >/dev/null
+          done
+          for x in \
+            'ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909' \
+            'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990' \
+            '7dd59b5d2be7c0040f42ee494c9bd8b71ccb0d8b' \
+            '31348847806' \
+            '9048521513' \
+            'sha256:4bfb87af3b6c09afdcc62226022d68a995139eda64031fb57169f9a99c510751'; do
+            grep -F "$x" "$c" >/dev/null
+          done
+          for x in \
+            '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb' \
+            'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'; do
+            grep -F "$x" "$p" >/dev/null
+          done
+          grep -F 'evaluation=evaluator.evaluate_pair(eval_payload)' "$e" >/dev/null
+          grep -F 'final=evaluator.final_verdict(pair_results)' "$e" >/dev/null
+          if grep -F 'evaluator.evaluate_pair(candidate_families' "$e" >/dev/null; then
+            echo 'legacy non-payload evaluator call survived' >&2
+            exit 1
+          fi
+      - name: Compile final orchestration
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_final_sonotaco_one_shot_v1/runtime_helpers.py \
+            orbittrace_final_sonotaco_one_shot_v1/prepare_label_free_rows.py \
+            orbittrace_final_sonotaco_one_shot_v1/run_candidate_pretruth.py \
+            orbittrace_final_sonotaco_one_shot_v1/run_comparator_pretruth.py \
+            orbittrace_final_sonotaco_one_shot_v1/freeze_pretruth_outputs.py \
+            orbittrace_final_sonotaco_one_shot_v1/open_truth_and_evaluate.py
+      - name: Run final SonotaCo normalizer self-test
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_final_sonotaco_normalizer_v1/normalizer.py
+      - name: Run truth-free comparator adapter tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_final_sonotaco_comparators_v1/test_pretruth_comparators.py
+      - name: Run post-output truth-boundary tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python orbittrace_final_sonotaco_truth_v1/test_truth_boundary.py
+      - name: Run exact frozen evaluator self-test and interface audit
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --upgrade 'numpy==2.1.3' 'scipy==1.14.1'
+          python - <<'PY'
+          import numpy,scipy
+          assert numpy.__version__=='2.1.3',numpy.__version__
+          assert scipy.__version__=='1.14.1',scipy.__version__
+          print('PASS_EXACT_FROZEN_854_NUMERICAL_RUNTIME')
+          PY
+          base64 -d orbittrace_final_matched_evaluator_v1/evaluator.py.gz.b64 | gzip -dc > /tmp/orbittrace_final_matched_evaluator_v1.py
+          test "$(sha256sum /tmp/orbittrace_final_matched_evaluator_v1.py | cut -d' ' -f1)" = 'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c'
+          PYTHONPATH=/tmp python orbittrace_final_matched_evaluator_v1/self_test.py
+          python - <<'PY'
+          import importlib.util, inspect
+          p='/tmp/orbittrace_final_matched_evaluator_v1.py'
+          spec=importlib.util.spec_from_file_location('frozen_eval',p)
+          assert spec and spec.loader
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          assert str(inspect.signature(m.evaluate_pair)) == "(payload: 'dict[str, Any]') -> 'dict[str, Any]'"
+          assert str(inspect.signature(m.final_verdict)) == "(pair_results: 'list[dict[str, Any]]') -> 'dict[str, Any]'"
+          print('EVALUATE_PAIR_SIGNATURE', inspect.signature(m.evaluate_pair))
+          print('FINAL_VERDICT_SIGNATURE', inspect.signature(m.final_verdict))
+          PY
+      - name: Source guard against target, MAARSY, or alternate-dataset access surfaces
+        run: |
+          set -euo pipefail
+          if grep -REiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|SonotaCo 2023|SonotaCo 2025|MAARSY 2020|MAARSY 2021|MAARSY 2022|MAARSY 2023' orbittrace_final_sonotaco_one_shot_v1 .github/workflows/orbittrace_final_sonotaco_one_shot_v1.yml; then
+            echo 'forbidden target/MAARSY/stale-dataset surface in final one-shot source' >&2
+            exit 1
+          fi
+          echo PASS_FINAL_SONOTACO_ONE_SHOT_SOURCE_FREEZE
+          echo EXECUTION_DORMANT_NO_FINAL_DATA_ACCESSED

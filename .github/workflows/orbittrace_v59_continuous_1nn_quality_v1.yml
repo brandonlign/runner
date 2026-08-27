@@ -1,0 +1,160 @@
+name: OrbitTrace v59 continuous 1-NN quality development v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v59_continuous_1nn_quality_v1/**'
+      - '.github/workflows/orbittrace_v59_continuous_1nn_quality_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v59-continuous-1nn-quality-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and pin frozen v59 scientific sources before truth
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/truth output
+          test "$(git hash-object orbittrace_v59_continuous_1nn_quality_v1/PROTOCOL.md)" = '4f99756b80a32cbcd177315e077d6a5650ba769c'
+          test "$(git hash-object orbittrace_v59_continuous_1nn_quality_v1/train_evaluate.py)" = 'c324ad24e19c5e5d363f0e9c823836d7d27ac630'
+          test "$(git hash-object orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py)" = '917e3cd6f9310ca1282e0efa58ed0924d03ed4da'
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v59_continuous_1nn_quality_v1/train_evaluate.py
+          echo PASS_V59_FROZEN_SOURCE_PINS
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - name: Verify immutable #839 ranker before truth
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          echo PASS_V59_IMMUTABLE_RANKER
+
+      - name: Restore and verify immutable #950 pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route,n in (('sugar',267),('hdbscan',229)):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and f['truth_accessed'] is False
+              assert m['feature_dimension']==71 and len(m['family_ids'])==n and len(f['families'])==n
+              assert [str(x['family_id']) for x in f['families']]==list(map(str,m['family_ids']))
+              assert m['target_information_access'] is False
+              assert m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_V59_IMMUTABLE_PRETRUTH_PAYLOAD')
+          PY
+
+      - name: Load immutable exposed SonotaCo truth only after complete v59 scientific freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+          echo PASS_V59_EXPOSED_TRUTH_LOADED_AFTER_SCIENTIFIC_FREEZE
+
+      - name: Reproduce exact v31 and evaluate sole frozen v59 continuous 1-NN quality rule
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v59_continuous_1nn_quality_v1/train_evaluate.py \
+            --sugar-root input/payload/sugar \
+            --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth \
+            --ranker-source input/ranker/run_urc_union_ranker.py \
+            --output output/result
+
+      - name: Enforce v59 scientific and protected-data firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V59_CONTINUOUS_1NN_QUALITY_RESULT.json'))
+          assert r['verdict'] in {'PASS_V59_CONTINUOUS_1NN_QUALITY_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT','FAIL_V59_CONTINUOUS_1NN_QUALITY_ALL_PANEL_LITERATURE_SUPERIORITY_DEVELOPMENT'}
+          assert r['parent_reproduction_pass'] is True and len(r['parent_controls'])==4
+          exp={('sugar',2013):(0.2719801488280529,16),('sugar',2014):(0.31529041952487225,17),('hdbscan',2013):(0.14888037368183737,9),('hdbscan',2014):(0.15198123772301594,9)}
+          for x in r['parent_controls']:
+              e=exp[(x['comparator'],x['year'])]
+              assert abs(x['macro_f1']-e[0])<1e-12 and x['recovered_f1_gt_0_5']==e[1]
+          assert r['feature_dimension']==71 and r['distance']=='ordinary Euclidean across all 71 fold-training standardized dimensions'
+          assert r['nearest_k']==1 and r['nearest_neighbor_population']=='all fold-training families regardless of target value'
+          assert r['nearest_neighbor_tie_rule']=='first immutable stacked training-row occurrence under numpy.argmin'
+          assert r['same_neighbor_supplies_both_years'] is True and r['annual_prediction_combiner']=='min(pred_2013,pred_2014)'
+          assert r['strict_whole_shower_oof'] is True and r['diversity']=={'lambda':0.8,'scale':1.0} and r['fusion']=='one equal rank-sum with exact v19'
+          assert len(r['fold_diagnostics'])==5 and len(r['panels'])==4
+          assert r['panel_wins']==sum(bool(x['superiority_pair_pass']) for x in r['panels'])
+          for k in ('candidate_membership_changed','pretruth_feature_changed','classifier_or_parametric_regressor_used','nearest_positive_negative_partition_used','distance_weighting_used','multi_neighbor_averaging_used','separate_annual_neighbor_used','target_transform_used','target_threshold_used_for_v59','k_search','metric_search','scaling_search','feature_search','block_weight_search','threshold_search','annual_combiner_search','diversity_search','fusion_search','source_quota_selected','budget_specific_rule','year_specific_rule','route_specific_rule','boundary_identity_used','oracle_identity_used_for_ranking','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'],r['panel_wins'],r['panels'])
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          sha256sum \
+            orbittrace_v59_continuous_1nn_quality_v1/PROTOCOL.md \
+            orbittrace_v59_continuous_1nn_quality_v1/train_evaluate.py \
+            orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py \
+            input/ranker/run_urc_union_ranker.py input/payload.zip input/truth.zip \
+            output/result/V59_CONTINUOUS_1NN_QUALITY_RESULT.json \
+            > output/V59_CONTINUOUS_1NN_QUALITY_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v59-continuous-1nn-quality-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

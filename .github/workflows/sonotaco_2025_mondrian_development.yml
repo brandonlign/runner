@@ -1,0 +1,128 @@
+name: SonotaCo 2025 Mondrian development
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-2025-native-prefix-audit
+    paths:
+      - .github/workflows/sonotaco_2025_mondrian_development.yml
+      - sonotaco_mondrian_development/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sonotaco-2025-mondrian-development
+  cancel-in-progress: true
+
+jobs:
+  external-survey-development:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2025-mondrian-development
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Decode and verify frozen external adapter
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          echo '6432ff4e016dd7521a5e9bb048406c6a2fd67a3d65ad3a06a4c284c6c427a5c9  sonotaco_mondrian_development/source_parts/part00.b64' | sha256sum -c -
+          python - <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          from pathlib import Path
+
+          encoded = ''.join(Path('sonotaco_mondrian_development/source_parts/part00.b64').read_text().split())
+          source = gzip.decompress(base64.b64decode(encoded, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          expected = '5e6d7a6545d83902362cc06c2fae5d285ae92eb2e8e1d7d42fd9769862ebf518'
+          if digest != expected:
+              raise RuntimeError(f'adapter source mismatch: {digest}')
+          Path('/tmp/run_sonotaco_mondrian_development.py').write_bytes(source)
+          print('adapter bytes:', len(source))
+          print('adapter SHA-256:', digest)
+          PY
+          python -m py_compile /tmp/run_sonotaco_mondrian_development.py
+      - name: Retrieve exact GMN-MDC audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download 30855193522 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name real-shower-meta-data-audit \
+            --dir input
+          echo 'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778  input/audit.json' | sha256sum -c -
+      - name: Download exact SonotaCo 2025 archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          echo 'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52  input/025a.zip' | sha256sum -c -
+      - name: Run frozen external-survey development benchmark
+        run: |
+          set -euo pipefail
+          python /tmp/run_sonotaco_mondrian_development.py \
+            --archive input/025a.zip \
+            --audit input/audit.json \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --workers 4 \
+            --output output
+          cat output/SONOTACO_2025_MONDRIAN_DEVELOPMENT.md
+      - name: Enforce all frozen continuation gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/sonotaco_2025_mondrian_development.json').read_text())
+          print(json.dumps({
+              'counts': result['counts'],
+              'candidate_weak_auc': result['candidate_weak_auc'],
+              'fixed_comparator_weak_auc': result['fixed_comparator_weak_auc'],
+              'false_positive': result['false_positive'],
+              'worst_reporting_sector_0.05': result['worst_reporting_sector_0.05'],
+              'recall': result['recall'],
+              'gates': result['gates'],
+              'verdict': result['verdict'],
+          }, indent=2))
+          if not all(result['gates'].values()):
+              raise SystemExit('Frozen SonotaCo 2025 Mondrian development gate failed')
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_mondrian_development/PROTOCOL.md \
+            sonotaco_mondrian_development/source_parts/part00.b64 \
+            real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            mondrian_clique_development/source_parts_v2/part00.b64 \
+            mondrian_clique_development/source_parts_v2/part01.b64 \
+            mondrian_clique_development/source_parts_v2/part02.b64 \
+            mondrian_clique_development/source_parts_v2/part03.b64 \
+            input/025a.zip \
+            input/audit.json \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - name: Upload frozen development evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2025-mondrian-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90

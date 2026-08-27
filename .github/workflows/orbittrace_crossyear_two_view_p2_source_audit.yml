@@ -1,0 +1,104 @@
+name: OrbitTrace cross-year two-view P2 source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/PROTOCOL.md
+      - orbittrace_crossyear_two_view_membership_p2/run_development.py
+      - orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py
+      - .github/workflows/orbittrace_crossyear_two_view_p2_development.yml
+      - .github/workflows/orbittrace_crossyear_two_view_p2_source_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-crossyear-two-view-p2-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-crossyear-two-view-membership-p2-freeze
+      - name: Reconstruct protocol-compliant runtime and prove frozen boundaries
+        run: |
+          set -euo pipefail
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py \
+            /tmp/run_p2_protocol_compliant.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/run_p2_protocol_compliant.py' | sha256sum -c -
+          python -m py_compile /tmp/run_p2_protocol_compliant.py
+          python - <<'PY'
+          import ast,hashlib
+          from pathlib import Path
+          text=Path('/tmp/run_p2_protocol_compliant.py').read_text()
+          tree=ast.parse(text)
+          assert hashlib.sha256(text.encode()).hexdigest()=='169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da'
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          constants={}
+          for n in tree.body:
+              if isinstance(n,ast.Assign) and len(n.targets)==1 and isinstance(n.targets[0],ast.Name):
+                  try: constants[n.targets[0].id]=ast.literal_eval(n.value)
+                  except Exception: pass
+          assert constants['YEARS']==(2022,2023)
+          assert constants['V8_SOURCE_COMMIT']=='c9d6c44704013ba0c9430100e98a29a56b453304'
+          assert constants['DSH_COMPARATOR_SHA256']=='85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a'
+          assert constants['EXPECTED_FAMILY_COUNT']==226
+          assert constants['WINDOW_HALF_WIDTH_DEG']==5.0
+          assert constants['MIN_DIRECTION_NEGATIVES']==128
+          assert constants['LOGISTIC_C']==1.0
+          assert constants['LOGISTIC_MAX_ITER']==1000
+          assert constants['LOGISTIC_TOL']==1e-10
+          assert constants['RESPONSIBILITY_THRESHOLD']==0.5
+          assert constants['MACRO_F1_GAIN_GATE']==0.08
+          assert constants['TOP100_PRECISION_FLOOR']==0.65
+          assert constants['LARGE_RECALL_MULTIPLIER']==1.5
+          assert constants['LARGE_PRECISION_FLOOR']==0.85
+          header=ast.get_source_segment(text,defs['exact_header_positions'])
+          assert 'exact("q")' in header and 'field == "Q"' in header and 'q/Q schema identity changed' in header
+          orbit=ast.get_source_segment(text,defs['parse_target_excluded_orbits'])
+          assert orbit.index('support.BLIND_LOW') < orbit.index('values = {')
+          assert 'label_column_accessed": False' in orbit and 'target_region_orbit_decoded": False' in orbit
+          dsh=ast.get_source_segment(text,defs['min_exact_dsh_to_source'])
+          assert dsh.count('dsh.pairwise_dsh(')==1 and 'np.min(cross, axis=1)' in dsh and '0.05' not in dsh
+          main=ast.get_source_segment(text,defs['main'])
+          # Required universe correction: EVERY non-seed row enters the ±5° window test.
+          assert 'valid_nonseed_by_year = {' not in main
+          assert 'target_nonseed_events = valid_nonseed_by_year[target_year]' not in main
+          assert 'nonseed_by_year = {' in main
+          assert '[e for e in scan_by_year[year] if str(e["id"]) not in global_seed_ids]' in main
+          assert 'target_nonseed_events = nonseed_by_year[target_year]' in main
+          assert 'missing_orbit_ids = [str(event["id"]) for event in negative_events if str(event["id"]) not in orbit_by_id]' in main
+          assert 'P2 input-ineligible: required target-window nonseed lacks valid orbit' in main
+          assert main.index('negative_events = [event for event, keep') < main.index('missing_orbit_ids =') < main.index('negative_obs = mahalanobis_distance')
+          # Frozen model/training/conflict rules remain exact.
+          assert 'OAS(' in text and 'StandardScaler()' in main and 'scaler.fit(X, sample_weight=sample_weight)' in main
+          for token in ('penalty="l2"','C=LOGISTIC_C','solver="lbfgs"','max_iter=LOGISTIC_MAX_ITER','tol=LOGISTIC_TOL','class_weight=None'):
+              assert token in main, token
+          assert '0.5 / len(x_pos)' in main and '0.5 / len(x_neg)' in main
+          assert 'denom = 1.0 + float(sum(p["odds"] for p in proposals))' in main
+          assert 'responsibility <= RESPONSIBILITY_THRESHOLD' in main
+          assert 'family_rank[str(p["family_id"])]' in main
+          assert 'global_seed_ids' in main and 'seed entered P2 competition' in main
+          model_freeze=main.index('(args.output / "p2_model_pretruth.sha256").write_text')
+          membership_freeze=main.index('(args.output / "p2_membership_pretruth.sha256").write_text')
+          truth_eval=main.index('baseline_full = v8.mult.evaluate_order(hidden_labels')
+          assert model_freeze < membership_freeze < truth_eval
+          pretruth=main[:truth_eval]
+          assert 'evaluate_order(hidden_labels' not in pretruth and 'eligible_labels(hidden_labels' not in pretruth
+          assert 'parameter_search": False' in main and 'new_members_can_seed_growth": False' in main
+          print('PASS_CROSSYEAR_TWO_VIEW_P2_PROTOCOL_COMPLIANT_SOURCE_AUDIT')
+          PY
+      - name: Assert source-only firewall
+        if: always()
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION_NO_ORBITTRACE_TARGET

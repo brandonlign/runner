@@ -1,0 +1,77 @@
+name: OrbitTrace v15 label-free v8 qualification source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_v15_label_free_v8_qualification_v1/**'
+      - '.github/workflows/orbittrace_v15_label_free_v8_qualification_v1_source_audit.yml'
+      - '.github/workflows/orbittrace_v15_label_free_v8_qualification_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit frozen source lineage and firewall
+        run: |
+          set -euo pipefail
+          test "$(git -C frozen-v8 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
+          test "$(git -C frozen-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          python -m py_compile orbittrace_v15_label_free_v8_qualification_v1/run_qualification.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          runner=Path('orbittrace_v15_label_free_v8_qualification_v1/run_qualification.py').read_text()
+          protocol=Path('orbittrace_v15_label_free_v8_qualification_v1/PROTOCOL.md').read_text()
+          tree=ast.parse(runner)
+          imports=set()
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports.update(x.name.split('.')[0] for x in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module: imports.add(n.module.split('.')[0])
+          forbidden={'requests','urllib','http','socket','subprocess','h5py','tarfile','zipfile','pandas','gmn_python_api'}
+          assert not imports.intersection(forbidden), imports.intersection(forbidden)
+          for token in (
+              'YEARS = (2022, 2023)',
+              'EXPECTED_FAMILY_COUNT = 226',
+              'EXPECTED_QUALIFIED = 95',
+              'EXPECTED_V8_RECOVERY100 = 58',
+              'EXPECTED_V8_MRR = 0.045531138942766655',
+              'EXPECTED_V8_PRECISION = 0.6884631112636006',
+              'MIN_V15_MRR = 0.04325458199562832',
+              'MIN_V15_PRECISION = 0.6384631112636006',
+              'v6.label_free_scan_year',
+              'v8.repair_year_centroids',
+              'application.run_pretruth',
+              'direct_order == result["component_orders"]["128"]',
+              'label_dependent_calibration_used": False',
+          ):
+              assert token in runner, token
+          for phrase in (
+              'canonical event rows -> exact promoted v8 label-free family graph',
+              'no calibration events and no score threshold',
+              'component caps exactly `(128, 96, 64)`',
+              'PASS_V15_LABEL_FREE_V8_DEPLOYMENT_QUALIFICATION',
+              'no DMS or replacement dataset',
+          ):
+              assert phrase.lower() in protocol.lower(), phrase
+          assert not Path('orbittrace_v15_label_free_v8_qualification_v1/RUN.md').exists()
+          for forbidden_surface in ('https://', 'http://', 'h5py.', 'requests.', 'urlopen(', 'download'):
+              assert forbidden_surface not in runner.lower(), forbidden_surface
+          print('PASS_V15_LABEL_FREE_V8_QUALIFICATION_SOURCE_AUDIT')
+          print('NO_SCIENTIFIC_EXECUTION_NO_EXTERNAL_ACCESS_NO_TARGET_ACCESS')
+          PY

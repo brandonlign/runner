@@ -1,0 +1,82 @@
+name: OrbitTrace fixed4 wrapper saturation PR
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-blind-catalogue-synthesis
+    paths:
+      - orbittrace_fixed4_wrapper_audit/**
+      - .github/workflows/orbittrace_fixed4_wrapper_saturation_pr.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-fixed4-wrapper-saturation-pr
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BROAD_ARTIFACT_ID: '8957230278'
+      BROAD_ARTIFACT_SHA256: '2ee3d5c9edf299c0f9ea69b2d6254d7918e0aa659f8cc2c659bb99ff2dfc0d17'
+      CAL_SCAN_ARTIFACT_ID: '8958042095'
+      CAL_SCAN_ARTIFACT_SHA256: '3ce72dde553cf58c6d4b9e734c29558a0f2bbefee664ba98189f4e90e821c596'
+      CAL_REVEAL_ARTIFACT_ID: '8958194010'
+      CAL_REVEAL_ARTIFACT_SHA256: '74c95a3fd59650126a2a298fc1bab5cc055caa91bff2feae6c9256521fdc00aa'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-fixed4-wrapper-saturation-audit
+      - name: Retrieve exact frozen artifacts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/broad input/cal_scan input/cal_reveal output
+          fetch_artifact() {
+            local id="$1" out="$2"
+            curl --fail-with-body -L \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
+              -o "${out}"
+          }
+          fetch_artifact "${BROAD_ARTIFACT_ID}" input/broad.zip
+          fetch_artifact "${CAL_SCAN_ARTIFACT_ID}" input/cal_scan.zip
+          fetch_artifact "${CAL_REVEAL_ARTIFACT_ID}" input/cal_reveal.zip
+          echo "${BROAD_ARTIFACT_SHA256}  input/broad.zip" | sha256sum -c -
+          echo "${CAL_SCAN_ARTIFACT_SHA256}  input/cal_scan.zip" | sha256sum -c -
+          echo "${CAL_REVEAL_ARTIFACT_SHA256}  input/cal_reveal.zip" | sha256sum -c -
+          unzip -q input/broad.zip -d input/broad
+          unzip -q input/cal_scan.zip -d input/cal_scan
+          unzip -q input/cal_reveal.zip -d input/cal_reveal
+      - name: Run frozen audit
+        run: |
+          set -euo pipefail
+          python orbittrace_fixed4_wrapper_audit/audit.py \
+            --broad input/broad \
+            --cal-scan input/cal_scan \
+            --cal-reveal input/cal_reveal \
+            --output output
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            orbittrace_fixed4_wrapper_audit/PROTOCOL.md \
+            orbittrace_fixed4_wrapper_audit/audit.py \
+            input/broad.zip input/cal_scan.zip input/cal_reveal.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-fixed4-wrapper-saturation-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

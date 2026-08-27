@@ -1,0 +1,43 @@
+name: OrbitTrace wavelet catalogue v3 source export
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-wavelet-catalogue-v3-development
+    paths:
+      - .github/workflows/orbittrace_wavelet_catalogue_v3_source_export.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Decode and verify exact development runner
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cat orbittrace_wavelet_catalogue_v3/source_parts/part*.b64 \
+            | base64 --decode \
+            | gzip --decompress \
+            > output/run_wavelet_catalogue_v3_development.py
+          test "$(sha256sum output/run_wavelet_catalogue_v3_development.py | awk '{print $1}')" = \
+            "ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51"
+          python -m py_compile output/run_wavelet_catalogue_v3_development.py
+          sha256sum output/run_wavelet_catalogue_v3_development.py > output/source_sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-wavelet-catalogue-v3-decoded-source
+          path: output
+          if-no-files-found: error
+          retention-days: 90

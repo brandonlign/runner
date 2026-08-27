@@ -1,0 +1,58 @@
+name: OrbitTrace final comparator pretruth runner v1 audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_comparators_v1/**'
+      - '.github/workflows/orbittrace_final_comparator_pretruth_runner_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit source identity, constants, truth boundary, and synthetic execution
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4'
+          p=orbittrace_final_sonotaco_comparators_v1/pretruth_comparators.py
+          d=orbittrace_final_sonotaco_comparators_v1/PROTOCOL.md
+          for x in \
+            'sonotaco-final-label-free-sugar-v1' \
+            '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb' \
+            'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2' \
+            'SUGAR_CLONE_ITERATIONS = 1000' \
+            'SUGAR_MIN_RECURRENCE = 100' \
+            'SUGAR_SEED_ROOT = 20170209' \
+            'HDBSCAN_MIN_CLUSTER_SIZE = 100' \
+            'HDBSCAN_VERSION = "0.8.44"' \
+            '__source_sha256__' \
+            'truth-bearing key present before output freeze'; do
+            grep -F "$x" "$p" >/dev/null
+          done
+          for x in \
+            'min samples 5' \
+            'epsilon percentile 23' \
+            '1000 clone iterations' \
+            'minimum recurrence 100' \
+            'seed root 20170209' \
+            'No known-shower truth may open'; do
+            grep -F "$x" "$d" >/dev/null
+          done
+          if grep -Eiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|requests\.|urllib|curl |wget |2013.*zip|2014.*zip' "$p"; then
+            echo 'forbidden data/target transport surface in pretruth comparator adapter' >&2
+            exit 1
+          fi
+          cd orbittrace_final_sonotaco_comparators_v1
+          python test_pretruth_comparators.py
+          echo PASS_FINAL_PRETRUTH_COMPARATOR_RUNNER_SOURCE_AUDIT
+          echo NO_SONOTACO_VALUES_NO_TRUTH_NO_TARGET_ACCESS

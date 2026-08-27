@@ -1,0 +1,57 @@
+name: OrbitTrace P14 direct matched pretruth source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-launcher-v2
+    paths:
+      - orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct*.py
+      - orbittrace_support_safe_rank_p14/run_matched_pretruth_direct_v1.sh
+      - orbittrace_core_halo_p13_literature/prepare_pretruth_panel_input_p14.py
+      - orbittrace_core_halo_p13_literature/finalize_pretruth_checkpoint_p14.py
+      - .github/workflows/orbittrace_p14_matched_direct_source_audit.yml
+      - .github/workflows/orbittrace_p14_matched_direct_pretruth.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Generate and audit final pretruth shell without data access
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
+          python -m py_compile orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct.py orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v2.py orbittrace_core_halo_p13_literature/prepare_pretruth_panel_input_p14.py orbittrace_core_halo_p13_literature/finalize_pretruth_checkpoint_p14.py
+          python orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v2.py orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p14_direct.sh
+          bash -n /tmp/p14_direct.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/p14_direct.sh').read_text()
+          required=(
+            'LAUNCH_P14_MATCHED_PRETRUTH_DIRECT_V1',
+            'PASS_P14_DIRECT_AUTHORITATIVE_DEVELOPMENT',
+            'fetch_exact_assignment_artifact 9012424187',
+            'fetch_exact_assignment_artifact 8955917326',
+            '8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3',
+            '1c6960eb8dd1c29e1787dd3cd2da58ca0397c73dc21c432caa5b15c2cc1f3204',
+            'PASS_P14_DIRECT_ORBIT_READER_SCHEMA_CORRECTION',
+            '--p14-rank-module /tmp/p14_support_safe_rank.py',
+            '/tmp/finalize_p14_checkpoint.py',
+            'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES',
+            'exit 0',
+          )
+          for x in required: assert x in p,x
+          for x in ('OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE','evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
+              assert x not in p,x
+          assert p.count("progress 'AUTHORITATIVE P13 DEVELOPMENT PREREQUISITE'")==1
+          assert p.count("progress 'EXACT RAW BENCHMARK ARCHIVES'")==1
+          assert p.count("progress 'P14 HARD TWO-PANEL PRETRUTH BARRIER — STOP BEFORE TRUTH'")==1
+          print('PASS_P14_DIRECT_GENERATED_SHELL_SOURCE_AUDIT')
+          PY
+          test ! -e orbittrace_support_safe_rank_p14/LAUNCH_PRETRUTH.md
+          echo NO_COMPARATOR_DOWNLOAD_NO_TRUTH_NO_TARGET_ACCESS

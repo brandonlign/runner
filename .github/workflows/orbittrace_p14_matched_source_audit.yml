@@ -1,0 +1,57 @@
+name: OrbitTrace P14 matched source/pretruth audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-launcher-v2
+    paths:
+      - orbittrace_support_safe_rank_p14/P14_MATCHED_BENCHMARK_PROTOCOL.md
+      - orbittrace_support_safe_rank_p14/run_matched_pretruth_v1.sh
+      - orbittrace_core_halo_p13_literature/prepare_pretruth_panel_input_p14.py
+      - orbittrace_core_halo_p13_literature/finalize_pretruth_checkpoint_p14.py
+      - orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py
+      - .github/workflows/orbittrace_p14_matched_source_audit.yml
+      - .github/workflows/orbittrace_p14_matched_pretruth.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Audit promoted P14-only scientific delta
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v7.sh)" = 'c16ca7fcd15d08f179bca69263d9035c600aeb04'
+          python -m py_compile orbittrace_core_halo_p13_literature/prepare_pretruth_panel_input_p14.py orbittrace_core_halo_p13_literature/finalize_pretruth_checkpoint_p14.py orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py
+          bash -n orbittrace_support_safe_rank_p14/run_matched_pretruth_v1.sh
+          git fetch --no-tags --depth=1 origin 213310dc72f691b1558171e8094002ec6b9a7b07
+          git show FETCH_HEAD:orbittrace_support_safe_rank_p14/support_safe_rank.py > /tmp/p14.py
+          test "$(git hash-object /tmp/p14.py)" = 'dfb58023ce26583a532ea5342cde051ff288d44c'
+          python -m py_compile /tmp/p14.py
+          python - <<'PY'
+          from pathlib import Path
+          prep=Path('orbittrace_core_halo_p13_literature/prepare_pretruth_panel_input_p14.py').read_text()
+          cp=Path('orbittrace_core_halo_p13_literature/finalize_pretruth_checkpoint_p14.py').read_text()
+          run=Path('orbittrace_support_safe_rank_p14/run_matched_pretruth_v1.sh').read_text()
+          proto=Path('orbittrace_support_safe_rank_p14/P14_MATCHED_BENCHMARK_PROTOCOL.md').read_text()
+          for x in ('install_p14_rank','score_and_complete_rank','original_score','original_rank','p14_support_safe_rank','fabricated_scores','episode_size_relaxed','P14_SUPPORT_SAFE_MULTIPLICITY_RANK'):
+              assert x in prep,x
+          for x in ('p14_rank_frozen_before_truth','p14_no_fabricated_score','p14_episode_size_128_unchanged','p14_support_safe_rank_sha256'):
+              assert x in cp,x
+          for x in ('STOP BEFORE TRUTH','PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES','9041190744','dfb58023ce26583a532ea5342cde051ff288d44c'):
+              assert x in run,x
+          for x in ('4–9-member mean F1 >= comparator +0.10','combined 4–24-member mean F1 >= comparator +0.10','both HDBSCAN and Sugar','No target access is authorized by matched PASS alone'):
+              assert x in proto,x
+          assert "progress 'POSTFREEZE TRUTH PARSERS + EVALUATOR SOURCE'" in run  # only as truncation anchor text
+          assert "p=p[:pos]+" in run and "exit 0" in run
+          for x in ('OrbitTrace-April','target_coordinate'):
+              assert x not in prep+cp+run+proto,x
+          print('PASS_P14_MATCHED_SOURCE_PRETRUTH_AUDIT')
+          PY
+          test ! -e orbittrace_core_halo_p13_literature/LAUNCH_V7.md
+          echo NO_MATCHED_TRUTH_NO_CLUSTER_VALUES_NO_TARGET_ACCESS

@@ -1,0 +1,47 @@
+name: OrbitTrace P18 matched truth-opening protocol source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/P18_MATCHED_TRUTH_OPENING_PROTOCOL.md
+      - .github/workflows/orbittrace_p18_matched_truth_opening_protocol_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify P18 truth-opening is one-time checkpoint-only and gate-frozen
+        run: |
+          set -euo pipefail
+          p=orbittrace_p17_rank_halo_membership_p18/P18_MATCHED_TRUTH_OPENING_PROTOCOL.md
+          for x in \
+            'P18 is already fixed as the sole primary matched challenger' \
+            'competitor_cluster_values_accessed=false' \
+            'known_shower_truth_accessed=false' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            '3f53e1ffeabb1b32d2de124cbf903d193012b9af' \
+            'run the already-frozen blind-safe matched evaluator **once**' \
+            'No P17/P18 detector, halo proposal, family constructor, score, distance, membership model, threshold, merge, or ranking code may run after truth becomes available' \
+            '4–9-member mean F1 gain >= +0.10' \
+            'combined 4–24-member mean F1 gain >= +0.10' \
+            'overall macro-F1 delta >= -0.10' \
+            'retain at least 80%' \
+            'PASS_P18_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'FAIL_P18_MATCHED_SPARSE_SUPERIORITY_NO_GO' \
+            'P17 core-only may be evaluated only as a preregistered diagnostic ablation' \
+            'does not authorize target access'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'target_coordinate|OrbitTrace-April|prior.*rank 59|247\.|-14\.|37\.62|95 canonical' "$p"; then
+            echo 'target-specific information leaked into P18 truth-opening protocol' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md
+          echo PASS_P18_MATCHED_TRUTH_OPENING_PROTOCOL_SOURCE_FREEZE
+          echo NO_MATCHED_TRUTH_OPENED_NO_EXTERNAL_NO_TARGET_ACCESS

@@ -1,0 +1,110 @@
+name: OrbitTrace P13 matched literature full freeze audit v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-core-halo-pretruth-reservation
+    paths:
+      - orbittrace_core_halo_p13_literature/**
+      - .github/workflows/orbittrace_p13_matched_full_freeze_audit_v2.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 1}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install source-audit dependencies
+        run: python -m pip install numpy==2.1.3 scipy==1.14.1 scikit-learn==1.5.2 pandas==2.2.3 requests==2.32.5 beautifulsoup4==4.12.3
+      - name: Verify exact machine freeze
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          f=json.loads(Path('orbittrace_core_halo_p13_literature/MATCHED_FREEZE.json').read_text())
+          assert f['classification']=='P13 matched-literature execution freeze'
+          assert f['years']==[2023,2025] and f['blind_exclusion']==[20.0,55.0]
+          assert f['primary_discovery_output']=='immutable P13 recurrent core only'
+          assert f['secondary_characterization_output']=='exact transported P12 halo; cannot affect superiority'
+          assert f['p13_development']['workflow_run_id']==31303078223
+          assert f['p13_development']['artifact_id']==9035081147
+          assert f['p13_development']['artifact_digest']=='sha256:efd9c047fb195800d88da3409fb3765e265becb6d0483367e46b8f232658956a'
+          assert f['p13_development']['core_pretruth_sha256']=='12e6635085c77c8c705fe225e67811c659e98bf7cd1047649ec2b8d593261b3c'
+          assert f['p13_development']['halo_pretruth_sha256']=='f158ebfa3a9a3c8006a7c81cbf0b47f7307aa7f2537e8046621b08037230cca3'
+          assert f['p12_matched_transport']['generated_source_sha256']=='7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c'
+          lit=f['literature_implementation']
+          assert lit['p3_evaluator_source_commit']=='b1fa693471be78d1634632de942b6f95222c8a92'
+          assert lit['p3_blindsafe_evaluator_git_blob']=='2fdc051dd6e4f5d42d3f20e8c35390a57a26fb34'
+          assert lit['p3_base_evaluator_git_blob']=='23275e4a59e1a5dab3934ea63c4f73381c627912'
+          expected={
+            ('hdbscan','2023'):('35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761',26460),
+            ('hdbscan','2025'):('8e7580c52e41e6996d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3',19658),
+            ('sugar','2023'):('2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389',30414),
+            ('sugar','2025'):('77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e',23200)}
+          for (p,y),(sha,n) in expected.items(): assert f['assignments'][p][y]['sha256']==sha and f['assignments'][p][y]['count']==n
+          assert f['exact_row_archives']['2023']['zip_sha256']=='9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430'
+          assert f['exact_row_archives']['2025']['zip_sha256']=='f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52'
+          g=f['mandatory_sparse_gate']; assert g=={
+            'separate_for_each_panel_and_year':True,'four_to_nine_mean_f1_gain_min':0.10,'four_to_twentyfour_mean_f1_gain_min':0.10,
+            'macro_f1_max_deficit':0.10,'competitor_f1_gt_0_5_retention_min':0.80,'required_panels':['hdbscan','sugar'],'required_years':[2023,2025]}
+          assert f['broad_only_does_not_authorize_external'] is True and f['target_access_authorized'] is False and f['parameter_search'] is False
+          assert Path('orbittrace_core_halo_p13_literature/P12_MATCHED_TRANSPORT_SOURCE_SHA256').read_text().strip()==f['p12_matched_transport']['generated_source_sha256']
+          print('PASS_P13_MATCHED_MACHINE_FREEZE_V2')
+          PY
+      - name: Reconstruct exact P12 transport
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/p10.py
+          python orbittrace_density_contrast_p11/apply_p11_patch.py /tmp/p10.py /tmp/p11.py
+          python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/p12.py
+          echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12.py' | sha256sum -c -
+          python orbittrace_core_halo_p13_literature/apply_p12_matched_transport_patch.py /tmp/p12.py /tmp/p12_panel.py
+          echo '7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c  /tmp/p12_panel.py' | sha256sum -c -
+          python -m py_compile /tmp/p12_panel.py orbittrace_core_halo_p13_literature/*.py
+          echo PASS_P13_P12_TRANSPORT_V2
+      - name: Verify pinned evaluator Git objects and sparse semantics
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin b1fa693471be78d1634632de942b6f95222c8a92
+          git show FETCH_HEAD:orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen_blindsafe.py > /tmp/evaluate_frozen_blindsafe.py
+          git show FETCH_HEAD:orbittrace_crossfit_seed_floor_membership_p3_literature/evaluate_frozen.py > /tmp/evaluate_frozen.py
+          test "$(git hash-object /tmp/evaluate_frozen_blindsafe.py)" = '2fdc051dd6e4f5d42d3f20e8c35390a57a26fb34'
+          test "$(git hash-object /tmp/evaluate_frozen.py)" = '23275e4a59e1a5dab3934ea63c4f73381c627912'
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/evaluate_frozen.py').read_text()
+          for token in ('four_to_nine_gain_ge_0_10','four_to_twentyfour_gain_ge_0_10','macro_f1_not_more_than_0_10_lower','retain_at_least_80pct_f1_gt_0_5_count','sparse_pairwise_pass','pairwise_only_no_cross_denominator_comparison','broad_only_does_not_authorize_external','SPARSE_STREAM_SUPERIORITY','NO_LITERATURE_SUPERIORITY'): assert token in p,token
+          print('PASS_P13_EVALUATOR_GIT_OBJECTS_AND_GATES_V2')
+          PY
+      - name: Verify core-only/halo-secondary finalizer boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          t='\n'.join(Path(x).read_text() for x in (
+            'orbittrace_core_halo_p13_literature/prepare_pretruth_panel_input.py','orbittrace_core_halo_p13_literature/split_strict_manifest.py',
+            'orbittrace_core_halo_p13_literature/finalize_pretruth_checkpoint.py','orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py'))
+          for token in ('primary_candidate_is_core_only','halo_can_affect_primary_evaluation','p13_primary_core_only','p13_halo_secondary_only','sparse_superiority_required_against_both_comparators_in_both_years','external_validation_authorized','target_access_authorized','7f55f5f2b0e6886cfedca38c52ae8e08e5272892498cbc10d92f0f886bed845c'): assert token in t,token
+          for forbidden in ('OrbitTrace-April','target_coordinate'): assert forbidden not in t
+          print('PASS_P13_CORE_HALO_CLAIM_BOUNDARY_V2')
+          PY
+          test ! -e orbittrace_core_halo_p13_literature/RUN.md
+          test ! -e target
+          echo PASS_P13_MATCHED_FULL_FREEZE_V2_NO_TRUTH_NO_TARGET
