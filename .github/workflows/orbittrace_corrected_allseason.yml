@@ -1,0 +1,57 @@
+name: OrbitTrace raw corrected all-season search
+
+on:
+  push:
+    branches:
+      - research/orbittrace-new-discovery-screen-20260828
+    paths:
+      - orbittrace_new_discovery_screen/__init__.py
+      - orbittrace_new_discovery_screen/corrected_allseason_month.py
+      - .github/workflows/orbittrace_corrected_allseason.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  month:
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        month: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PROTOCOL_ID: 'orbittrace-raw/CORRECTED_ALLSEASON_PROTOCOL@7987f288'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            numpy==2.1.3 pandas==2.2.3 scipy==1.14.1 scikit-learn==1.5.2 \
+            requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Compile compute mirror
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_new_discovery_screen/corrected_allseason_month.py
+      - name: Execute frozen corrected month
+        run: |
+          set -euo pipefail
+          echo "Executing ${PROTOCOL_ID}, month ${{ matrix.month }}"
+          python -m orbittrace_new_discovery_screen.corrected_allseason_month \
+            --month ${{ matrix.month }} \
+            --out corrected_output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-raw-corrected-allseason-month-${{ matrix.month }}
+          path: corrected_output/
+          if-no-files-found: warn
+          retention-days: 60
