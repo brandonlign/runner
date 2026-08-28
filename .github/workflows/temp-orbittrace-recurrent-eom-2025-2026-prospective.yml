@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: brandonlign/orbittrace-raw
-          ref: 97e0227f8f715d9b94e82f98507be51aef0309b0
+          ref: f850fa612e7607cf6eeb1c0a205a1a15b17416e6
           token: ${{ secrets.ISEF_REPO_TOKEN }}
           path: orbittrace-raw
           persist-credentials: false
@@ -68,9 +68,10 @@ jobs:
         working-directory: orbittrace-raw
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "97e0227f8f715d9b94e82f98507be51aef0309b0"
+          test "$(git rev-parse HEAD)" = "f850fa612e7607cf6eeb1c0a205a1a15b17416e6"
           python -m py_compile \
             pipeline/discovery_search/recurrent_eom_2025_2026_prospective.py \
+            pipeline/discovery_search/recurrent_eom_2025_2026_run.py \
             pipeline/discovery_search/association.py \
             pipeline/discovery_search/distance.py
           python - <<'PY'
@@ -100,7 +101,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p recurrent_eom_2025_2026
-          python -m pipeline.discovery_search.recurrent_eom_2025_2026_prospective generate \
+          python -m pipeline.discovery_search.recurrent_eom_2025_2026_run generate \
             --kernel ../recurrent-frozen/orbittrace_recurrent_eom_hdbscan_v1/recurrent_eom.py \
             --out recurrent_eom_2025_2026/RECURRENT_EOM_2025_2026_PRE_ADJUDICATION.json
           sha256sum recurrent_eom_2025_2026/RECURRENT_EOM_2025_2026_PRE_ADJUDICATION.json \
@@ -120,7 +121,7 @@ jobs:
         working-directory: orbittrace-raw
         run: |
           set -euo pipefail
-          python -m pipeline.discovery_search.recurrent_eom_2025_2026_prospective adjudicate \
+          python -m pipeline.discovery_search.recurrent_eom_2025_2026_run adjudicate \
             --pre recurrent_eom_2025_2026/RECURRENT_EOM_2025_2026_PRE_ADJUDICATION.json \
             --ledger ../ledger_source/HELDOUT_2019_2021_ACCESS_LEDGER_V2.json \
             --out recurrent_eom_2025_2026/RECURRENT_EOM_2025_2026_ADJUDICATION.json
