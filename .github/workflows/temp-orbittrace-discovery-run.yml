@@ -1,0 +1,59 @@
+name: Temporary OrbitTrace prospective discovery compute
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-discovery-run.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  discovery:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        month: [1,2,3,4,5,6,7,8,9,10,11,12]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out scientific working repository
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: research/prospective-discovery-20260828
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.1.3 pandas==2.2.3 scipy==1.14.1 scikit-learn==1.5.2 hdbscan==0.8.40 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0 pytest==8.3.5
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Unit diagnostics
+        if: matrix.month == 4
+        working-directory: orbittrace-raw
+        run: pytest -q tests/test_discovery_search.py
+      - name: Run month search
+        working-directory: orbittrace-raw
+        shell: bash
+        run: |
+          set -euo pipefail
+          M=${{ matrix.month }}
+          if [ "$M" -le 7 ]; then YEARS='2022,2023,2024,2025,2026'; SEEDS='2025,2026'; else YEARS='2022,2023,2024,2025'; SEEDS='2024,2025'; fi
+          python -m pipeline.discovery_search.run_month --month "$M" --years "$YEARS" --seed-years "$SEEDS" --top-n 80 --expansion-limit 100 --out discovery_output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-prospective-month-${{ matrix.month }}
+          path: orbittrace-raw/discovery_output/
+          if-no-files-found: warn
+          retention-days: 90
