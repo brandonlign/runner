@@ -11,13 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  discovery:
+  calibration:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        month: [1,2,3,4,5,6,7,8,9,10,11,12]
     steps:
       - uses: actions/checkout@v4
       - name: Check out scientific working repository
@@ -37,18 +33,71 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           # gmn-python-api 0.0.13 predates pandas 2's strict mixed-datetime
-          # inference.  Reproduce its compatible parsing environment rather
+          # inference. Reproduce its compatible parsing environment rather
           # than changing any meteor data or discovery criterion.
           python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 scikit-learn==1.5.2 hdbscan==0.8.40 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0 pytest==8.3.5
           python -m pip install --no-deps gmn-python-api==0.0.13
       - name: Unit diagnostics
-        if: matrix.month == 4
         working-directory: orbittrace-raw
         run: |
           set -o pipefail
           mkdir -p discovery_output
           python -m pytest -q tests/test_discovery_search.py 2>&1 | tee discovery_output/unit_diagnostics.log
-      - name: Run month search
+      - name: Run frozen April XLI calibration
+        working-directory: orbittrace-raw
+        run: |
+          set -o pipefail
+          mkdir -p discovery_output
+          python -m pipeline.discovery_search.run_month --month 4 --years 2022,2023,2024,2025,2026 --seed-years 2025,2026 --top-n 25 --expansion-limit 30 --out discovery_output 2>&1 | tee discovery_output/month_4_run.log
+      - name: Require April XLI control
+        working-directory: orbittrace-raw
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('discovery_output/month_04.json')
+          d = json.loads(path.read_text(encoding='utf-8'))
+          assert d['april_xli_control']['pass'], d['april_xli_control']
+          print('April XLI control PASS')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-prospective-april-xli-calibration
+          path: orbittrace-raw/discovery_output/
+          if-no-files-found: warn
+          retention-days: 90
+
+  transfer:
+    needs: calibration
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        month: [1,2,3,5,6,7,8,9,10,11,12]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out scientific working repository
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: research/prospective-discovery-20260828
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 scikit-learn==1.5.2 hdbscan==0.8.40 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0 pytest==8.3.5
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Run frozen transfer month
         working-directory: orbittrace-raw
         shell: bash
         run: |
@@ -56,12 +105,11 @@ jobs:
           mkdir -p discovery_output
           M=${{ matrix.month }}
           if [ "$M" -le 7 ]; then YEARS='2022,2023,2024,2025,2026'; SEEDS='2025,2026'; else YEARS='2022,2023,2024,2025'; SEEDS='2024,2025'; fi
-          # Frozen transfer-search settings from the scientific workflow.
           python -m pipeline.discovery_search.run_month --month "$M" --years "$YEARS" --seed-years "$SEEDS" --top-n 60 --expansion-limit 80 --out discovery_output 2>&1 | tee "discovery_output/month_${M}_run.log"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: orbittrace-prospective-month-${{ matrix.month }}
+          name: orbittrace-prospective-transfer-month-${{ matrix.month }}
           path: orbittrace-raw/discovery_output/
           if-no-files-found: warn
           retention-days: 90
