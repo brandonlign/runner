@@ -1,0 +1,60 @@
+name: OrbitTrace drift-track control benchmark matrix
+
+on:
+  push:
+    branches:
+      - research/orbittrace-new-discovery-screen-20260828
+    paths:
+      - orbittrace_new_discovery_screen/drift_track_control_cell.py
+      - .github/workflows/orbittrace_drift_track_controls_matrix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control-cell:
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        month: [7, 9, 10]
+        variant: [A_EOM_5_3, B_LEAF_5_3, C_EOM_8_4, D_LEAF_8_4]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROTOCOL_ID: 'orbittrace-raw/DRIFT_TRACK_CONTROL_BENCHMARK@f1886bfe'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            numpy==2.1.3 pandas==2.2.3 scipy==1.14.1 scikit-learn==1.5.2 \
+            requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Compile exact compute cell
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            orbittrace_new_discovery_screen/drift_track_controls.py \
+            orbittrace_new_discovery_screen/drift_track_control_cell.py
+      - name: Execute frozen benchmark cell
+        run: |
+          set -euo pipefail
+          echo "Executing ${PROTOCOL_ID}: month=${{ matrix.month }} variant=${{ matrix.variant }}"
+          python -m orbittrace_new_discovery_screen.drift_track_control_cell \
+            --month '${{ matrix.month }}' \
+            --variant '${{ matrix.variant }}' \
+            --out control_cell_output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drift-track-control-${{ matrix.month }}-${{ matrix.variant }}
+          path: control_cell_output/
+          if-no-files-found: warn
+          retention-days: 60
