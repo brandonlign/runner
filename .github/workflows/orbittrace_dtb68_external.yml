@@ -1,0 +1,53 @@
+name: OrbitTrace DTb68 independent replication
+
+on:
+  push:
+    branches:
+      - research/orbittrace-new-discovery-screen-20260828
+    paths:
+      - orbittrace_new_discovery_screen/dtb68_external_replication.py
+      - .github/workflows/orbittrace_dtb68_external.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-source:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        source: [sonotaco, edmond]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PROTOCOL_ID: 'orbittrace-raw/DTB68_EXTERNAL_REPLICATION_PROTOCOL@7dc8eb47'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.1.3 pandas==2.2.3 scipy==1.14.1 requests==2.32.5
+      - name: Compile exact frozen runner
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_new_discovery_screen/dtb68_external_replication.py
+      - name: Execute frozen external replication
+        run: |
+          set -euo pipefail
+          echo "Executing ${PROTOCOL_ID}, source=${{ matrix.source }}"
+          python -m orbittrace_new_discovery_screen.dtb68_external_replication \
+            --source '${{ matrix.source }}' \
+            --out external_output
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dtb68-external-${{ matrix.source }}
+          path: external_output/
+          if-no-files-found: warn
+          retention-days: 60
