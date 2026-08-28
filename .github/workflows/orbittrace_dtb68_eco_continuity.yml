@@ -6,7 +6,7 @@ on:
       - research/orbittrace-new-discovery-screen-20260828
     paths:
       - orbittrace_new_discovery_screen/dtb68_eco_continuity.py
-      - orbittrace_new_discovery_screen/dtb68_eco_continuity_v2.py
+      - orbittrace_new_discovery_screen/dtb68_eco_continuity_v3.py
       - .github/workflows/orbittrace_dtb68_eco_continuity.yml
   workflow_dispatch:
 
@@ -41,12 +41,12 @@ jobs:
         run: |
           python -m py_compile \
             orbittrace_new_discovery_screen/dtb68_eco_continuity.py \
-            orbittrace_new_discovery_screen/dtb68_eco_continuity_v2.py
+            orbittrace_new_discovery_screen/dtb68_eco_continuity_v3.py
       - name: Execute frozen continuity year
         run: |
           set -euo pipefail
           echo "Executing ${PROTOCOL_ID}: year=${{ matrix.year }}"
-          python -m orbittrace_new_discovery_screen.dtb68_eco_continuity_v2 \
+          python -m orbittrace_new_discovery_screen.dtb68_eco_continuity_v3 \
             --year '${{ matrix.year }}' \
             --out continuity_output
       - uses: actions/upload-artifact@v4
