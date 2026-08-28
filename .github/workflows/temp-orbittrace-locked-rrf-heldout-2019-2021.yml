@@ -1,0 +1,132 @@
+name: Temporary OrbitTrace locked-RRF heldout 2019-2021 confirmation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-locked-rrf-heldout-2019-2021.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  adjudicate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out frozen scientific confirmation implementation
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: 43591c3a035f35f0f12117febd5497454a33523c
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install confirmation dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Compile frozen confirmation implementation
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            pipeline/discovery_search/locked_rrf_heldout_2019_2021.py \
+            pipeline/discovery_search/locked_rrf_heldout_2019_2021_run.py \
+            pipeline/discovery_search/confirmation_cumulative_ledger.py
+
+      - name: Download immutable discovery and prior-confirmation sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p full_source locked_source transfer_source prior_source
+          gh run download 33219756919 --repo brandonlign/runner --name orbittrace-locked-rrf-full-catalogue --dir full_source
+          gh run download 31112651984 --repo brandonlign/runner --name orbittrace-fixed4-locked-rrf-application-pre-reveal --dir locked_source
+          gh run download 33217537596 --repo brandonlign/runner --dir transfer_source
+          gh run download 33218858305 --repo brandonlign/runner --name orbittrace-prospective-heldout-aggregate --dir prior_source
+          test "$(sha256sum locked_source/orbittrace_fixed4_locked_rrf_scan.json.gz | awk '{print $1}')" = "c55e3db626df21faede809cf6b74f808b0c5c13a56672682f6d09f6b11c5d0b3"
+
+      - name: Apply frozen prior-region firewall
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          mkdir -p locked_heldout
+          python -m pipeline.discovery_search.locked_rrf_heldout_2019_2021_run prepare \
+            --audit ../full_source/LOCKED_RRF_FULL_CATALOGUE.json \
+            --scan ../locked_source/orbittrace_fixed4_locked_rrf_scan.json.gz \
+            --registry pipeline/discovery_search/HELDOUT_2019_2021_REGION_REGISTRY.json \
+            --transfer-root ../transfer_source \
+            --out locked_heldout/LOCKED_RRF_HELDOUT_PREPARED.json
+          python - <<'PY'
+          import json
+          d=json.load(open('locked_heldout/LOCKED_RRF_HELDOUT_PREPARED.json'))
+          assert d['source_preconfirm_lead_count'] == 1, d['source_preconfirm_lead_count']
+          assert d['prior_region_count'] == 50, d['prior_region_count']
+          assert d['eligible_count'] == 0, d['eligible_count']
+          assert d['excluded_count'] == 1, d['excluded_count']
+          x=d['excluded'][0]
+          assert x['family_id'] == 'G6f53b162aee1', x['family_id']
+          assert x['locked_rrf_rank'] == 95, x['locked_rrf_rank']
+          names={h['name'] for h in x['prior_region_overlaps']}
+          assert 'locked_rank95' in names, names
+          print('Frozen firewall PASS: rank 95 excluded; zero pristine candidates')
+          PY
+
+      - name: Execute frozen heldout driver
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          # With zero pristine candidates this must return before load_heldout_panels(),
+          # so no new 2019-2021 GMN candidate-region data are queried.
+          python -m pipeline.discovery_search.locked_rrf_heldout_2019_2021_run run \
+            --prepared locked_heldout/LOCKED_RRF_HELDOUT_PREPARED.json \
+            --out locked_heldout/result
+          python - <<'PY'
+          import json
+          d=json.load(open('locked_heldout/result/LOCKED_RRF_HELDOUT_2019_2021.json'))
+          assert d['candidate_family_size'] == 0, d['candidate_family_size']
+          assert d['excluded_prior_region_count'] == 1, d['excluded_prior_region_count']
+          assert d['pass_count'] == 0, d['pass_count']
+          assert d['results'] == [], d['results']
+          print('Heldout driver PASS without opening a pristine candidate family')
+          PY
+
+      - name: Apply frozen cumulative sequential multiplicity ledger
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python -m pipeline.discovery_search.confirmation_cumulative_ledger \
+            --prior ../prior_source/prospective_heldout_2019_2021.json \
+            --locked locked_heldout/result/LOCKED_RRF_HELDOUT_2019_2021.json \
+            --out locked_heldout/cumulative
+          python - <<'PY'
+          import json
+          d=json.load(open('locked_heldout/cumulative/CUMULATIVE_HELDOUT_CONFIRMATION_LEDGER.json'))
+          assert d['prior_batch']['candidate_count'] == 46, d['prior_batch']
+          assert d['locked_batch']['candidate_count'] == 0, d['locked_batch']
+          assert d['cumulative_family_size'] == 46, d['cumulative_family_size']
+          assert d['locked_formal_pass_count'] == 0, d['locked_formal_pass_count']
+          print('Cumulative ledger PASS: no new test entered the family')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-locked-rrf-heldout-firewall-ledger
+          path: orbittrace-raw/locked_heldout/
+          if-no-files-found: error
+          retention-days: 90
