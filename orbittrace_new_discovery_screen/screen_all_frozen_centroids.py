@@ -4,7 +4,8 @@
 Scientific source-of-truth lives in brandonlign/orbittrace-raw under
 pipeline/discovery_search.  This public runner copy exists only because private
 raw-repository Actions are currently not starting jobs.  It does not change
-candidate identities, memberships, or frozen ranks.
+candidate identities, memberships, or frozen ranks.  Output is intended to be
+copied back into the raw research branch after verification.
 """
 from __future__ import annotations
 
