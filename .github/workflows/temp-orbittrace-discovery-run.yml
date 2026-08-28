@@ -41,15 +41,19 @@ jobs:
       - name: Unit diagnostics
         if: matrix.month == 4
         working-directory: orbittrace-raw
-        run: pytest -q tests/test_discovery_search.py
+        run: |
+          set -o pipefail
+          mkdir -p discovery_output
+          python -m pytest -q tests/test_discovery_search.py 2>&1 | tee discovery_output/unit_diagnostics.log
       - name: Run month search
         working-directory: orbittrace-raw
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
+          mkdir -p discovery_output
           M=${{ matrix.month }}
           if [ "$M" -le 7 ]; then YEARS='2022,2023,2024,2025,2026'; SEEDS='2025,2026'; else YEARS='2022,2023,2024,2025'; SEEDS='2024,2025'; fi
-          python -m pipeline.discovery_search.run_month --month "$M" --years "$YEARS" --seed-years "$SEEDS" --top-n 80 --expansion-limit 100 --out discovery_output
+          python -m pipeline.discovery_search.run_month --month "$M" --years "$YEARS" --seed-years "$SEEDS" --top-n 80 --expansion-limit 100 --out discovery_output 2>&1 | tee "discovery_output/month_${M}_run.log"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
