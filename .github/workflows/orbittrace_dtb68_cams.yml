@@ -1,0 +1,44 @@
+name: OrbitTrace DTb68 CAMS replication
+
+on:
+  push:
+    branches:
+      - research/orbittrace-new-discovery-screen-20260828
+    paths:
+      - orbittrace_new_discovery_screen/dtb68_cams_replication.py
+      - .github/workflows/orbittrace_dtb68_cams.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cams:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROTOCOL_ID: 'orbittrace-raw/DTB68_CAMS_REPLICATION_PROTOCOL@3bf3f3a0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==2.1.3 pandas==2.2.3 scipy==1.14.1 requests==2.32.5
+      - name: Compile frozen CAMS runner
+        run: python -m py_compile orbittrace_new_discovery_screen/dtb68_cams_replication.py
+      - name: Execute frozen CAMS replication
+        run: |
+          set -euo pipefail
+          echo "Executing ${PROTOCOL_ID}"
+          python -m orbittrace_new_discovery_screen.dtb68_cams_replication
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dtb68-cams-replication
+          path: cams_output/
+          if-no-files-found: error
+          retention-days: 60
