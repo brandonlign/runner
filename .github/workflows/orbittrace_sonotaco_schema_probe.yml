@@ -1,0 +1,25 @@
+name: OrbitTrace SonotaCo schema probe
+
+on:
+  push:
+    branches:
+      - research/orbittrace-new-discovery-screen-20260828
+    paths:
+      - orbittrace_new_discovery_screen/sonotaco_schema_probe.py
+      - .github/workflows/orbittrace_sonotaco_schema_probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pandas==2.2.3 requests==2.32.5
+      - run: python -m orbittrace_new_discovery_screen.sonotaco_schema_probe
