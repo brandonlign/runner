@@ -64,13 +64,13 @@ jobs:
           assert d.get('data') and int(d.get('count', 0)) >= 1000
           PY
 
-      - name: Adjudicate ranks 96 and 294
+      - name: Adjudicate ranks 95 and 105
         run: |
           set -euo pipefail
           python orbittrace_new_discovery_screen/adjudicate_orbits.py \
             --scan locked_rrf/orbittrace_fixed4_locked_rrf_scan.json.gz \
             --mdc streamfulldata.json \
-            --ranks 96 294 \
+            --ranks 95 105 \
             --scan-zip-sha256 "${LOCKED_RRF_ZIP_SHA256}" \
             --out orbit_output
 
@@ -78,7 +78,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbittrace-discovery-orbit-adjudication
+          name: orbittrace-discovery-orbit-adjudication-95-105
           path: orbit_output/
           if-no-files-found: warn
           retention-days: 30
