@@ -1,0 +1,56 @@
+name: OrbitTrace raw all-family centroid triage
+
+on:
+  push:
+    branches:
+      - research/orbittrace-new-discovery-screen-20260828
+    paths:
+      - orbittrace_new_discovery_screen/screen_all_frozen_centroids.py
+      - .github/workflows/orbittrace_all_family_centroid_screen.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LOCKED_RRF_ARTIFACT_ID: '8973803775'
+      LOCKED_RRF_ZIP_SHA256: '1c26dc06193eb2119a0e181d9a85c22c18b09da8316fe6679754cb554ca29d34'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen locked-RRF scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${LOCKED_RRF_ARTIFACT_ID}/zip" \
+            --output locked_rrf.zip
+          echo "${LOCKED_RRF_ZIP_SHA256}  locked_rrf.zip" | sha256sum --check -
+          mkdir locked_rrf
+          unzip -q locked_rrf.zip -d locked_rrf
+      - name: Download current IAU MDC
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://ceresiaumdc.ta3.sk/downloads/lists_shw_data/streamfulldata.json" \
+            --output streamfulldata.json
+      - name: Screen all frozen centroids
+        run: |
+          set -euo pipefail
+          python orbittrace_new_discovery_screen/screen_all_frozen_centroids.py \
+            --scan locked_rrf/orbittrace_fixed4_locked_rrf_scan.json.gz \
+            --mdc streamfulldata.json \
+            --out centroid_output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-raw-all-family-centroid-screen
+          path: centroid_output/
+          if-no-files-found: error
+          retention-days: 60
