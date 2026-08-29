@@ -13,18 +13,18 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 import astropy.units as u
 
-# Use the source-only DR15 product; it is scientifically sufficient here and much
-# smaller than the complete stacked table that includes observation-level payloads.
 U5='https://heasarc.gsfc.nasa.gov/FTP/xmm/data/catalogues/5XMM_DR15cat_source_v1.0.fits.gz'
-U4='https://heasarc.gsfc.nasa.gov/FTP/xmm/data/catalogues/4XMM_DR14cat_v1.0.fits.gz'
-P5=Path('/tmp/5XMM_DR15cat_source_v1.0.fits.gz'); P4=Path('/tmp/4XMM_DR14cat_v1.0.fits.gz')
+# DR14 slim is the official unique-source catalogue and is sufficient for a
+# positional presence/absence comparison while avoiding a ~1 GB detection table.
+U4='https://heasarc.gsfc.nasa.gov/FTP/xmm/data/catalogues/4XMM_DR14cat_slim_v1.0.fits.gz'
+P5=Path('/tmp/5XMM_DR15cat_source_v1.0.fits.gz'); P4=Path('/tmp/4XMM_DR14cat_slim_v1.0.fits.gz')
 OUT=Path('results/xmm_dr15_reprocessing_probe.json'); OUT.parent.mkdir(parents=True,exist_ok=True)
 CUTOFF_MJD=float(Time('2023-12-31T23:59:59',scale='utc').mjd)
 
 def save(x): OUT.write_text(json.dumps(x,indent=2,sort_keys=True,default=str)+'\n'); print(json.dumps(x,indent=2,sort_keys=True,default=str))
 def dl(url,p):
     if p.exists() and p.stat().st_size>20_000_000:return
-    req=urllib.request.Request(url,headers={'User-Agent':'ISEF-5XMM-reprocessing-probe/1.1'})
+    req=urllib.request.Request(url,headers={'User-Agent':'ISEF-5XMM-reprocessing-probe/1.2'})
     with urllib.request.urlopen(req,timeout=180) as r,p.open('wb') as f:
         while True:
             b=r.read(8*1024*1024)
@@ -55,7 +55,7 @@ def end_mjd(a):
         except:pass
     return out,'string_time'
 def uniq4(d,names,ra,dec):
-    sid=pick(names,'SRCID','SC_SRCID','IAUNAME')
+    sid=pick(names,'SRCID','SC_SRCID','IAUNAME','SRCID_4XMM')
     r=farr(d,ra); q=farr(d,dec); ok=np.isfinite(r)&np.isfinite(q)
     if sid:
         ids=np.asarray(d[sid]); _,idx=np.unique(ids[ok],return_index=True); base=np.where(ok)[0][idx]; return r[base],q[base],sid,len(base)
@@ -91,7 +91,8 @@ def main():
              'five_rows':len(d5),'four_rows':len(d4),'four_unique_sources':n4u,'old_epoch_clean_pointlike_5xmm':len(idx5),
              'unmatched_counts_by_radius_arcsec':counts,'conservative_unmatched_10arcsec':len(orphan_idx),
              'cutoff_mjd':CUTOFF_MJD,'end_time_mode':emode,'resolved5':c5,'four_id_column':sid4,
-             'note':'No 5XMM source names or external identity services are emitted or queried.'}
+             'catalog4_url':U4,
+             'note':'No 5XMM source names or external identity services are emitted or queried. END_TIME is a preliminary old-data-era proxy; exact contributing ObsIDs must be checked before any reprocessing-only claim.'}
         for key in ('hr1','hr2','hr3','hr4','flux','var','classx_outlier'):
             if c5[key]:
                 z=farr(d5,c5[key])[orphan_idx]; z=z[np.isfinite(z)]
