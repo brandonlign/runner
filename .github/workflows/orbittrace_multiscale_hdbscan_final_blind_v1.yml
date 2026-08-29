@@ -1,0 +1,179 @@
+name: OrbitTrace multiscale HDBSCAN final blind discovery v1
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - 'orbittrace_multiscale_hdbscan_final_blind_v1/**'
+      - '.github/workflows/orbittrace_multiscale_hdbscan_final_blind_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  final-blind:
+    if: github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Freeze execution identity and verify ASFN authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh pr view 1434 --repo "$GITHUB_REPOSITORY" --json comments --jq '.comments[].body' > /tmp/asfn_comments.txt
+          grep -q 'PASS_MULTISCALE_HDBSCAN_ASFN_GENERALIZATION_V1' /tmp/asfn_comments.txt
+          cat > /tmp/binding.md <<EOF
+          ### Multiscale HDBSCAN final blind execution frozen before target reveal
+
+          BINDING_MULTISCALE_FINAL_RUN: \`${GITHUB_RUN_ID}\`
+
+          Head: \`${GITHUB_SHA}\`. Exact SonotaCo-frozen weights/grid/lambda are authorized by ASFN transfer PASS. Stage A freezes the complete label-free GMN ranking and exact top-100 memberships before any canonical OrbitTrace package is downloaded. Stage B is exact-ID intersection only. First technically valid Stage-B scientific result is binding; no target rescue/tuning is authorized.
+          EOF
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/binding.md
+
+      - name: Install exact blind-catalogue runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf input output frozen-v8
+          mkdir -p input output/stage-a output/stage-b
+          python -m pip install --disable-pip-version-check --upgrade pip >/dev/null
+          git clone -q --no-checkout "https://github.com/${GITHUB_REPOSITORY}.git" frozen-v8
+          git -C frozen-v8 fetch -q --no-tags --depth=1 origin c9d6c44704013ba0c9430100e98a29a56b453304
+          git -C frozen-v8 checkout -q FETCH_HEAD
+          python -m pip install --disable-pip-version-check -r frozen-v8/ghoststream_fixed4_application/requirements.txt >/dev/null
+          python -m pip install --disable-pip-version-check --no-deps gmn-python-api==0.0.13 >/dev/null
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.7.1' >/dev/null
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44' >/dev/null
+          python -m py_compile orbittrace_multiscale_hdbscan_final_blind_v1/build_stage_a.py orbittrace_multiscale_hdbscan_final_blind_v1/reveal_stage_b.py
+          git fetch -q --no-tags --depth=1 origin agent/orbittrace-symmetric-tuned-literature-benchmark-v2
+          git show FETCH_HEAD:orbittrace_symmetric_tuned_literature_v2/recurrent_eom.py > input/recurrent_eom.py
+          test "$(git hash-object input/recurrent_eom.py)" = '30ac3fa3bc47910370df528fcf3ae8ecb6277b47'
+          test -f frozen-v8/orbittrace_fixed4_blind_catalogue/source_parts/part00.b64
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+
+      - name: Stage A - freeze complete target-blind multiscale ranking
+        run: |
+          set -euo pipefail
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+          python -u orbittrace_multiscale_hdbscan_final_blind_v1/build_stage_a.py \
+            --blind-source-parts frozen-v8/orbittrace_fixed4_blind_catalogue/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --recurrent-eom-source input/recurrent_eom.py \
+            --scratch-loader input/decoded_blind_catalogue_loader.py \
+            --output output/stage-a/STAGE_A.json
+          sha256sum output/stage-a/STAGE_A.json > output/stage-a/STAGE_A_SHA256.txt
+          python - <<'PY'
+          import json
+          p=json.load(open('output/stage-a/STAGE_A.json'))
+          assert p['schema']=='ORBITTRACE_MULTISCALE_HDBSCAN_FINAL_BLIND_V1_STAGE_A'
+          assert p['event_count']==549636 and len(p['top100'])==100
+          assert [x['rank'] for x in p['top100']]==list(range(1,101))
+          assert p['target_reference_access'] is False
+          assert p['canonical_target_ids_accessed'] is False
+          assert p['target_coordinates_accessed'] is False
+          assert p['shower_labels_used'] is False
+          print('PASS_MULTISCALE_STAGE_A_FROZEN_BEFORE_TARGET')
+          PY
+          test ! -e input/canonical_outer.zip
+          test ! -e input/canonical_bundle.zip
+
+      - name: Upload immutable Stage-A seal before target access
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-multiscale-hdbscan-final-blind-v1-stage-a
+          path: output/stage-a
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Stage B transport - retrieve canonical target only after Stage A seal
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s output/stage-a/STAGE_A.json
+          test -s output/stage-a/STAGE_A_SHA256.txt
+          curl --fail-with-body -L -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8814798136/zip" -o input/canonical_outer.zip
+          echo '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5  input/canonical_outer.zip' | sha256sum -c -
+          rm -rf input/canonical_outer && mkdir -p input/canonical_outer
+          unzip -q input/canonical_outer.zip -d input/canonical_outer
+          test -f input/canonical_outer/ghoststream_final_expert_bundle/GhostStream_Expert_Review_Bundle.zip
+          cp input/canonical_outer/ghoststream_final_expert_bundle/GhostStream_Expert_Review_Bundle.zip input/canonical_bundle.zip
+          echo '60c0a77ed8852277f949a0296ccafc91ae4947277011cb1d6247b9be4b173e22  input/canonical_bundle.zip' | sha256sum -c -
+          echo PASS_CANONICAL_TRANSPORT_AFTER_MULTISCALE_STAGE_A
+
+      - name: Stage B - binding exact-ID reveal only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_multiscale_hdbscan_final_blind_v1/reveal_stage_b.py \
+            --stage-a output/stage-a/STAGE_A.json \
+            --stage-a-sha256 output/stage-a/STAGE_A_SHA256.txt \
+            --canonical-zip input/canonical_bundle.zip \
+            --output output/stage-b/RESULT.json
+          sha256sum output/stage-b/RESULT.json > output/stage-b/RESULT_SHA256.txt
+
+      - name: Publish binding result to PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if test -f output/stage-b/RESULT.json; then
+            python - <<'PY' > /tmp/result.md
+          import hashlib,json
+          from pathlib import Path
+          p=Path('output/stage-b/RESULT.json');r=json.loads(p.read_text());s=r['selected_candidate']
+          print('## Binding multiscale HDBSCAN final blind OrbitTrace reveal')
+          print();print(f"Verdict: **`{r['verdict']}`**")
+          print(f"- Stage-A SHA-256: `{r['stage_a_sha256']}`")
+          print(f"- result SHA-256: `{hashlib.sha256(p.read_bytes()).hexdigest()}`")
+          print(f"- first support-passing rank: `{r['first_rank_with_support_gate']}`")
+          print(f"- first clean-success rank: `{r['first_rank_with_clean_success_gate']}`")
+          if s:
+              q=s['quality'];print(f"- selected rank `{s['rank']}`, members `{s['member_count']}`, exact overlap 2022 `{q['overlap_2022']}/10`, 2023 `{q['overlap_2023']}/8`, total `{q['overlap_total']}/18`; precision/recall/F1 `{q['precision']:.6f} / {q['recall']:.6f} / {q['f1']:.6f}`")
+          print('- Stage B used exact trajectory-ID intersection only; no membership recomputation, reranking, merging, distance matching, or post-reveal tuning.')
+          PY
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md
+          else
+            echo "MULTISCALE_FINAL_TARGET_TECHNICAL_FAILURE run=${GITHUB_RUN_ID}: no valid Stage-B result; scientific method and gate remain unchanged." > /tmp/result.md
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result.md
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-multiscale-hdbscan-final-blind-v1-result
+          path: output
+          if-no-files-found: warn
+          retention-days: 90
