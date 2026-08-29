@@ -25,7 +25,7 @@ def card_value(s):
     x=s.split('/',1)[0].strip()
     if x.startswith("'"): return x.strip("'").strip()
     if x in ('T','F'): return x=='T'
-    try: return float(x) if any(c in x for c in '.EDed') else int(x)
+    try: return float(x.replace('D','E')) if any(c in x for c in '.EDed') else int(x)
     except: return x
 
 def parse_header(raw):
@@ -40,9 +40,15 @@ def parse_header(raw):
 
 def layout(url):
     raw,_=rr(url,0,65535); ph,psz=parse_header(raw)
-    # primary can have data, though these products normally do not
-    pbit=abs(int(ph.get('BITPIX',8))); pn=int(ph.get('NAXIS',0)); count=1
-    for ax in range(1,pn+1): count*=int(ph.get(f'NAXIS{ax}',0))
+    # NAXIS=0 means the primary HDU has zero data bytes. The previous version
+    # accidentally treated it as one scalar pixel, shifting the first extension
+    # by a whole 2880-byte FITS block.
+    pbit=abs(int(ph.get('BITPIX',8))); pn=int(ph.get('NAXIS',0))
+    if pn==0:
+        count=0
+    else:
+        count=1
+        for ax in range(1,pn+1): count*=int(ph.get(f'NAXIS{ax}',0))
     pbytes=math.ceil((count*pbit//8)/BLOCK)*BLOCK if count else 0
     first=psz+pbytes
     raw2,_=rr(url,first,first+65535); eh,ehsz=parse_header(raw2)
@@ -67,9 +73,16 @@ def finite_summary(z):
     if not len(f): return {'finite':0}
     return {'finite':int(len(f)),'min':float(np.min(f)),'median':float(np.median(f)),'max':float(np.max(f)),'p90':float(np.percentile(f,90))}
 
+def decode_flags(value):
+    # Euclid VIS calibrated-frame flag definitions used by Q1/Q2 processing.
+    bits={
+      1:'INVALID',2:'HOT',4:'COLD',8:'SAT',16:'COSMIC',32:'GHOST',64:'QUADEDGE',128:'BAD_COLUMN',256:'BAD_CLUSTER',512:'CR_REGION',
+      4096:'OVRCOL',8192:'EXTOBJ',16384:'SCATLIGHT',32768:'CHARINJ',131072:'SATXTALKGHOST',262144:'STARSIGNAL',524288:'SATURATEDSTAR',
+      1048576:'CTICORRECTION',2097152:'ADCMAX',4194304:'NO_DATA',8388608:'STITCHBLOCK',16777216:'OBJECTS'}
+    v=int(value); return [name for bit,name in bits.items() if v & bit]
+
 def main():
     surv=json.loads(SURV.read_text())['survivors']; rows=[]
-    # Validate every strict morphology-clean >20% survivor (currently a tiny list).
     for s in surv:
         e=int(s['event_epoch']); k=int(json.loads(Path('results/euclid_routed_feasibility.json').read_text())['routes'][str(e%4)]['k'])
         q=b.getq(e,k); x,y=b.pix(q,float(s['ra']),float(s['dec'])); sci=b.FILES[e]
@@ -79,12 +92,15 @@ def main():
             try:
                 z,lay,box=stamp(url,k,x,y); info={'url_file':fn,'layout':lay,'box':box,'summary':finite_summary(z)}
                 if kind=='flag':
-                    vals,cnt=np.unique(z,return_counts=True); info['unique_values']=[{'value':int(v),'count':int(c)} for v,c in zip(vals,cnt)]; info['center_value']=int(z[z.shape[0]//2,z.shape[1]//2]); info['nonzero_fraction']=float(np.mean(z!=0))
+                    vals,cnt=np.unique(z,return_counts=True); info['unique_values']=[{'value':int(v),'count':int(c),'decoded':decode_flags(v)} for v,c in zip(vals,cnt)]; cv=int(z[z.shape[0]//2,z.shape[1]//2]); info['center_value']=cv; info['center_decoded']=decode_flags(cv); info['nonzero_fraction']=float(np.mean(z!=0))
+                    # summarize whether cosmic-ray-related bits touch the central 5x5 source core
+                    cy,cx=z.shape[0]//2,z.shape[1]//2; core=z[max(0,cy-2):cy+3,max(0,cx-2):cx+3].astype(np.int64)
+                    info['core_any_cosmic_bit']=bool(np.any(core & 16)); info['core_any_cr_region_bit']=bool(np.any(core & 512)); info['core_any_hot_bit']=bool(np.any(core & 2)); info['core_any_invalid_bit']=bool(np.any(core & 1))
                 else:
                     info['center_value']=float(z[z.shape[0]//2,z.shape[1]//2])
                 rec[kind]=info
             except Exception as ex: rec[kind]={'error':f'{type(ex).__name__}: {ex}','url_file':fn}
         rows.append(rec)
-    out={'success':True,'note':'released FLAG/RMS map validation of strict morphology-clean Stage-0 excursions; nonzero flags require product-bit interpretation before astrophysical claims','events':rows}
+    out={'success':True,'note':'released FLAG/RMS validation after corrected FITS primary-HDU layout; flag absence does not by itself rule out partially masked cosmic rays','events':rows}
     OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n'); print(json.dumps(out,indent=2,sort_keys=True))
 if __name__=='__main__': main()
