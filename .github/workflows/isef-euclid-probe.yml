@@ -75,6 +75,11 @@ jobs:
         if: steps.survivors.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_flag_validation.py
+      - name: Calibrate aperture-vs-PSF amplitude consistency
+        id: ampconsistency
+        if: steps.survivors.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_amplitude_consistency.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -92,6 +97,7 @@ jobs:
             results/euclid_gaia_positive_controls.json
             results/euclid_aux_manifest.json
             results/euclid_stage0_flag_validation.json
+            results/euclid_stage0_amplitude_consistency.json
           if-no-files-found: warn
       - name: Report result to probe issue
         if: always()
@@ -103,13 +109,14 @@ jobs:
           PSFCONTROLS_OUTCOME: ${{ steps.psfcontrols.outcome }}
           POSITIVES_OUTCOME: ${{ steps.positives.outcome }}
           FLAGS_OUTCOME: ${{ steps.flags.outcome }}
+          AMPCONSISTENCY_OUTCOME: ${{ steps.ampconsistency.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
           print('## Euclid Q2 Stage-0 empirical morphology/positive-control gate')
-          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`; PSF: `{os.environ.get('PSF_OUTCOME')}`; controls: `{os.environ.get('PSFCONTROLS_OUTCOME')}`; Gaia positives: `{os.environ.get('POSITIVES_OUTCOME')}`; flags: `{os.environ.get('FLAGS_OUTCOME')}`")
-          for name in ['euclid_stage0_psf_validation.json','euclid_stage0_psf_controls.json','euclid_gaia_positive_controls.json','euclid_stage0_flag_validation.json']:
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`; PSF: `{os.environ.get('PSF_OUTCOME')}`; controls: `{os.environ.get('PSFCONTROLS_OUTCOME')}`; Gaia positives: `{os.environ.get('POSITIVES_OUTCOME')}`; flags: `{os.environ.get('FLAGS_OUTCOME')}`; amplitude consistency: `{os.environ.get('AMPCONSISTENCY_OUTCOME')}`")
+          for name in ['euclid_stage0_psf_validation.json','euclid_stage0_psf_controls.json','euclid_gaia_positive_controls.json','euclid_stage0_flag_validation.json','euclid_stage0_amplitude_consistency.json']:
               p=Path('results')/name; print(f'### {name}')
               if p.exists(): print('```json'); print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]); print('```')
               else: print('_not produced_')
