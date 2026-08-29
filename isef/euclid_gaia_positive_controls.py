@@ -7,26 +7,21 @@ import numpy as np
 from astropy.table import Table
 import euclid_routed_feasibility as b
 import euclid_exact_routing as er
-
-OUT=Path('results/euclid_gaia_positive_controls.json')
-TAPS=['https://gea.esac.esa.int/tap-server/tap/sync','https://gaia.aip.de/tap/sync']
-CENTER=(267.5945,-30.0074);RADIUS=0.20
+OUT=Path('results/euclid_gaia_positive_controls.json');OUT.parent.mkdir(parents=True,exist_ok=True)
+TAPS=['https://gea.esac.esa.int/tap-server/tap/sync','https://gaia.aip.de/tap/sync'];CENTER=(267.5945,-30.0074);RADIUS=0.20
 
 def lower_keys(d):return {str(k).lower():v for k,v in d.items()}
 def parse_response(raw):
     txt=raw.decode('utf-8',errors='replace')
     if 'value="ERROR"' in txt[:4000]:raise RuntimeError(txt[:1500])
     if '<VOTABLE' in txt[:1000]:
-        t=Table.read(io.BytesIO(raw),format='votable');rows=[]
-        for rr in t:
-            rows.append({str(n).lower():('' if np.ma.is_masked(rr[n]) else str(rr[n])) for n in t.colnames})
-        return rows
+        t=Table.read(io.BytesIO(raw),format='votable');return [{str(n).lower():('' if np.ma.is_masked(rr[n]) else str(rr[n])) for n in t.colnames} for rr in t]
     return [lower_keys(r) for r in csv.DictReader(io.StringIO(txt))]
 def tap(adql):
     errs=[];body=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':adql}).encode()
     for url in TAPS:
         try:
-            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.6','Content-Type':'application/x-www-form-urlencoded'})
+            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.7','Content-Type':'application/x-www-form-urlencoded'})
             with urllib.request.urlopen(req,timeout=15) as r:raw=r.read()
             return parse_response(raw),url
         except Exception as e:errs.append(f'{url}: {type(e).__name__}: {e}')
@@ -50,27 +45,19 @@ def measure_candidate(row,groupmaps):
     if valid:
         norm=flux/np.median(flux);rec['euclid_normalized_flux']=[float(x) for x in norm];rec['euclid_peak_to_peak_fraction']=float(np.max(norm)-np.min(norm));rec['euclid_max_abs_excursion']=float(np.max(np.abs(norm-1)))
     return rec
+def save(out):OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2,sort_keys=True))
 def main():
-    ra,de=CENTER
-    adql=f"""SELECT TOP 30 gs.source_id AS sid,gs.ra AS cra,gs.dec AS cdec,gs.phot_g_mean_mag AS gmag,v.amplitude_estimate AS amp,v.frequency AS freq
-FROM gaiadr3.gaia_source AS gs JOIN gaiadr3.vari_short_timescale AS v ON gs.source_id=v.source_id
-WHERE 1=CONTAINS(POINT('ICRS',gs.ra,gs.dec),CIRCLE('ICRS',{ra},{de},{RADIUS}))
-AND gs.phot_g_mean_mag < 19.0 AND v.amplitude_estimate >= 0.10 AND v.frequency >= 4.0
-ORDER BY v.amplitude_estimate DESC"""
+    ra,de=CENTER;adql=f"""SELECT TOP 30 gs.source_id AS sid,gs.ra AS cra,gs.dec AS cdec,gs.phot_g_mean_mag AS gmag,v.amplitude_estimate AS amp,v.frequency AS freq FROM gaiadr3.gaia_source AS gs JOIN gaiadr3.vari_short_timescale AS v ON gs.source_id=v.source_id WHERE 1=CONTAINS(POINT('ICRS',gs.ra,gs.dec),CIRCLE('ICRS',{ra},{de},{RADIUS})) AND gs.phot_g_mean_mag < 19.0 AND v.amplitude_estimate >= 0.10 AND v.frequency >= 4.0 ORDER BY v.amplitude_estimate DESC"""
     try:rows,endpoint=tap(adql)
-    except Exception as e:
-        out={'success':False,'noncritical':True,'error':f'{type(e).__name__}: {e}','query':adql};OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2));return
-    if not rows:
-        out={'success':False,'noncritical':True,'error':'Gaia query returned zero controls','query':adql};OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2));return
+    except Exception as e:return save({'success':False,'noncritical':True,'error':f'{type(e).__name__}: {e}','query':adql})
+    if not rows:return save({'success':False,'noncritical':True,'error':'Gaia query returned zero controls','query':adql})
     required={'sid','cra','cdec','gmag','amp','freq'}
-    if not required.issubset(rows[0]):
-        out={'success':False,'noncritical':True,'error':'Unexpected TAP columns','columns':sorted(rows[0]),'query':adql};OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2));return
+    if not required.issubset(rows[0]):return save({'success':False,'noncritical':True,'error':'Unexpected TAP columns','columns':sorted(rows[0]),'first_row':rows[0],'query':adql,'endpoint':endpoint})
     rows=sorted(rows,key=lambda r:(-float(r['amp']),float(r['gmag'])));groupmaps=er.map_groups();tested=[]
     for row in rows:
         rec=measure_candidate(row,groupmaps);tested.append(rec)
         if sum(1 for x in tested if x.get('routed'))>=5:break
-    good=[x for x in tested if x.get('valid_flux')]
-    out={'success':len(good)>0,'endpoint':endpoint,'note':'Gaia labels select coordinates only; fixed Euclid photometry and exact WCS routing','query':adql,'gaia_candidates_returned':len(rows),'tested':tested,'valid_controls':len(good)}
+    good=[x for x in tested if x.get('valid_flux')];out={'success':len(good)>0,'endpoint':endpoint,'note':'Gaia labels select coordinates only; fixed Euclid photometry and exact WCS routing','query':adql,'gaia_candidates_returned':len(rows),'tested':tested,'valid_controls':len(good)}
     if good:out['control_excursions']=[{'source_id':x['source_id'],'gaia_amplitude_mag':x['gaia_amplitude_mag'],'gaia_frequency_per_day':x['gaia_frequency_per_day'],'euclid_max_abs_excursion':x['euclid_max_abs_excursion'],'euclid_peak_to_peak_fraction':x['euclid_peak_to_peak_fraction']} for x in good]
-    OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2,sort_keys=True))
+    save(out)
 if __name__=='__main__':main()
