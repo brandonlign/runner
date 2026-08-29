@@ -1,0 +1,41 @@
+name: ISEF XSA catalogue link probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_xsa_download_link_probe.py'
+      - '.github/workflows/isef-xmm-xsa-download-link-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Extract catalogue links
+        id: p
+        continue-on-error: true
+        run: timeout 240s python isef/xmm_xsa_download_link_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-xsa-download-links
+          path: results/xmm_xsa_download_link_probe.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}', OUTCOME: '${{ steps.p.outcome }}'}
+        run: |
+          python - <<'PY' >/tmp/r.md
+          import json,os
+          from pathlib import Path
+          print('## XSA catalogue download-link probe');print('Outcome:',f"`{os.environ.get('OUTCOME')}`")
+          p=Path('results/xmm_xsa_download_link_probe.json')
+          if p.exists():print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]+'\n```')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
