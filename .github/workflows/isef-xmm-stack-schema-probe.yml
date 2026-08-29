@@ -1,0 +1,38 @@
+name: ISEF XMM stack schema probe
+on:
+  push:
+    paths:
+      - 'isef/xmm_stack_schema_probe.py'
+      - '.github/workflows/isef-xmm-stack-schema-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8'
+      - name: Probe schemas
+        run: timeout 420s python isef/xmm_stack_schema_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-xmm-stack-schema-probe
+          path: results/xmm_stack_schema_probe.json
+      - name: Report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY' >/tmp/r.md
+          import json
+          from pathlib import Path
+          print('## XMM stack schema probe')
+          p=Path('results/xmm_stack_schema_probe.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:60000]+'\n```')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
