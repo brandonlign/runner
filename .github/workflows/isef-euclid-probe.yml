@@ -31,11 +31,11 @@ jobs:
         if: steps.routed.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_diagnostics.py
-      - name: Run development injection recovery
+      - name: Run empirical-amplitude injection recovery
         id: inject
         if: steps.routed.outcome == 'success'
         continue-on-error: true
-        run: python isef/euclid_stage0_injection.py
+        run: python isef/euclid_stage0_injection_amp.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -58,7 +58,7 @@ jobs:
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 + diagnostics + injections')
+          print('## Euclid Q2 Stage-0 empirical-amplitude injection')
           print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; diagnostics: `{os.environ.get('DIAG_OUTCOME')}`; injections: `{os.environ.get('INJECT_OUTCOME')}`")
           for name in ['euclid_routed_feasibility.json','euclid_stage0_diagnostics.json','euclid_stage0_injection.json']:
               p=Path('results')/name;print(f'### {name}')
