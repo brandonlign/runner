@@ -1,0 +1,43 @@
+name: ISEF Euclid v2 stratified pair injection
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_v2_stratified_pair_injection.py'
+      - '.github/workflows/isef-euclid-v2-stratified-injection.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  inject:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Five-patch stratified pair injections
+        id: inj
+        continue-on-error: true
+        run: timeout 1080s python isef/euclid_v2_stratified_pair_injection.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-v2-stratified-pair-injection
+          path: results/euclid_v2_stratified_pair_injection.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python - <<'PY' > /tmp/inj.md
+          import json
+          from pathlib import Path
+          print('## Euclid v2 stratified coherent-pair injections')
+          p=Path('results/euclid_v2_stratified_pair_injection.json')
+          if p.exists():
+            z=json.loads(p.read_text());z.pop('trial_rows',None);print('```json\n'+json.dumps(z,indent=2,sort_keys=True)+'\n```')
+          else: print('artifact missing')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/inj.md
