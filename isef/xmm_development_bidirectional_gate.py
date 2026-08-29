@@ -62,16 +62,14 @@ def nearest(src,tgt,srcemap,tgtemap,pairmap):
  for r in src:
   p=par(r['srcid'],srcemap);q=pairmap.get(p);old=gt.get(q,[])
   if not old:continue
-  c=SkyCoord(float(r['ra'])*u.deg,float(r['dec'])*u.deg);t=SkyCoord([float(x['ra']) for x in old]*u.deg,[float(x['dec']) for x in old]*u.deg);_,sp,_=c.match_to_catalog_sky(t);ss.append(float(sp.arcsec))
+  c=SkyCoord(float(r['ra'])*u.deg,float(r['dec'])*u.deg);t=SkyCoord([float(x['ra']) for x in old]*u.deg,[float(x['dec']) for x in old]*u.deg);_,sp,_=c.match_to_catalog_sky(t);ss.append(float(np.asarray(sp.arcsec).reshape(-1)[0]))
  a=np.asarray(ss);return {'n':len(a),'sep_quantiles':{str(q):float(np.quantile(a,q)) for q in (.5,.9,.95,.99)} if len(a) else {},'unmatched':{str(r):int(np.sum(a>r)) for r in RADS},'unmatched_fraction':{str(r):float(np.mean(a>r)) for r in RADS} if len(a) else {}}
 def main():
  try:
   m45,m54,e4,e5=maps();all4=[];all5=[];sector={}
   for sec in SECS:
    lo=sec*30;hi=lo+30
-   # DR14 'cleanest usable' convention: STACK_FLAG <=1; point source; analogous ML>=10 sensitivity threshold.
    q4=f"SELECT TOP 200000 srcid,ra,dec,stack_flag,extent,ep_det_ml,n_obs FROM {T4} WHERE n_obs IS NOT NULL AND {clause(lo,hi)} AND stack_flag<=1 AND extent=0 AND ep_det_ml>=10"
-   # include all DR15 clean point sources above same numeric threshold as counterpart pool
    q5=f"SELECT TOP 200000 srcid,ra,dec,sum_flag,extent,stack_det_ml,n_obs FROM {T5} WHERE n_obs IS NOT NULL AND {clause(lo,hi,M)} AND sum_flag=0 AND extent=0 AND stack_det_ml>=10"
    r4=tap(E4,q4);r5=tap(E5,q5);k4=[r for r in r4 if par(r['srcid'],e4) in m45];k5=[r for r in r5 if par(r['srcid'],e5) in m54];all4.extend(k4);all5.extend(k5);sector[str(sec)]={'clean_dr14':len(k4),'clean_dr15':len(k5),'top_truncated':len(r4)>=200000 or len(r5)>=200000}
   a=nearest(all5,all4,e5,e4,m54);b=nearest(all4,all5,e4,e5,m45)
