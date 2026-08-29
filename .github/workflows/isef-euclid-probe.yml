@@ -50,6 +50,11 @@ jobs:
         if: steps.psfdetector.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_psf_flag_gate.py
+      - name: Measure full-gate injection recovery
+        id: jointinject
+        if: steps.psfflag.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_joint_injection.py
       - name: Test exact-routed PSF detector across broad development patches
         id: multipatch
         if: steps.psfcontrols.outcome == 'success'
@@ -71,6 +76,7 @@ jobs:
             results/euclid_stage0_psf_controls.json
             results/euclid_stage0_psf_detector.json
             results/euclid_stage0_psf_flag_gate.json
+            results/euclid_stage0_joint_injection.json
             results/euclid_stage0_multi_patch.json
             results/euclid_gaia_positive_controls.json
           if-no-files-found: warn
@@ -81,6 +87,7 @@ jobs:
           ROUTED_OUTCOME: ${{ steps.routed.outcome }}
           PSFDETECTOR_OUTCOME: ${{ steps.psfdetector.outcome }}
           PSFFLAG_OUTCOME: ${{ steps.psfflag.outcome }}
+          JOINTINJECT_OUTCOME: ${{ steps.jointinject.outcome }}
           MULTIPATCH_OUTCOME: ${{ steps.multipatch.outcome }}
           POSITIVES_OUTCOME: ${{ steps.positives.outcome }}
         run: |
@@ -88,8 +95,8 @@ jobs:
           import json, os
           from pathlib import Path
           print('## Euclid Q2 current PSF/FLAG/generalization gate')
-          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; PSF detector: `{os.environ.get('PSFDETECTOR_OUTCOME')}`; PSF+FLAG: `{os.environ.get('PSFFLAG_OUTCOME')}`; multi-patch: `{os.environ.get('MULTIPATCH_OUTCOME')}`; Gaia: `{os.environ.get('POSITIVES_OUTCOME')}`")
-          for name in ['euclid_stage0_psf_detector.json','euclid_stage0_psf_flag_gate.json','euclid_stage0_multi_patch.json','euclid_gaia_positive_controls.json']:
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; PSF detector: `{os.environ.get('PSFDETECTOR_OUTCOME')}`; PSF+FLAG: `{os.environ.get('PSFFLAG_OUTCOME')}`; full-gate injections: `{os.environ.get('JOINTINJECT_OUTCOME')}`; multi-patch: `{os.environ.get('MULTIPATCH_OUTCOME')}`; Gaia: `{os.environ.get('POSITIVES_OUTCOME')}`")
+          for name in ['euclid_stage0_psf_flag_gate.json','euclid_stage0_joint_injection.json','euclid_stage0_multi_patch.json','euclid_gaia_positive_controls.json']:
               p=Path('results')/name; print(f'### {name}')
               if p.exists(): print('```json'); print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]); print('```')
               else: print('_not produced_')
