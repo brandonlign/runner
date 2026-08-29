@@ -1,0 +1,74 @@
+name: OrbitTrace paper hyperparameter robustness v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-paper-hyperparam-robustness-v1
+    paths:
+      - 'orbittrace_paper_hyperparam_robustness_v1/**'
+      - '.github/workflows/orbittrace-paper-hyperparam-robustness-v1.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'orbittrace_paper_hyperparam_robustness_v1/**'
+      - '.github/workflows/orbittrace-paper-hyperparam-robustness-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  robustness:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install frozen scientific dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            gmn-python-api==0.0.13 \
+            numpy==1.23.5 \
+            pandas==1.3.5 \
+            scikit-learn==1.3.2 \
+            requests==2.32.5
+
+      - name: Verify frozen protocol and scoring-set shape
+        run: |
+          set -euo pipefail
+          test -s orbittrace_paper_hyperparam_robustness_v1/PROTOCOL.md
+          test "$(wc -l < orbittrace_paper_hyperparam_robustness_v1/canonical_2025_2026_ids.tsv)" -eq 63
+          test "$(cut -f2 orbittrace_paper_hyperparam_robustness_v1/canonical_2025_2026_ids.tsv | sort -u | wc -l)" -eq 63
+          python -m py_compile orbittrace_paper_hyperparam_robustness_v1/run.py
+
+      - name: Execute frozen 41-setting sensitivity analysis
+        run: |
+          set -euo pipefail
+          python orbittrace_paper_hyperparam_robustness_v1/run.py
+
+      - name: Record environment and commit
+        if: always()
+        run: |
+          mkdir -p orbittrace_paper_hyperparam_robustness_v1/output
+          git rev-parse HEAD > orbittrace_paper_hyperparam_robustness_v1/output/execution_commit.txt
+          python --version > orbittrace_paper_hyperparam_robustness_v1/output/python_version.txt
+          python -m pip freeze > orbittrace_paper_hyperparam_robustness_v1/output/environment.txt
+          sha256sum \
+            orbittrace_paper_hyperparam_robustness_v1/PROTOCOL.md \
+            orbittrace_paper_hyperparam_robustness_v1/canonical_2025_2026_ids.tsv \
+            orbittrace_paper_hyperparam_robustness_v1/run.py \
+            > orbittrace_paper_hyperparam_robustness_v1/output/source_sha256.txt
+
+      - name: Upload complete result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-paper-hyperparam-robustness-v1
+          path: orbittrace_paper_hyperparam_robustness_v1/output
+          if-no-files-found: error
