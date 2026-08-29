@@ -14,37 +14,39 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8'
-      - name: Map 16-epoch dither geometry
-        id: geometry
+      - name: Install science dependencies
+        run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Run cross-quadrant 16-epoch feasibility test
+        id: routed
         continue-on-error: true
-        run: python isef/euclid_geometry_manifest.py
-      - name: Upload geometry artifact
+        run: python isef/euclid_routed_feasibility.py
+      - name: Upload routed feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: isef-euclid-geometry
-          path: results/euclid_geometry_manifest.json
+          name: isef-euclid-routed-stage0
+          path: |
+            results/euclid_routed_feasibility.json
+            results/euclid_routed_stamps.npz
           if-no-files-found: warn
-      - name: Report geometry to probe issue
+      - name: Report routed result to probe issue
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          GEOM_OUTCOME: ${{ steps.geometry.outcome }}
+          ROUTED_OUTCOME: ${{ steps.routed.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          p=Path('results/euclid_geometry_manifest.json')
-          print('## Euclid Q2 geometry manifest')
-          print(f"Outcome: `{os.environ.get('GEOM_OUTCOME')}`")
+          p=Path('results/euclid_routed_feasibility.json')
+          print('## Euclid Q2 cross-quadrant Stage-0')
+          print(f"Outcome: `{os.environ.get('ROUTED_OUTCOME')}`")
           if p.exists():
               print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
           else:print('_not produced_')
