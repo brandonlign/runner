@@ -1,0 +1,75 @@
+{
+  "frozen_at": "2026-08-22",
+  "analysis": "full_acrf_v3_5_posthoc_hyperparameter_robustness",
+  "status": "frozen before any full-ACRF sensitivity execution; post-hoc robustness, not prospective method selection",
+  "source_method": "brandonlign/orbittrace main, ACRF-v3.5",
+  "unchanged_components": [
+    "periodic_physical6 representation",
+    "global recurrent anchors",
+    "overlapping 10-degree local windows with 5-degree stride",
+    "cross-window 0.80-Jaccard fusion",
+    "recurrence calibration and ordering",
+    "top-100 fixed membership-materialization budget",
+    "leave-one-year-out robust membership expansion",
+    "1.02 finite-sample halo inflation",
+    "Dv <= 0.15 post-membership orbit gate",
+    "2025-2026 seed years and 2022-2026 application years"
+  ],
+  "baseline": {
+    "feature_scales": [3.5, 3.0, 2.5, 2.5],
+    "min_cluster_size": 8,
+    "min_samples": 4,
+    "frozen_expected_result": {
+      "rank": 7,
+      "reported_members": 123,
+      "canonical_overlap": 95,
+      "canonical_count": 95,
+      "precision": 0.7723577235772358,
+      "recall": 1.0,
+      "f1": 0.8715596330275228
+    }
+  },
+  "grid": {
+    "hdbscan_factorial": {
+      "feature_scales": [3.5, 3.0, 2.5, 2.5],
+      "min_cluster_size": [6, 8, 12],
+      "min_samples": [2, 4, 6],
+      "cells": 9
+    },
+    "one_at_a_time_scale_perturbations": {
+      "relative_change": [-0.2, 0.2],
+      "dimensions": [
+        "sun_centered_radiant_longitude",
+        "radiant_latitude",
+        "geocentric_speed",
+        "solar_longitude"
+      ],
+      "hdbscan": [8, 4],
+      "cells": 8
+    },
+    "joint_scale_perturbations": {
+      "multipliers": [0.8, 1.2],
+      "hdbscan": [8, 4],
+      "cells": 2
+    },
+    "unique_cells": 19
+  },
+  "target_firewall": "For each shard, all assigned ACRF catalogues and top-100 final memberships are generated before the canonical OrbitTrace table is opened. The target is then used only for post-hoc tracking/scoring of the corresponding family.",
+  "primary_metrics": [
+    "rank of best OrbitTrace-matching materialized family",
+    "reported membership",
+    "canonical overlap out of 95",
+    "precision",
+    "recall",
+    "F1"
+  ],
+  "fixed_summary_thresholds": [
+    "exact 95/95 recovery",
+    ">=90/95 recovery",
+    ">=85/95 recovery",
+    "rank <= 100",
+    "F1 >= 0.80"
+  ],
+  "baseline_gate": "The baseline cell must reproduce rank 7, 123 reported members, 95/95 overlap, precision 0.7723577235772358 and F1 0.8715596330275228 before the sensitivity result is accepted.",
+  "stopping_rule": "Execute all 19 frozen cells. Do not tune, substitute, narrow, or add settings after observing full-ACRF results. Any sensitivity is reported rather than repaired by selecting a different cell."
+}

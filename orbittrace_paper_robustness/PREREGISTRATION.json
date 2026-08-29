@@ -1,0 +1,43 @@
+{
+  "frozen_at": "2026-08-22",
+  "purpose": "Post-hoc robustness test of the ACRF/HDBSCAN clustering core only. This is not hyperparameter selection and cannot be used to replace the paper's frozen ACRF-v3.5 settings.",
+  "data": {
+    "years": [2025, 2026],
+    "month": 4,
+    "quality": "GMN sporadics; >=2 stations; median fit error <=180 arcsec; finite radiant/speed; 5<=Vg<=75 km/s; same-time solutions deduplicated by lowest fit error then highest station count",
+    "fixed_local_solar_longitude_window_deg": [27.0, 47.0],
+    "target_access": "OrbitTrace canonical 2025-2026 timestamps are inaccessible during each HDBSCAN fit and are opened only after all cluster labels for that setting exist, solely to track the corresponding family."
+  },
+  "baseline": {
+    "feature_scales": [3.5, 3.0, 2.5, 2.5],
+    "min_cluster_size": 8,
+    "min_samples": 4
+  },
+  "grid": {
+    "scale_factorial": {
+      "feature_scales": [[2.5,3.5,4.5],[2.0,3.0,4.0],[1.5,2.5,3.5],[1.5,2.5,3.5]],
+      "min_cluster_size": 8,
+      "min_samples": 4,
+      "cells": 81
+    },
+    "hdbscan_factorial": {
+      "feature_scales": [3.5,3.0,2.5,2.5],
+      "min_cluster_size": [6,8,12],
+      "min_samples": [2,4,6],
+      "cells": 9
+    },
+    "joint_extreme_interactions": {
+      "scale_low_high": [[2.5,4.5],[2.0,4.0],[1.5,3.5],[1.5,3.5]],
+      "hdbscan_corners": [[6,2],[6,6],[12,2],[12,6]],
+      "cells": 64
+    },
+    "raw_design_cells": 154,
+    "unique_parameter_settings": 153,
+    "duplicate": "The baseline setting occurs in both the scale and HDBSCAN factorials and is executed once."
+  },
+  "cluster_outputs": ["eom", "leaf"],
+  "tracking_rule": "After clustering, among recurrent clusters containing events in both 2025 and 2026, choose the cluster with maximum F1 against the 63 canonical 2025-2026 OrbitTrace timestamps; break ties by larger overlap, then higher precision, then smaller cluster size, then EOM before leaf.",
+  "reported_metrics": ["tracked-family overlap/63", "precision", "recall", "F1", "2025 and 2026 overlap", "cluster size", "EOM versus leaf"],
+  "fixed_summary_thresholds": ["63/63", ">=60/63", ">=57/63", ">=50/63"],
+  "stopping_rule": "Execute all 153 unique settings. Do not add, delete, narrow, retune, or substitute settings after inspecting results. Report sensitivity as sensitivity; do not pick a better-performing setting."
+}
