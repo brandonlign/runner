@@ -1,0 +1,26 @@
+name: ISEF XMM catalog file probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_catalog_file_probe.py'
+      - '.github/workflows/isef-xmm-catalog-file-probe.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python isef/xmm_catalog_file_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-xmm-catalog-file-probe
+          path: results/xmm_catalog_file_probe.json
+      - name: Report
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body "$(cat results/xmm_catalog_file_probe.json)"
