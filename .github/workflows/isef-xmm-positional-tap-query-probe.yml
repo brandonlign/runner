@@ -1,0 +1,32 @@
+name: ISEF XMM positional TAP query probe
+on:
+  push:
+    paths:
+      - 'isef/xmm_positional_tap_query_probe.py'
+      - '.github/workflows/isef-xmm-positional-tap-query-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: timeout 300s python isef/xmm_positional_tap_query_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-xmm-positional-tap-query-probe
+          path: results/xmm_positional_tap_query_probe.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python - <<'PY' >/tmp/r.md
+          from pathlib import Path
+          print('## XMM positional TAP query probe')
+          p=Path('results/xmm_positional_tap_query_probe.json')
+          if p.exists(): print('```json\n'+p.read_text()[:50000]+'\n```')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
