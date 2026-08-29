@@ -1,0 +1,43 @@
+name: ISEF Euclid v2 OGLE DSCT phase controls
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_v2_ogle_dsct_phase_probe.py'
+      - '.github/workflows/isef-euclid-v2-dsct-phase.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Prospective DSCT phase controls
+        id: probe
+        continue-on-error: true
+        run: timeout 600s python isef/euclid_v2_ogle_dsct_phase_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-v2-dsct-phase-controls
+          path: results/euclid_v2_ogle_dsct_phase_probe.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}', OUTCOME: '${{ steps.probe.outcome }}'}
+        run: |
+          python - <<'PY' > /tmp/dsct.md
+          import json,os
+          from pathlib import Path
+          print('## Euclid v2 OGLE delta-Scuti phase-control probe')
+          print(f"outcome: `{os.environ.get('OUTCOME')}`")
+          p=Path('results/euclid_v2_ogle_dsct_phase_probe.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:60000]+'\n```')
+          else: print('_artifact not produced_')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/dsct.md
