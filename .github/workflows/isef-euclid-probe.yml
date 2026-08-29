@@ -31,11 +31,11 @@ jobs:
         if: steps.routed.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_diagnostics.py
-      - name: Run empirical-amplitude injection recovery
+      - name: Run bright-subset injection diagnostic
         id: inject
         if: steps.routed.outcome == 'success'
         continue-on-error: true
-        run: python isef/euclid_stage0_injection_amp.py
+        run: python isef/euclid_stage0_bright_injection.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,7 +45,7 @@ jobs:
             results/euclid_routed_feasibility.json
             results/euclid_routed_stamps.npz
             results/euclid_stage0_diagnostics.json
-            results/euclid_stage0_injection.json
+            results/euclid_stage0_bright_injection.json
           if-no-files-found: warn
       - name: Report result to probe issue
         if: always()
@@ -58,9 +58,9 @@ jobs:
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 empirical-amplitude injection')
+          print('## Euclid Q2 Stage-0 bright-subset injections')
           print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; diagnostics: `{os.environ.get('DIAG_OUTCOME')}`; injections: `{os.environ.get('INJECT_OUTCOME')}`")
-          for name in ['euclid_routed_feasibility.json','euclid_stage0_diagnostics.json','euclid_stage0_injection.json']:
+          for name in ['euclid_routed_feasibility.json','euclid_stage0_diagnostics.json','euclid_stage0_bright_injection.json']:
               p=Path('results')/name;print(f'### {name}')
               if p.exists():print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
               else:print('_not produced_')
