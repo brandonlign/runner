@@ -1,0 +1,42 @@
+name: ISEF Euclid Field 2 geometry probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_field_runtime.py'
+      - 'isef/euclid_field2_geometry_probe.py'
+      - '.github/workflows/isef-euclid-field2-geometry.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - id: probe
+        continue-on-error: true
+        run: timeout 420s python isef/euclid_field2_geometry_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-field2-geometry
+          path: results/euclid_field2_geometry_probe.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python - <<'PY' > /tmp/f2geo.md
+          import json
+          from pathlib import Path
+          print('## Euclid Field-2 metadata-only geometry probe')
+          p=Path('results/euclid_field2_geometry_probe.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:60000]+'\n```')
+          else: print('artifact missing')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/f2geo.md
