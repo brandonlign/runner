@@ -6,10 +6,15 @@ on:
     - cron: '*/5 * * * *'
   issues:
     types: [opened]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'isef/**'
+      - '.github/workflows/isef-euclid-probe.yml'
 
 jobs:
   probe:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'pull_request' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
