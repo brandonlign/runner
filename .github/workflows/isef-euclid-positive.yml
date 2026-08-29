@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'isef/euclid_gaia_positive_controls.py'
+      - 'isef/euclid_gaia_control_fullgate.py'
       - '.github/workflows/isef-euclid-positive.yml'
 
 permissions:
@@ -14,36 +15,44 @@ permissions:
 jobs:
   positive:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
-      - name: Gaia known-variable control
+      - name: Gaia known-variable coordinate control
         id: positive
         continue-on-error: true
         run: timeout 90s python isef/euclid_gaia_positive_controls.py
+      - name: Gaia strongest control through full Stage-0B gate
+        id: fullgate
+        continue-on-error: true
+        run: timeout 120s python isef/euclid_gaia_control_fullgate.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: isef-euclid-positive-control
-          path: results/euclid_gaia_positive_controls.json
+          path: |
+            results/euclid_gaia_positive_controls.json
+            results/euclid_gaia_control_fullgate.json
           if-no-files-found: warn
       - name: Report
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           OUTCOME: ${{ steps.positive.outcome }}
+          FULLGATE: ${{ steps.fullgate.outcome }}
         run: |
           python - <<'PY' > /tmp/positive.md
           import json, os
           from pathlib import Path
           print('## Euclid external known-variable positive control')
-          print(f"Step outcome: `{os.environ.get('OUTCOME')}`")
-          p=Path('results/euclid_gaia_positive_controls.json')
-          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)+'\n```')
-          else: print('_artifact not produced_')
+          print(f"coordinate-control: `{os.environ.get('OUTCOME')}`; full-gate: `{os.environ.get('FULLGATE')}`")
+          for name in ['euclid_gaia_positive_controls.json','euclid_gaia_control_fullgate.json']:
+              p=Path('results')/name; print(f'### {name}')
+              if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)+'\n```')
+              else: print('_artifact not produced_')
           PY
           gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/positive.md
