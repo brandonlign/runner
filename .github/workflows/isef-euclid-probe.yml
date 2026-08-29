@@ -14,7 +14,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,41 +22,39 @@ jobs:
           python-version: '3.12'
       - name: Install science dependencies
         run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
-      - name: Run fast concurrent 16-epoch feasibility test
-        id: fast
+      - name: Run minimal 16-epoch quadrant feasibility test
+        id: test
         continue-on-error: true
-        run: python isef/euclid_fast_feasibility.py
+        run: python isef/euclid_ultrafast_feasibility.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: isef-euclid-fast-stage0
+          name: isef-euclid-ultrafast-stage0
           path: |
-            results/euclid_fast_feasibility.json
-            results/euclid_fast_stamps.npz
+            results/euclid_ultrafast_feasibility.json
+            results/euclid_ultrafast_stamps.npz
           if-no-files-found: warn
       - name: Report result to probe issue
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          FAST_OUTCOME: ${{ steps.fast.outcome }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          p=Path('results/euclid_fast_feasibility.json')
-          print('## Euclid Q2 fast feasibility run')
+          p=Path('results/euclid_ultrafast_feasibility.json')
+          print('## Euclid Q2 minimal feasibility run')
           print()
           print(f"Commit: `{os.environ.get('GITHUB_SHA','')}`")
-          print(f"Outcome: `{os.environ.get('FAST_OUTCOME')}`")
+          print(f"Outcome: `{os.environ.get('TEST_OUTCOME')}`")
           print()
           if p.exists():
-              obj=json.loads(p.read_text()); txt=json.dumps(obj,indent=2,sort_keys=True)
-              print('```json'); print(txt[:50000]); print('```')
-          else:
-              print('_result JSON not produced_')
+              print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
+          else: print('_result JSON not produced_')
           PY
           gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
       - name: Fail if feasibility failed
-        if: always() && steps.fast.outcome != 'success'
+        if: always() && steps.test.outcome != 'success'
         run: exit 1
