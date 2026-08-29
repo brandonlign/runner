@@ -12,6 +12,10 @@ on:
       - 'isef/**'
       - '.github/workflows/isef-euclid-probe.yml'
 
+concurrency:
+  group: isef-euclid-q2-probe
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write
@@ -31,31 +35,7 @@ jobs:
         id: routed
         continue-on-error: true
         run: python isef/euclid_shiftwide_feasibility.py
-      - name: Diagnose aperture and dither systematics
-        if: steps.routed.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_diagnostics.py
-      - name: Run candidate-independent quality diagnostic
-        id: quality
-        if: steps.routed.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_quality.py
-      - name: Inspect morphology-clean large excursions
-        id: survivors
-        if: steps.routed.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_survivors.py
-      - name: Run cross-aperture and temporal quality diagnostic
-        id: qualityv2
-        if: steps.routed.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_quality_v2.py
-      - name: Run same-dither PSF validation
-        id: psf
-        if: steps.survivors.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_psf_validation.py
-      - name: Build empirical PSF null and pixel injections
+      - name: Build empirical PSF morphology null and pixel injections
         id: psfcontrols
         if: steps.routed.outcome == 'success'
         continue-on-error: true
@@ -70,7 +50,7 @@ jobs:
         if: steps.psfdetector.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_psf_flag_gate.py
-      - name: Test PSF detector across five independent development patches
+      - name: Test exact-routed PSF detector across broad development patches
         id: multipatch
         if: steps.psfcontrols.outcome == 'success'
         continue-on-error: true
@@ -79,57 +59,22 @@ jobs:
         id: positives
         if: steps.routed.outcome == 'success'
         continue-on-error: true
-        run: timeout 50s python isef/euclid_gaia_positive_controls.py || true
-      - name: Inspect auxiliary FITS products
-        id: aux
-        if: steps.survivors.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_aux_manifest.py
-      - name: Validate survivors with released FLAG and RMS maps
-        id: flags
-        if: steps.survivors.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_flag_validation.py
-      - name: Audit flags across all raw excursions
-        id: flagpopulation
-        if: steps.routed.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_flag_population.py
-      - name: Audit every unflagged high excursion against empirical PSF null
-        id: unflaggedpsf
-        if: steps.flagpopulation.outcome == 'success' && steps.psfcontrols.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_unflagged_psf_audit.py
-      - name: Calibrate aperture-vs-PSF amplitude consistency
-        id: ampconsistency
-        if: steps.unflaggedpsf.outcome == 'success'
-        continue-on-error: true
-        run: python isef/euclid_stage0_amplitude_consistency.py
-      - name: Upload feasibility artifacts
+        run: timeout 70s python isef/euclid_gaia_positive_controls.py || true
+      - name: Upload current validation artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: isef-euclid-routed-stage0
+          name: isef-euclid-current-gate
           path: |
             results/euclid_routed_feasibility.json
             results/euclid_routed_stamps.npz
-            results/euclid_stage0_diagnostics.json
-            results/euclid_stage0_quality.json
-            results/euclid_stage0_survivors.json
-            results/euclid_stage0_quality_v2.json
-            results/euclid_stage0_psf_validation.json
             results/euclid_stage0_psf_controls.json
             results/euclid_stage0_psf_detector.json
             results/euclid_stage0_psf_flag_gate.json
             results/euclid_stage0_multi_patch.json
             results/euclid_gaia_positive_controls.json
-            results/euclid_aux_manifest.json
-            results/euclid_stage0_flag_validation.json
-            results/euclid_stage0_flag_population.json
-            results/euclid_stage0_unflagged_psf_audit.json
-            results/euclid_stage0_amplitude_consistency.json
           if-no-files-found: warn
-      - name: Report result to probe issue
+      - name: Report current gate to probe issue
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -142,7 +87,7 @@ jobs:
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 joint PSF/FLAG + generalization gate')
+          print('## Euclid Q2 current PSF/FLAG/generalization gate')
           print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; PSF detector: `{os.environ.get('PSFDETECTOR_OUTCOME')}`; PSF+FLAG: `{os.environ.get('PSFFLAG_OUTCOME')}`; multi-patch: `{os.environ.get('MULTIPATCH_OUTCOME')}`; Gaia: `{os.environ.get('POSITIVES_OUTCOME')}`")
           for name in ['euclid_stage0_psf_detector.json','euclid_stage0_psf_flag_gate.json','euclid_stage0_multi_patch.json','euclid_gaia_positive_controls.json']:
               p=Path('results')/name; print(f'### {name}')
