@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'isef/euclid_stage0_multpatch.py'
+      - 'isef/euclid_stage0_multpatch_fast.py'
       - '.github/workflows/isef-euclid-multpatch.yml'
   workflow_dispatch:
 
@@ -22,15 +23,15 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
-      - name: Run geometry-selected multi-patch replication
+      - name: Run fast geometry-selected multi-patch replication
         id: run
         continue-on-error: true
-        run: python isef/euclid_stage0_multpatch.py
+        run: python isef/euclid_stage0_multpatch_fast.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: isef-euclid-multpatch
-          path: results/euclid_stage0_multpatch.json
+          name: isef-euclid-multpatch-fast
+          path: results/euclid_stage0_multpatch_fast.json
           if-no-files-found: warn
       - name: Report result
         if: always()
@@ -41,9 +42,9 @@ jobs:
           python - <<'PY' > /tmp/multpatch.md
           import json,os
           from pathlib import Path
-          print('## Euclid Q2 geometry-selected multi-patch replication')
+          print('## Euclid Q2 fast geometry-selected multi-patch replication')
           print('Outcome:',f"`{os.environ.get('OUTCOME')}`")
-          p=Path('results/euclid_stage0_multpatch.json')
+          p=Path('results/euclid_stage0_multpatch_fast.json')
           if p.exists(): print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
           else: print('_result not produced_')
           PY
