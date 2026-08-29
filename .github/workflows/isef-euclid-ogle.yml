@@ -1,0 +1,45 @@
+name: ISEF Euclid OGLE controls
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_ogle_positive_controls.py'
+      - '.github/workflows/isef-euclid-ogle.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  ogle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: OGLE ultra-short-period controls
+        id: test
+        continue-on-error: true
+        run: timeout 150s python isef/euclid_ogle_positive_controls.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-ogle-controls
+          path: results/euclid_ogle_positive_controls.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.test.outcome }}
+        run: |
+          python - <<'PY' > /tmp/ogle.md
+          import json,os
+          from pathlib import Path
+          print('## Euclid OGLE independent positive controls')
+          print(f"outcome: `{os.environ.get('OUTCOME')}`")
+          p=Path('results/euclid_ogle_positive_controls.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)+'\n```')
+          else: print('_artifact not produced_')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/ogle.md
