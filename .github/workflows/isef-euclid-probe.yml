@@ -60,6 +60,11 @@ jobs:
         if: steps.routed.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_psf_controls.py
+      - name: Run Gaia short-timescale positive controls
+        id: positives
+        if: steps.routed.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_gaia_positive_controls.py
       - name: Inspect auxiliary FITS products
         id: aux
         if: steps.survivors.outcome == 'success'
@@ -84,6 +89,7 @@ jobs:
             results/euclid_stage0_quality_v2.json
             results/euclid_stage0_psf_validation.json
             results/euclid_stage0_psf_controls.json
+            results/euclid_gaia_positive_controls.json
             results/euclid_aux_manifest.json
             results/euclid_stage0_flag_validation.json
           if-no-files-found: warn
@@ -95,14 +101,15 @@ jobs:
           SURVIVOR_OUTCOME: ${{ steps.survivors.outcome }}
           PSF_OUTCOME: ${{ steps.psf.outcome }}
           PSFCONTROLS_OUTCOME: ${{ steps.psfcontrols.outcome }}
+          POSITIVES_OUTCOME: ${{ steps.positives.outcome }}
           FLAGS_OUTCOME: ${{ steps.flags.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 empirical morphology gate')
-          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`; PSF: `{os.environ.get('PSF_OUTCOME')}`; controls: `{os.environ.get('PSFCONTROLS_OUTCOME')}`; flags: `{os.environ.get('FLAGS_OUTCOME')}`")
-          for name in ['euclid_stage0_psf_validation.json','euclid_stage0_psf_controls.json','euclid_stage0_flag_validation.json']:
+          print('## Euclid Q2 Stage-0 empirical morphology/positive-control gate')
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`; PSF: `{os.environ.get('PSF_OUTCOME')}`; controls: `{os.environ.get('PSFCONTROLS_OUTCOME')}`; Gaia positives: `{os.environ.get('POSITIVES_OUTCOME')}`; flags: `{os.environ.get('FLAGS_OUTCOME')}`")
+          for name in ['euclid_stage0_psf_validation.json','euclid_stage0_psf_controls.json','euclid_gaia_positive_controls.json','euclid_stage0_flag_validation.json']:
               p=Path('results')/name; print(f'### {name}')
               if p.exists(): print('```json'); print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]); print('```')
               else: print('_not produced_')
