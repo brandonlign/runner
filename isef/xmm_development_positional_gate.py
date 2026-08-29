@@ -98,7 +98,7 @@ def nearest_stats(d5,d4,map5to4,e5,e4):
   idx,sep,_=c5.match_to_catalog_sky(c4); ss=sep.arcsec
   seps.extend(ss.tolist());tested+=len(rows)
   for r,i,s in zip(rows,idx,ss):
-   e5v=float(r['radec_err']) if r.get('radec_err') is not None else np.nan
+   e5v=float(r['error_radius']) if r.get('error_radius') is not None else np.nan
    e4v=float(old[int(i)]['radec_err']) if old[int(i)].get('radec_err') is not None else np.nan
    den=max(1.0,(e5v if np.isfinite(e5v) else 0)+(e4v if np.isfinite(e4v) else 0))
    errscaled.append(float(s)/den)
@@ -115,7 +115,7 @@ def main():
   map4to5,map5to4,e4,e5=exact_pairs();sector_results={};all5=[];all4=[]
   for sec in SECTORS:
    lo=sec*30.;hi=lo+30.;cl5=ra_clause(lo,hi,0);cl4=ra_clause(lo,hi,MARGIN)
-   q5=f"SELECT TOP 200000 srcid,ra,dec,radec_err,extent,sum_flag,stack_det_ml,n_obs FROM {T5} WHERE n_obs IS NOT NULL AND {cl5} AND sum_flag=0 AND extent=0 AND stack_det_ml>=10"
+   q5=f"SELECT TOP 200000 srcid,ra,dec,error_radius,extent,sum_flag,stack_det_ml,n_obs FROM {T5} WHERE n_obs IS NOT NULL AND {cl5} AND sum_flag=0 AND extent=0 AND stack_det_ml>=10"
    q4=f"SELECT TOP 200000 srcid,ra,dec,radec_err,n_obs FROM {T4} WHERE n_obs IS NOT NULL AND {cl4}"
    r5=tap(EP5,q5);r4=tap(EP4,q4)
    k5=[r for r in r5 if parent(r['srcid'],e5) in map5to4]
