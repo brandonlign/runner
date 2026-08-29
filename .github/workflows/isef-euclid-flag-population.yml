@@ -1,10 +1,11 @@
-name: ISEF Euclid population flag audit
+name: ISEF Euclid population flag and PSF audit
 
 on:
   push:
     branches: [main]
     paths:
       - 'isef/euclid_stage0_flag_population.py'
+      - 'isef/euclid_stage0_unflagged_psf_audit.py'
       - '.github/workflows/isef-euclid-flag-population.yml'
   workflow_dispatch:
 
@@ -26,30 +27,45 @@ jobs:
         id: stage0
         continue-on-error: true
         run: python isef/euclid_shiftwide_feasibility.py
+      - name: Build empirical PSF null
+        id: controls
+        if: steps.stage0.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_psf_controls.py
       - name: Audit released flags for high excursions
-        id: audit
+        id: flags
         if: steps.stage0.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_flag_population.py
+      - name: Audit all unflagged >20 percent excursions with PSF shape
+        id: psfaudit
+        if: steps.controls.outcome == 'success' && steps.flags.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_unflagged_psf_audit.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: isef-euclid-flag-population
-          path: results/euclid_stage0_flag_population.json
+          name: isef-euclid-flag-psf-population
+          path: |
+            results/euclid_stage0_flag_population.json
+            results/euclid_stage0_psf_controls.json
+            results/euclid_stage0_unflagged_psf_audit.json
           if-no-files-found: warn
       - name: Report
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          OUTCOME: ${{ steps.audit.outcome }}
+          FLAGS_OUTCOME: ${{ steps.flags.outcome }}
+          PSF_OUTCOME: ${{ steps.psfaudit.outcome }}
         run: |
           python - <<'PY' > /tmp/audit.md
           import json,os
           from pathlib import Path
-          print('## Euclid Q2 high-excursion flag population audit')
-          print('Outcome:',f"`{os.environ.get('OUTCOME')}`")
-          p=Path('results/euclid_stage0_flag_population.json')
-          if p.exists(): print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
-          else: print('_result not produced_')
+          print('## Euclid Q2 unflagged high-excursion PSF audit')
+          print(f"Flags: `{os.environ.get('FLAGS_OUTCOME')}`; PSF audit: `{os.environ.get('PSF_OUTCOME')}`")
+          for name in ['euclid_stage0_flag_population.json','euclid_stage0_unflagged_psf_audit.json']:
+              p=Path('results')/name; print(f'### {name}')
+              if p.exists(): print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
+              else: print('_result not produced_')
           PY
           gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/audit.md
