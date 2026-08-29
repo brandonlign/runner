@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Run the existing blinded 5XMM-vs-4XMM probe with parallel HTTP range downloads."""
+"""Run the blinded 5XMM-vs-4XMM probe with parallel HTTP range downloads.
+This revision picks up the official slim 4XMM-DR14 unique-source catalogue.
+"""
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor,as_completed
-import urllib.request, os
+import urllib.request
 import xmm_dr15_reprocessing_probe as base
 
 def head(url):
-    req=urllib.request.Request(url,method='HEAD',headers={'User-Agent':'ISEF-XMM-fast/1.0'})
+    req=urllib.request.Request(url,method='HEAD',headers={'User-Agent':'ISEF-XMM-fast/1.1'})
     with urllib.request.urlopen(req,timeout=30) as r:return int(r.headers['Content-Length'])
 
 def one(url,start,end,path):
-    req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-fast/1.0','Range':f'bytes={start}-{end}'})
+    req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-fast/1.1','Range':f'bytes={start}-{end}'})
     with urllib.request.urlopen(req,timeout=120) as r:
         if r.status not in (200,206):raise RuntimeError(f'HTTP {r.status}')
         data=r.read()
