@@ -1,0 +1,47 @@
+name: ISEF 5XMM-DR15 Stage 0 TAP
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_dr15_stage0_tap.py'
+      - '.github/workflows/isef-xmm-dr15-stage0-tap.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  stage0-tap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Run TAP catalog-only probe
+        id: probe
+        continue-on-error: true
+        run: timeout 480s python isef/xmm_dr15_stage0_tap.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-dr15-stage0-tap
+          path: results/xmm_dr15_stage0_tap.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.probe.outcome }}
+        run: |
+          python - <<'PY' > /tmp/report.md
+          import json,os
+          from pathlib import Path
+          print('## 5XMM-DR15 TAP Stage 0')
+          print('Outcome:',f"`{os.environ.get('OUTCOME')}`")
+          p=Path('results/xmm_dr15_stage0_tap.json')
+          if p.exists():
+              x=json.loads(p.read_text()); x.pop('top_tail_anonymous',None)
+              print('```json\n'+json.dumps(x,indent=2,sort_keys=True)[:50000]+'\n```')
+          else: print('_result not produced_')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/report.md
