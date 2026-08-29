@@ -21,7 +21,7 @@ def tap(adql):
     errs=[];body=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':adql}).encode()
     for url in TAPS:
         try:
-            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.7','Content-Type':'application/x-www-form-urlencoded'})
+            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.8','Content-Type':'application/x-www-form-urlencoded'})
             with urllib.request.urlopen(req,timeout=15) as r:raw=r.read()
             return parse_response(raw),url
         except Exception as e:errs.append(f'{url}: {type(e).__name__}: {e}')
@@ -30,8 +30,9 @@ def aperture(im,x,y,r=2.2,ri=5,ro=8):
     x0=max(0,int(x)-9);x1=min(im.shape[1],int(x)+10);y0=max(0,int(y)-9);y1=min(im.shape[0],int(y)+10);s=im[y0:y1,x0:x1];yy,xx=np.indices(s.shape);rad=np.hypot(xx+x0-x,yy+y0-y);a=s[rad<=r];n=s[(rad>=ri)&(rad<=ro)]
     if len(a)<8 or len(n)<20:return np.nan
     return float(np.nansum(a-np.nanmedian(n)))
+def source_id(row):return row.get('sid') or row.get('datalinkid') or row.get('source_id')
 def measure_candidate(row,groupmaps):
-    ra=float(row['cra']);de=float(row['cdec']);sid=row['sid']
+    ra=float(row['cra']);de=float(row['cdec']);sid=source_id(row)
     try:routes,diag=er.route_target(groupmaps,(ra,de))
     except Exception as e:return {'source_id':sid,'ra':ra,'dec':de,'routed':False,'route_error':str(e)}
     hs=b.epoch_headers(routes);ims=[None]*16;meta=[None]*16
@@ -51,8 +52,8 @@ def main():
     try:rows,endpoint=tap(adql)
     except Exception as e:return save({'success':False,'noncritical':True,'error':f'{type(e).__name__}: {e}','query':adql})
     if not rows:return save({'success':False,'noncritical':True,'error':'Gaia query returned zero controls','query':adql})
-    required={'sid','cra','cdec','gmag','amp','freq'}
-    if not required.issubset(rows[0]):return save({'success':False,'noncritical':True,'error':'Unexpected TAP columns','columns':sorted(rows[0]),'first_row':rows[0],'query':adql,'endpoint':endpoint})
+    required={'cra','cdec','gmag','amp','freq'}
+    if not required.issubset(rows[0]) or source_id(rows[0]) is None:return save({'success':False,'noncritical':True,'error':'Unexpected TAP columns','columns':sorted(rows[0]),'first_row':rows[0],'query':adql,'endpoint':endpoint})
     rows=sorted(rows,key=lambda r:(-float(r['amp']),float(r['gmag'])));groupmaps=er.map_groups();tested=[]
     for row in rows:
         rec=measure_candidate(row,groupmaps);tested.append(rec)
