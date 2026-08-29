@@ -1,0 +1,42 @@
+name: ISEF 4XMM-DR14 XCatDB schema
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_dr14_xcatdb_schema.py'
+      - '.github/workflows/isef-xmm-dr14-xcatdb-schema.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8'
+      - name: Probe public DR14 TAP
+        id: p
+        continue-on-error: true
+        run: timeout 360s python isef/xmm_dr14_xcatdb_schema.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-dr14-xcatdb-schema
+          path: results/xmm_dr14_xcatdb_schema.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}', OUTCOME: '${{ steps.p.outcome }}'}
+        run: |
+          python - <<'PY' > /tmp/r.md
+          import json,os
+          from pathlib import Path
+          print('## 4XMM-DR14 XCatDB schema probe');print('Outcome:',f"`{os.environ.get('OUTCOME')}`")
+          p=Path('results/xmm_dr14_xcatdb_schema.json')
+          if p.exists():print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:60000]+'\n```')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
