@@ -1,0 +1,43 @@
+name: ISEF Euclid Gaia EB controls
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_gaia_eb_controls.py'
+      - '.github/workflows/isef-euclid-eb.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  eb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Gaia EB controls
+        id: test
+        continue-on-error: true
+        run: timeout 150s python isef/euclid_gaia_eb_controls.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-gaia-eb-controls
+          path: results/euclid_gaia_eb_controls.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}', OUTCOME: '${{ steps.test.outcome }}'}
+        run: |
+          python - <<'PY' > /tmp/eb.md
+          import json,os
+          from pathlib import Path
+          print('## Euclid Gaia eclipsing-binary controls')
+          print(f"outcome: `{os.environ.get('OUTCOME')}`")
+          p=Path('results/euclid_gaia_eb_controls.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)+'\n```')
+          else: print('_artifact not produced_')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/eb.md
