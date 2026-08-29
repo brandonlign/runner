@@ -2,10 +2,6 @@ name: ISEF Euclid Q2 probe
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/5 * * * *'
-  issues:
-    types: [opened]
   pull_request:
     branches: [main]
     paths:
@@ -14,7 +10,6 @@ on:
 
 jobs:
   probe:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.event_name == 'pull_request' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -22,23 +17,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2' 'fsspec>=2025.7' 'aiohttp>=3.12'
-      - name: Run deterministic HTTP-range probe
-        run: python isef/euclid_range_probe.py
-      - name: Run Astropy/fsspec comparison probe
-        if: success()
-        run: python isef/euclid_remote_probe.py
-      - name: Run 16-epoch repeatability feasibility test
-        if: success()
-        run: python isef/euclid_16epoch_feasibility.py
-      - name: Upload all feasibility artifacts
+      - name: Install science dependencies
+        run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Validate all 16 Field-1 science URLs
+        run: python isef/euclid_16url_smoke.py
+      - name: Run bounded HTTP-range smoke test
+        run: python isef/euclid_range_smoke.py
+      - name: Run 16-epoch repeatability feasibility test with bounded ranges
+        run: python isef/euclid_16epoch_feasibility_safe.py
+      - name: Upload feasibility results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: isef-euclid-feasibility
+          name: isef-euclid-stage0
           path: |
-            results/euclid_*probe.json
+            results/euclid_16url_smoke.json
+            results/euclid_range_smoke.json
             results/euclid_16epoch_feasibility.json
             results/euclid_16epoch_stamps.npz
           if-no-files-found: warn
