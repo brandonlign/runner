@@ -11,6 +11,8 @@ on:
     paths:
       - 'isef/**'
       - '.github/workflows/isef-euclid-probe.yml'
+  issues:
+    types: [opened]
 
 concurrency:
   group: isef-euclid-q2-probe
@@ -22,6 +24,7 @@ permissions:
 
 jobs:
   probe:
+    if: github.event_name != 'issues' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -69,7 +72,7 @@ jobs:
         id: positives
         if: steps.routed.outcome == 'success'
         continue-on-error: true
-        run: timeout 70s python isef/euclid_gaia_positive_controls.py || true
+        run: timeout 70s python isef/euclid_gaia_positive_controls.py
       - name: Upload current validation artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -107,4 +110,6 @@ jobs:
               if p.exists(): print('```json'); print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]); print('```')
               else: print('_not produced_')
           PY
-          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          if [ -z "$ISSUE_NUMBER" ]; then ISSUE_NUMBER=1447; fi
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
