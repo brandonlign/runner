@@ -13,10 +13,10 @@ import euclid_routed_feasibility as b
 from concurrent.futures import ThreadPoolExecutor,as_completed
 
 OUT=Path('results/euclid_gaia_positive_controls_v2.json')
-TAP='https://gea.esac.esa.int/tap-server/tap/sync'; CENTER=(267.45,-30.05);RADIUS=0.85
+TAP='https://gea.esac.esa.int/tap-server/tap/sync'; CENTER=(267.45,-30.05);RADIUS=0.30
 
 def tap(q):
-    body=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':q}).encode();req=urllib.request.Request(TAP,data=body,headers={'User-Agent':'isef-euclid-positive-v2/1.0','Content-Type':'application/x-www-form-urlencoded'})
+    body=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':q}).encode();req=urllib.request.Request(TAP,data=body,headers={'User-Agent':'isef-euclid-positive-v2/1.1','Content-Type':'application/x-www-form-urlencoded'})
     with urllib.request.urlopen(req,timeout=120) as r:txt=r.read().decode('utf-8',errors='replace')
     if '<VOTABLE' in txt[:500] or 'QUERY_STATUS" value="ERROR' in txt:raise RuntimeError(txt[:3000])
     return list(csv.DictReader(io.StringIO(txt)))
@@ -41,25 +41,24 @@ def measure(row,qs,shifts):
     rec={'source_id':row['source_id'],'ra':ra,'dec':de,'routed':True,'valid_flux':valid,'gmag':float(row['phot_g_mean_mag']),'frequency_per_day':float(row['frequency']),'period_hours':24/float(row['frequency']),'primary_depth_mag':float(row['derived_primary_ecl_depth']),'primary_duration_phase':float(row['derived_primary_ecl_duration']),'global_ranking':float(row['global_ranking'])}
     if valid:
         z=fl/np.median(fl);rec['euclid_normalized_flux']=[float(v) for v in z];rec['euclid_peak_to_peak_fraction']=float(np.max(z)-np.min(z));rec['euclid_max_abs_excursion']=float(np.max(np.abs(z-1)))
-        # Gaia-model phase coverage is intentionally not used to alter extraction/detection; report expected chance proxy only.
         rec['expected_primary_eclipse_duration_minutes']=float(row['derived_primary_ecl_duration'])*24*60/float(row['frequency'])
     return rec
 def main():
     ra,de=CENTER
-    q=f"""SELECT TOP 200 gs.source_id,gs.ra,gs.dec,gs.phot_g_mean_mag,e.frequency,e.global_ranking,e.derived_primary_ecl_depth,e.derived_primary_ecl_duration
-FROM gaiadr3.gaia_source AS gs JOIN gaiadr3.vari_eclipsing_binary AS e USING (source_id)
-WHERE 1=CONTAINS(POINT('ICRS',gs.ra,gs.dec),CIRCLE('ICRS',{ra},{de},{RADIUS}))
-AND gs.phot_g_mean_mag < 19.5 AND e.frequency >= 2.0 AND e.derived_primary_ecl_depth >= 0.15
-AND e.derived_primary_ecl_duration >= 0.03 AND e.global_ranking >= 0.4
+    q=f"""SELECT TOP 50 gs.source_id,gs.ra,gs.dec,gs.phot_g_mean_mag,e.frequency,e.global_ranking,e.derived_primary_ecl_depth,e.derived_primary_ecl_duration
+FROM gaiadr3.vari_eclipsing_binary AS e JOIN gaiadr3.gaia_source AS gs ON e.source_id=gs.source_id
+WHERE e.frequency >= 2.0 AND e.derived_primary_ecl_depth >= 0.20
+AND e.derived_primary_ecl_duration >= 0.03 AND e.global_ranking >= 0.5
+AND gs.phot_g_mean_mag < 18.8
+AND 1=CONTAINS(POINT('ICRS',gs.ra,gs.dec),CIRCLE('ICRS',{ra},{de},{RADIUS}))
 ORDER BY e.derived_primary_ecl_depth DESC"""
     rows=tap(q);qs=b.map_epoch0();shifts=b.pointing_shifts();tested=[]
-    # deterministic Gaia-only ordering: deepest, then shortest period, then brightness.
     rows=sorted(rows,key=lambda r:(-float(r['derived_primary_ecl_depth']),-float(r['frequency']),float(r['phot_g_mean_mag'])))
     for row in rows:
         x=measure(row,qs,shifts);tested.append(x)
-        if sum(bool(v.get('valid_flux')) for v in tested)>=10 or len(tested)>=60:break
+        if sum(bool(v.get('valid_flux')) for v in tested)>=8 or len(tested)>=30:break
     good=[v for v in tested if v.get('valid_flux')]
-    out={'success':True,'note':'Gaia DR3 EB selection fixed before Euclid measurements; no Euclid outcome used in selection','query':q,'gaia_candidates_returned':len(rows),'tested_count':len(tested),'routed_count':sum(bool(v.get('routed')) for v in tested),'valid_controls':len(good),'tested':tested}
+    out={'success':True,'note':'Gaia DR3 EB selection fixed before Euclid measurements; narrowed TAP cone after server timeout, not based on Euclid outcomes','query':q,'gaia_candidates_returned':len(rows),'tested_count':len(tested),'routed_count':sum(bool(v.get('routed')) for v in tested),'valid_controls':len(good),'tested':tested}
     if good:out['ranked_by_euclid_excursion_for_diagnostic_only']=sorted([{'source_id':v['source_id'],'euclid_max_abs_excursion':v['euclid_max_abs_excursion'],'peak_to_peak':v['euclid_peak_to_peak_fraction'],'period_hours':v['period_hours'],'primary_depth_mag':v['primary_depth_mag'],'expected_primary_eclipse_duration_minutes':v['expected_primary_eclipse_duration_minutes']} for v in good],key=lambda x:x['euclid_max_abs_excursion'],reverse=True)
     OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2,sort_keys=True))
 if __name__=='__main__':main()
