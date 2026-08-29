@@ -14,7 +14,7 @@ import euclid_stage0_psf_detector as pd
 import euclid_stage0_psf_flag_gate as fg
 
 OUT=Path('results/euclid_gaia_eb_fullgate.json');OUT.parent.mkdir(parents=True,exist_ok=True)
-TAPS=['https://gea.esac.esa.int/tap-server/tap/sync','https://gaia.aip.de/tap/sync']
+TAPS=['https://gaia.aip.de/tap/sync','https://gea.esac.esa.int/tap-server/tap/sync']
 CENTER=(267.58,-30.11);RADIUS=0.18
 MULTIPATCH_Q95=0.14011415120359302
 MORPH={'control_quantile':0.95,'shape_residual_max':0.7433354680523049,'shape_correlation_min':0.6246851398220109}
@@ -31,12 +31,12 @@ def tap(q):
  body=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':q}).encode();errs=[]
  for u in TAPS:
   try:
-   req=urllib.request.Request(u,data=body,headers={'User-Agent':'isef-euclid-eb-fullgate/1.0','Content-Type':'application/x-www-form-urlencoded'});return parse(urllib.request.urlopen(req,timeout=30).read()),u
+   req=urllib.request.Request(u,data=body,headers={'User-Agent':'isef-euclid-eb-fullgate/1.1','Content-Type':'application/x-www-form-urlencoded'});return parse(urllib.request.urlopen(req,timeout=30).read()),u
   except Exception as e:errs.append(f'{u}: {e}')
  raise RuntimeError('; '.join(errs))
 def gate(row,gm):
  ra=float(row['cra']);de=float(row['cdec']);target=(ra,de)
- base={'source_id':str(row['sid']),'ra':ra,'dec':de,'gmag':float(row['gmag']),'frequency_per_day':float(row['freq']),'period_hours':24/float(row['freq']),'primary_depth_mag':float(row['depth']),'primary_duration_phase':float(row['duration']),'global_ranking':float(row['rank'])}
+ base={'source_id':str(row['sid']),'ra':ra,'dec':de,'gmag':float(row['gmag']),'frequency_per_day':float(row['freq']),'period_hours':24/float(row['freq']),'primary_depth_mag':float(row['depth']),'global_ranking':float(row['rank'])}
  try:routes,diag=er.route_target(gm,target)
  except Exception as e:return {**base,'routed':False,'route_error':str(e)}
  spec={'offset_arcsec':(0,0),'target':target,'routes':routes,'route_diagnostics':diag}
@@ -56,17 +56,16 @@ def gate(row,gm):
  recovered=bool(len(good)>=pd.MIN_ACCEPTED and mx is not None and mx>=MULTIPATCH_Q95)
  return {**base,'routed':True,'accepted_epochs':len(good),'max_abs_corrected_fraction':mx,'max_epoch':me,'passes_multipatch_q95':bool(mx is not None and mx>=MULTIPATCH_Q95),'positive_control_recovered':recovered,'measurements':rows}
 def main():
- ra,de=CENTER;q=f"""SELECT TOP 60 gs.source_id AS sid,gs.ra AS cra,gs.dec AS cdec,gs.phot_g_mean_mag AS gmag,v.frequency AS freq,v.derived_primary_ecl_depth AS depth,v.derived_primary_ecl_duration AS duration,v.global_ranking AS rank FROM gaiadr3.gaia_source AS gs JOIN gaiadr3.vari_eclipsing_binary AS v ON gs.source_id=v.source_id WHERE 1=CONTAINS(POINT('ICRS',gs.ra,gs.dec),CIRCLE('ICRS',{ra},{de},{RADIUS})) AND gs.phot_g_mean_mag<19.0 AND v.frequency>=2.0 AND v.derived_primary_ecl_depth>=0.20 AND v.derived_primary_ecl_duration>=0.03 AND v.global_ranking>=0.5 ORDER BY v.derived_primary_ecl_depth DESC"""
+ ra,de=CENTER;q=f"""SELECT TOP 60 gs.source_id AS sid,gs.ra AS cra,gs.dec AS cdec,gs.phot_g_mean_mag AS gmag,v.frequency AS freq,v.derived_primary_ecl_depth AS depth,v.global_ranking AS rank FROM gaiadr3.gaia_source AS gs JOIN gaiadr3.vari_eclipsing_binary AS v ON gs.source_id=v.source_id WHERE 1=CONTAINS(POINT('ICRS',gs.ra,gs.dec),CIRCLE('ICRS',{ra},{de},{RADIUS})) AND gs.phot_g_mean_mag<19.0 AND v.frequency>=2.0 AND v.derived_primary_ecl_depth>=0.20 AND v.global_ranking>=0.5 ORDER BY v.derived_primary_ecl_depth DESC"""
  try:rows,endpoint=tap(q)
  except Exception as e:return save({'success':False,'gate_passed':False,'error':str(e),'query':q})
  gm=er.map_groups();tested=[];full=0
  for row in rows:
-  # Geometry is allowed to determine measurability; Euclid flux is not.
   try:er.route_target(gm,(float(row['cra']),float(row['cdec'])))
   except Exception as e:
    tested.append({'source_id':str(row['sid']),'ra':float(row['cra']),'dec':float(row['cdec']),'routed':False,'route_error':str(e)});continue
   z=gate(row,gm);tested.append(z);full+=1
   if full>=MAX_FULLGATE:break
  recovered=[x for x in tested if x.get('positive_control_recovered')]
- save({'success':True,'gate_passed':len(recovered)>0,'endpoint':endpoint,'query':q,'selection':'Gaia DR3 EB external-only selection: G<19, frequency>=2/d, primary eclipse depth>=0.20 mag, eclipse duration phase>=0.03, global ranking>=0.5, ordered by Gaia eclipse depth; first exact-WCS-routable systems tested without Euclid-yield ordering','frozen_threshold':MULTIPATCH_Q95,'minimum_accepted_epochs':pd.MIN_ACCEPTED,'frozen_morphology_limits':MORPH,'fullgate_tested':full,'recovered_controls':len(recovered),'tested':tested})
+ save({'success':True,'gate_passed':len(recovered)>0,'endpoint':endpoint,'query':q,'selection':'Gaia DR3 EB external-only selection: G<19, frequency>=2/d, primary eclipse depth>=0.20 mag, global ranking>=0.5, ordered by Gaia eclipse depth; first exact-WCS-routable systems tested without Euclid-yield ordering','frozen_threshold':MULTIPATCH_Q95,'minimum_accepted_epochs':pd.MIN_ACCEPTED,'frozen_morphology_limits':MORPH,'fullgate_tested':full,'recovered_controls':len(recovered),'tested':tested})
 if __name__=='__main__':main()
