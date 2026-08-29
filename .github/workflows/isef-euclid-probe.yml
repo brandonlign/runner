@@ -51,6 +51,11 @@ jobs:
         if: steps.routed.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_survivors.py
+      - name: Run cross-aperture and temporal quality diagnostic
+        id: qualityv2
+        if: steps.routed.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_quality_v2.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,25 +68,25 @@ jobs:
             results/euclid_stage0_bright_injection.json
             results/euclid_stage0_quality.json
             results/euclid_stage0_survivors.json
+            results/euclid_stage0_quality_v2.json
           if-no-files-found: warn
       - name: Report result to probe issue
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           ROUTED_OUTCOME: ${{ steps.routed.outcome }}
-          DIAG_OUTCOME: ${{ steps.diag.outcome }}
-          INJECT_OUTCOME: ${{ steps.inject.outcome }}
           QUALITY_OUTCOME: ${{ steps.quality.outcome }}
           SURVIVOR_OUTCOME: ${{ steps.survivors.outcome }}
+          QUALITYV2_OUTCOME: ${{ steps.qualityv2.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 survivor gate')
-          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; diagnostics: `{os.environ.get('DIAG_OUTCOME')}`; injections: `{os.environ.get('INJECT_OUTCOME')}`; quality: `{os.environ.get('QUALITY_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`")
-          for name in ['euclid_stage0_quality.json','euclid_stage0_survivors.json']:
-              p=Path('results')/name;print(f'### {name}')
-              if p.exists():print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
-              else:print('_not produced_')
+          print('## Euclid Q2 Stage-0 cross-aperture gate')
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; quality: `{os.environ.get('QUALITY_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`; quality-v2: `{os.environ.get('QUALITYV2_OUTCOME')}`")
+          for name in ['euclid_stage0_survivors.json','euclid_stage0_quality_v2.json']:
+              p=Path('results')/name; print(f'### {name}')
+              if p.exists(): print('```json'); print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]); print('```')
+              else: print('_not produced_')
           PY
           gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
