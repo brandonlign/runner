@@ -1,0 +1,145 @@
+name: Temporary OrbitTrace recurrent-EOM CAMS follow-up
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-recurrent-eom-cams-followup.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  followup:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out frozen CAMS follow-up science
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: 80145598965773d5684bd5adf0a3540459b1b112
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frozen CAMS runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            numpy==1.26.4 \
+            pandas==2.2.3 \
+            scipy==1.14.1 \
+            requests==2.32.5 \
+            beautifulsoup4==4.12.3 \
+            click==8.0.4 \
+            future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Verify frozen implementation and survivor boundary
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "80145598965773d5684bd5adf0a3540459b1b112"
+          python -m py_compile \
+            pipeline/discovery_search/recurrent_eom_cams_followup.py \
+            pipeline/discovery_search/recurrent_eom_sonotaco_confirmation.py \
+            pipeline/discovery_search/recurrent_eom_sonotaco_confirmation_run.py \
+            pipeline/discovery_search/association.py \
+            pipeline/discovery_search/distance.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          survivors = json.loads(Path('pipeline/discovery_search/RECURRENT_EOM_SONOTACO_SURVIVORS.json').read_text())
+          assert survivors['formal_survivor_count'] == 2
+          assert [x['family_id'] for x in survivors['survivors']] == [
+              'e100ddc6e79f27d95949',
+              '056a96361233144318b9',
+          ]
+          assert survivors['template_sha256'] == 'e7a47921e3bff8d41dfc9486558a8cd8012e289e9c2fff9a1a9a3037e6152a80'
+          print('exact two-survivor freeze PASS')
+          PY
+
+      - name: Download immutable SonotaCo template freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p template_source frozen_inputs
+          gh run download 33222618792 \
+            --repo brandonlign/runner \
+            --name orbittrace-recurrent-eom-sonotaco-template-freeze-v2 \
+            --dir template_source
+          TEMPLATE="$(find template_source -type f -name 'RECURRENT_EOM_SONOTACO_TEMPLATES.json' -print -quit)"
+          test -n "$TEMPLATE"
+          test "$(sha256sum "$TEMPLATE" | awk '{print $1}')" = "e7a47921e3bff8d41dfc9486558a8cd8012e289e9c2fff9a1a9a3037e6152a80"
+          cp "$TEMPLATE" frozen_inputs/RECURRENT_EOM_SONOTACO_TEMPLATES.json
+          sha256sum frozen_inputs/RECURRENT_EOM_SONOTACO_TEMPLATES.json | tee frozen_inputs/TEMPLATE_SHA256.txt
+
+      - name: Upload immutable CAMS input freeze
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-cams-input-freeze
+          path: frozen_inputs/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Run frozen CAMS follow-up for both survivors
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          mkdir -p cams_followup
+          python -m pipeline.discovery_search.recurrent_eom_cams_followup \
+            --templates ../frozen_inputs/RECURRENT_EOM_SONOTACO_TEMPLATES.json \
+            --out cams_followup/RECURRENT_EOM_CAMS_FOLLOWUP.json
+          sha256sum cams_followup/RECURRENT_EOM_CAMS_FOLLOWUP.json | tee cams_followup/RESULT_SHA256.txt
+
+      - name: Verify frozen CAMS result
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+
+          path = 'cams_followup/RECURRENT_EOM_CAMS_FOLLOWUP.json'
+          data = json.load(open(path))
+          assert data['stage'] == 'recurrent-eom-cams-followup-v1'
+          assert data['survivor_family_size'] == 2
+          assert data['survivor_ids'] == [
+              'e100ddc6e79f27d95949',
+              '056a96361233144318b9',
+          ]
+          assert set(map(int, data['cams_archive_metadata'])) == set(range(2010, 2017))
+          assert len(data['results']) == 2
+          assert data['positive_control']['family_id'] == '8dda131b8699e843676a'
+          assert data['formal_cams_followup_count'] <= 2
+          assert len(data['formal_cams_followups']) == data['formal_cams_followup_count']
+          print('CAMS_VALID_ROWS', data['cams_valid_rows'])
+          print('FORMAL_CAMS_FOLLOWUPS', data['formal_cams_followup_count'])
+          print('POSITIVE_CONTROL_PASS', data['positive_control']['calibration_pass'])
+          for row in data['results']:
+              print('SURVIVOR', row['family_id'], row['members'], row['active_years_ge2'], row['raw_fisher_p'], row['holm_fisher_p'], row['shifted_window_p'], row['formal_cams_followup'])
+          for year, meta in data['cams_archive_metadata'].items():
+              if 'error' in meta:
+                  print('ARCHIVE_ERROR', year, meta['error'])
+          PY
+
+      - name: Upload CAMS follow-up result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-cams-followup
+          path: orbittrace-raw/cams_followup/
+          if-no-files-found: warn
+          retention-days: 90
