@@ -34,7 +34,7 @@ def tap(adql):
     errs=[];body=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':adql}).encode()
     for url in TAPS:
         try:
-            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.3','Content-Type':'application/x-www-form-urlencoded'})
+            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.4','Content-Type':'application/x-www-form-urlencoded'})
             with urllib.request.urlopen(req,timeout=15) as r:raw=r.read()
             return parse_response(raw),url
         except Exception as e:errs.append(f'{url}: {type(e).__name__}: {e}')
@@ -63,13 +63,14 @@ def measure_candidate(row,groupmaps):
 
 def main():
     ra,de=CENTER
-    # vari_short_timescale already carries source_id, coordinates and G magnitude;
-    # querying it directly avoids TAP-dependent JOIN/USING syntax failures.
-    adql=f"""SELECT TOP 30 source_id,ra,dec,phot_g_mean_mag,amplitude_estimate,frequency
-FROM gaiadr3.vari_short_timescale
-WHERE 1=CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',{ra},{de},{RADIUS}))
-AND phot_g_mean_mag < 19.0 AND amplitude_estimate >= 0.10 AND frequency >= 4.0
-ORDER BY amplitude_estimate DESC"""
+    # vari_short_timescale has variability metrics but not sky coordinates or G;
+    # use explicit ON syntax rather than USING for portability across Gaia TAP servers.
+    adql=f"""SELECT TOP 30 gs.source_id,gs.ra,gs.dec,gs.phot_g_mean_mag,v.amplitude_estimate,v.frequency
+FROM gaiadr3.gaia_source AS gs JOIN gaiadr3.vari_short_timescale AS v
+ON gs.source_id=v.source_id
+WHERE 1=CONTAINS(POINT('ICRS',gs.ra,gs.dec),CIRCLE('ICRS',{ra},{de},{RADIUS}))
+AND gs.phot_g_mean_mag < 19.0 AND v.amplitude_estimate >= 0.10 AND v.frequency >= 4.0
+ORDER BY v.amplitude_estimate DESC"""
     try:rows,endpoint=tap(adql)
     except Exception as e:
         out={'success':False,'noncritical':True,'error':f'{type(e).__name__}: {e}','query':adql};OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2));return
