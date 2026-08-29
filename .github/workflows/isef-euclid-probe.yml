@@ -2,9 +2,7 @@ name: ISEF Euclid Q2 probe
 
 on:
   workflow_dispatch:
-  issues:
-    types: [opened]
-  pull_request:
+  push:
     branches: [main]
     paths:
       - 'isef/**'
@@ -16,7 +14,6 @@ permissions:
 
 jobs:
   probe:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -50,11 +47,10 @@ jobs:
             results/euclid_16epoch_feasibility.json
             results/euclid_16epoch_stamps.npz
           if-no-files-found: warn
-      - name: Report result to trigger issue
-        if: always() && github.event_name == 'issues'
+      - name: Report result to probe issue
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          ISSUE: ${{ github.event.issue.number }}
           RANGE_OUTCOME: ${{ steps.range.outcome }}
           REMOTE_OUTCOME: ${{ steps.remote.outcome }}
           EPOCH16_OUTCOME: ${{ steps.epoch16.outcome }}
@@ -65,6 +61,7 @@ jobs:
           from pathlib import Path
           print('## Euclid Q2 feasibility run')
           print()
+          print(f"Commit: `{os.environ.get('GITHUB_SHA','')}`")
           print(f"- range probe: `{os.environ.get('RANGE_OUTCOME')}`")
           print(f"- astropy/fsspec probe: `{os.environ.get('REMOTE_OUTCOME')}`")
           print(f"- 16-epoch feasibility: `{os.environ.get('EPOCH16_OUTCOME')}`")
@@ -87,7 +84,7 @@ jobs:
               print('```')
               print()
           PY
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
       - name: Fail workflow if core probe failed
         if: always() && (steps.range.outcome != 'success' || steps.epoch16.outcome != 'success')
         run: exit 1
