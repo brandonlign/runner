@@ -1,0 +1,50 @@
+name: ISEF Euclid Q2 multi-patch replication
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_stage0_multpatch.py'
+      - '.github/workflows/isef-euclid-multpatch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  multpatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Run geometry-selected multi-patch replication
+        id: run
+        continue-on-error: true
+        run: python isef/euclid_stage0_multpatch.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-multpatch
+          path: results/euclid_stage0_multpatch.json
+          if-no-files-found: warn
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          python - <<'PY' > /tmp/multpatch.md
+          import json,os
+          from pathlib import Path
+          print('## Euclid Q2 geometry-selected multi-patch replication')
+          print('Outcome:',f"`{os.environ.get('OUTCOME')}`")
+          p=Path('results/euclid_stage0_multpatch.json')
+          if p.exists(): print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
+          else: print('_result not produced_')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/multpatch.md
