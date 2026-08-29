@@ -17,6 +17,7 @@ OUT=Path('results/euclid_gaia_positive_controls.json')
 TAPS=['https://gea.esac.esa.int/tap-server/tap/sync','https://gaia.aip.de/tap/sync']
 CENTER=(267.5945,-30.0074);RADIUS=0.20
 
+def lower_keys(d):return {str(k).lower():v for k,v in d.items()}
 def parse_response(raw):
     txt=raw.decode('utf-8',errors='replace')
     if 'value="ERROR"' in txt[:4000]:raise RuntimeError(txt[:1500])
@@ -25,16 +26,16 @@ def parse_response(raw):
         for rr in t:
             d={}
             for n in t.colnames:
-                v=rr[n];d[n]='' if np.ma.is_masked(v) else str(v)
+                v=rr[n];d[str(n).lower()]='' if np.ma.is_masked(v) else str(v)
             rows.append(d)
         return rows
-    return list(csv.DictReader(io.StringIO(txt)))
+    return [lower_keys(r) for r in csv.DictReader(io.StringIO(txt))]
 
 def tap(adql):
     errs=[];body=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':adql}).encode()
     for url in TAPS:
         try:
-            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.4','Content-Type':'application/x-www-form-urlencoded'})
+            req=urllib.request.Request(url,data=body,headers={'User-Agent':'isef-euclid-positive-controls/1.5','Content-Type':'application/x-www-form-urlencoded'})
             with urllib.request.urlopen(req,timeout=15) as r:raw=r.read()
             return parse_response(raw),url
         except Exception as e:errs.append(f'{url}: {type(e).__name__}: {e}')
@@ -63,8 +64,6 @@ def measure_candidate(row,groupmaps):
 
 def main():
     ra,de=CENTER
-    # vari_short_timescale has variability metrics but not sky coordinates or G;
-    # use explicit ON syntax rather than USING for portability across Gaia TAP servers.
     adql=f"""SELECT TOP 30 gs.source_id,gs.ra,gs.dec,gs.phot_g_mean_mag,v.amplitude_estimate,v.frequency
 FROM gaiadr3.gaia_source AS gs JOIN gaiadr3.vari_short_timescale AS v
 ON gs.source_id=v.source_id
