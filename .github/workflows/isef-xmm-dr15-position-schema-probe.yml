@@ -1,0 +1,33 @@
+name: ISEF XMM DR15 position schema probe
+on:
+  push:
+    paths:
+      - 'isef/xmm_dr15_position_schema_probe.py'
+      - '.github/workflows/isef-xmm-dr15-position-schema-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'astropy>=7.1,<8'
+      - run: timeout 240s python isef/xmm_dr15_position_schema_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-xmm-dr15-position-schema-probe
+          path: results/xmm_dr15_position_schema_probe.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python - <<'PY' >/tmp/r.md
+          from pathlib import Path
+          print('## DR15 position schema probe')
+          p=Path('results/xmm_dr15_position_schema_probe.json')
+          if p.exists(): print('```json\n'+p.read_text()[:50000]+'\n```')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
