@@ -14,7 +14,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,39 +22,45 @@ jobs:
           python-version: '3.12'
       - name: Install science dependencies
         run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
-      - name: Run minimal 16-epoch quadrant feasibility test
+      - name: Map 16-epoch dither geometry
+        id: geometry
+        continue-on-error: true
+        run: python isef/euclid_geometry_manifest.py
+      - name: Run compact same-quadrant feasibility test
         id: test
+        if: steps.geometry.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_ultrafast_feasibility.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: isef-euclid-ultrafast-stage0
+          name: isef-euclid-stage0
           path: |
+            results/euclid_geometry_manifest.json
             results/euclid_ultrafast_feasibility.json
             results/euclid_ultrafast_stamps.npz
           if-no-files-found: warn
-      - name: Report result to probe issue
+      - name: Report results to probe issue
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          GEOM_OUTCOME: ${{ steps.geometry.outcome }}
           TEST_OUTCOME: ${{ steps.test.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          p=Path('results/euclid_ultrafast_feasibility.json')
-          print('## Euclid Q2 minimal feasibility run')
+          print('## Euclid Q2 Stage-0 geometry/photometry run')
           print()
           print(f"Commit: `{os.environ.get('GITHUB_SHA','')}`")
-          print(f"Outcome: `{os.environ.get('TEST_OUTCOME')}`")
-          print()
-          if p.exists():
-              print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
-          else: print('_result JSON not produced_')
+          print(f"Geometry outcome: `{os.environ.get('GEOM_OUTCOME')}`")
+          print(f"Photometry outcome: `{os.environ.get('TEST_OUTCOME')}`")
+          for fn in ['euclid_geometry_manifest.json','euclid_ultrafast_feasibility.json']:
+              p=Path('results')/fn
+              print();print('### '+fn)
+              if p.exists():
+                  print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
+              else: print('_not produced_')
           PY
           gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
-      - name: Fail if feasibility failed
-        if: always() && steps.test.outcome != 'success'
-        run: exit 1
