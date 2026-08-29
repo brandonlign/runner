@@ -1,0 +1,43 @@
+name: ISEF Euclid Gaia short-timescale full gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_gaia_shorttimescale_fullgate.py'
+      - '.github/workflows/isef-euclid-short-fullgate.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  fullgate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Frozen gate on preexisting Gaia short-timescale cohort
+        id: test
+        continue-on-error: true
+        run: timeout 720s python isef/euclid_gaia_shorttimescale_fullgate.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-gaia-short-fullgate
+          path: results/euclid_gaia_shorttimescale_fullgate.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}', OUTCOME: '${{ steps.test.outcome }}'}
+        run: |
+          python - <<'PY' > /tmp/shortfull.md
+          import json,os
+          from pathlib import Path
+          print('## Euclid preexisting Gaia short-timescale frozen-gate controls')
+          print(f"outcome: `{os.environ.get('OUTCOME')}`")
+          p=Path('results/euclid_gaia_shorttimescale_fullgate.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)+'\n```')
+          else: print('_artifact not produced_')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/shortfull.md
