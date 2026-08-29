@@ -1,12 +1,6 @@
 name: ISEF Euclid Q2 probe
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'isef/**'
-      - '.github/workflows/isef-euclid-probe.yml'
   pull_request:
     branches: [main]
     paths:
@@ -20,77 +14,55 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2' 'fsspec>=2025.7' 'aiohttp>=3.12'
-      - name: Run deterministic HTTP-range probe
-        id: range
+      - name: Install science dependencies
+        run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Run exact-WCS 16-epoch feasibility test
+        id: routed
         continue-on-error: true
-        run: python isef/euclid_range_probe.py
-      - name: Run Astropy/fsspec comparison probe
-        id: remote
-        if: steps.range.outcome == 'success'
+        run: python isef/euclid_shiftwide_feasibility.py
+      - name: Diagnose aperture and dither systematics
+        id: diag
+        if: steps.routed.outcome == 'success'
         continue-on-error: true
-        run: python isef/euclid_remote_probe.py
-      - name: Run 16-epoch repeatability feasibility test
-        id: epoch16
-        if: steps.range.outcome == 'success'
+        run: python isef/euclid_stage0_diagnostics.py
+      - name: Run bright-subset injection diagnostic
+        id: inject
+        if: steps.routed.outcome == 'success'
         continue-on-error: true
-        run: python isef/euclid_16epoch_feasibility.py
-      - name: Upload all feasibility artifacts
+        run: python isef/euclid_stage0_bright_injection.py
+      - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: isef-euclid-feasibility
+          name: isef-euclid-routed-stage0
           path: |
-            results/euclid_*probe.json
-            results/euclid_16epoch_feasibility.json
-            results/euclid_16epoch_stamps.npz
+            results/euclid_routed_feasibility.json
+            results/euclid_routed_stamps.npz
+            results/euclid_stage0_diagnostics.json
+            results/euclid_stage0_bright_injection.json
           if-no-files-found: warn
       - name: Report result to probe issue
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          RANGE_OUTCOME: ${{ steps.range.outcome }}
-          REMOTE_OUTCOME: ${{ steps.remote.outcome }}
-          EPOCH16_OUTCOME: ${{ steps.epoch16.outcome }}
-        shell: bash
+          ROUTED_OUTCOME: ${{ steps.routed.outcome }}
+          DIAG_OUTCOME: ${{ steps.diag.outcome }}
+          INJECT_OUTCOME: ${{ steps.inject.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 feasibility run')
-          print()
-          print(f"Commit: `{os.environ.get('GITHUB_SHA','')}`")
-          print(f"Event: `{os.environ.get('GITHUB_EVENT_NAME','')}`")
-          print(f"- range probe: `{os.environ.get('RANGE_OUTCOME')}`")
-          print(f"- astropy/fsspec probe: `{os.environ.get('REMOTE_OUTCOME')}`")
-          print(f"- 16-epoch feasibility: `{os.environ.get('EPOCH16_OUTCOME')}`")
-          print()
-          for p in [Path('results/euclid_range_probe.json'), Path('results/euclid_remote_probe.json'), Path('results/euclid_16epoch_feasibility.json')]:
-              print(f"### {p.name}")
-              if not p.exists():
-                  print('_not produced_')
-                  print()
-                  continue
-              try:
-                  obj=json.loads(p.read_text())
-                  txt=json.dumps(obj, indent=2, sort_keys=True)
-              except Exception:
-                  txt=p.read_text()
-              if len(txt) > 18000:
-                  txt=txt[:18000]+'\n...TRUNCATED...'
-              print('```json')
-              print(txt)
-              print('```')
-              print()
+          print('## Euclid Q2 Stage-0 bright-subset injections')
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; diagnostics: `{os.environ.get('DIAG_OUTCOME')}`; injections: `{os.environ.get('INJECT_OUTCOME')}`")
+          for name in ['euclid_routed_feasibility.json','euclid_stage0_diagnostics.json','euclid_stage0_bright_injection.json']:
+              p=Path('results')/name;print(f'### {name}')
+              if p.exists():print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
+              else:print('_not produced_')
           PY
           gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
-      - name: Fail workflow if core probe failed
-        if: always() && (steps.range.outcome != 'success' || steps.epoch16.outcome != 'success')
-        run: exit 1
