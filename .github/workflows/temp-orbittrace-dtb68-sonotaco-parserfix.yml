@@ -1,0 +1,93 @@
+name: Temporary OrbitTrace DTb68 corrected SonotaCo replication
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-dtb68-sonotaco-parserfix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  sonotaco:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out frozen DTb68 implementation
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: research/orbittrace-new-discovery-screen-20260828
+          path: frozen-runner
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen replication dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==2.2.3 scipy==1.14.1 requests==2.32.5
+      - name: Run frozen SonotaCo protocol with parser-only correction
+        env:
+          PYTHONPATH: frozen-runner
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import io
+          import sys
+          import zipfile
+          import pandas as pd
+          import requests
+          from orbittrace_new_discovery_screen import dtb68_external_replication as mod
+
+          original = mod.read_zip_csv
+
+          def corrected_read_zip_csv(url: str):
+              response = requests.get(url, timeout=240)
+              response.raise_for_status()
+              with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                  names = [
+                      name for name in archive.namelist()
+                      if name.lower().endswith('.csv')
+                      and '__note' not in name.lower()
+                      and not name.startswith('__MACOSX/')
+                  ]
+                  if not names:
+                      raise RuntimeError(f'no CSV in {url}')
+                  member = names[0]
+                  raw = archive.read(member)
+
+              # Parser-only correction. SonotaCo SNMv3 files can carry a
+              # whitespace-delimited header/body despite the .csv suffix.
+              # Preserve ordinary comma parsing for EDMOND/normal CSVs, then
+              # retry only when the first parse collapsed the schema to one
+              # column. No membership, geometry, orbit, year, or significance
+              # criterion is changed.
+              frame = pd.read_csv(io.BytesIO(raw), low_memory=False)
+              if len(frame.columns) == 1:
+                  frame = pd.read_csv(io.BytesIO(raw), sep=r'\s+', engine='python')
+              frame.columns = [str(column).strip() for column in frame.columns]
+              return frame, member, len(response.content)
+
+          mod.read_zip_csv = corrected_read_zip_csv
+          sys.argv = [
+              'dtb68_external_replication',
+              '--source', 'sonotaco',
+              '--out', 'sonotaco_corrected_output',
+          ]
+          rc = mod.main()
+          if rc:
+              raise SystemExit(rc)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dtb68-corrected-sonotaco-replication
+          path: sonotaco_corrected_output/
+          if-no-files-found: error
+          retention-days: 90

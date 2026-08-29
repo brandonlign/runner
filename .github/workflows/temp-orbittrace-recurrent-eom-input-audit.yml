@@ -1,0 +1,60 @@
+name: Temporary OrbitTrace recurrent-EOM input audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-recurrent-eom-input-audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out frozen recurrent-EOM support provenance
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Decode exact frozen support wrapper
+        run: |
+          set -euo pipefail
+          mkdir -p decoded
+          cat frozen/orbittrace_fixed4_support_wrapper_development/source_parts/part*.b64 | base64 -d | gzip -dc > decoded/frozen_support.py
+          echo "DECODED_SHA256=$(sha256sum decoded/frozen_support.py | awk '{print $1}')"
+          test "$(sha256sum decoded/frozen_support.py | awk '{print $1}')" = "fa18a19c08c6824c66606cbd92095dc3605cbcc30f17a468c9e525e7c6ff4a62"
+          python -m py_compile decoded/frozen_support.py
+      - name: Extract parser and quality contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('decoded/frozen_support.py')
+          text=p.read_text()
+          tree=ast.parse(text)
+          wanted={'parse_catalogue','load_sources'}
+          chunks=[]
+          for node in tree.body:
+              if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)) and node.name in wanted:
+                  chunks.append(ast.get_source_segment(text,node))
+          out='\n\n'.join(chunks)+'\n'
+          Path('decoded/parser_excerpt.py').write_text(out)
+          print(out)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-frozen-input-parser-audit
+          path: |
+            decoded/frozen_support.py
+            decoded/parser_excerpt.py
+          if-no-files-found: error
+          retention-days: 90
