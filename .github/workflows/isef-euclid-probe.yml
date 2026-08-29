@@ -7,6 +7,11 @@ on:
     paths:
       - 'isef/**'
       - '.github/workflows/isef-euclid-probe.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'isef/**'
+      - '.github/workflows/isef-euclid-probe.yml'
 
 permissions:
   contents: read
@@ -62,6 +67,7 @@ jobs:
           print('## Euclid Q2 feasibility run')
           print()
           print(f"Commit: `{os.environ.get('GITHUB_SHA','')}`")
+          print(f"Event: `{os.environ.get('GITHUB_EVENT_NAME','')}`")
           print(f"- range probe: `{os.environ.get('RANGE_OUTCOME')}`")
           print(f"- astropy/fsspec probe: `{os.environ.get('REMOTE_OUTCOME')}`")
           print(f"- 16-epoch feasibility: `{os.environ.get('EPOCH16_OUTCOME')}`")
