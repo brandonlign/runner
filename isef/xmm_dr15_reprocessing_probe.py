@@ -13,16 +13,18 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 import astropy.units as u
 
-U5='https://heasarc.gsfc.nasa.gov/FTP/xmm/data/catalogues/5XMM_DR15cat_v1.0.fits.gz'
+# Use the source-only DR15 product; it is scientifically sufficient here and much
+# smaller than the complete stacked table that includes observation-level payloads.
+U5='https://heasarc.gsfc.nasa.gov/FTP/xmm/data/catalogues/5XMM_DR15cat_source_v1.0.fits.gz'
 U4='https://heasarc.gsfc.nasa.gov/FTP/xmm/data/catalogues/4XMM_DR14cat_v1.0.fits.gz'
-P5=Path('/tmp/5XMM_DR15cat_v1.0.fits.gz'); P4=Path('/tmp/4XMM_DR14cat_v1.0.fits.gz')
+P5=Path('/tmp/5XMM_DR15cat_source_v1.0.fits.gz'); P4=Path('/tmp/4XMM_DR14cat_v1.0.fits.gz')
 OUT=Path('results/xmm_dr15_reprocessing_probe.json'); OUT.parent.mkdir(parents=True,exist_ok=True)
 CUTOFF_MJD=float(Time('2023-12-31T23:59:59',scale='utc').mjd)
 
 def save(x): OUT.write_text(json.dumps(x,indent=2,sort_keys=True,default=str)+'\n'); print(json.dumps(x,indent=2,sort_keys=True,default=str))
 def dl(url,p):
-    if p.exists() and p.stat().st_size>50_000_000:return
-    req=urllib.request.Request(url,headers={'User-Agent':'ISEF-5XMM-reprocessing-probe/1.0'})
+    if p.exists() and p.stat().st_size>20_000_000:return
+    req=urllib.request.Request(url,headers={'User-Agent':'ISEF-5XMM-reprocessing-probe/1.1'})
     with urllib.request.urlopen(req,timeout=180) as r,p.open('wb') as f:
         while True:
             b=r.read(8*1024*1024)
@@ -39,7 +41,9 @@ def farr(d,n): return np.asarray(d[n],dtype=float)
 def end_mjd(a):
     a=np.asarray(a)
     if np.issubdtype(a.dtype,np.number):
-        z=a.astype(float); med=float(np.nanmedian(z[np.isfinite(z)]))
+        z=a.astype(float); finite=z[np.isfinite(z)]
+        if not len(finite):return None,'no_finite_times'
+        med=float(np.nanmedian(finite))
         if 40000<med<100000:return z,'mjd'
         if 2.4e6<med<2.6e6:return z-2400000.5,'jd'
         return None,f'unrecognized_numeric_median_{med}'
@@ -58,7 +62,7 @@ def uniq4(d,names,ra,dec):
     return r[ok],q[ok],None,int(ok.sum())
 def main():
     try:dl(U5,P5); dl(U4,P4)
-    except Exception as e:return save({'success':False,'stage':'download','error':f'{type(e).__name__}: {e}'})
+    except Exception as e:return save({'success':False,'stage':'download','error':f'{type(e).__name__}: {e}','u5':U5,'u4':U4})
     h5=h4=None
     try:
         h5,t5,d5,n5=table(P5); h4,t4,d4,n4=table(P4)
@@ -82,7 +86,6 @@ def main():
         sc4=SkyCoord(ra4*u.deg,de4*u.deg); sc5=SkyCoord(ra5[idx5]*u.deg,de5[idx5]*u.deg)
         _,sep,_=sc5.match_to_catalog_sky(sc4); sec=sep.arcsec
         counts={str(x):int(np.sum(sec>x)) for x in (2,3,5,7,10,15)}
-        # Conservative reprocessing-only cohort uses no 4XMM source within 10 arcsec.
         orphan_idx=idx5[sec>10]
         out={'success':True,'decision':'REPROCESSING_COHORT_EXISTS' if len(orphan_idx)>=100 else 'REPROCESSING_COHORT_SMALL',
              'five_rows':len(d5),'four_rows':len(d4),'four_unique_sources':n4u,'old_epoch_clean_pointlike_5xmm':len(idx5),
@@ -93,7 +96,6 @@ def main():
             if c5[key]:
                 z=farr(d5,c5[key])[orphan_idx]; z=z[np.isfinite(z)]
                 if len(z):out[f'{key}_summary']={'n':len(z),'median':float(np.median(z)),'q05':float(np.quantile(z,.05)),'q95':float(np.quantile(z,.95)),'min':float(np.min(z)),'max':float(np.max(z))}
-        # Anonymous deterministic high-information slices for later preregistration.
         anon=[]
         var=farr(d5,c5['var']) if c5['var'] else np.full(len(d5),np.nan)
         ol=farr(d5,c5['classx_outlier']) if c5['classx_outlier'] else np.full(len(d5),np.nan)
