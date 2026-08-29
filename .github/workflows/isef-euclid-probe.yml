@@ -50,6 +50,11 @@ jobs:
         if: steps.routed.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_quality_v2.py
+      - name: Run same-dither PSF validation
+        id: psf
+        if: steps.survivors.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_psf_validation.py
       - name: Inspect auxiliary FITS products
         id: aux
         if: steps.survivors.outcome == 'success'
@@ -72,6 +77,7 @@ jobs:
             results/euclid_stage0_quality.json
             results/euclid_stage0_survivors.json
             results/euclid_stage0_quality_v2.json
+            results/euclid_stage0_psf_validation.json
             results/euclid_aux_manifest.json
             results/euclid_stage0_flag_validation.json
           if-no-files-found: warn
@@ -83,15 +89,16 @@ jobs:
           QUALITY_OUTCOME: ${{ steps.quality.outcome }}
           SURVIVOR_OUTCOME: ${{ steps.survivors.outcome }}
           QUALITYV2_OUTCOME: ${{ steps.qualityv2.outcome }}
+          PSF_OUTCOME: ${{ steps.psf.outcome }}
           AUX_OUTCOME: ${{ steps.aux.outcome }}
           FLAGS_OUTCOME: ${{ steps.flags.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 auxiliary-product gate')
-          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; quality: `{os.environ.get('QUALITY_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`; quality-v2: `{os.environ.get('QUALITYV2_OUTCOME')}`; aux: `{os.environ.get('AUX_OUTCOME')}`; flags: `{os.environ.get('FLAGS_OUTCOME')}`")
-          for name in ['euclid_stage0_quality_v2.json','euclid_aux_manifest.json','euclid_stage0_flag_validation.json']:
+          print('## Euclid Q2 Stage-0 PSF/auxiliary validation')
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; survivors: `{os.environ.get('SURVIVOR_OUTCOME')}`; quality-v2: `{os.environ.get('QUALITYV2_OUTCOME')}`; PSF: `{os.environ.get('PSF_OUTCOME')}`; aux: `{os.environ.get('AUX_OUTCOME')}`; flags: `{os.environ.get('FLAGS_OUTCOME')}`")
+          for name in ['euclid_stage0_psf_validation.json','euclid_aux_manifest.json','euclid_stage0_flag_validation.json']:
               p=Path('results')/name; print(f'### {name}')
               if p.exists(): print('```json'); print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]); print('```')
               else: print('_not produced_')
