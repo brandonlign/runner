@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generalization test of morphology-gated same-dither PSF variability.
 
-Five non-overlapping development patches are routed and range-read across all 16
-Q2 exposures. The same candidate-independent 95% PSF morphology envelope used by
-the single-patch detector is applied before source maxima/nulls are constructed.
-No blind field is opened here.
+Five development patches separated by 3 arcmin are routed and range-read across
+all 16 Q2 exposures. The same candidate-independent 95% PSF morphology envelope
+used by the single-patch detector is applied before source maxima/nulls are
+constructed. No blind field is opened here.
 """
 import json, math
 from pathlib import Path
@@ -14,7 +14,7 @@ import euclid_routed_feasibility as b
 import euclid_stage0_psf_detector as pd
 
 OUT=Path('results/euclid_stage0_multi_patch.json');RNG=np.random.default_rng(20260829)
-CENTER=(267.5945,-30.0074);OFFSETS_ARCSEC=[(0,0),(36,0),(-36,0),(0,36),(0,-36)];AMPS=(0.10,0.20,0.50)
+CENTER=(267.5945,-30.0074);OFFSETS_ARCSEC=[(0,0),(180,0),(-180,0),(0,180),(0,-180)];AMPS=(0.10,0.20,0.50)
 
 def target_from_offset(dra_as,ddec_as):
     ra,de=CENTER;return ra+dra_as/(3600*math.cos(math.radians(de))),de+ddec_as/3600
@@ -56,6 +56,6 @@ def main():
     for a in AMPS:
         vals=np.asarray([v for p in patches for v in p['injected_recovered'][str(a)]],float);injection[str(a)]={'morphology_accepted_trials':int(len(vals)),'recovered':pd.summary(vals)}
         if len(allmax) and len(vals):injection[str(a)].update({'recovery_gt_pooled_q95':float(np.mean(np.abs(vals)>pooled['q95'])),'recovery_gt_pooled_q99':float(np.mean(np.abs(vals)>pooled['q99'])),'recovery_gt_pooled_zero_fp':float(np.mean(np.abs(vals)>pooled['zero_observed_fp']))})
-    out={'success':len(patches)>=4 and len(allmax)>=50,'note':'multi-patch morphology-gated development generalization; no blind field opened','morphology_limits':lim,'requested_patches':5,'successful_patches':len(patches),'failures':fail,'pooled':pooled,'injections':injection,'patches':patches}
+    out={'success':len(patches)>=4 and len(allmax)>=50,'note':'3-arcmin multi-patch morphology-gated development generalization; no blind field opened','morphology_limits':lim,'offsets_arcsec':OFFSETS_ARCSEC,'requested_patches':5,'successful_patches':len(patches),'failures':fail,'pooled':pooled,'injections':injection,'patches':patches}
     OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n');print(json.dumps(out,indent=2,sort_keys=True))
 if __name__=='__main__':main()
