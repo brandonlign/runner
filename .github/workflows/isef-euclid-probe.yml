@@ -1,6 +1,11 @@
 name: ISEF Euclid Q2 probe
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/**'
+      - '.github/workflows/isef-euclid-probe.yml'
   pull_request:
     branches: [main]
     paths:
@@ -36,6 +41,11 @@ jobs:
         if: steps.routed.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_bright_injection.py
+      - name: Run candidate-independent quality diagnostic
+        id: quality
+        if: steps.routed.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_quality.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -46,6 +56,7 @@ jobs:
             results/euclid_routed_stamps.npz
             results/euclid_stage0_diagnostics.json
             results/euclid_stage0_bright_injection.json
+            results/euclid_stage0_quality.json
           if-no-files-found: warn
       - name: Report result to probe issue
         if: always()
@@ -54,13 +65,14 @@ jobs:
           ROUTED_OUTCOME: ${{ steps.routed.outcome }}
           DIAG_OUTCOME: ${{ steps.diag.outcome }}
           INJECT_OUTCOME: ${{ steps.inject.outcome }}
+          QUALITY_OUTCOME: ${{ steps.quality.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 bright-subset injections')
-          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; diagnostics: `{os.environ.get('DIAG_OUTCOME')}`; injections: `{os.environ.get('INJECT_OUTCOME')}`")
-          for name in ['euclid_routed_feasibility.json','euclid_stage0_diagnostics.json','euclid_stage0_bright_injection.json']:
+          print('## Euclid Q2 Stage-0 quality gate')
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; diagnostics: `{os.environ.get('DIAG_OUTCOME')}`; injections: `{os.environ.get('INJECT_OUTCOME')}`; quality: `{os.environ.get('QUALITY_OUTCOME')}`")
+          for name in ['euclid_routed_feasibility.json','euclid_stage0_diagnostics.json','euclid_stage0_bright_injection.json','euclid_stage0_quality.json']:
               p=Path('results')/name;print(f'### {name}')
               if p.exists():print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
               else:print('_not produced_')
