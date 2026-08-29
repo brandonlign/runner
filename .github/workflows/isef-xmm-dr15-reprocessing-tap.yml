@@ -1,0 +1,42 @@
+name: ISEF 5XMM TAP reprocessing probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_dr15_reprocessing_tap.py'
+      - '.github/workflows/isef-xmm-dr15-reprocessing-tap.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'scipy>=1.13'
+      - name: Run blinded TAP plus slim comparison
+        id: probe
+        continue-on-error: true
+        run: timeout 780s python isef/xmm_dr15_reprocessing_tap.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-dr15-reprocessing-tap
+          path: results/xmm_dr15_reprocessing_tap.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}', OUTCOME: '${{ steps.probe.outcome }}'}
+        run: |
+          python - <<'PY' >/tmp/report.md
+          import json,os
+          from pathlib import Path
+          print('## 5XMM TAP old-era/4XMM-absent probe')
+          print('Outcome:',os.environ.get('OUTCOME'))
+          p=Path('results/xmm_dr15_reprocessing_tap.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:60000]+'\n```')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/report.md
