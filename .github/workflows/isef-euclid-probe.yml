@@ -22,10 +22,10 @@ jobs:
           python-version: '3.12'
       - name: Install science dependencies
         run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
-      - name: Run cross-quadrant 16-epoch feasibility test
+      - name: Run direct-WCS 16-epoch feasibility test
         id: routed
         continue-on-error: true
-        run: python isef/euclid_routed_feasibility.py
+        run: python isef/euclid_direct_feasibility.py
       - name: Upload routed feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,7 +45,7 @@ jobs:
           import json, os
           from pathlib import Path
           p=Path('results/euclid_routed_feasibility.json')
-          print('## Euclid Q2 cross-quadrant Stage-0')
+          print('## Euclid Q2 direct-WCS Stage-0')
           print(f"Outcome: `{os.environ.get('ROUTED_OUTCOME')}`")
           if p.exists():
               print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
