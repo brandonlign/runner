@@ -1,0 +1,41 @@
+name: ISEF Euclid Q2 field manifest
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_q2_field_manifest.py'
+      - '.github/workflows/isef-euclid-q2-field-manifest.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - id: run
+        continue-on-error: true
+        run: python isef/euclid_q2_field_manifest.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-q2-field-manifest
+          path: results/euclid_q2_field_manifest.json
+          if-no-files-found: warn
+      - name: Report
+        if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python - <<'PY' > /tmp/m.md
+          import json
+          from pathlib import Path
+          p=Path('results/euclid_q2_field_manifest.json')
+          print('## Euclid Q2 field-neutral manifest')
+          if p.exists():
+            z=json.loads(p.read_text());print('success:',z.get('success'));print({k:v.get('complete') for k,v in z.get('fields',{}).items()})
+          else: print('artifact missing')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/m.md
