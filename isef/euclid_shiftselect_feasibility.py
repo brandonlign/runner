@@ -44,8 +44,6 @@ def search(qs,shifts):
                 candidates.append((score,sign,k,target,pred,med))
         if candidates and max(x[0] for x in candidates)>b.MARGIN+150 and order.index(k)>=12: break
     candidates.sort(reverse=True,key=lambda z:z[0])
-    # Validate against actual WCS in each representative group. Try candidates
-    # in score order because a dither is not guaranteed to be a perfect rigid shift.
     diagnostics=[]
     for score,sign,k,target,pred,med in candidates[:200]:
         actual={}; ok=True; rows=[]
@@ -73,7 +71,7 @@ def patched_route_groups(qs,target,shifts):
 
 def main():
     global QS,SELECTED,SHIFTS
-    QS=b.map_epoch0(); SHIFTS=b.pointing_shifts(QS); SELECTED=search(QS,SHIFTS)
+    QS=b.map_epoch0(); SHIFTS=b.pointing_shifts(); SELECTED=search(QS,SHIFTS)
     print('SHIFT_SELECTED',{'score':SELECTED[0],'sign':SELECTED[1],'epoch0_k':SELECTED[2],'target':SELECTED[3],'routes':SELECTED[4]})
     b.map_epoch0=patched_map_epoch0; b.choose_target=patched_choose_target; b.route_groups=patched_route_groups
     b.main()
