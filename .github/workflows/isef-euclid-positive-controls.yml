@@ -1,0 +1,50 @@
+name: ISEF Euclid Gaia positive controls
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/euclid_gaia_positive_controls_v2.py'
+      - '.github/workflows/isef-euclid-positive-controls.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  positives:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'numpy>=2.2' 'astropy>=7.1,<8' 'photutils>=2.2'
+      - name: Run Gaia eclipsing-binary positive controls
+        id: run
+        continue-on-error: true
+        run: python isef/euclid_gaia_positive_controls_v2.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-euclid-positive-controls-v2
+          path: results/euclid_gaia_positive_controls_v2.json
+          if-no-files-found: warn
+      - name: Report result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          python - <<'PY' > /tmp/positive.md
+          import json,os
+          from pathlib import Path
+          print('## Euclid Q2 Gaia eclipsing-binary positive controls')
+          print('Outcome:',f"`{os.environ.get('OUTCOME')}`")
+          p=Path('results/euclid_gaia_positive_controls_v2.json')
+          if p.exists(): print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
+          else: print('_result not produced_')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/positive.md
