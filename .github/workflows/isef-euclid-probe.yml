@@ -1,15 +1,13 @@
 name: ISEF Euclid Q2 probe
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'isef/euclid_remote_probe.py'
-      - '.github/workflows/isef-euclid-probe.yml'
   workflow_dispatch:
+  issues:
+    types: [opened]
 
 jobs:
   probe:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
