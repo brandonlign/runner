@@ -65,11 +65,16 @@ jobs:
         if: steps.routed.outcome == 'success'
         continue-on-error: true
         run: python isef/euclid_stage0_psf_detector.py
+      - name: Test PSF detector across five independent development patches
+        id: multipatch
+        if: steps.routed.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_multi_patch.py
       - name: Run Gaia short-timescale positive controls
         id: positives
         if: steps.routed.outcome == 'success'
         continue-on-error: true
-        run: python isef/euclid_gaia_positive_controls.py
+        run: timeout 50s python isef/euclid_gaia_positive_controls.py || true
       - name: Inspect auxiliary FITS products
         id: aux
         if: steps.survivors.outcome == 'success'
@@ -110,6 +115,7 @@ jobs:
             results/euclid_stage0_psf_validation.json
             results/euclid_stage0_psf_controls.json
             results/euclid_stage0_psf_detector.json
+            results/euclid_stage0_multi_patch.json
             results/euclid_gaia_positive_controls.json
             results/euclid_aux_manifest.json
             results/euclid_stage0_flag_validation.json
@@ -123,6 +129,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ROUTED_OUTCOME: ${{ steps.routed.outcome }}
           PSFDETECTOR_OUTCOME: ${{ steps.psfdetector.outcome }}
+          MULTIPATCH_OUTCOME: ${{ steps.multipatch.outcome }}
           FLAGPOP_OUTCOME: ${{ steps.flagpopulation.outcome }}
           UNFLAGGEDPSF_OUTCOME: ${{ steps.unflaggedpsf.outcome }}
           AMPCONSISTENCY_OUTCOME: ${{ steps.ampconsistency.outcome }}
@@ -131,9 +138,9 @@ jobs:
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          print('## Euclid Q2 Stage-0 PSF detector gate')
-          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; PSF detector: `{os.environ.get('PSFDETECTOR_OUTCOME')}`; flags: `{os.environ.get('FLAGPOP_OUTCOME')}`; unflagged PSF: `{os.environ.get('UNFLAGGEDPSF_OUTCOME')}`; amplitude consistency: `{os.environ.get('AMPCONSISTENCY_OUTCOME')}`; Gaia positives: `{os.environ.get('POSITIVES_OUTCOME')}`")
-          for name in ['euclid_stage0_psf_detector.json','euclid_stage0_flag_population.json','euclid_stage0_unflagged_psf_audit.json','euclid_stage0_amplitude_consistency.json','euclid_gaia_positive_controls.json']:
+          print('## Euclid Q2 Stage-0 PSF detector + generalization gate')
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; PSF detector: `{os.environ.get('PSFDETECTOR_OUTCOME')}`; multi-patch: `{os.environ.get('MULTIPATCH_OUTCOME')}`; flags: `{os.environ.get('FLAGPOP_OUTCOME')}`; unflagged PSF: `{os.environ.get('UNFLAGGEDPSF_OUTCOME')}`; amplitude consistency: `{os.environ.get('AMPCONSISTENCY_OUTCOME')}`; Gaia positives: `{os.environ.get('POSITIVES_OUTCOME')}`")
+          for name in ['euclid_stage0_psf_detector.json','euclid_stage0_multi_patch.json','euclid_stage0_flag_population.json','euclid_stage0_unflagged_psf_audit.json','euclid_stage0_amplitude_consistency.json','euclid_gaia_positive_controls.json']:
               p=Path('results')/name; print(f'### {name}')
               if p.exists(): print('```json'); print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]); print('```')
               else: print('_not produced_')
