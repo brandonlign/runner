@@ -2,12 +2,14 @@ name: ISEF Euclid Q2 probe
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
   issues:
     types: [opened]
 
 jobs:
   probe:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || startsWith(github.event.issue.title, 'ISEF EUCLID PROBE')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
