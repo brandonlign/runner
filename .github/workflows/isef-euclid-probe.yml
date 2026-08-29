@@ -26,6 +26,11 @@ jobs:
         id: routed
         continue-on-error: true
         run: python isef/euclid_shiftwide_feasibility.py
+      - name: Diagnose aperture and dither systematics
+        id: diag
+        if: steps.routed.outcome == 'success'
+        continue-on-error: true
+        run: python isef/euclid_stage0_diagnostics.py
       - name: Upload feasibility artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -34,21 +39,24 @@ jobs:
           path: |
             results/euclid_routed_feasibility.json
             results/euclid_routed_stamps.npz
+            results/euclid_stage0_diagnostics.json
           if-no-files-found: warn
       - name: Report result to probe issue
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           ROUTED_OUTCOME: ${{ steps.routed.outcome }}
+          DIAG_OUTCOME: ${{ steps.diag.outcome }}
         run: |
           python - <<'PY' > /tmp/euclid-comment.md
           import json, os
           from pathlib import Path
-          p=Path('results/euclid_routed_feasibility.json')
-          print('## Euclid Q2 exact-WCS Stage-0')
-          print(f"Outcome: `{os.environ.get('ROUTED_OUTCOME')}`")
-          if p.exists():
-              print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
-          else:print('_not produced_')
+          print('## Euclid Q2 Stage-0 + dither diagnostics')
+          print(f"Stage-0: `{os.environ.get('ROUTED_OUTCOME')}`; diagnostics: `{os.environ.get('DIAG_OUTCOME')}`")
+          for name in ['euclid_routed_feasibility.json','euclid_stage0_diagnostics.json']:
+              p=Path('results')/name
+              print(f'### {name}')
+              if p.exists():print('```json');print(json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:50000]);print('```')
+              else:print('_not produced_')
           PY
           gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/euclid-comment.md
