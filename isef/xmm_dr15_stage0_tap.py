@@ -7,22 +7,27 @@ predeclared quality cuts locally. It intentionally does not emit source names or
 perform external identity/literature lookups.
 """
 from __future__ import annotations
-import csv, io, json, math, urllib.parse, urllib.request
+import io, json, math, urllib.parse, urllib.request
 from pathlib import Path
+import numpy as np
+from astropy.table import Table
 
 TAP='https://heasarc.gsfc.nasa.gov/xamin/vo/tap/sync'
 OUT=Path('results/xmm_dr15_stage0_tap.json'); OUT.parent.mkdir(parents=True,exist_ok=True)
 QUERY='''SELECT ra,dec,approx_source_var,sum_flag,n_contrib,n_obs,extent,stack_det_ml,stack_flux,stack_gamma,stack_nh FROM xmmssc WHERE approx_source_var >= 5 AND n_contrib >= 2'''
 
-def post_adql(q:str)->str:
-    data=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':q}).encode()
-    req=urllib.request.Request(TAP,data=data,headers={'Content-Type':'application/x-www-form-urlencoded','User-Agent':'ISEF-5XMM-DR15-stage0-tap/1.0'})
-    with urllib.request.urlopen(req,timeout=180) as r:
-        raw=r.read()
+def post_adql(q:str):
+    data=urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','QUERY':q}).encode()
+    req=urllib.request.Request(TAP,data=data,headers={'Content-Type':'application/x-www-form-urlencoded','User-Agent':'ISEF-5XMM-DR15-stage0-tap/1.1'})
+    with urllib.request.urlopen(req,timeout=180) as r: raw=r.read()
     text=raw.decode('utf-8','replace')
-    if '<VOTABLE' in text[:1000] and 'QUERY_STATUS' in text[:5000] and 'ERROR' in text[:5000]:
-        raise RuntimeError(text[:5000])
-    return text
+    if 'QUERY_STATUS' in text[:6000] and 'value="ERROR"' in text[:6000]: raise RuntimeError(text[:6000])
+    tab=Table.read(io.BytesIO(raw),format='votable')
+    rows=[]
+    for rr in tab:
+        z={str(n).lower():('' if np.ma.is_masked(rr[n]) else rr[n]) for n in tab.colnames}
+        rows.append(z)
+    return rows
 
 def f(x):
     try:
@@ -41,25 +46,21 @@ def save(o):
     print(json.dumps(o,indent=2,sort_keys=True))
 
 def main():
-    try:text=post_adql(QUERY)
+    try:rows=post_adql(QUERY)
     except Exception as e:return save({'success':False,'stage':'tap','error':f'{type(e).__name__}: {e}','query':QUERY})
-    rows=list(csv.DictReader(io.StringIO(text)))
     parsed=[]
-    for r in rows:
-        z={str(k).lower():v for k,v in r.items()}
+    for z in rows:
         v=f(z.get('approx_source_var')); flag=f(z.get('sum_flag')); nc=f(z.get('n_contrib')); ext=f(z.get('extent'))
         if None in (v,flag,nc,ext):continue
         parsed.append({'v':v,'flag':flag,'nc':nc,'ext':ext,'ra':f(z.get('ra')),'dec':f(z.get('dec')),
                        'nobs':f(z.get('n_obs')),'ml':f(z.get('stack_det_ml')),'flux':f(z.get('stack_flux')),
                        'gamma':f(z.get('stack_gamma')),'nh':f(z.get('stack_nh'))})
-    # Primary cleanliness gate follows catalog guidance: SUM_FLAG<3; restrict to point sources.
     clean=[r for r in parsed if r['flag']<3 and r['nc']>=2 and r['ext']==0]
     veryclean=[r for r in clean if r['flag']==0]
     thresholds=(5,10,20,30,50,100,300,1000,3000,10000)
     counts={str(t):sum(r['v']>=t for r in clean) for t in thresholds}
     counts0={str(t):sum(r['v']>=t for r in veryclean) for t in thresholds}
     vals=[r['v'] for r in clean]
-    # Anonymous top tail: no names and coordinates rounded to 0.1 deg solely for broad sky-distribution diagnostics.
     top=[]
     for r in sorted(clean,key=lambda x:x['v'],reverse=True)[:100]:
         top.append({'var':r['v'],'sum_flag':r['flag'],'n_contrib':r['nc'],'n_obs':r['nobs'],'stack_det_ml':r['ml'],
