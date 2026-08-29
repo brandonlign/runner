@@ -13,10 +13,9 @@ from collections import defaultdict, Counter
 from astropy.io import fits
 import numpy as np
 
-U4='https://xmmssc.aip.de/data/xmmstack_v3.2_4xmmdr14s_obslist.fits.gz'
+U4='https://xmmssc.aip.de/files/dr14s/xmmstack_v3.2_4xmmdr14s_obslist.fits.gz'
 U5_CANDIDATES=[
- 'https://xmmssc.aip.de/data/5xmmdr15_stacklist.fits.gz',
- 'https://xmmssc.aip.de/data/5xmmdr15_obslist.fits.gz',
+ 'https://xmmssc.aip.de/files/dr15/5xmmdr15_stacklist.fits.gz',
 ]
 P4=Path('/tmp/4xmmdr14s_obslist.fits.gz');P5=Path('/tmp/5xmmdr15_stacklist.fits.gz')
 OUT=Path('results/xmm_matched_stack_gate.json');OUT.parent.mkdir(parents=True,exist_ok=True)
@@ -26,7 +25,7 @@ def dl(urls,path):
  errs=[]
  for url in urls:
   try:
-   req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-matched-stack-gate/1.0'})
+   req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-matched-stack-gate/1.1'})
    with urllib.request.urlopen(req,timeout=120) as r,path.open('wb') as f:
     while True:
      b=r.read(1024*1024)
@@ -81,32 +80,22 @@ def main():
   u4=dl(U4,P4);u5=dl(U5_CANDIDATES,P5)
   info4=inspect(P4);info5=inspect(P5);d4=table(P4);d5=table(P5)
   g4,c4=stack_sets(d4);g5,c5=stack_sets(d5)
-  # Hash observation sets so reports contain no stack/source identities.
   byset4=defaultdict(list);byset5=defaultdict(list)
   for sid,s in g4.items():byset4[frozenset(s)].append(sid)
   for sid,s in g5.items():byset5[frozenset(s)].append(sid)
   exact_sets=set(byset4)&set(byset5)
   exact4=sum(len(byset4[s]) for s in exact_sets);exact5=sum(len(byset5[s]) for s in exact_sets)
   obs_exact=sum(len(s) for s in exact_sets)
-  # Also quantify containment: 5XMM stack contains exactly one historical DR14s set plus extra observations.
-  set4=list(byset4)
-  obs_to_4=defaultdict(set)
+  set4=list(byset4);obs_to_4=defaultdict(set)
   for j,s in enumerate(set4):
    for o in s:obs_to_4[o].add(j)
-  contained=0;contained_noextra=0;extra_hist=[]
+  contained=0;extra_hist=[]
   for s5 in byset5:
-   cand=None
-   for o in s5:
-    q=obs_to_4.get(o,set());cand=set(q) if cand is None else cand&q
-    if not cand:break
-   # exact already handled. For supersets, find historical sets that are subset using union candidates instead.
    possible=set()
    for o in s5:possible |= obs_to_4.get(o,set())
    hits=[set4[j] for j in possible if set4[j].issubset(s5)]
    if hits:
-    contained+=1
-    best=max(hits,key=len);extra_hist.append(len(s5)-len(best))
-    if len(s5)==len(best):contained_noextra+=1
+    contained+=1;best=max(hits,key=len);extra_hist.append(len(s5)-len(best))
   sizes4=Counter(map(len,g4.values()));sizes5=Counter(map(len,g5.values()))
   examples=[{'obs_set_hash':digest_obs(s),'n_obs':len(s)} for s in sorted(exact_sets,key=lambda x:(len(x),sorted(x)))[:25]]
   out={'success':True,'four_url':u4,'five_url':u5,'four_file_bytes':P4.stat().st_size,'five_file_bytes':P5.stat().st_size,
@@ -116,6 +105,7 @@ def main():
        'four_stack_size_histogram':dict(sorted(sizes4.items())),'five_stack_size_histogram':dict(sorted(sizes5.items())),
        'exact_observation_set_count':len(exact_sets),'four_stacks_on_exact_sets':exact4,'five_stacks_on_exact_sets':exact5,
        'observation_memberships_across_exact_sets':obs_exact,'five_sets_containing_a_four_set':contained,
+       'extra_observation_histogram_for_containment':dict(sorted(Counter(extra_hist).items())),
        'exact_examples_anonymous':examples,
        'decision':'MATCHED_STACK_EXPERIMENT_FEASIBLE' if len(exact_sets)>=100 else 'MATCHED_STACK_EXPERIMENT_TOO_SMALL',
        'note':'Only stack/observation membership was inspected; no source catalogue rows, identities, or spectral outcomes were read.'}
