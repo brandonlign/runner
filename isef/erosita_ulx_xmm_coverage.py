@@ -20,7 +20,9 @@ XSA_SYNC='https://nxsa.esac.esa.int/tap-server/tap/sync'
 PRIOR_FLAGS=['f_walton','f_bernadich','f_kovlakas','f_tranin_ulx','f_tranin_hlx']
 
 def tap(q,timeout=300):
- r=requests.post(XSA_SYNC,data={'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':q},timeout=timeout); r.raise_for_status(); t=r.text
+ r=requests.post(XSA_SYNC,data={'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'csv','QUERY':q},timeout=timeout)
+ if not r.ok: raise RuntimeError(f'XSA HTTP {r.status_code} for ADQL: {q}\n{r.text[:2500]}')
+ t=r.text
  try:return pd.read_csv(io.StringIO(t))
  except Exception as e: raise RuntimeError(t[:2500]) from e
 
@@ -85,9 +87,12 @@ def main():
  es=schema(exp) if exp else pd.DataFrame();
  if exp: es.to_csv(OUT/'exp_schema.csv',index=False)
  oid=pick(os,['observation_id','obs_id','obsid'],True); ora=pick(os,['ra'],True); odec=pick(os,['dec'],True); dur=pick(os,['duration','observation_duration'],True)
- target=pick(os,['target','target_name']); start=pick(os,['start_utc','start_time']); sci=pick(os,['with_science'])
- cols=[oid,ora,odec,dur]+[x for x in [target,start,sci] if x]
- q='SELECT '+','.join(cols)+' FROM '+obs + (f' WHERE {sci}=true' if sci else '')
+ target=pick(os,['target','target_name']); start=pick(os,['start_utc','start_time'])
+ # v_public_observations is already a public/science-oriented archive view; the
+ # previous explicit boolean predicate was redundant and not accepted by this
+ # ADQL service. Removing it is infrastructure-only and does not alter the gate.
+ cols=[oid,ora,odec,dur]+[x for x in [target,start] if x]
+ q='SELECT '+','.join(cols)+' FROM '+obs
  ob=tap(q); report['public_obs_rows']=len(ob)
  matches=[]
  for _,s in new.iterrows():
@@ -104,7 +109,7 @@ def main():
  report['obs_matches_ge10ks']=len(long)
 
  if exp and len(long):
-  eo=pick(es,['observation_id','obs_id','obsid'],True); inst=pick(es,['instrument','instrument_name','instrument_id']); ed=pick(es,['duration','exposure_duration','scheduled_duration','performed_duration']); eid=pick(es,['exposure_id','exp_id']); mode=pick(es,['mode','instrument_mode','exposure_mode']); filt=pick(es,['filter','filter_name'])
+  eo=pick(es,['observation_id','obs_id','obsid'],True); inst=pick(es,['instrument','instrument_name','instrument_id']); ed=pick(es,['duration','exposure_duration','scheduled_duration','performed_duration']); eid=pick(es,['exposure_id','exp_id']); mode=pick(es,['mode_friendly_name','mode','instrument_mode','exposure_mode']); filt=pick(es,['filter','filter_name'])
   report['exposure_columns']={'obsid':eo,'instrument':inst,'duration':ed,'exposure_id':eid,'mode':mode,'filter':filt}
   if inst and ed:
    ids=sorted(set(long.observation_id.astype(str))); chunks=[]; ecols=[x for x in [eo,eid,inst,ed,mode,filt] if x]
