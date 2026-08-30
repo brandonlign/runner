@@ -4,7 +4,7 @@
 Reads TIME, formal FLUX_ERR_CORR, quality/background/centroid diagnostics and
 background-star overlap only. Deliberately never accesses FLUX or FLUX_CORR.
 """
-import json, math, urllib.request
+import json, urllib.request
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
@@ -18,18 +18,6 @@ def medmad(x):
  x=np.asarray(x,float); x=x[np.isfinite(x)]
  if not len(x): return np.nan,np.nan
  m=float(np.median(x)); return m,float(1.4826*np.median(np.abs(x-m)))
-
-def design(t,seg,evol=False):
- t=np.asarray(t); seg=np.asarray(seg); cols=[]
- use=np.unique(seg)
- for s in use:
-  z=(seg==s).astype(float); c=float(np.median(t[seg==s])); cols += [z,z*(t-c)]
- w=2*np.pi/P0
- if evol:
-  for s in use:
-   z=(seg==s).astype(float); cols += [z*np.sin(w*t),z*np.cos(w*t)]
- else: cols += [np.sin(w*t),np.cos(w*t)]
- return np.column_stack(cols)
 
 def fit_bic(y,e,t,seg,evol=False,signal=True):
  cols=[]; use=np.unique(seg)
@@ -68,7 +56,6 @@ def main():
   results={}
   with fits.open(p,memmap=True) as h:
    extra=h['EXTRAS'].data
-   # extras science-independent diagnostics only
    et=np.asarray(extra['TIME'],float); nstar=np.asarray(extra['NPIX_BKGSTAR_CORE'],float)
    for ap in ['LIGHTCURVE_AP0','LIGHTCURVE_AP1']:
     d=h[ap].data
@@ -86,35 +73,29 @@ def main():
      elig=bool(span>=MINSPAN and len(x)>=25)
      if elig: evo_ids.append(int(s))
      seginfo.append({'id':int(s),'n':int(len(x)),'start_btjd':float(x.min()),'stop_btjd':float(x.max()),'span_hours':span*24,'evolution_eligible':elig})
-    # H1 can only be assessed on evolution-eligible segments. For injection gate, restrict to those,
-    # because short fragments cannot have segment-specific phase by freeze.
     evo_mask=np.isin(seg,evo_ids); te=tt[evo_mask]; se=seg[evo_mask]; eformal=ee[evo_mask]
-    # Convert formal error scale to fractional units using header magnitude and published TESS zeropoint 20.44.
     mag=float(h[ap].header['TESSMAG']); fref=10**((20.44-mag)/2.5); efull=ee/fref; efe=eformal/fref
-    # Avoid unrealistically claiming more precision than formal rows: use exact fractional formal errors.
+    det_thresh=10.0 if ap=='LIGHTCURVE_AP0' else 6.0
     detrec={}
     for amp in AMPS:
      hit=0
      for j in range(NINJ):
       ph=RNG.uniform(0,2*np.pi); y=amp*np.sin(2*np.pi*tt/P0+ph)+RNG.normal(0,efull)
       b0=fit_bic(y,efull,tt,seg,signal=False); b1=fit_bic(y,efull,tt,seg,evol=False,signal=True)
-      if b0-b1>=10: hit+=1
+      if b0-b1>=det_thresh: hit+=1
      detrec[str(amp)]=hit/NINJ
     evohit=0
     if len(evo_ids)>=2:
-     # longest two eligible temporal segments; phase shift the later one by +0.20 cycles.
      lens={s:np.sum(se==s) for s in np.unique(se)}; pair=sorted(lens,key=lambda s:(-lens[s],s))[:2]; pair=sorted(pair,key=lambda s:np.median(te[se==s]))
-     # Run on all eligible segments: phase 0 for earlier/background segments, +0.2 cycle for the later selected segment and all later eligible segments.
      cut=float(np.mean([np.median(te[se==pair[0]]),np.median(te[se==pair[1]])]))
      for j in range(NINJ):
       ph=RNG.uniform(0,2*np.pi); shift=np.where(te>cut,0.20*2*np.pi,0.0); y=.05*np.sin(2*np.pi*te/P0+ph+shift)+RNG.normal(0,efe)
       h0=fit_bic(y,efe,te,se,evol=False,signal=True); h1=fit_bic(y,efe,te,se,evol=True,signal=True)
       if h0-h1>=10: evohit+=1
-    results[ap]={'rows_total':int(len(t)),'rows_clean':int(clean.sum()),'clean_fraction':float(clean.mean()),'background_mad_median':mb,'background_mad_robust_sigma':sd,'centroid_disp_median':md,'centroid_disp_robust_sigma':ds,'segments':seginfo,'evolution_eligible_segment_count':len(evo_ids),'header_tessmag':mag,'header_implied_flux_e_s':fref,'median_fractional_formal_error':float(np.median(efull)),'detection_recovery':detrec,'phase_shift_0p20_recovery':evohit/NINJ if len(evo_ids)>=2 else None}
+    results[ap]={'rows_total':int(len(t)),'rows_clean':int(clean.sum()),'clean_fraction':float(clean.mean()),'background_mad_median':mb,'background_mad_robust_sigma':sd,'centroid_disp_median':md,'centroid_disp_robust_sigma':ds,'segments':seginfo,'evolution_eligible_segment_count':len(evo_ids),'header_tessmag':mag,'header_implied_flux_e_s':fref,'median_fractional_formal_error':float(np.median(efull)),'detection_delta_bic_threshold':det_thresh,'detection_recovery':detrec,'phase_shift_0p20_recovery':evohit/NINJ if len(evo_ids)>=2 else None}
   ap0=results['LIGHTCURVE_AP0']; ap1=results['LIGHTCURVE_AP1']
   o['apertures']=results
   o['gate_ap0_detection_5pct']=bool(ap0['detection_recovery']['0.05']>=.90)
-  # Protocol sets AP1 >=80% using its own lower threshold. We simulated detection using Delta BIC 10 uniformly, making this conservative.
   o['gate_ap1_detection_5pct']=bool(ap1['detection_recovery']['0.05']>=.80)
   o['gate_ap0_evolution_0p20']=bool(ap0['phase_shift_0p20_recovery'] is not None and ap0['phase_shift_0p20_recovery']>=.80)
   o['gate_passed']=bool(o['gate_ap0_detection_5pct'] and o['gate_ap1_detection_5pct'] and o['gate_ap0_evolution_0p20'])
