@@ -1,0 +1,27 @@
+name: ISEF TESS 3I pre-flux sampling gate
+on:
+  push:
+    paths:
+      - 'isef/tess3i_preflux_sampling_gate.py'
+      - '.github/workflows/isef-tess3i-preflux-sampling-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy astropy
+      - run: timeout 900s python isef/tess3i_preflux_sampling_gate.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-tess3i-preflux-sampling-gate
+          path: results/tess3i_preflux_sampling_gate.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file results/tess3i_preflux_sampling_gate.json || true
