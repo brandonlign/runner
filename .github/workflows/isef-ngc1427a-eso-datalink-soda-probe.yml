@@ -1,0 +1,21 @@
+name: ISEF NGC1427A ESO DataLink SODA probe
+on:
+  push:
+    paths:
+      - 'isef/ngc1427a_eso_datalink_soda_probe.py'
+      - '.github/workflows/isef-ngc1427a-eso-datalink-soda-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 300s python isef/ngc1427a_eso_datalink_soda_probe.py
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## NGC1427A ESO DataLink/SODA probe'; echo '```json'; cat results/ngc1427a_eso_datalink_soda_probe.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
