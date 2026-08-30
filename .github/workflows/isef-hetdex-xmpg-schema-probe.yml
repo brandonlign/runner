@@ -1,0 +1,31 @@
+name: ISEF HETDEX XMPG schema probe
+on:
+  push:
+    paths:
+      - 'isef/hetdex_xmpg_schema_probe.py'
+      - '.github/workflows/isef-hetdex-xmpg-schema-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 600s python isef/hetdex_xmpg_schema_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-hetdex-xmpg-schema-probe
+          path: results/hetdex_xmpg_schema_probe.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          python - <<'PY' >/tmp/r.md
+          import json
+          from pathlib import Path
+          print('## HETDEX XMPG schema probe')
+          p=Path('results/hetdex_xmpg_schema_probe.json')
+          if p.exists(): print('```json\n'+json.dumps(json.loads(p.read_text()),indent=2,sort_keys=True)[:60000]+'\n```')
+          PY
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
