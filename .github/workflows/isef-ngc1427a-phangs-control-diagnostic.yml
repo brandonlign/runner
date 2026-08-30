@@ -1,0 +1,21 @@
+name: ISEF NGC1427A PHANGS control diagnostic
+on:
+  push:
+    paths:
+      - 'isef/ngc1427a_phangs_control_diagnostic.py'
+      - '.github/workflows/isef-ngc1427a-phangs-control-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 240s python isef/ngc1427a_phangs_control_diagnostic.py
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## NGC1427A PHANGS control diagnostic'; echo '```json'; cat results/ngc1427a_phangs_control_diagnostic.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
