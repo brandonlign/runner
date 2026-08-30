@@ -1,0 +1,21 @@
+name: ISEF NGC1427A PHANGS PN classification control v2
+on:
+  push:
+    paths:
+      - 'isef/ngc1427a_phangs_classification_control_v2.py'
+      - '.github/workflows/isef-ngc1427a-phangs-classification-control-v2.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  control:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 240s python isef/ngc1427a_phangs_classification_control_v2.py
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## NGC1427A PHANGS classification control v2'; echo '```json'; cat results/ngc1427a_phangs_classification_control_v2.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
