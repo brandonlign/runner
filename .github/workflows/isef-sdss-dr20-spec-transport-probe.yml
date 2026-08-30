@@ -1,0 +1,26 @@
+name: ISEF SDSS DR20 spectrum transport probe
+on:
+  push:
+    paths:
+      - 'isef/sdss_dr20_spec_transport_probe.py'
+      - '.github/workflows/isef-sdss-dr20-spec-transport-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 120s python isef/sdss_dr20_spec_transport_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-sdss-dr20-spec-transport-probe
+          path: results/sdss_dr20_spec_transport_probe.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## DR20 spectrum transport probe'; echo '```json'; cat results/sdss_dr20_spec_transport_probe.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
