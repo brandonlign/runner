@@ -1,0 +1,24 @@
+name: ISEF SDSS DR20 Gaia quality schema probe
+on:
+  push:
+    paths:
+      - '.github/workflows/isef-sdss-dr20-gaia-quality-schema-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 300s python isef/sdss_dr20_gaia_quality_schema_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-sdss-dr20-gaia-quality-schema-probe
+          path: results/sdss_dr20_gaia_quality_schema_probe.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## SDSS DR20 Gaia quality/covariance schema probe'; echo '```json'; cat results/sdss_dr20_gaia_quality_schema_probe.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
