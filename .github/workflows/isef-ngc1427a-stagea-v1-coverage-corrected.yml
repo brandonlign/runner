@@ -1,0 +1,29 @@
+name: NGC1427A Stage-A v1 coverage-corrected gate
+on:
+  push:
+    paths:
+      - 'isef/ngc1427a_muse_stagea_v1_coverage_corrected.py'
+      - '.github/workflows/isef-ngc1427a-stagea-v1-coverage-corrected.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy scipy astropy
+      - run: timeout 2400s python isef/ngc1427a_muse_stagea_v1_coverage_corrected.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ngc1427a-stagea-v1-coverage-corrected
+          path: results/ngc1427a_muse_stagea_v1_coverage_corrected.json
+      - if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file results/ngc1427a_muse_stagea_v1_coverage_corrected.json || true
