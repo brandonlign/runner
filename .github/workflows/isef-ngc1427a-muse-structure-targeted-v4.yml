@@ -1,0 +1,21 @@
+name: ISEF NGC1427A MUSE structure targeted v4
+on:
+  push:
+    paths:
+      - 'isef/ngc1427a_muse_structure_targeted_v4.py'
+      - '.github/workflows/isef-ngc1427a-muse-structure-targeted-v4.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 600s python isef/ngc1427a_muse_structure_targeted_v4.py
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## NGC1427A MUSE targeted structure v4'; echo '```json'; cat results/ngc1427a_muse_structure_targeted_v4.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
