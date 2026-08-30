@@ -1,0 +1,21 @@
+name: ISEF SDSS DR20 MWM summary datamodel probe
+on:
+  push:
+    paths:
+      - 'isef/sdss_dr20_mwm_summary_datamodel_probe.py'
+      - '.github/workflows/isef-sdss-dr20-mwm-summary-datamodel-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python isef/sdss_dr20_mwm_summary_datamodel_probe.py
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## SDSS DR20 MWM summary datamodel probe'; echo '```json'; cat results/sdss_dr20_mwm_summary_datamodel_probe.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
