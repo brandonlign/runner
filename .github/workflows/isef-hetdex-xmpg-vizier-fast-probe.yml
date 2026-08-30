@@ -1,0 +1,25 @@
+name: ISEF HETDEX XMPG VizieR fast probe
+on:
+  push:
+    paths:
+      - 'isef/hetdex_xmpg_vizier_fast_probe.py'
+      - '.github/workflows/isef-hetdex-xmpg-vizier-fast-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 300s python isef/hetdex_xmpg_vizier_fast_probe.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-hetdex-xmpg-vizier-fast
+          path: results/hetdex_xmpg_vizier_fast_probe.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## HETDEX XMPG fast HPSC1 control probe'; echo '```json'; cat results/hetdex_xmpg_vizier_fast_probe.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
