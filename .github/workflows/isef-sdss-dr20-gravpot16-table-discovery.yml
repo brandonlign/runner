@@ -1,0 +1,24 @@
+name: ISEF SDSS DR20 GravPot16 table discovery
+on:
+  push:
+    paths:
+      - '.github/workflows/isef-sdss-dr20-gravpot16-table-discovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 300s python isef/sdss_dr20_gravpot16_table_discovery.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-sdss-dr20-gravpot16-table-discovery
+          path: results/sdss_dr20_gravpot16_table_discovery.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## SDSS DR20 GravPot16 table discovery'; echo '```json'; cat results/sdss_dr20_gravpot16_table_discovery.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
