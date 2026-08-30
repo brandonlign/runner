@@ -1,0 +1,28 @@
+name: ISEF HETDEX HPSC2 schema probe
+on:
+  push:
+    paths:
+      - '.github/workflows/isef-hetdex-hpsc2-schema-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          python - <<'PY' > /tmp/result.json
+          import urllib.request,re,json,urllib.parse
+          base='https://web.corral.tacc.utexas.edu/hetdex/HETDEX/pdr/pdr1/hetdex_source_catalog_2/'
+          req=urllib.request.Request(base,headers={'User-Agent':'ISEF-HETDEX-schema/1.0'})
+          with urllib.request.urlopen(req,timeout=60) as r: h=r.read(2000000).decode('utf-8','replace')
+          hrefs=sorted(set(urllib.parse.urljoin(base,x) for x in re.findall(r'href=["\']([^"\']+)',h,re.I)))
+          print(json.dumps({'success':True,'status':'INFRASTRUCTURE_ONLY','base':base,'links':hrefs[:300],'link_count':len(hrefs),'note':'Directory names only; no source rows or science outcomes inspected.'},indent=2))
+          PY
+          cat /tmp/result.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## HETDEX HPSC2 schema/access probe'; echo '```json'; cat /tmp/result.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
