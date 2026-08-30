@@ -1,0 +1,26 @@
+name: ISEF SDSS DR20 post-survivor query diagnostic
+on:
+  push:
+    paths:
+      - 'isef/sdss_dr20_postsurvivor_query_diagnostic.py'
+      - '.github/workflows/isef-sdss-dr20-postsurvivor-query-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 300s python isef/sdss_dr20_postsurvivor_query_diagnostic.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-sdss-dr20-postsurvivor-query-diagnostic
+          path: results/sdss_dr20_postsurvivor_query_diagnostic.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## SDSS DR20 post-survivor query diagnostic'; echo '```json'; cat results/sdss_dr20_postsurvivor_query_diagnostic.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
