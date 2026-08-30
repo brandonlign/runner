@@ -1,0 +1,21 @@
+name: ISEF SDSS DR20 candidate spectrum URL probe
+on:
+  push:
+    paths:
+      - 'isef/sdss_dr20_spec_url_probe.py'
+      - '.github/workflows/isef-sdss-dr20-spec-url-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: timeout 90s python isef/sdss_dr20_spec_url_probe.py
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## DR20 candidate spectrum URL probe'; echo '```json'; cat results/sdss_dr20_spec_url_probe.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
