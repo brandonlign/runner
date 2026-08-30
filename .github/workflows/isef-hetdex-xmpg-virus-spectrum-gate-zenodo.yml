@@ -1,0 +1,30 @@
+name: ISEF HETDEX XMPG VIRUS spectrum gate Zenodo mirror
+on:
+  push:
+    paths:
+      - '.github/workflows/isef-hetdex-xmpg-virus-spectrum-gate-zenodo.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'scipy>=1.16' 'astropy>=7.1,<8' 'fsspec>=2025.1' 'aiohttp>=3.10'
+      - env:
+          HETDEX_HPSC1_SPEC_URL: 'https://zenodo.org/records/7448504/files/hetdex_sc1_spec_v3.2.fits?download=1'
+          HETDEX_GATE_OUT: 'results/hetdex_xmpg_virus_spectrum_gate_zenodo.json'
+        run: timeout 1200s python isef/hetdex_xmpg_virus_spectrum_gate.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-hetdex-xmpg-virus-spectrum-gate-zenodo
+          path: results/hetdex_xmpg_virus_spectrum_gate_zenodo.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## HETDEX XMPG frozen VIRUS gate — Zenodo mirror'; echo '```json'; cat results/hetdex_xmpg_virus_spectrum_gate_zenodo.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
