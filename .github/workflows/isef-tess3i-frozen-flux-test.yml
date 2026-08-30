@@ -1,0 +1,27 @@
+name: ISEF TESS 3I frozen flux coherence test
+on:
+  push:
+    paths:
+      - 'isef/tess3i_frozen_flux_test.py'
+      - '.github/workflows/isef-tess3i-frozen-flux-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy astropy
+      - run: timeout 1800s python isef/tess3i_frozen_flux_test.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-tess3i-frozen-flux-test
+          path: results/tess3i_frozen_flux_test.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file results/tess3i_frozen_flux_test.json || true
