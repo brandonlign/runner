@@ -1,0 +1,37 @@
+name: ISEF HETDEX HPSC2 header probe
+on:
+  push:
+    paths:
+      - '.github/workflows/isef-hetdex-hpsc2-header-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          python - <<'PY' >/tmp/result.json
+          import urllib.request,json,re
+          base='https://web.corral.tacc.utexas.edu/hetdex/HETDEX/pdr/pdr1/hetdex_source_catalog_2/'
+          def text(name,n=200000):
+            req=urllib.request.Request(base+name,headers={'User-Agent':'ISEF-HETDEX-header/1.0'})
+            with urllib.request.urlopen(req,timeout=60) as r:return r.read(n).decode('utf-8','replace')
+          readme=text('readme')
+          # Read only FITS header blocks using HTTP Range; do not inspect table rows.
+          schemas={}
+          for name in ['hetdex_sc2_v1.5.fits','hetdex_sc2_detinfo_v1.5.fits','hetdex_sc2_spec_v1.5.fits']:
+            req=urllib.request.Request(base+name,headers={'User-Agent':'ISEF-HETDEX-header/1.0','Range':'bytes=0-65535'})
+            with urllib.request.urlopen(req,timeout=60) as r:b=r.read(65536)
+            s=b.decode('ascii','replace');cols=[]
+            for m in re.finditer(r"TTYPE\d+\s*=\s*'([^']+)'",s): cols.append(m.group(1).strip())
+            schemas[name]={'columns_seen_in_header':cols,'bytes_read':len(b),'content_range':r.headers.get('Content-Range'),'content_length':r.headers.get('Content-Length')}
+          print(json.dumps({'success':True,'status':'SCHEMA_ONLY','readme_excerpt':readme[:12000],'schemas':schemas,'note':'No FITS table rows or source outcomes inspected.'},indent=2))
+          PY
+          cat /tmp/result.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## HETDEX HPSC2 schema header probe'; echo '```json'; cat /tmp/result.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
