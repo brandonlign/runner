@@ -1,0 +1,24 @@
+name: ISEF NGC1427A SODA off-line transport probe
+on:
+  push:
+    paths:
+      - 'isef/ngc1427a_soda_offline_transport_probe.py'
+      - '.github/workflows/isef-ngc1427a-soda-offline-transport-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'astropy>=7.1,<8'
+      - run: timeout 600s python isef/ngc1427a_soda_offline_transport_probe.py
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## NGC1427A SODA off-line transport probe'; echo '```json'; cat results/ngc1427a_soda_offline_transport_probe.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
