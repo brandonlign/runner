@@ -5,12 +5,12 @@ import numpy as np
 from astropy.io import fits
 FIELD='112053'; GROUP='112XXX'
 FILES=[('60334','spec-112053-60334-63050396111356292.fits'),('60660','spec-112053-60660-63050396111356292.fits'),('60665','spec-112053-60665-63050396111356292.fits')]
-BASE='https://dr20.sdss.org/sas/dr20/spectro/boss/redux/v6_2_1/spectra/daily/full'
+BASE='https://data.sdss.org/sas/dr20/spectro/boss/redux/v6_2_1/spectra/daily/full'
 C=299792.458
 LINES={'CaII_K':3933.663,'MgII_4481':4481.126,'HeI_4026':4026.191,'HeI_4471':4471.480}
 OUT=Path('results/sdss_dr20_postsurvivor_spectrum_feature_audit.json');OUT.parent.mkdir(exist_ok=True)
 def download(url):
- req=urllib.request.Request(url,headers={'User-Agent':'ISEF-DR20-SpectrumAudit/1.1'})
+ req=urllib.request.Request(url,headers={'User-Agent':'ISEF-DR20-SpectrumAudit/1.2'})
  with urllib.request.urlopen(req,timeout=180) as r:return r.read()
 def extract(raw):
  with fits.open(io.BytesIO(raw),memmap=False) as h:
@@ -37,7 +37,7 @@ def feature(w,f,iv,rest,rv=-471.7881):
 o={'status':'BOSS_VISIT_SPECTRUM_FEATURE_AUDIT','expected_summary_rv_kms':-471.7881,'features':{},'visits':[]}
 try:
  for mjd,fn in FILES:
-  url=f'{BASE}/{GROUP}/{FIELD}/{fn}';raw=download(url);w,f,iv,meta=extract(raw);rec={'mjd':int(mjd),'file':fn,'url':url,'bytes':len(raw),'wave_min_A':float(np.nanmin(w)),'wave_max_A':float(np.nanmax(w)),'hdu':meta,'lines':{}}
+  url=f'{BASE}/{GROUP}/{FIELD}/{mjd}/{fn}';raw=download(url);w,f,iv,meta=extract(raw);rec={'mjd':int(mjd),'file':fn,'url':url,'bytes':len(raw),'wave_min_A':float(np.nanmin(w)),'wave_max_A':float(np.nanmax(w)),'hdu':meta,'lines':{}}
   for name,rest in LINES.items():rec['lines'][name]=feature(w,f,iv,rest)
   o['visits'].append(rec)
  for name in LINES:
