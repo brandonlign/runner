@@ -63,6 +63,20 @@ def pick(s,names,required=False):
 def sep_arcmin(ra,dec,oras,odecs):
  a=SkyCoord(float(ra)*u.deg,float(dec)*u.deg); b=SkyCoord(np.asarray(oras,float)*u.deg,np.asarray(odecs,float)*u.deg); return a.separation(b).arcmin
 
+def norm_obsid(v):
+ """XMM observation IDs are fixed-width 10-character identifiers.
+
+ CSV parsing may coerce an all-digit identifier to integer/float and strip the
+ leading zero, so restore it mechanically before any exposure-table join.
+ """
+ if pd.isna(v): return ''
+ if isinstance(v,(int,np.integer)): s=str(int(v))
+ elif isinstance(v,(float,np.floating)) and float(v).is_integer(): s=str(int(v))
+ else:
+  s=str(v).strip()
+  if s.endswith('.0') and s[:-2].isdigit(): s=s[:-2]
+ return s.zfill(10) if s.isdigit() else s
+
 def main():
  report={'information_barrier':'eROSITA catalog + XMM metadata only; no event photons or timing outcomes'}
  r=requests.get(EROSITA_FITS,timeout=120); r.raise_for_status(); cat=df_fits(r.content)
@@ -88,17 +102,14 @@ def main():
  if exp: es.to_csv(OUT/'exp_schema.csv',index=False)
  oid=pick(os,['observation_id','obs_id','obsid'],True); ora=pick(os,['ra'],True); odec=pick(os,['dec'],True); dur=pick(os,['duration','observation_duration'],True)
  target=pick(os,['target','target_name']); start=pick(os,['start_utc','start_time'])
- # v_public_observations is already a public/science-oriented archive view; the
- # previous explicit boolean predicate was redundant and not accepted by this
- # ADQL service. Removing it is infrastructure-only and does not alter the gate.
  cols=[oid,ora,odec,dur]+[x for x in [target,start] if x]
  q='SELECT '+','.join(cols)+' FROM '+obs
- ob=tap(q); report['public_obs_rows']=len(ob)
+ ob=tap(q); ob['_obsid_norm']=ob[oid].map(norm_obsid); report['public_obs_rows']=len(ob)
  matches=[]
  for _,s in new.iterrows():
   seps=sep_arcmin(s[ra],s[dec],ob[ora],ob[odec]); idx=np.where(seps<=13)[0]
   for j in idx:
-   x=ob.iloc[j]; z={'iauname':str(s[iau]),'ra':float(s[ra]),'dec':float(s[dec]),'observation_id':str(x[oid]),'offaxis_arcmin':float(seps[j]),'observation_duration_s':float(x[dur])}
+   x=ob.iloc[j]; z={'iauname':str(s[iau]),'ra':float(s[ra]),'dec':float(s[dec]),'observation_id':str(x['_obsid_norm']),'offaxis_arcmin':float(seps[j]),'observation_duration_s':float(x[dur])}
    if target:z['target']=str(x[target])
    if start:z['start']=str(x[start])
    matches.append(z)
@@ -112,13 +123,14 @@ def main():
   eo=pick(es,['observation_id','obs_id','obsid'],True); inst=pick(es,['instrument','instrument_name','instrument_id']); ed=pick(es,['duration','exposure_duration','scheduled_duration','performed_duration']); eid=pick(es,['exposure_id','exp_id']); mode=pick(es,['mode_friendly_name','mode','instrument_mode','exposure_mode']); filt=pick(es,['filter','filter_name'])
   report['exposure_columns']={'obsid':eo,'instrument':inst,'duration':ed,'exposure_id':eid,'mode':mode,'filter':filt}
   if inst and ed:
-   ids=sorted(set(long.observation_id.astype(str))); chunks=[]; ecols=[x for x in [eo,eid,inst,ed,mode,filt] if x]
+   ids=sorted(set(long.observation_id.map(norm_obsid))); chunks=[]; ecols=[x for x in [eo,eid,inst,ed,mode,filt] if x]
+   report['matched_obsids_for_exposure_query']=ids
    for k in range(0,len(ids),40):
     il=','.join("'"+x.replace("'","''")+"'" for x in ids[k:k+40]); chunks.append(tap(f"SELECT {','.join(ecols)} FROM {exp} WHERE {eo} IN ({il})"))
-   ee=pd.concat(chunks,ignore_index=True); ee.to_csv(OUT/'exposures.csv',index=False)
-   ii=ee[inst].astype(str).str.lower(); pn=ee[ii.str.contains('pn',regex=False)|ii.str.contains('epn',regex=False)].copy(); report['pn_rows']=len(pn)
+   ee=pd.concat(chunks,ignore_index=True); ee['_obsid_norm']=ee[eo].map(norm_obsid); ee.to_csv(OUT/'exposures.csv',index=False)
+   ii=ee[inst].astype(str).str.lower(); pn=ee[ii.str.contains('pn',regex=False)|ii.str.contains('epn',regex=False)].copy(); report['pn_rows']=len(pn); report['exposure_instruments']=sorted(set(ee[inst].astype(str)))
    if len(pn):
-    pn['pn_duration_s']=pd.to_numeric(pn[ed],errors='coerce'); agg=pn.groupby(eo,as_index=False).pn_duration_s.sum(min_count=1); mm=long.merge(agg,left_on='observation_id',right_on=eo,how='left'); mm.to_csv(OUT/'pn_matches.csv',index=False); gp=mm[mm.pn_duration_s>=10000]; report['sources_pn_ge10ks']=int(gp.iauname.nunique()); report['pn_matches_ge10ks']=len(gp)
+    pn['pn_duration_s']=pd.to_numeric(pn[ed],errors='coerce'); agg=pn.groupby('_obsid_norm',as_index=False).pn_duration_s.sum(min_count=1); mm=long.merge(agg,left_on='observation_id',right_on='_obsid_norm',how='left'); mm.to_csv(OUT/'pn_matches.csv',index=False); gp=mm[mm.pn_duration_s>=10000]; report['sources_pn_ge10ks']=int(gp.iauname.nunique()); report['pn_matches_ge10ks']=len(gp)
    else: report['sources_pn_ge10ks']=0
   else: report['pn_schema_unresolved']=True
  else: report['pn_metadata_not_run']=True
