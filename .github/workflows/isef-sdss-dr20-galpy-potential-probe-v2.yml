@@ -1,0 +1,27 @@
+name: ISEF SDSS DR20 galpy potential API probe v2
+on:
+  push:
+    paths:
+      - '.github/workflows/isef-sdss-dr20-galpy-potential-probe-v2.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'numpy>=2.2' 'scipy>=1.16' 'galpy>=1.12,<2'
+      - run: timeout 600s python isef/sdss_dr20_galpy_potential_probe_v2.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isef-sdss-dr20-galpy-potential-probe-v2
+          path: results/sdss_dr20_galpy_potential_probe_v2.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          { echo '## SDSS DR20 galpy potential API probe v2'; echo '```json'; cat results/sdss_dr20_galpy_potential_probe_v2.json 2>/dev/null || true; echo '```'; } >/tmp/r.md
+          gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file /tmp/r.md
