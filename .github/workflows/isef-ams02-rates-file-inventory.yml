@@ -1,0 +1,27 @@
+name: ISEF AMS-02 rate-file inventory probe
+on:
+  push:
+    paths:
+      - 'isef/ams02_rates_file_inventory_probe.py'
+      - '.github/workflows/isef-ams02-rates-file-inventory.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install astropy
+      - run: timeout 300s python isef/ams02_rates_file_inventory_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-ams02-rates-file-inventory
+          path: results/ams02_rates_file_inventory_probe.json
+      - if: always()
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: gh issue comment 1447 --repo "$GITHUB_REPOSITORY" --body-file results/ams02_rates_file_inventory_probe.json || true
