@@ -1,0 +1,31 @@
+name: ISEF TESS binary 12523 sector inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_12523_SECTOR_INVENTORY_TRIGGER'
+  workflow_dispatch:
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install metadata-only stack
+        run: pip install 'numpy<2.0' astropy requests tesswcs tess-ephem
+      - name: Verify syntax
+        run: python -m py_compile isef/tess_binary_12523_sector_inventory.py
+      - name: Inventory sectors without TESS science values
+        run: |
+          cd isef
+          python tess_binary_12523_sector_inventory.py
+      - name: Preserve inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-12523-sector-inventory
+          path: isef/results/tess_binary_12523_sector_inventory/
+          if-no-files-found: warn
