@@ -1,0 +1,31 @@
+name: ISEF TESS binary 6764 iterative diagnostic
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_6764_ITERATIVE_DIAGNOSTIC_TRIGGER'
+  workflow_dispatch:
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install numpy scipy astropy requests
+      - name: Verify diagnostic syntax
+        run: python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_6764_iterative_diagnostic.py
+      - name: Run external-positive-only diagnostic
+        run: |
+          cd isef
+          python tess_binary_6764_iterative_diagnostic.py
+      - name: Preserve diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-6764-iterative-diagnostic
+          path: isef/results/tess_binary_6764_iterative_diagnostic/
+          if-no-files-found: warn
