@@ -1,0 +1,33 @@
+name: ISEF PUNCH KH real-background wave gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_kh_real_background_controls_v2.py'
+      - 'isef/punch_kh_real_background_wave_gate.py'
+      - '.github/workflows/isef-punch-kh-real-background-wave-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wavegate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests
+      - name: Run real-background wave and null gate
+        id: wavegate
+        continue-on-error: true
+        run: python isef/punch_kh_real_background_wave_gate.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-kh-real-background-wave-gate
+          path: results/punch_kh_real_background_wave_gate/
+          if-no-files-found: error
+      - name: Preserve scientific gate status
+        if: steps.wavegate.outcome == 'failure'
+        run: exit 1
