@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Final 48-epoch long/radial temporal real-background gate for PUNCH R3 KH.
 
-TARGET BLIND. Reads only rotated 512x81-equivalent sections from 48 distinct
-2025-09-21 CTM v0l epochs at eight fixed control starts. No R3 pixels.
+TARGET BLIND. Reads the identical frozen rotated 512x81-equivalent sections
+from 48 distinct 2025-09-21 CTM v0l epochs at eight fixed control starts.
+Transport uses resilient full-file curl/resume because each compressed CTM is
+only ~18 MB; scientific pixels/geometry/metrics are unchanged. No R3 pixels.
 """
 from __future__ import annotations
-import json,re,time
+import json,re,subprocess,time
 from concurrent.futures import ProcessPoolExecutor,as_completed
 from pathlib import Path
 import numpy as np
@@ -18,9 +20,10 @@ import punch_kh_real_background_wave_gate as wg
 import punch_kh_long_oriented_spatial_gate as ls
 
 OUT=Path('results/punch_kh_long_radial_temporal_gate');OUT.mkdir(parents=True,exist_ok=True)
+CACHE=OUT/'cache';CACHE.mkdir(parents=True,exist_ok=True)
 ROOT=bg.ROOT;FILE_RE=re.compile(r'href=["\'](PUNCH_L2_CTM_(20250921\d{6})_v0l\.fits)["\']',re.I)
 NT=48;CADENCE_S=480;WAVES=ls.WAVES;PEAK=ls.PEAK;NX=ls.NX;NY=ls.NY
-EPOCH_RETRIES=5
+DOWNLOAD_RETRIES=3
 bg.NX=NX;bg.NY=NY;bg.NT=NT
 
 
@@ -36,6 +39,8 @@ def exact_run():
 
 
 def remote_radial_patch(hdu,field):
+    # Historical function name retained; hdu may now be local. The returned
+    # scientific section and interpolation are identical to the range-read path.
     cx,cy=field['center'];u=np.asarray(field['u'],float);v=np.asarray([-u[1],u[0]])
     s=np.arange(NX,dtype=float);q=np.arange(NY,dtype=float)-(NY-1)/2;S,Q=np.meshgrid(s,q)
     xx=cx+S*u[0]+Q*v[0];yy=cy+S*u[1]+Q*v[1]
@@ -45,28 +50,31 @@ def remote_radial_patch(hdu,field):
     return map_coordinates(tile,[yy-y0,xx-x0],order=1,mode='nearest')
 
 
-def read_epoch(name):
-    """Read all eight frozen patches atomically; retry only transport/runtime I/O.
-
-    No patch is committed to the time cube until every field for this exact epoch
-    has been obtained, preventing duplicates if a range request fails mid-epoch.
-    """
-    last=None
-    for attempt in range(1,EPOCH_RETRIES+1):
+def download_epoch(name):
+    dest=CACHE/name;url=ROOT+name
+    for outer in range(1,DOWNLOAD_RETRIES+1):
+        cmd=['curl','--fail','--location','--show-error','--retry','12','--retry-delay','5','--retry-max-time','900','--retry-all-errors','--connect-timeout','30','--speed-time','120','--speed-limit','1024','--continue-at','-','--output',str(dest),url]
         try:
-            tmp={}
-            with fits.open(ROOT+name,use_fsspec=True,
-                           fsspec_kwargs={'block_size':1024*1024},memmap=False) as h:
-                if tuple(h[1].shape)!=(4096,4096):raise RuntimeError('unexpected CTM shape')
-                for label,field in ls.FIELDS.items():
-                    tmp[label]=remote_radial_patch(h[1],field)
-            return tmp
-        except Exception as exc:
-            last=exc
-            if attempt>=EPOCH_RETRIES:break
-            print('  transport retry',attempt,'/',EPOCH_RETRIES,'for',name,type(exc).__name__,flush=True)
-            time.sleep(5*attempt)
-    raise RuntimeError(f'failed frozen epoch {name} after {EPOCH_RETRIES} transport attempts') from last
+            subprocess.run(cmd,check=True)
+            if dest.exists() and dest.stat().st_size>=2880:return dest
+        except Exception:
+            if outer>=DOWNLOAD_RETRIES:raise
+            time.sleep(5*outer)
+    raise RuntimeError(f'failed full-file transport for {name}')
+
+
+def read_epoch(name):
+    """Download one exact compressed CTM robustly, then extract all 8 patches atomically."""
+    path=download_epoch(name)
+    try:
+        tmp={}
+        with fits.open(path,memmap=False) as h:
+            if tuple(h[1].shape)!=(4096,4096):raise RuntimeError('unexpected CTM shape')
+            for label,field in ls.FIELDS.items():tmp[label]=remote_radial_patch(h[1],field)
+        return tmp
+    finally:
+        try:path.unlink()
+        except OSError:pass
 
 
 def read_cubes(run):
@@ -130,6 +138,6 @@ def main():
     center_ok=summary['p90_of_trial_p90_error_px']<=wg.CENTERLINE_P90_OF_P90_MAX and summary['minimum_valid_fraction']>=wg.CENTERLINE_MIN_VALID and summary['minimum_eligible_frame_fraction']>=wg.CENTERLINE_MIN_ELIGIBLE;wave_ok=summary['positive_pass_fraction']>=wg.POS_PASS_FRACTION_MIN and summary['null_false_kh_n']<=wg.NULL_FALSE_KH_MAX
     summary.update({'centerline_gate':'PASS' if center_ok else 'FAIL','wave_gate':'PASS' if wave_ok else 'FAIL','gate':'PASS' if center_ok and wave_ok else 'FAIL'})
     sf={k:{'center':[float(x) for x in v['center']],'u':[float(x) for x in v['u']]} for k,v in ls.FIELDS.items()}
-    report={'information_barrier':'48 distinct 2025-09-21 non-R3 CTM v0l epochs only; zero R3 pixels','selection_rule':'earliest exact contiguous 48-frame v0l run at 8-minute cadence','transport_rule':f'atomic eight-field epoch reads with up to {EPOCH_RETRIES} retries; science arrays and frozen metrics unchanged','roi':[NY,NX],'fields':sf,'wavelengths':WAVES,'peak_sigma':PEAK,'selected_files':[n for _,n,_ in run],'patch_stats':stats,'trials':trials,'summary':summary}
+    report={'information_barrier':'48 distinct 2025-09-21 non-R3 CTM v0l epochs only; zero R3 pixels','selection_rule':'earliest exact contiguous 48-frame v0l run at 8-minute cadence','transport_rule':'resilient full compressed CTM curl/resume per epoch (~18 MB each), delete after extracting identical frozen patches; scientific arrays/geometry/metrics unchanged','roi':[NY,NX],'fields':sf,'wavelengths':WAVES,'peak_sigma':PEAK,'selected_files':[n for _,n,_ in run],'patch_stats':stats,'trials':trials,'summary':summary}
     (OUT/'summary.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n');print(json.dumps(summary,indent=2,sort_keys=True));return 0 if center_ok and wave_ok else 3
 if __name__=='__main__':raise SystemExit(main())
