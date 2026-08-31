@@ -28,8 +28,6 @@ EXCLUDED=(
 'MATLAS-1177','MATLAS-1297','MATLAS-1598','MATLAS-1847','MATLAS-1957',
 'MATLAS-1996','MATLAS-2103','MATLAS-254','MATLAS-28','MATLAS-332',
 'MATLAS-40','MATLAS-659','MATLAS-991')
-# Exact canonical published 74, copied from frozen manifest executable solely
-# to enforce the barrier. Intersection with EXCLUDED must be empty.
 PUBLISHED=set('''MATLAS-42 MATLAS-49 MATLAS-138 MATLAS-141 MATLAS-149 MATLAS-177 MATLAS-203 MATLAS-207 MATLAS-262 MATLAS-290 MATLAS-342 MATLAS-347 MATLAS-365 MATLAS-368 MATLAS-401 MATLAS-405 MATLAS-478 MATLAS-524 MATLAS-585 MATLAS-627 MATLAS-658 MATLAS-682 MATLAS-787 MATLAS-791 MATLAS-799 MATLAS-898 MATLAS-976 MATLAS-984 MATLAS-987 MATLAS-1059 MATLAS-1154 MATLAS-1174 MATLAS-1216 MATLAS-1225 MATLAS-1262 MATLAS-1302 MATLAS-1321 MATLAS-1332 MATLAS-1400 MATLAS-1408 MATLAS-1412 MATLAS-1413 MATLAS-1437 MATLAS-1470 MATLAS-1485 MATLAS-1530 MATLAS-1534 MATLAS-1539 MATLAS-1545 MATLAS-1550 MATLAS-1558 MATLAS-1577 MATLAS-1589 MATLAS-1616 MATLAS-1618 MATLAS-1630 MATLAS-1647 MATLAS-1662 MATLAS-1667 MATLAS-1740 MATLAS-1779 MATLAS-1794 MATLAS-1801 MATLAS-1865 MATLAS-1888 MATLAS-1907 MATLAS-1938 MATLAS-1975 MATLAS-1985 MATLAS-2019 MATLAS-2021 MATLAS-2069 MATLAS-2176 MATLAS-2184'''.split())
 assert len(PUBLISHED)==74 and not (set(EXCLUDED)&PUBLISHED)
 
@@ -41,14 +39,25 @@ def robust_sigma(a):
 
 
 def choose_product(target):
+    """Query proposal metadata first, then exact-filter locally.
+
+    MAST's target_name criterion performs name resolution and returned no result
+    for labels such as MATLAS-1177 despite those literal labels being present in
+    the proposal metadata. Local exact filtering is the same strategy used by
+    the successful frozen 74-target manifest and changes no science selection.
+    """
     rows=[]
     for program in PROGRAMS:
-        obs=Observations.query_criteria(obs_collection='HST',proposal_id=program,
-            instrument_name='ACS/WFC',target_name=target,filters='F814W')
+        allobs=Observations.query_criteria(obs_collection='HST',proposal_id=program,
+            instrument_name='ACS/WFC')
+        if not len(allobs):continue
+        mask=np.array([(str(r['target_name'])==target and str(r['filters']).upper()=='F814W') for r in allobs],bool)
+        obs=allobs[mask]
         if not len(obs):continue
         for r in obs:
-            if str(r['target_name']) in PUBLISHED:
-                raise RuntimeError(f'BARRIER BREACH target={r["target_name"]}')
+            literal=str(r['target_name'])
+            if literal in PUBLISHED or literal=='MATLAS2019':
+                raise RuntimeError(f'BARRIER BREACH target={literal}')
         prod=Observations.get_product_list(obs)
         for r in prod:
             fn=str(r['productFilename']) if 'productFilename' in prod.colnames else ''
@@ -58,8 +67,6 @@ def choose_product(target):
             rows.append({'program':program,'filename':fn,'dataURI':str(r['dataURI']),
                 'size':int(r['size']) if 'size' in prod.colnames and r['size'] is not None else None})
     if not rows:raise RuntimeError(f'No HAP F814W DRC for excluded control {target}')
-    # HAP association product is the shortest root; longer roots are exposure-
-    # level/sub-association products. Ties break lexicographically.
     rows.sort(key=lambda r:(len(r['filename']),r['filename']))
     return rows[0],rows
 
@@ -82,6 +89,7 @@ def audit(path):
         a=np.asarray(h[idx].data,dtype=np.float32);hdr=h[idx].header;ph=h[0].header
     finite=np.isfinite(a);zero=(a==0)&finite
     valid=finite & ~(zero if zero.mean()>0.005 else False)
+    if valid.mean()<=0:raise RuntimeError(f'empty valid footprint {path.name}')
     med=float(np.median(a[valid]));fill=np.where(valid,a,med).astype(np.float32)
     resid=fill-gaussian_filter(fill,32.0,mode='nearest')
     rmed,rsig=robust_sigma(resid[valid])
@@ -93,7 +101,8 @@ def audit(path):
 
 def main():
     report={'information_barrier':'Only 13 proposal targets excluded from published Table A.1 are opened; published 74 remain sealed',
-        'published74_science_values_opened':False,'excluded_controls_n':len(EXCLUDED),'controls':[]}
+        'published74_science_values_opened':False,'excluded_controls_n':len(EXCLUDED),'controls':[],
+        'transport_repair':'proposal-first metadata query + exact local target/filter match; target set unchanged'}
     for j,target in enumerate(EXCLUDED,1):
         print(f'CONTROL {j}/{len(EXCLUDED)} {target}',flush=True)
         chosen,allrows=choose_product(target)
