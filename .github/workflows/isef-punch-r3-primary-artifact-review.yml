@@ -1,0 +1,41 @@
+name: ISEF PUNCH R3 frozen primary artifact review
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/PUNCH_R3_PRIMARY_ARTIFACT_REVIEW_TRIGGER'
+  workflow_dispatch:
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PUNCH_R3_TARGET_OPEN_AUTHORIZED: YES
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install exact analysis and diagnostic dependencies
+        run: pip install numpy scipy astropy requests matplotlib
+      - name: Verify frozen primary provenance and diagnostic code
+        run: |
+          test "$(sha256sum isef/punch_r3_primary_roi_manifest.csv | awk '{print $1}')" = "b47e5da740e4481db9643c8ccf44fa9171c29c8bbb70e8fa74dcbf3ed76c7488"
+          python -m py_compile isef/punch_r3_primary_analysis_locked.py isef/punch_r3_primary_analysis_frozen.py isef/punch_r3_primary_artifact_diagnostics_locked.py
+      - name: Reproduce exact locked 80-epoch primary result
+        run: |
+          cd isef
+          python punch_r3_primary_analysis_locked.py
+      - name: Generate only preregistered fixed artifact diagnostics
+        run: |
+          cd isef
+          python punch_r3_primary_artifact_diagnostics_locked.py
+      - name: Preserve complete reproducibility and review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-punch-r3-primary-artifact-review-frozen
+          path: isef/results/punch_r3_primary_analysis/
+          if-no-files-found: error
