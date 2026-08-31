@@ -1,0 +1,27 @@
+name: ISEF PUNCH R3 distance geometry
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_r3_distance_geometry.py'
+      - '.github/workflows/isef-punch-r3-distance-geometry.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  distance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install astropy astroquery
+      - name: Freeze Horizons observer-range geometry
+        run: python isef/punch_r3_distance_geometry.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-r3-distance-geometry
+          path: results/punch_r3_distance_geometry/
+          if-no-files-found: error
