@@ -1,0 +1,32 @@
+name: ISEF IMAP Release 1 metadata access probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/IMAP_RELEASE1_ACCESS_PROBE_TRIGGER'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install metadata-only probe dependencies
+        run: pip install requests cdflib
+      - name: Verify and run target-blind Release 1 access probe
+        run: |
+          python -m py_compile isef/imap_release1_access_probe.py
+          cd isef
+          python imap_release1_access_probe.py
+      - name: Preserve metadata-only feasibility result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-imap-release1-access-probe
+          path: isef/results/imap_release1_access_probe/report.json
+          if-no-files-found: error
