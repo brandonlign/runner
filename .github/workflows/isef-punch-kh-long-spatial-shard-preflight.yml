@@ -1,0 +1,20 @@
+name: ISEF PUNCH KH spatial shard equivalence preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_kh_long_spatial_shard_preflight.py'
+      - '.github/workflows/isef-punch-kh-long-spatial-shard-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests
+      - run: python isef/punch_kh_long_spatial_shard_preflight.py
