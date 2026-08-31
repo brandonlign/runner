@@ -15,7 +15,9 @@ from astropy.io import fits
 from tess_asteroids import MovingTPF, __version__ as tess_asteroids_version
 
 OUT=Path('results/tess_binary_6764_extraction_pilot');OUT.mkdir(parents=True,exist_ok=True)
-TARGET='6764 Kirillavrov';SECTOR=1
+# Horizons resolves the numbered minor planet robustly by number; the earlier
+# combined string "6764 Kirillavrov" was rejected before ephemeris generation.
+TARGET='6764';DISPLAY_TARGET='6764 Kirillavrov';SECTOR=1
 
 def table_summary(path):
     with fits.open(path,memmap=False) as h:
@@ -39,7 +41,7 @@ def main():
     mt.make_tpf(shape=(11,11),bg_method='linear_model',ap_method='prf',save=True,outdir=str(OUT))
     mt.make_lc(method='all',save=True,outdir=str(OUT))
     files=sorted(str(Path(x).name) for x in glob.glob(str(OUT/'*.fits')))
-    rep={'role':'known-binary external extraction control only','target':TARGET,'sector':SECTOR,
+    rep={'role':'known-binary external extraction control only','target':DISPLAY_TARGET,'query_target':TARGET,'sector':SECTOR,
          'tess_asteroids_version':tess_asteroids_version,'year8_discovery_values_opened':False,
          'camera':int(mt.camera),'ccd':int(mt.ccd),'ephemeris_rows':int(len(mt.ephem)),
          'ephem_time_min':float(np.nanmin(mt.ephem['time'])),'ephem_time_max':float(np.nanmax(mt.ephem['time'])),
