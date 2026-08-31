@@ -5,6 +5,7 @@ on:
     paths:
       - 'isef/punch_kh_real_background_controls_v2.py'
       - 'isef/punch_kh_real_background_wave_gate.py'
+      - 'isef/punch_kh_prefetch_controls.py'
       - '.github/workflows/isef-punch-kh-real-background-wave-gate.yml'
   workflow_dispatch:
 permissions:
@@ -12,12 +13,14 @@ permissions:
 jobs:
   wavegate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - run: pip install numpy scipy astropy requests
+      - name: Prefetch frozen non-R3 control FITS with retry/resume
+        run: python isef/punch_kh_prefetch_controls.py
       - name: Run real-background wave and null gate
         id: wavegate
         continue-on-error: true
