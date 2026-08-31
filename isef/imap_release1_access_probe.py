@@ -3,12 +3,12 @@
 
 Purpose: determine whether the fresh July 2026 IMAP public release is technically
 usable for a new ISEF project *before* inspecting scientific outcome
-distributions.  This script inventories public archive files and inspects CDF
-metadata/record structure only.  It does not print or summarize science-variable
+distributions. This script inventories public archive files and inspects CDF
+metadata/record structure only. It does not print or summarize science-variable
 values, spectra, elemental abundances, impact compositions, or event directions.
 
 The first priority is IDEX L2A sci-10days because event-level dust composition
-could provide an unusually fresh discovery surface.  Other Release-1 datasets
+could provide an unusually fresh discovery surface. Other Release-1 datasets
 are inventoried at directory level for fallback comparison.
 """
 from __future__ import annotations
@@ -80,8 +80,6 @@ def recursive_inventory(base: str, max_depth: int = 3):
 def head_meta(url: str):
     r = requests.head(url, allow_redirects=True, timeout=(15, 60))
     if r.status_code >= 400:
-        # Some archive paths do not support HEAD reliably; zero-byte range gets
-        # headers without downloading the CDF body.
         r = requests.get(url, headers={'Range': 'bytes=0-0'}, stream=True,
                          timeout=(15, 60))
     r.raise_for_status()
@@ -133,51 +131,47 @@ def safe_scalar(v):
 def cdf_structure(path: Path):
     """Metadata/schema only. Never call varget on a science variable."""
     c = cdflib.CDF(str(path))
+    info = c.cdf_info()
+    zvars = list(getattr(info, 'zVariables', []) or [])
+    rvars = list(getattr(info, 'rVariables', []) or [])
+    out = {
+        'cdf_info': {
+            'version': safe_scalar(getattr(info, 'Version', None)),
+            'encoding': safe_scalar(getattr(info, 'Encoding', None)),
+            'majority': safe_scalar(getattr(info, 'Majority', None)),
+            'zvariables': zvars,
+            'rvariables': rvars,
+            'num_zvariables': len(zvars),
+            'num_rvariables': len(rvars),
+        },
+        'global_attributes': {},
+        'variables': {},
+        'science_values_opened': False,
+    }
     try:
-        info = c.cdf_info()
-        zvars = list(getattr(info, 'zVariables', []) or [])
-        rvars = list(getattr(info, 'rVariables', []) or [])
-        out = {
-            'cdf_info': {
-                'version': safe_scalar(getattr(info, 'Version', None)),
-                'encoding': safe_scalar(getattr(info, 'Encoding', None)),
-                'majority': safe_scalar(getattr(info, 'Majority', None)),
-                'zvariables': zvars,
-                'rvariables': rvars,
-                'num_zvariables': len(zvars),
-                'num_rvariables': len(rvars),
-            },
-            'global_attributes': {},
-            'variables': {},
-            'science_values_opened': False,
-        }
-        try:
-            gattrs = c.globalattsget()
-            for k, v in gattrs.items():
-                # Metadata text can include dataset purpose, processing level,
-                # time coverage, DOI, caveats.  It is not a science outcome.
-                out['global_attributes'][k] = safe_scalar(v)
-        except Exception as exc:
-            out['global_attributes_error'] = repr(exc)
+        gattrs = c.globalattsget()
+        for k, v in gattrs.items():
+            out['global_attributes'][k] = safe_scalar(v)
+    except Exception as exc:
+        out['global_attributes_error'] = repr(exc)
 
-        for name in zvars + rvars:
-            try:
-                vi = c.varinq(name)
-                va = c.varattsget(name)
-                out['variables'][name] = {
-                    'data_type': safe_scalar(getattr(vi, 'Data_Type_Description', None)),
-                    'num_elements': safe_scalar(getattr(vi, 'Num_Elements', None)),
-                    'num_dims': safe_scalar(getattr(vi, 'Num_Dims', None)),
-                    'dim_sizes': safe_scalar(getattr(vi, 'Dim_Sizes', None)),
-                    'last_record': safe_scalar(getattr(vi, 'Last_Rec', None)),
-                    'rec_vary': safe_scalar(getattr(vi, 'Rec_Vary', None)),
-                    'attributes': {k: safe_scalar(v) for k, v in va.items()},
-                }
-            except Exception as exc:
-                out['variables'][name] = {'metadata_error': repr(exc)}
-        return out
-    finally:
-        c.close()
+    for name in zvars + rvars:
+        try:
+            vi = c.varinq(name)
+            va = c.varattsget(name)
+            out['variables'][name] = {
+                'data_type': safe_scalar(getattr(vi, 'Data_Type_Description', None)),
+                'num_elements': safe_scalar(getattr(vi, 'Num_Elements', None)),
+                'num_dims': safe_scalar(getattr(vi, 'Num_Dims', None)),
+                'dim_sizes': safe_scalar(getattr(vi, 'Dim_Sizes', None)),
+                'last_record': safe_scalar(getattr(vi, 'Last_Rec', None)),
+                'rec_vary': safe_scalar(getattr(vi, 'Rec_Vary', None)),
+                'attributes': {k: safe_scalar(v) for k, v in va.items()},
+            }
+        except Exception as exc:
+            out['variables'][name] = {'metadata_error': repr(exc)}
+    # cdflib.CDF is a pure reader in this version and exposes no close() method.
+    return out
 
 
 def main():
@@ -205,17 +199,14 @@ def main():
                 'first_cdf': sorted([x['url'] for x in cdfs])[:1],
                 'last_cdf': sorted([x['url'] for x in cdfs])[-1:] if cdfs else [],
             }
-            # HEAD metadata on first/last only; avoids bulk downloads.
             if cdfs:
-                entry['first_cdf_http_metadata'] = head_meta(sorted(cdfs, key=lambda x: x['url'])[0]['url'])
-                entry['last_cdf_http_metadata'] = head_meta(sorted(cdfs, key=lambda x: x['url'])[-1]['url'])
+                ordered = sorted(cdfs, key=lambda x: x['url'])
+                entry['first_cdf_http_metadata'] = head_meta(ordered[0]['url'])
+                entry['last_cdf_http_metadata'] = head_meta(ordered[-1]['url'])
             report['datasets'][label] = entry
         except Exception as exc:
             report['datasets'][label] = {'url': url, 'access': 'FAIL', 'error': repr(exc)}
 
-    # Only IDEX receives one representative metadata/schema inspection because
-    # it is the leading fresh-data candidate. Selection is lexicographic and
-    # therefore independent of any scientific values.
     idex = report['datasets'].get('idex_l2a_sci_10days', {})
     if idex.get('access') == 'PASS':
         files, _ = recursive_inventory(idex['url'], max_depth=3)
@@ -231,8 +222,6 @@ def main():
                 'download': dl,
                 'structure': structure,
             }
-            # Preserve only the textual report, not a local copy of the science
-            # CDF, so this stage does not become a hidden outcome cache.
             dest.unlink(missing_ok=True)
 
     (OUT / 'report.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
