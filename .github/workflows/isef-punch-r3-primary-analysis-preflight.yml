@@ -27,6 +27,17 @@ jobs:
           cat /tmp/interlock.txt
           test "$rc" -ne 0
           grep -q 'REFUSING TARGET OPEN' /tmp/interlock.txt
+      - name: Verify immutable primary manifest loads without target pixels
+        run: |
+          PYTHONPATH=isef python - <<'PY'
+          import punch_r3_primary_analysis_frozen as p
+          rows=p.load_manifest()
+          print({'n':len(rows),'first':rows[0]['timestamp_utc'],'last':rows[-1]['timestamp_utc'],'sha256':p.MANIFEST_SHA256})
+          assert len(rows)==80
+          assert rows[0]['timestamp_utc']=='2026-04-21T18:00:29Z'
+          assert rows[-1]['timestamp_utc']=='2026-04-22T04:32:29Z'
+          assert all(r['relative_path'].endswith('_v0l.fits') for r in rows)
+          PY
       - name: Verify detailed ridge center equals controlled fitter
         run: |
           PYTHONPATH=isef python - <<'PY'
