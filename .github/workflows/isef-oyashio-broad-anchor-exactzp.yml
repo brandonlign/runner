@@ -1,0 +1,25 @@
+name: ISEF Oyashio broad anchor exact zero point
+on:
+  push:
+    branches: [main]
+    paths: ['isef/OYASHIO_BROAD_ANCHOR_EXACTZP_TRIGGER']
+  workflow_dispatch:
+jobs:
+  anchors:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy astroquery sep requests acstools
+      - run: |
+          python -m py_compile isef/oyashio_broad_anchor_count_pilot.py isef/oyashio_broad_anchor_exactzp.py
+          cd isef
+          python oyashio_broad_anchor_exactzp.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-oyashio-broad-anchor-exactzp
+          path: isef/results/oyashio_broad_anchor_exactzp/report.json
+          if-no-files-found: error
