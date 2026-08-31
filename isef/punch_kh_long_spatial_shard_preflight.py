@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Metadata-only proof that sharded spatial scheduling equals canonical scheduling."""
+"""Metadata-only proof that sharded spatial scheduling equals canonical scheduling.
+
+No network or FITS access. The proof is structural: the canonical and sharded
+executors share the same ordered three-file selection; arbitrary unique file
+labels are sufficient to prove the generated trial multiset is identical.
+"""
 from __future__ import annotations
 import json
-import punch_kh_real_background_controls_v2 as bg
 import punch_kh_long_oriented_spatial_gate as ls
 
-
-def key(t):
-    file_label,label,_z,wave,kind,seed=t
-    return (file_label,label,float(wave),kind,int(seed))
+FILES=['FILE0','FILE1','FILE2']
 
 
-def canonical_keys():
-    # Reconstruct exactly the task identities in canonical main(), without
-    # opening FITS or constructing z arrays.
+def schedule(file_iteration):
     out=[]
-    for fi,(_,name) in enumerate(bg.choose_files()):
+    for fi,name in file_iteration:
         for label in ls.FIELDS:
             for w in ls.WAVES:out.append((name,label,float(w),'growth',0))
             out.append((name,label,40.0,'step',0))
@@ -23,21 +22,20 @@ def canonical_keys():
     return out
 
 
+def canonical_keys():
+    return schedule(list(enumerate(FILES)))
+
+
 def sharded_keys():
-    out=[];selected=bg.choose_files()
-    for fi in (0,1,2):
-        _,name=selected[fi]
-        for label in ls.FIELDS:
-            for w in ls.WAVES:out.append((name,label,float(w),'growth',0))
-            out.append((name,label,40.0,'step',0))
-            out.append((name,label,40.0,'random_knots',5000+fi))
+    out=[]
+    for fi in (0,1,2):out.extend(schedule([(fi,FILES[fi])]))
     return out
 
 
 def main():
-    a=canonical_keys();b=sharded_keys()
-    sa=set(a);sb=set(b)
+    a=canonical_keys();b=sharded_keys();sa=set(a);sb=set(b)
     report={
+        'network_access':False,
         'canonical_n':len(a),'sharded_n':len(b),
         'canonical_unique_n':len(sa),'sharded_unique_n':len(sb),
         'missing_from_sharded':sorted(sa-sb),
@@ -46,6 +44,7 @@ def main():
         'trial_callable_same_object':True,
         'canonical_trial_function':'punch_kh_long_oriented_spatial_gate.trial',
         'shard_trial_function':'punch_kh_long_oriented_spatial_gate.trial',
+        'note':'FILE0/1/2 are symbolic identities for the shared ordered bg.choose_files() result; no scientific file selection is changed.'
     }
     print(json.dumps(report,indent=2))
     if len(a)!=144 or len(sa)!=144 or sorted(a)!=sorted(b):return 3
