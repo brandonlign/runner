@@ -1,0 +1,36 @@
+name: ISEF PUNCH R3 L2 header-only audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_r3_l2_header_audit.py'
+      - '.github/workflows/isef-punch-r3-l2-header-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Audit FITS headers only
+        id: audit
+        continue-on-error: true
+        run: python isef/punch_r3_l2_header_audit.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-r3-l2-header-audit
+          path: results/punch_r3_l2_header_audit/
+          if-no-files-found: error
+      - name: Preserve audit status
+        if: steps.audit.outcome == 'failure'
+        run: exit 1
