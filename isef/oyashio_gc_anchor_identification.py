@@ -12,6 +12,7 @@ import csv, io, json
 from pathlib import Path
 import numpy as np, requests
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 from astropy.wcs import WCS
 import astropy.units as u
 import matlas_oyashio_blind_detector_pilot as p
@@ -28,25 +29,34 @@ def load_gc_table():
                      'v_minus_i':float(z['(V-I) (mag)']),'c_4_8':float(z['c_4-8']),'d_cen_kpc':float(z['D_cen (kpc)'])})
     return rows
 
+def science_wcs(path):
+    # Use the actual FITS SCI header. p.load_sci intentionally returns only a
+    # JSON-safe metadata summary, which is unsuitable for WCS construction.
+    with fits.open(path,memmap=False) as h:
+        idx=None
+        for j,hd in enumerate(h):
+            if getattr(hd,'data',None) is not None and np.ndim(hd.data)==2:
+                idx=j;break
+        if idx is None: raise RuntimeError(f'No 2-D science image in {path.name}')
+        return WCS(h[idx].header,relax=True).celestial,idx,list(h[idx].data.shape)
+
 def main():
     rows=p.query_products();row=next(r for r in rows if r['filename']==p.EXPECTED_COMBINED)
-    path=p.download_one(row);arr,hdr=p.load_sci(path)
-    w=WCS(hdr)
+    path=p.download_one(row);w,sci_hdu,shape=science_wcs(path)
     raw,_=p.truth_points_dense()
     endpoints=[raw[0],raw[-1]]
     gcs=load_gc_table();gcsky=SkyCoord([x['ra_deg'] for x in gcs]*u.deg,[x['dec_deg'] for x in gcs]*u.deg)
     out=[]
     for k,(x,y) in enumerate(endpoints):
-        sky=w.pixel_to_world(float(x),float(y))
-        # Keep celestial component even if WCS object contains extra axes.
-        if hasattr(sky,'ra'): sc=SkyCoord(sky.ra,sky.dec)
-        else: sc=SkyCoord(sky[0].ra,sky[0].dec)
+        sc=w.pixel_to_world(float(x),float(y))
+        if not hasattr(sc,'ra'): sc=SkyCoord(sc[0].ra,sc[0].dec)
         sep=sc.separation(gcsky).arcsec;ii=int(np.argmin(sep));g=dict(gcs[ii]);g['separation_arcsec']=float(sep[ii])
         out.append({'endpoint_index':k,'x_px':float(x),'y_px':float(y),'ra_deg':float(sc.ra.deg),'dec_deg':float(sc.dec.deg),'nearest_gc':g})
     # The anchor is defined as the endpoint with the smaller nearest-GC separation.
     anchor=min(out,key=lambda z:z['nearest_gc']['separation_arcsec'])
     rep={'role':'external positive-control anchor identification only','matlas_target_science_values_opened':False,
          'information_barrier':'Only GO-16890 Oyashio F814W combined DRC WCS/image loaded',
+         'image':{'filename':row['filename'],'science_hdu':sci_hdu,'shape':shape},
          'gc_catalog_source':GC_URL,'gc_catalog_n':len(gcs),'track_endpoints':out,'identified_anchor':anchor,
          'anchor_pass':bool(anchor['nearest_gc']['separation_arcsec']<=0.25)}
     path.unlink(missing_ok=True);(OUT/'report.json').write_text(json.dumps(rep,indent=2,sort_keys=True)+'\n')
