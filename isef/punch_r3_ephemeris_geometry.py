@@ -60,8 +60,12 @@ def query_rows(label: str, times: list[datetime]):
         for i,dt in enumerate(chunk):
             comet=SkyCoord(float(eph["RA"][i])*u.deg,float(eph["DEC"][i])*u.deg,frame="icrs")
             sun=get_sun(Time(dt)).icrs
-            pa=float(sun.position_angle(comet).to_value(u.deg))
-            sep=float(sun.separation(comet).to_value(u.deg))
+            # Local tangent-plane anti-solar direction at the comet: first find
+            # the bearing FROM comet TO Sun, then reverse it by 180 degrees.
+            # The earlier sun.position_angle(comet) value is a bearing at the
+            # Sun and is not equivalent for a large (~131 deg) separation.
+            pa=float((comet.position_angle(sun).to_value(u.deg)+180.0)%360.0)
+            sep=float(comet.separation(sun).to_value(u.deg))
             rows.append({
                 "partition":label,
                 "timestamp_utc":dt.isoformat().replace("+00:00","Z"),
@@ -87,7 +91,7 @@ def main():
       "observer":"Earth geocenter (500@399); spacecraft-vs-geocenter parallax to be included as geometric systematic if needed",
       "designation":"C/2025 R3",
       "frozen_partitions":{"primary_n":PRIMARY_N,"holdout_n":HOLDOUT_N,"cadence_min":CADENCE_MIN},
-      "axis_rule":"projected anti-solar PA from Sun to comet; no image-based optimization",
+      "axis_rule":"local tangent-plane anti-solar PA = PA(comet->Sun)+180 deg; no image-based optimization",
       "rows":rows,
     }
     (OUT/"geometry.json").write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
