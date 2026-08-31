@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Full wave/growth discrimination on real non-target PUNCH backgrounds.
 
-TARGET BLIND: imports the corrected 2025-09-21 background/extraction machinery
-and never accesses C/2025 R3 files.
+TARGET BLIND: only 2025-09-21 backgrounds are opened. Final control fields are
+matched prospectively to the corrected C/2025 R3 elongation range before any
+real-background gate metric is accepted.
 """
 from __future__ import annotations
 
@@ -15,6 +16,17 @@ import numpy as np
 from astropy.io import fits
 
 import punch_kh_real_background_controls_v2 as bg
+
+# Corrected target-blind Horizons geometry puts R3 at 12.03--14.67 deg from the
+# Sun during the frozen sequence. At 0.0225 deg/pixel this is ~535--652 px.
+# Bracket that range with two non-target annuli and four cardinal azimuths each.
+C0=2048
+bg.PATCH_CENTERS={
+    "r550_E":(C0+550,C0),"r550_W":(C0-550,C0),
+    "r550_N":(C0,C0+550),"r550_S":(C0,C0-550),
+    "r650_E":(C0+650,C0),"r650_W":(C0-650,C0),
+    "r650_N":(C0,C0+650),"r650_S":(C0,C0-650),
+}
 
 OUT=Path("results/punch_kh_real_background_wave_gate")
 OUT.mkdir(parents=True,exist_ok=True)
@@ -29,6 +41,9 @@ POS_SPEED_RELERR_MAX=.15
 POS_GROWTH_RELERR_MAX=.25
 POS_PASS_FRACTION_MIN=.80
 NULL_FALSE_KH_MAX=0
+CENTERLINE_P90_OF_P90_MAX=1.5
+CENTERLINE_MIN_VALID=.98
+CENTERLINE_MIN_ELIGIBLE=.90
 PEAK_POS=[5.0,8.0]
 PEAK_NULL=5.0
 ONSET=10
@@ -112,10 +127,9 @@ def growth_compare(t,amp,minseg=6,ming=8):
 
 
 def infer_wave(clean,eligible,t):
-    # No long-gap interpolation beyond the already frozen <=2-column mask repair.
     rowgood=np.asarray(eligible,bool)&np.all(np.isfinite(clean),axis=1)
-    if np.mean(rowgood)<.90:return {"status":"INSUFFICIENT_COMPLETE_FRAMES","complete_frame_fraction":float(np.mean(rowgood))}
-    yy=clean[rowgood];tt=t[rowgood];s=np.arange(bg.NX,dtype=float)
+    if np.mean(rowgood)<CENTERLINE_MIN_ELIGIBLE:return {"status":"INSUFFICIENT_COMPLETE_FRAMES","complete_frame_fraction":float(np.mean(rowgood))}
+    yy=clean[rowgood];tt=t[rowgood]
     yy=yy-np.mean(yy,axis=1,keepdims=True)
     ft=np.fft.rfft(yy,axis=1);freq=np.fft.rfftfreq(bg.NX,d=1.0);wave=np.full_like(freq,np.inf);pos=freq>0;wave[pos]=1/freq[pos]
     allow=pos&(wave>=MIN_WAVELENGTH)&(wave<=MAX_WAVELENGTH);inds=np.where(allow)[0]
@@ -133,8 +147,12 @@ def full_kh_call(r):
 def trial(args):
     file_label,patch,bgreal,peak,kind,seed=args
     y,t,frames,truth=injected_movie(bgreal,peak,kind,seed);raw=bg.centerline(frames,y);clean,flag,elig=bg.mask_center(raw);r=infer_wave(clean,elig,t)
+    good=np.isfinite(clean)&np.isfinite(truth)
+    err=np.abs(clean[good]-truth[good]) if np.any(good) else np.asarray([np.inf])
     out={"file":file_label,"patch":patch,"peak_sigma":peak,"kind":kind,"seed":seed,"fit":r,"kh_call":full_kh_call(r),
-         "flagged_fraction":float(np.mean(flag)),"eligible_frame_fraction":float(np.mean(elig))}
+         "flagged_fraction":float(np.mean(flag)),"eligible_frame_fraction":float(np.mean(elig)),
+         "valid_fraction":float(np.mean(good)),"median_abs_error_px":float(np.median(err)),
+         "p90_abs_error_px":float(np.quantile(err,.90))}
     if kind=="growth" and r.get("status")=="OK":
         out.update({"wavelength_relerr":abs(r["wavelength"]-bg.WAVELENGTH)/bg.WAVELENGTH,
                     "speed_relerr":abs(r["phase_speed"]-bg.SPEED)/bg.SPEED,
@@ -145,10 +163,14 @@ def trial(args):
 
 def main():
     selected=bg.choose_files();report={"information_barrier":"2025-09-21 non-R3 backgrounds only; no R3 access",
+        "control_geometry":{"target_elongation_deg":[12.03047,14.66585],"sampling_deg_per_px":.0225,
+            "control_radii_px":[550,650],"patches":bg.PATCH_CENTERS},
         "frozen_gate":{"wavelength_px":[MIN_WAVELENGTH,MAX_WAVELENGTH],"phase_r2_min":PHASE_R2_MIN,
             "spectral_concentration_min":SPECTRAL_CONCENTRATION_MIN,"delta_bic_min_each":DBIC_MIN,
             "positive_wavelength_relerr_max":POS_WAVELENGTH_RELERR_MAX,"positive_speed_relerr_max":POS_SPEED_RELERR_MAX,
-            "positive_growth_relerr_max":POS_GROWTH_RELERR_MAX,"positive_pass_fraction_min":POS_PASS_FRACTION_MIN,"null_false_kh_max":NULL_FALSE_KH_MAX},"trials":[]}
+            "positive_growth_relerr_max":POS_GROWTH_RELERR_MAX,"positive_pass_fraction_min":POS_PASS_FRACTION_MIN,
+            "null_false_kh_max":NULL_FALSE_KH_MAX,"centerline_p90_of_trial_p90_max":CENTERLINE_P90_OF_P90_MAX,
+            "centerline_min_valid":CENTERLINE_MIN_VALID,"centerline_min_eligible":CENTERLINE_MIN_ELIGIBLE},"trials":[]}
     for file_index,(_,name) in enumerate(selected):
         path=bg.download(name)
         with fits.open(path,memmap=True) as hdul:
@@ -168,14 +190,21 @@ def main():
     pos=[r for r in report["trials"] if r["kind"]=="growth"];null=[r for r in report["trials"] if r["kind"]!="growth"]
     summary={"positive_n":len(pos),"positive_pass_n":sum(r.get("positive_pass",False) for r in pos),
         "positive_pass_fraction":float(np.mean([r.get("positive_pass",False) for r in pos])) if pos else 0,
-        "null_n":len(null),"null_false_kh_n":sum(r["kh_call"] for r in null),"by_kind":{}}
+        "null_n":len(null),"null_false_kh_n":sum(r["kh_call"] for r in null),
+        "p90_of_trial_p90_error_px":float(np.quantile([r["p90_abs_error_px"] for r in report["trials"]],.90)) if report["trials"] else float("inf"),
+        "minimum_valid_fraction":float(min((r["valid_fraction"] for r in report["trials"]),default=0.0)),
+        "minimum_eligible_frame_fraction":float(min((r["eligible_frame_fraction"] for r in report["trials"]),default=0.0)),"by_kind":{}}
     for kind in ["growth","step","random_knots"]:
         ss=[r for r in report["trials"] if r["kind"]==kind]
         summary["by_kind"][kind]={"n":len(ss),"kh_call_fraction":float(np.mean([r["kh_call"] for r in ss])) if ss else None,
-            "median_phase_r2":float(np.median([r["fit"].get("phase_r2",np.nan) for r in ss])),
-            "median_spectral_concentration":float(np.median([r["fit"].get("spectral_concentration",np.nan) for r in ss]))}
-    gate=summary["positive_pass_fraction"]>=POS_PASS_FRACTION_MIN and summary["null_false_kh_n"]<=NULL_FALSE_KH_MAX
-    summary["gate"]="PASS" if gate else "FAIL";report["summary"]=summary
-    (OUT/"summary.json").write_text(json.dumps(report,indent=2,sort_keys=True)+"\n");print(json.dumps(summary,indent=2,sort_keys=True));return 0 if gate else 3
+            "median_phase_r2":float(np.nanmedian([r["fit"].get("phase_r2",np.nan) for r in ss])) if ss else None,
+            "median_spectral_concentration":float(np.nanmedian([r["fit"].get("spectral_concentration",np.nan) for r in ss])) if ss else None}
+    center_ok=(summary["p90_of_trial_p90_error_px"]<=CENTERLINE_P90_OF_P90_MAX and
+               summary["minimum_valid_fraction"]>=CENTERLINE_MIN_VALID and
+               summary["minimum_eligible_frame_fraction"]>=CENTERLINE_MIN_ELIGIBLE)
+    wave_ok=summary["positive_pass_fraction"]>=POS_PASS_FRACTION_MIN and summary["null_false_kh_n"]<=NULL_FALSE_KH_MAX
+    summary["centerline_gate"]="PASS" if center_ok else "FAIL";summary["wave_gate"]="PASS" if wave_ok else "FAIL"
+    summary["gate"]="PASS" if center_ok and wave_ok else "FAIL";report["summary"]=summary
+    (OUT/"summary.json").write_text(json.dumps(report,indent=2,sort_keys=True)+"\n");print(json.dumps(summary,indent=2,sort_keys=True));return 0 if center_ok and wave_ok else 3
 
 if __name__=="__main__":raise SystemExit(main())
