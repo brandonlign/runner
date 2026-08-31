@@ -1,0 +1,36 @@
+name: ISEF MATLAS Oyashio blind-detector pilot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/MATLAS_OYASHIO_BLIND_DETECTOR_PILOT_TRIGGER'
+  workflow_dispatch:
+
+jobs:
+  pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install external-control dependencies
+        run: pip install numpy scipy astropy astroquery scikit-image requests
+      - name: Verify pilot and information barrier
+        run: |
+          python -m py_compile isef/matlas_oyashio_blind_detector_pilot.py
+          grep -q "TARGET = 'UGC9050-DW1'" isef/matlas_oyashio_blind_detector_pilot.py
+          grep -q "PROGRAM = '16890'" isef/matlas_oyashio_blind_detector_pilot.py
+      - name: Run blind detector only on published Oyashio control
+        run: |
+          cd isef
+          python matlas_oyashio_blind_detector_pilot.py
+      - name: Preserve control pilot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-matlas-oyashio-blind-detector-pilot
+          path: isef/results/matlas_oyashio_blind_detector_pilot/report.json
+          if-no-files-found: error
