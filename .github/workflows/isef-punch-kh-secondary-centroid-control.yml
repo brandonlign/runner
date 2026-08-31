@@ -1,0 +1,34 @@
+name: ISEF PUNCH KH secondary centroid control
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_kh_secondary_centroid_control.py'
+      - '.github/workflows/isef-punch-kh-secondary-centroid-control.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  centroid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests
+      - name: Prefetch frozen non-R3 control FITS
+        run: python isef/punch_kh_prefetch_controls.py
+      - name: Run secondary centroid calibration
+        id: gate
+        continue-on-error: true
+        run: python isef/punch_kh_secondary_centroid_control.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-kh-secondary-centroid-control
+          path: results/punch_kh_secondary_centroid_control/
+          if-no-files-found: error
+      - name: Preserve diagnostic calibration status
+        if: steps.gate.outcome == 'failure'
+        run: exit 1
