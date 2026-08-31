@@ -1,0 +1,35 @@
+name: ISEF MATLAS excluded F814W background audit v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/MATLAS_EXCLUDED_F814W_BACKGROUND_AUDIT_V2_TRIGGER'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install control-audit dependencies
+        run: pip install numpy scipy astropy astroquery requests
+      - name: Verify exact exclusion barrier and product-format repair
+        run: |
+          python -m py_compile isef/matlas_excluded_f814w_background_audit.py isef/matlas_excluded_f814w_background_audit_v2.py
+          grep -q "No published-74 target is queried or opened" isef/matlas_excluded_f814w_background_audit_v2.py
+      - name: Run matched-background audit on excluded controls only
+        run: |
+          cd isef
+          python matlas_excluded_f814w_background_audit_v2.py
+      - name: Preserve background audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-matlas-excluded-f814w-background-audit-v2
+          path: isef/results/matlas_excluded_f814w_background_audit/report.json
+          if-no-files-found: error
