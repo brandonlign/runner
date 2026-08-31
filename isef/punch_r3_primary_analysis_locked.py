@@ -21,7 +21,10 @@ import numpy as np
 import punch_r3_primary_analysis_frozen as p
 
 LOCAL_MANIFEST = Path(__file__).with_name('punch_r3_primary_roi_manifest.csv')
-MANIFEST_SHA256 = '0a9ad1e8e47ce8c1cbb2e1d578ed1ab318dc6f90e07b972697e92761b309541b'
+# Correct SHA-256 of the committed CSV bytes, established by the no-pixel
+# Actions preflight. The science-repo and runner copies also share Git blob SHA
+# a796ca666e26b97f7b9d3fe45f42abb9a215504e.
+MANIFEST_SHA256 = 'b47e5da740e4481db9643c8ccf44fa9171c29c8bbb70e8fa74dcbf3ed76c7488'
 
 
 def load_local_manifest():
