@@ -10,6 +10,18 @@ OUT=Path('results/tess_binary_6764_tssys_positive');OUT.mkdir(parents=True,exist
 URL='https://archive.konkoly.hu/pub/tssys/dr1/lightcurves_spectra/6764.lc'
 ORBIT_H=30.41
 
+def clean_json(x):
+    """Serialization-only sanitizer; does not modify detector calculations."""
+    if isinstance(x,(float,np.floating)):
+        return float(x) if np.isfinite(x) else None
+    if isinstance(x,(int,np.integer)):
+        return int(x)
+    if isinstance(x,dict):
+        return {k:clean_json(v) for k,v in x.items()}
+    if isinstance(x,(list,tuple)):
+        return [clean_json(v) for v in x]
+    return x
+
 def main():
     r=requests.get(URL,timeout=120,headers={'User-Agent':'ISEF-frozen-positive-control/1.0'});r.raise_for_status()
     raw=OUT/'6764.lc';raw.write_bytes(r.content)
@@ -25,10 +37,12 @@ def main():
          'published_orbital_period_h':ORBIT_H,'allowed_positive_harmonics':[0.5,1.0,2.0],
          'selected_event_period_h':float(selected_h) if np.isfinite(selected_h) else None,
          'harmonic_matches_within_5pct':harmonic_matches,'positive_gate_pass':positive_pass,'detector':d}
-    (OUT/'report.json').write_text(json.dumps(rep,indent=2,sort_keys=True,allow_nan=False)+'\n')
-    print(json.dumps({'positive_gate_pass':positive_pass,'selected_event_period_h':rep['selected_event_period_h'],'harmonic_matches':harmonic_matches,
-                      'hard_pass':d.get('hard_pass'),'score':d.get('score'),'hard_conditions':d.get('hard_conditions'),
-                      'rotation_period_h':d.get('rotation',{}).get('rotation_period_h'),'bls':d.get('bls'),'events':d.get('events'),'model_comparison':d.get('model_comparison')},indent=2,allow_nan=False))
+    rep_clean=clean_json(rep)
+    (OUT/'report.json').write_text(json.dumps(rep_clean,indent=2,sort_keys=True,allow_nan=False)+'\n')
+    summary={'positive_gate_pass':positive_pass,'selected_event_period_h':rep_clean['selected_event_period_h'],'harmonic_matches':harmonic_matches,
+             'hard_pass':d.get('hard_pass'),'score':d.get('score'),'hard_conditions':d.get('hard_conditions'),
+             'rotation_period_h':d.get('rotation',{}).get('rotation_period_h'),'bls':d.get('bls'),'events':d.get('events'),'model_comparison':d.get('model_comparison')}
+    print(json.dumps(clean_json(summary),indent=2,allow_nan=False))
     raise SystemExit(0 if positive_pass else 3)
 
 if __name__=='__main__':main()
