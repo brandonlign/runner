@@ -1,0 +1,27 @@
+name: ISEF TESS binary 6764 extraction control
+on:
+  push:
+    branches: [main]
+    paths: ['isef/TESS_BINARY_6764_EXTRACTION_TRIGGER']
+  workflow_dispatch:
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install moving-object extraction stack
+        run: pip install 'tess-asteroids==1.5.1'
+      - name: Run known published binary extraction only
+        run: |
+          python -m py_compile isef/tess_binary_6764_extraction_pilot.py
+          cd isef
+          python tess_binary_6764_extraction_pilot.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-6764-extraction-control
+          path: isef/results/tess_binary_6764_extraction_pilot/
+          if-no-files-found: warn
