@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'isef/punch_r3_primary_analysis_frozen.py'
+      - 'isef/punch_r3_primary_analysis_locked.py'
+      - 'isef/punch_r3_primary_roi_manifest.csv'
       - '.github/workflows/isef-punch-r3-primary-analysis-preflight.yml'
   workflow_dispatch:
 permissions:
@@ -18,21 +20,23 @@ jobs:
         with: {python-version: '3.12'}
       - run: pip install numpy scipy astropy requests
       - name: Syntax check
-        run: python -m py_compile isef/punch_r3_primary_analysis_frozen.py
-      - name: Verify target-open interlock
+        run: |
+          python -m py_compile isef/punch_r3_primary_analysis_frozen.py
+          python -m py_compile isef/punch_r3_primary_analysis_locked.py
+      - name: Verify target-open interlock through authoritative entrypoint
         run: |
           set +e
-          python isef/punch_r3_primary_analysis_frozen.py > /tmp/interlock.txt 2>&1
+          python isef/punch_r3_primary_analysis_locked.py > /tmp/interlock.txt 2>&1
           rc=$?
           cat /tmp/interlock.txt
           test "$rc" -ne 0
           grep -q 'REFUSING TARGET OPEN' /tmp/interlock.txt
-      - name: Verify immutable primary manifest loads without target pixels
+      - name: Verify immutable local primary manifest without target pixels
         run: |
           PYTHONPATH=isef python - <<'PY'
-          import punch_r3_primary_analysis_frozen as p
-          rows=p.load_manifest()
-          print({'n':len(rows),'first':rows[0]['timestamp_utc'],'last':rows[-1]['timestamp_utc'],'sha256':p.MANIFEST_SHA256})
+          import punch_r3_primary_analysis_locked as q
+          rows=q.load_local_manifest()
+          print({'n':len(rows),'first':rows[0]['timestamp_utc'],'last':rows[-1]['timestamp_utc'],'sha256':q.MANIFEST_SHA256})
           assert len(rows)==80
           assert rows[0]['timestamp_utc']=='2026-04-21T18:00:29Z'
           assert rows[-1]['timestamp_utc']=='2026-04-22T04:32:29Z'
@@ -58,4 +62,20 @@ jobs:
               diff=abs(primary-detail['center_px']);worst=max(worst,diff);n+=1
           print({'n':n,'worst_center_difference_px':worst})
           if worst>1e-10: raise SystemExit('detailed target fitter differs from controlled primary fitter')
+          PY
+      - name: Verify confirmatory band semantics
+        run: |
+          PYTHONPATH=isef python - <<'PY'
+          import numpy as np
+          import punch_r3_primary_analysis_locked as q
+          clean=np.zeros((80,512));eligible=np.ones(80,bool)
+          base={'status':'OK','phase_r2':.999,'spectral_concentration':.5,'growth_rate':.4,
+                'delta_bic_growth_over_step':20.,'delta_bic_growth_over_constant':20.,
+                'delta_bic_growth_over_linear':20.,'growth_preferred':True}
+          outside=q.corrected_target_decision(dict(base,wavelength=20.),clean,eligible)
+          inside=q.corrected_target_decision(dict(base,wavelength=40.),clean,eligible)
+          print({'outside':outside['classification'],'inside':inside['classification']})
+          assert outside['classification']=='SELECTED_MODE_OUTSIDE_CONFIRMATORY_24_80_PX_BAND'
+          assert not outside['statistical_pass_pending_artifact_veto']
+          assert inside['statistical_pass_pending_artifact_veto']
           PY
