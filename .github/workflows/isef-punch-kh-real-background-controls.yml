@@ -1,0 +1,36 @@
+name: ISEF PUNCH KH real-background controls
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_kh_real_background_controls.py'
+      - '.github/workflows/isef-punch-kh-real-background-controls.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy scipy astropy requests
+      - name: Run non-target real-background injections
+        id: controls
+        continue-on-error: true
+        run: python isef/punch_kh_real_background_controls.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-kh-real-background-controls
+          path: results/punch_kh_real_background_controls/
+          if-no-files-found: error
+      - name: Preserve control gate status
+        if: steps.controls.outcome == 'failure'
+        run: exit 1
