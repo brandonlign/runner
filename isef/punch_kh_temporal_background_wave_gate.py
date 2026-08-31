@@ -3,8 +3,9 @@
 
 TARGET BLIND: only 2025-09-21 Level-2 CTM v0l controls are opened. The control
 sequence is chosen mechanically as the earliest exact 48-frame contiguous
-8-minute run. Fixed E/W/N/S field locations are used without appearance-based
-selection. Each movie frame comes from a different real CTM epoch.
+8-minute run. Importing the final spatial gate also installs the prospectively
+matched 550/650-pixel E/W/N/S control fields, bracketing the corrected R3
+12.03--14.67 deg elongation range.
 """
 from __future__ import annotations
 
@@ -46,7 +47,6 @@ def list_exact_run():
 
 
 def read_cutouts(run):
-    # Fixed preregistered locations, same 81x192 field used by the estimator.
     cubes={k:[] for k in bg.PATCH_CENTERS}
     for idx,(_,name,stamp) in enumerate(run):
         url=ROOT+name
@@ -64,8 +64,6 @@ def read_cutouts(run):
 
 
 def standardize_temporal(cube):
-    # Remove only a per-epoch DC level; use one pooled robust scale for the
-    # entire 48-epoch field so epoch-to-epoch structured variation is retained.
     meds=np.nanmedian(cube,axis=(1,2))
     centered=cube-meds[:,None,None]
     frame_mad=np.nanmedian(np.abs(centered),axis=(1,2))
@@ -79,8 +77,6 @@ def standardize_temporal(cube):
 
 
 def injected_temporal(cube,peak,kind,seed=0):
-    # Reuse the already frozen synthetic mode definitions from wg, substituting
-    # the distinct real background frame at each cadence epoch.
     rng=np.random.default_rng(seed)
     y=np.arange(bg.NY)-(bg.NY-1)/2
     x=np.arange(bg.NX,dtype=float)
@@ -119,9 +115,9 @@ def trial(args):
          "kh_call":wg.full_kh_call(fit),"flagged_fraction":float(np.mean(flag)),
          "eligible_frame_fraction":float(np.mean(elig))}
     good=np.isfinite(clean)&np.isfinite(truth)
-    if np.any(good):
-        err=np.abs(clean[good]-truth[good]);out.update({"median_abs_error_px":float(np.median(err)),
-            "p90_abs_error_px":float(np.quantile(err,.90)),"valid_fraction":float(np.mean(good))})
+    err=np.abs(clean[good]-truth[good]) if np.any(good) else np.asarray([np.inf])
+    out.update({"median_abs_error_px":float(np.median(err)),"p90_abs_error_px":float(np.quantile(err,.90)),
+                "valid_fraction":float(np.mean(good))})
     if kind=="growth" and fit.get("status")=="OK":
         out.update({"wavelength_relerr":abs(fit["wavelength"]-bg.WAVELENGTH)/bg.WAVELENGTH,
                     "speed_relerr":abs(fit["phase_speed"]-bg.SPEED)/bg.SPEED,
@@ -149,15 +145,22 @@ def main():
       "positive_n":len(pos),"positive_pass_n":sum(r.get("positive_pass",False) for r in pos),
       "positive_pass_fraction":float(np.mean([r.get("positive_pass",False) for r in pos])) if pos else 0.0,
       "null_n":len(null),"null_false_kh_n":sum(r["kh_call"] for r in null),
-      "p90_of_trial_p90_error_px":float(np.quantile([r.get("p90_abs_error_px",np.inf) for r in trials],.90)),
-      "minimum_valid_fraction":float(min(r.get("valid_fraction",0.0) for r in trials)),
+      "p90_of_trial_p90_error_px":float(np.quantile([r["p90_abs_error_px"] for r in trials],.90)),
+      "minimum_valid_fraction":float(min(r["valid_fraction"] for r in trials)),
       "minimum_eligible_frame_fraction":float(min(r["eligible_frame_fraction"] for r in trials))}
-    gate=summary["positive_pass_fraction"]>=wg.POS_PASS_FRACTION_MIN and summary["null_false_kh_n"]<=wg.NULL_FALSE_KH_MAX
-    summary["gate"]="PASS" if gate else "FAIL"
+    center_ok=(summary["p90_of_trial_p90_error_px"]<=wg.CENTERLINE_P90_OF_P90_MAX and
+               summary["minimum_valid_fraction"]>=wg.CENTERLINE_MIN_VALID and
+               summary["minimum_eligible_frame_fraction"]>=wg.CENTERLINE_MIN_ELIGIBLE)
+    wave_ok=(summary["positive_pass_fraction"]>=wg.POS_PASS_FRACTION_MIN and
+             summary["null_false_kh_n"]<=wg.NULL_FALSE_KH_MAX)
+    summary["centerline_gate"]="PASS" if center_ok else "FAIL"
+    summary["wave_gate"]="PASS" if wave_ok else "FAIL"
+    summary["gate"]="PASS" if center_ok and wave_ok else "FAIL"
     report={"information_barrier":"48 distinct 2025-09-21 non-R3 L2 CTM v0l epochs only; zero R3 access",
       "selection_rule":"earliest exact contiguous 48-frame v0l run at 8-minute cadence",
+      "control_geometry":{"target_elongation_deg":[12.03047,14.66585],"control_radii_px":[550,650],"patches":bg.PATCH_CENTERS},
       "selected_files":[name for _,name,_ in run],"patch_stats":stats,"trials":trials,"summary":summary}
     (OUT/"summary.json").write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
-    print(json.dumps(summary,indent=2,sort_keys=True));return 0 if gate else 3
+    print(json.dumps(summary,indent=2,sort_keys=True));return 0 if center_ok and wave_ok else 3
 
 if __name__=="__main__":raise SystemExit(main())
