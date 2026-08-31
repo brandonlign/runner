@@ -1,0 +1,33 @@
+name: ISEF TESS binary Stage-3 frozen preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_STAGE3_PREFLIGHT_TRIGGER'
+  workflow_dispatch:
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install numpy scipy astropy requests
+      - name: Verify frozen files and syntax
+        run: |
+          test "$(wc -l < isef/tess_binary_stage3_null_controls.txt)" -eq 128
+          python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_stage3_frozen.py isef/tess_binary_stage3_preflight.py
+      - name: Reproduce development result with frozen detector
+        run: |
+          cd isef
+          python tess_binary_stage3_preflight.py
+      - name: Preserve preflight
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage3-preflight
+          path: isef/results/tess_binary_stage3_preflight/
+          if-no-files-found: warn
