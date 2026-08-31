@@ -1,0 +1,31 @@
+name: ISEF TESS binary Year8 geometry screen
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_YEAR8_GEOMETRY_SCREEN_TRIGGER'
+  workflow_dispatch:
+jobs:
+  geometry:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install metadata geometry stack
+        run: pip install numpy astropy requests tesswcs
+      - name: Verify syntax
+        run: python -m py_compile isef/tess_binary_year8_geometry_screen.py
+      - name: Run geometry-only screen
+        run: |
+          cd isef
+          python tess_binary_year8_geometry_screen.py
+      - name: Preserve metadata-only result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-year8-geometry-screen
+          path: isef/results/tess_binary_year8_geometry_screen/
+          if-no-files-found: warn
