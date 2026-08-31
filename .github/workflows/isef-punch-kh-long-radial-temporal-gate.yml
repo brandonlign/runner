@@ -23,7 +23,18 @@ jobs:
       - name: Run final long/radial 48-epoch temporal gate
         id: gate
         continue-on-error: true
-        run: python isef/punch_kh_long_radial_temporal_gate.py
+        run: |
+          for attempt in 1 2 3; do
+            echo "Temporal gate transport attempt ${attempt}/3"
+            if python isef/punch_kh_long_radial_temporal_gate.py; then
+              exit 0
+            fi
+            rc=$?
+            echo "Attempt ${attempt} exited ${rc}; retrying only because no completed PASS/FAIL artifact exists yet."
+            rm -rf results/punch_kh_long_radial_temporal_gate
+            sleep $((20 * attempt))
+          done
+          exit 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
