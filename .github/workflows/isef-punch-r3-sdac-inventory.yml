@@ -1,0 +1,36 @@
+name: ISEF PUNCH R3 SDAC metadata inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_r3_sdac_inventory.py'
+      - '.github/workflows/isef-punch-r3-sdac-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Query SDAC directory metadata only
+        id: probe
+        continue-on-error: true
+        run: python isef/punch_r3_sdac_inventory.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-r3-sdac-inventory
+          path: results/punch_r3_sdac_inventory/
+          if-no-files-found: error
+      - name: Preserve gate status
+        if: steps.probe.outcome == 'failure'
+        run: exit 1
