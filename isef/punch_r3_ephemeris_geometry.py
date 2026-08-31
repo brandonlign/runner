@@ -10,6 +10,7 @@ celestial WCS header at analysis time.
 from __future__ import annotations
 
 import json
+import time as time_module
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -26,37 +27,52 @@ PRIMARY_N = 80
 HOLDOUT_START = datetime(2026,4,22,4,56,29,tzinfo=timezone.utc)
 HOLDOUT_N = 53
 CADENCE_MIN = 8
+BATCH = 12
+RETRIES = 5
 
 
 def epochs(start: datetime, n: int):
     return [start + timedelta(minutes=CADENCE_MIN*i) for i in range(n)]
 
 
+def horizons_batch(times: list[datetime]):
+    t=Time(times)
+    last=None
+    for attempt in range(RETRIES):
+        try:
+            obj=Horizons(id="C/2025 R3",id_type="designation",location="500@399",epochs=t.jd.tolist())
+            return obj.ephemerides(quantities="1,3")
+        except Exception as exc:
+            last=exc
+            if attempt+1<RETRIES:
+                time_module.sleep(2*(attempt+1))
+    raise RuntimeError(f"Horizons failed after {RETRIES} attempts") from last
+
+
 def query_rows(label: str, times: list[datetime]):
-    t = Time(times)
-    # Horizons accepts comet designations directly with id_type='designation'.
-    obj = Horizons(id="C/2025 R3", id_type="designation", location="500@399", epochs=t.jd.tolist())
-    eph = obj.ephemerides(quantities="1,3")
     rows=[]
-    for i, dt in enumerate(times):
-        comet=SkyCoord(float(eph["RA"][i])*u.deg,float(eph["DEC"][i])*u.deg,frame="icrs")
-        sun=get_sun(Time(dt)).icrs
-        # PA is measured east of north from the Sun toward the comet. Continuing
-        # in this direction from the nucleus is the frozen projected anti-solar
-        # downstream-axis prior.
-        pa=float(sun.position_angle(comet).to_value(u.deg))
-        sep=float(sun.separation(comet).to_value(u.deg))
-        rows.append({
-            "partition":label,
-            "timestamp_utc":dt.isoformat().replace("+00:00","Z"),
-            "jd_utc":float(t[i].jd),
-            "comet_ra_deg":float(eph["RA"][i]),
-            "comet_dec_deg":float(eph["DEC"][i]),
-            "sun_ra_deg":float(sun.ra.deg),
-            "sun_dec_deg":float(sun.dec.deg),
-            "sun_comet_separation_deg":sep,
-            "antisolar_pa_east_of_north_deg":pa,
-        })
+    for start in range(0,len(times),BATCH):
+        chunk=times[start:start+BATCH]
+        tc=Time(chunk)
+        eph=horizons_batch(chunk)
+        if len(eph)!=len(chunk):
+            raise RuntimeError(f"Horizons row mismatch: {len(eph)} != {len(chunk)}")
+        for i,dt in enumerate(chunk):
+            comet=SkyCoord(float(eph["RA"][i])*u.deg,float(eph["DEC"][i])*u.deg,frame="icrs")
+            sun=get_sun(Time(dt)).icrs
+            pa=float(sun.position_angle(comet).to_value(u.deg))
+            sep=float(sun.separation(comet).to_value(u.deg))
+            rows.append({
+                "partition":label,
+                "timestamp_utc":dt.isoformat().replace("+00:00","Z"),
+                "jd_utc":float(tc[i].jd),
+                "comet_ra_deg":float(eph["RA"][i]),
+                "comet_dec_deg":float(eph["DEC"][i]),
+                "sun_ra_deg":float(sun.ra.deg),
+                "sun_dec_deg":float(sun.dec.deg),
+                "sun_comet_separation_deg":sep,
+                "antisolar_pa_east_of_north_deg":pa,
+            })
     return rows
 
 
@@ -64,6 +80,8 @@ def main():
     primary=epochs(PRIMARY_START,PRIMARY_N)
     holdout=epochs(HOLDOUT_START,HOLDOUT_N)
     rows=query_rows("primary",primary)+query_rows("holdout",holdout)
+    if len(rows)!=PRIMARY_N+HOLDOUT_N:
+        raise RuntimeError("incomplete frozen ephemeris geometry")
     report={
       "information_barrier":"JPL Horizons + Astropy Sun ephemeris only; no PUNCH target image pixels opened",
       "observer":"Earth geocenter (500@399); spacecraft-vs-geocenter parallax to be included as geometric systematic if needed",
