@@ -1,0 +1,64 @@
+name: ISEF TESS binary Stage1 frozen null gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_STAGE1_NULL_TRIGGER'
+  workflow_dispatch:
+jobs:
+  null-shard:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen detector dependencies
+        run: pip install numpy scipy astropy requests
+      - name: Verify code and control manifest
+        run: |
+          python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_stage1_detector.py isef/tess_binary_stage1_null_shard.py
+          test "$(sha256sum isef/tess_binary_tssys_null_controls.txt | awk '{print $1}')" = "760298f1dd8ba8d7e97bfb70af3d0ed538ba6062066e1ca1bc78c6a6d0a7f6de"
+      - name: Run exact Stage-1 null shard
+        run: |
+          cd isef
+          python tess_binary_stage1_null_shard.py
+      - name: Preserve shard result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage1-null-shard-${{ matrix.shard }}
+          path: isef/results/tess_binary_stage1_null/shard_${{ matrix.shard }}/
+          if-no-files-found: warn
+  aggregate:
+    needs: null-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download all shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: isef-tess-binary-stage1-null-shard-*
+          path: isef/results/tess_binary_stage1_null_download
+      - name: Apply frozen aggregate gate
+        run: |
+          cd isef
+          python tess_binary_stage1_null_aggregate.py
+      - name: Preserve aggregate result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage1-null-aggregate
+          path: isef/results/tess_binary_stage1_null_aggregate/
+          if-no-files-found: warn
