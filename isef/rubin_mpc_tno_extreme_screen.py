@@ -84,6 +84,7 @@ def flatten(obj: Any, prefix=''):
 
 
 def extract_by_alias(obj: Any, aliases):
+    """Fallback parser for scalar-key representations."""
     aliases = {norm_key(x) for x in aliases}
     hits = []
     for path, key, value in flatten(obj):
@@ -91,13 +92,48 @@ def extract_by_alias(obj: Any, aliases):
             x = numeric(value)
             if x is not None:
                 hits.append((path, x))
-    # Prefer top-level/orbital-element-looking paths, then shortest path.
     if not hits:
         return None, []
     rank_words = ('kepler', 'element', 'orbit')
     hits.sort(key=lambda z: (0 if any(w in z[0].lower() for w in rank_words) else 1,
                              len(z[0]), z[0]))
     return hits[0][1], hits
+
+
+def coefficient_map(block: Any):
+    """Decode documented mpc_orb COM/KEP coefficient arrays.
+
+    MPC's current public schema stores orbital coordinates as parallel
+    coefficient_names / coefficient_values arrays.  This is a schema adapter
+    only; it does not alter the frozen scientific screen.
+    """
+    if not isinstance(block, dict):
+        return {}, {}
+    names = block.get('coefficient_names') or []
+    values = block.get('coefficient_values') or []
+    uncs = block.get('coefficient_uncertainties') or []
+    vals = {}
+    uncmap = {}
+    for j, name in enumerate(names):
+        key = norm_key(name)
+        if j < len(values):
+            x = numeric(values[j])
+            if x is not None:
+                vals[key] = x
+        if j < len(uncs):
+            u = numeric(uncs[j])
+            if u is not None:
+                uncmap[key] = u
+    return vals, uncmap
+
+
+def first_coeff(maps, aliases):
+    for label, values in maps:
+        for alias in aliases:
+            k = norm_key(alias)
+            if k in values:
+                return values[k], f'{label}.coefficient_values[{k}]'
+    return None, None
 
 
 def orbit_for(desig: str):
@@ -107,31 +143,57 @@ def orbit_for(desig: str):
     except Exception as exc:
         raise RuntimeError(f'no mpc_orb for {desig}: {raw!r}') from exc
 
-    a, ah = extract_by_alias(orb, ['a', 'semimajor_axis', 'semimajoraxis'])
-    e, eh = extract_by_alias(orb, ['e', 'eccentricity'])
-    inc, ih = extract_by_alias(orb, ['i', 'inclination'])
-    q, qh = extract_by_alias(orb, ['q', 'perihelion_distance', 'periheliondistance'])
+    kep, kep_unc = coefficient_map(orb.get('KEP'))
+    com, com_unc = coefficient_map(orb.get('COM'))
+    maps = [('KEP', kep), ('COM', com)]
 
-    # If q is not explicitly present, derive it only from extracted a/e.
+    a, ap = first_coeff(maps, ['a', 'semimajor_axis', 'semimajoraxis'])
+    e, ep = first_coeff(maps, ['e', 'eccentricity'])
+    inc, ip = first_coeff(maps, ['i', 'inclination'])
+    q, qp = first_coeff(maps, ['q', 'perihelion_distance', 'periheliondistance'])
+
+    # Documented COM commonly provides q/e rather than a; derive a exactly
+    # from q/(1-e).  Conversely derive q from a/e when KEP is available.
+    if a is None and q is not None and e is not None and e < 1.0:
+        a = q / (1.0 - e)
+        ap = 'derived q/(1-e)'
     if q is None and a is not None and e is not None:
         q = a * (1.0 - e)
+        qp = 'derived a*(1-e)'
+
+    # Retain old scalar-key parser only as a backwards-compatible fallback.
+    if a is None:
+        a, ah = extract_by_alias(orb, ['a', 'semimajor_axis', 'semimajoraxis'])
+        if a is not None: ap = ah[0][0]
+    if e is None:
+        e, eh = extract_by_alias(orb, ['e', 'eccentricity'])
+        if e is not None: ep = eh[0][0]
+    if inc is None:
+        inc, ih = extract_by_alias(orb, ['i', 'inclination'])
+        if inc is not None: ip = ih[0][0]
+    if q is None:
+        q, qh = extract_by_alias(orb, ['q', 'perihelion_distance', 'periheliondistance'])
+        if q is not None: qp = qh[0][0]
+    if a is None and q is not None and e is not None and e < 1.0:
+        a = q / (1.0 - e); ap = 'derived q/(1-e)'
+    if q is None and a is not None and e is not None:
+        q = a * (1.0 - e); qp = 'derived a*(1-e)'
 
     if a is None or e is None or inc is None or q is None:
         return {
             'desig': desig, 'status': 'UNPARSED_ORBIT',
-            'candidate_key_paths': {
-                'a': ah[:10], 'e': eh[:10], 'i': ih[:10], 'q': qh[:10]
-            },
             'raw_top_keys': sorted(orb.keys()),
+            'structured_blocks': {
+                'KEP_names': list((orb.get('KEP') or {}).get('coefficient_names') or []),
+                'COM_names': list((orb.get('COM') or {}).get('coefficient_names') or []),
+            },
         }
     return {
         'desig': desig, 'status': 'OK', 'a_au': a, 'e': e,
         'i_deg': inc, 'q_au': q,
-        'parse_paths': {
-            'a': ah[0][0] if ah else 'derived/unknown',
-            'e': eh[0][0] if eh else 'unknown',
-            'i': ih[0][0] if ih else 'unknown',
-            'q': qh[0][0] if qh else 'derived a*(1-e)',
+        'parse_paths': {'a': ap, 'e': ep, 'i': ip, 'q': qp},
+        'coefficient_uncertainties_if_supplied': {
+            'KEP': kep_unc, 'COM': com_unc,
         },
     }
 
@@ -162,8 +224,6 @@ def earliest_observation(desig: str):
     if not rows:
         return {'status': 'NO_OBSERVATIONS'}
 
-    # ADES obsTime is ISO. Sort textual ISO timestamps; all public values use a
-    # sortable year-first representation. Fall back to jd/mjd if necessary.
     def key(r):
         for k in ('obsTime', 'obstime', 'obs_time'):
             if r.get(k): return str(r[k])
