@@ -1,0 +1,63 @@
+name: ISEF PUNCH KH long spatial sharded gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_kh_long_spatial_shard.py'
+      - 'isef/punch_kh_long_spatial_aggregate.py'
+      - '.github/workflows/isef-punch-kh-long-spatial-sharded.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shard:
+    strategy:
+      fail-fast: false
+      matrix:
+        fi: [0, 1, 2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests
+      - name: Prefetch frozen non-R3 control FITS
+        run: python isef/punch_kh_prefetch_controls.py
+      - name: Run exact frozen spatial file shard
+        env:
+          PUNCH_SPATIAL_FILE_INDEX: ${{ matrix.fi }}
+        run: python isef/punch_kh_long_spatial_shard.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: punch-long-spatial-shard-${{ matrix.fi }}
+          path: results/punch_kh_long_spatial_shard_${{ matrix.fi }}/
+          if-no-files-found: error
+  aggregate:
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: punch-long-spatial-shard-*
+          path: shards
+          merge-multiple: false
+      - name: Aggregate with canonical frozen gate equations
+        id: gate
+        continue-on-error: true
+        run: python isef/punch_kh_long_spatial_aggregate.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-kh-long-spatial-sharded-gate
+          path: results/punch_kh_long_spatial_sharded_gate/
+          if-no-files-found: error
+      - name: Preserve scientific gate status
+        if: steps.gate.outcome == 'failure'
+        run: exit 1
