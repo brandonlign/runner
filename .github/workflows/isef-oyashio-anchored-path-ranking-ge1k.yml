@@ -1,0 +1,27 @@
+name: ISEF Oyashio frozen anchored path ranking >=1kpc
+on:
+  push:
+    branches: [main]
+    paths: ['isef/OYASHIO_ANCHORED_PATH_RANKING_GE1K_TRIGGER']
+  workflow_dispatch:
+jobs:
+  rank:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy astroquery sep requests acstools
+      - name: Verify frozen analyzer syntax
+        run: python -m py_compile isef/oyashio_broad_anchor_count_pilot.py isef/oyashio_broad_anchor_exactzp.py isef/oyashio_anchored_path_ranking.py isef/oyashio_anchored_path_ranking_locked.py isef/oyashio_anchored_path_ranking_ge1k_locked.py
+      - name: Run preregistered >=1 kpc whole-field ranking
+        run: |
+          cd isef
+          python oyashio_anchored_path_ranking_ge1k_locked.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-oyashio-frozen-anchored-path-ranking-ge1k
+          path: isef/results/oyashio_anchored_path_ranking/
+          if-no-files-found: warn
