@@ -1,0 +1,25 @@
+name: ISEF MATLAS 74 canonical HAP product freeze
+on:
+  push:
+    branches: [main]
+    paths: ['isef/MATLAS_74_CANONICAL_HAP_PRODUCT_FREEZE_TRIGGER']
+  workflow_dispatch:
+jobs:
+  freeze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy astroquery
+      - run: |
+          python -m py_compile isef/matlas_hst_sample_manifest_metadata.py isef/matlas_74_canonical_hap_product_freeze.py
+          cd isef
+          python matlas_74_canonical_hap_product_freeze.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-matlas-74-canonical-hap-product-freeze
+          path: isef/results/matlas_74_canonical_hap_product_freeze/
+          if-no-files-found: error
