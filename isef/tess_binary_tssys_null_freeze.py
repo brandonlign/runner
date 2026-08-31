@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Freeze historical TSSYS-DR1 null controls without opening light curves.
 
-Only catalogue/list metadata are read.  The selected `.lc` files are NOT
-requested by this program.  Binary/companion/contact-binary exclusions are
+Only catalogue/list metadata are read. The selected `.lc` files are NOT
+requested by this program. Binary/companion/contact-binary exclusions are
 constructed from Johnston's Archive before SHA-256 selection.
+
+Revision provenance: the first metadata-only attempt used mag<=13.5, n>=600,
+period 3--30 h, amplitude 0.03--0.40 and produced only 56 eligible objects,
+short of the preregistered >=128 controls. No light-curve value was opened.
+This revision broadens only null-pool eligibility, before outcome data, while
+leaving the frozen scientific detector untouched.
 """
 from __future__ import annotations
 import hashlib, json, re
@@ -17,13 +23,14 @@ JOHN_CONF='https://johnstonsarchive.net/astro/asteroidmoons.html'
 JOHN_POSS='https://johnstonsarchive.net/astro/asteroidmoonsq.html'
 JOHN_CONTACT='https://johnstonsarchive.net/astro/contactbinast.html'
 N_CONTROL=128
-MAG_MAX=13.5
-N_GOOD_MIN=600
-PERIOD_MIN_H=3.0
-PERIOD_MAX_H=30.0
-AMP_MIN=0.03
-AMP_MAX=0.40
-LC_TYPES={'P1','P2'}
+MAG_MAX=16.0
+N_GOOD_MIN=400
+PERIOD_MIN_H=2.0
+PERIOD_MAX_H=80.0
+AMP_MIN=0.02
+AMP_MAX=0.60
+LC_TYPES={'P1','P2','P1P2'}
+FAILED_FIRST_ELIGIBILITY={'median_tess_mag_max':13.5,'n_good_min':600,'period_h':[3.0,30.0],'amplitude_mag':[0.03,0.40],'lc_types':['P1','P2'],'eligible_n':56}
 
 
 def get(url):
@@ -43,11 +50,9 @@ def table_first_column_numbers(html):
 
 def exclusion_sets():
     hconf=get(JOHN_CONF);hposs=get(JOHN_POSS);hcontact=get(JOHN_CONTACT)
-    # Confirmed/probable list is largely HTML lists with numbered designations in parentheses.
     confirmed={int(x) for x in re.findall(r'\(([0-9]{1,7})\)',hconf)}
     possible=table_first_column_numbers(hposs)
     contact=table_first_column_numbers(hcontact)
-    # Over-exclusion is scientifically safe for a null-control pool.
     return confirmed,possible,contact,{
         'confirmed_page_sha256':hashlib.sha256(hconf.encode()).hexdigest(),
         'possible_page_sha256':hashlib.sha256(hposs.encode()).hexdigest(),
@@ -88,6 +93,8 @@ def main():
     rep={
       'role':'metadata-only historical-null freeze; no TSSYS light-curve values opened',
       'lightcurve_values_opened':False,
+      'selection_revision_reason':'first metadata-only box produced 56 < preregistered 128; broadened before any selected LC was opened',
+      'failed_first_eligibility':FAILED_FIRST_ELIGIBILITY,
       'sources':{'tssys_release_merge':MERGE,'johnston_confirmed_probable':JOHN_CONF,'johnston_possible_reports':JOHN_POSS,'johnston_contact_binary':JOHN_CONTACT},
       'source_hashes':{'tssys_release_merge_sha256':hashlib.sha256(merge_text.encode()).hexdigest(),**hashes},
       'catalogue_row_n':len(rows),'exclusion_counts':{'confirmed_regex_n':len(confirmed),'possible_table_n':len(possible),'contact_table_n':len(contact),'union_n':len(excluded)},
