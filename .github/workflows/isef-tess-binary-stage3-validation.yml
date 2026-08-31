@@ -1,0 +1,97 @@
+name: ISEF TESS binary Stage-3 historical validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_STAGE3_VALIDATION_TRIGGER'
+  workflow_dispatch:
+jobs:
+  positive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy scipy astropy requests
+      - name: Verify frozen detector and validation wrapper syntax
+        run: python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_stage3_frozen.py isef/tess_binary_stage3_validate.py
+      - name: Open untouched 1803 positive and evaluate frozen gate
+        run: |
+          cd isef
+          python tess_binary_stage3_validate.py positive
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage3-positive
+          path: isef/results/tess_binary_stage3_validation/positive/
+          if-no-files-found: warn
+
+  nulls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy scipy astropy requests
+      - name: Verify frozen manifest and code
+        run: |
+          test "$(wc -l < isef/tess_binary_stage3_null_controls.txt)" -eq 128
+          python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_stage3_frozen.py isef/tess_binary_stage3_validate.py
+      - name: Open only this frozen null shard and evaluate detector
+        run: |
+          cd isef
+          python tess_binary_stage3_validate.py null-shard ${{ matrix.shard }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage3-null-${{ matrix.shard }}
+          path: isef/results/tess_binary_stage3_validation/null-shard-${{ matrix.shard }}/
+          if-no-files-found: warn
+
+  aggregate:
+    runs-on: ubuntu-24.04
+    needs: [positive, nulls]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download all validation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: isef-tess-binary-stage3-*
+          path: downloaded
+      - name: Reconstruct deterministic result tree
+        run: |
+          mkdir -p isef/results/tess_binary_stage3_validation/positive
+          cp downloaded/isef-tess-binary-stage3-positive/report.json isef/results/tess_binary_stage3_validation/positive/report.json
+          for i in 0 1 2 3 4 5 6 7; do
+            mkdir -p isef/results/tess_binary_stage3_validation/null-shard-$i
+            cp downloaded/isef-tess-binary-stage3-null-$i/report.json isef/results/tess_binary_stage3_validation/null-shard-$i/report.json
+          done
+      - name: Apply frozen specificity gate
+        run: |
+          cd isef
+          python tess_binary_stage3_validate.py aggregate
+      - name: Apply frozen overall validation gate
+        if: always()
+        run: |
+          cd isef
+          python tess_binary_stage3_validate.py final
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage3-validation-final
+          path: |
+            isef/results/tess_binary_stage3_validation/null-aggregate.json
+            isef/results/tess_binary_stage3_validation/final.json
+          if-no-files-found: warn
