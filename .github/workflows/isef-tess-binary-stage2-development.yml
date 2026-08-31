@@ -1,0 +1,31 @@
+name: ISEF TESS binary Stage-2 development
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_STAGE2_DEVELOPMENT_TRIGGER'
+  workflow_dispatch:
+jobs:
+  develop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install numpy scipy astropy requests
+      - name: Verify syntax
+        run: python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_stage2_development.py
+      - name: Run Stage-2 development on 6764 only
+        run: |
+          cd isef
+          python tess_binary_stage2_development.py
+      - name: Preserve result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage2-development
+          path: isef/results/tess_binary_stage2_development/
+          if-no-files-found: warn
