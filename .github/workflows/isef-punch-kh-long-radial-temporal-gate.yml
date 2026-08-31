@@ -24,15 +24,20 @@ jobs:
         id: gate
         continue-on-error: true
         run: |
+          set +e
           for attempt in 1 2 3; do
             echo "Temporal gate transport attempt ${attempt}/3"
-            if python isef/punch_kh_long_radial_temporal_gate.py; then
-              exit 0
-            fi
+            python isef/punch_kh_long_radial_temporal_gate.py
             rc=$?
-            echo "Attempt ${attempt} exited ${rc}; retrying only because no completed PASS/FAIL artifact exists yet."
+            if [ -f results/punch_kh_long_radial_temporal_gate/summary.json ]; then
+              echo "Completed scientific summary exists; preserving PASS/FAIL result with exit ${rc}."
+              exit "${rc}"
+            fi
+            echo "Attempt ${attempt} exited ${rc} before a completed scientific summary; treating as runtime/transport failure."
             rm -rf results/punch_kh_long_radial_temporal_gate
-            sleep $((20 * attempt))
+            if [ "${attempt}" -lt 3 ]; then
+              sleep $((20 * attempt))
+            fi
           done
           exit 1
       - uses: actions/upload-artifact@v4
