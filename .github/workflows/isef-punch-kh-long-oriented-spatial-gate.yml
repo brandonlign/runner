@@ -1,0 +1,37 @@
+name: ISEF PUNCH KH long oriented spatial gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_kh_long_oriented_spatial_gate.py'
+      - 'isef/punch_kh_real_background_controls_v2.py'
+      - 'isef/punch_kh_real_background_wave_gate.py'
+      - 'isef/punch_kh_prefetch_controls.py'
+      - '.github/workflows/isef-punch-kh-long-oriented-spatial-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  longspatial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests
+      - name: Prefetch frozen non-R3 control FITS
+        run: python isef/punch_kh_prefetch_controls.py
+      - name: Run final long/oriented spatial gate
+        id: gate
+        continue-on-error: true
+        run: python isef/punch_kh_long_oriented_spatial_gate.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-kh-long-oriented-spatial-gate
+          path: results/punch_kh_long_oriented_spatial_gate/
+          if-no-files-found: error
+      - name: Preserve scientific gate status
+        if: steps.gate.outcome == 'failure'
+        run: exit 1
