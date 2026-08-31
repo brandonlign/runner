@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,7 +42,7 @@ FILE_RE = re.compile(r"PUNCH_L([0-3])_([A-Z0-9]+)_(\d{14})_v([A-Za-z0-9]+)\.fits
 
 def parse_listing(url: str):
     try:
-        r = requests.get(url, timeout=45)
+        r = requests.get(url, timeout=(5, 12))
         status = r.status_code
         if status != 200:
             return status, [], r.text[:500]
@@ -78,18 +79,18 @@ def summarize(files):
     unique_times = sorted(by_time)
     selected = []
     for t in unique_times:
-        # Version labels sort lexicographically under the PUNCH documented scheme.
         selected.append(sorted(by_time[t], key=lambda x: x["version"])[-1])
 
     dts = [datetime.fromisoformat(x) for x in unique_times]
     gaps = [(b-a).total_seconds()/60 for a,b in zip(dts[:-1], dts[1:])]
+    gaps_sorted = sorted(gaps)
     return {
         "n_fits_all_versions_in_window": len(inwin),
         "n_unique_epochs": len(unique_times),
         "versions": sorted({f["version"] for f in inwin}),
         "first_epoch_utc": unique_times[0] if unique_times else None,
         "last_epoch_utc": unique_times[-1] if unique_times else None,
-        "median_cadence_min": sorted(gaps)[len(gaps)//2] if gaps else None,
+        "median_cadence_min": gaps_sorted[len(gaps_sorted)//2] if gaps_sorted else None,
         "max_gap_min": max(gaps) if gaps else None,
         "selected_newest_per_epoch": selected,
     }
@@ -102,14 +103,36 @@ def main():
         "products": {},
     }
 
+    jobs = []
     for label, level, code in PRODUCTS:
+        for day in DATES:
+            url = f"{ROOT}/{level}/{code}/{day}/"
+            jobs.append((label, day, url))
+
+    fetched = {}
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        future_map = {pool.submit(parse_listing, url): (label, day, url) for label, day, url in jobs}
+        for fut in as_completed(future_map):
+            label, day, url = future_map[fut]
+            status, files, error = fut.result()
+            fetched[(label, day)] = {
+                "url": url,
+                "http_status": status,
+                "n_fits_links": len(files),
+                "error": error,
+                "files": files,
+            }
+
+    for label, _, _ in PRODUCTS:
         all_files = []
         listings = []
         for day in DATES:
-            url = f"{ROOT}/{level}/{code}/{day}/"
-            status, files, error = parse_listing(url)
-            listings.append({"url": url, "http_status": status, "n_fits_links": len(files), "error": error})
-            all_files.extend(files)
+            rec = fetched.get((label, day), {
+                "url": "missing", "http_status": None, "n_fits_links": 0,
+                "error": "future missing", "files": [],
+            })
+            listings.append({k: rec[k] for k in ["url", "http_status", "n_fits_links", "error"]})
+            all_files.extend(rec["files"])
         result["products"][label] = {"listings": listings, **summarize(all_files)}
 
     l2 = result["products"]["L2_CTM"]
@@ -129,7 +152,12 @@ def main():
         classification = "PUBLIC_SEQUENCE_ACCESS_FAIL"
 
     result["classification"] = classification
-    result["best_epoch_counts"] = {"L2_CTM": l2["n_unique_epochs"], "L1_any_CR": l1_best, "L0_any_CR": l0_best, "L3_any_clear": l3_best}
+    result["best_epoch_counts"] = {
+        "L2_CTM": l2["n_unique_epochs"],
+        "L1_any_CR": l1_best,
+        "L0_any_CR": l0_best,
+        "L3_any_clear": l3_best,
+    }
 
     (OUT / "summary.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, indent=2, sort_keys=True))
