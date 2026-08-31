@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """Authoritative lock wrapper for the frozen PUNCH R3 primary analyzer.
 
-This wrapper fixes only pre-target provenance/decision semantics discovered by
-no-pixel preflight. It does not change extraction, Gaussian fitting, masking,
-mode inference, growth models, thresholds, or any target measurement.
+This wrapper fixes only provenance/decision/interface defects while preserving
+the frozen target measurement itself. It does not change extraction, Gaussian
+fitting, masking, mode inference, growth models, thresholds, or any target
+measurement.
 
-It remains protected by the underlying explicit target-open authorization
-interlock. No workflow authorizing target access exists unless/ until the two
-final real-background gates pass scientifically.
+The centroid return-arity adapter below was added after the first authorized
+primary execution opened the 80 primary epochs but crashed before producing or
+printing a scientific result. The adapter executes the exact frozen centroid
+routine unchanged and only captures the raw centerline at its already-existing
+call to the frozen mask function, so the caller receives the four artifacts it
+was written to unpack: raw, clean, flag, eligible.
+
+The underlying explicit target-open authorization interlock remains active.
+The 53-epoch late holdout is not referenced or opened here.
 """
 from __future__ import annotations
 
@@ -26,6 +33,9 @@ LOCAL_MANIFEST = Path(__file__).with_name('punch_r3_primary_roi_manifest.csv')
 # a796ca666e26b97f7b9d3fe45f42abb9a215504e.
 MANIFEST_SHA256 = 'b47e5da740e4481db9643c8ccf44fa9171c29c8bbb70e8fa74dcbf3ed76c7488'
 
+# Preserve an immutable reference to the exact frozen centroid implementation.
+_FROZEN_CENTROID_CENTERLINE = p.centroid_centerline
+
 
 def load_local_manifest():
     raw=LOCAL_MANIFEST.read_bytes()
@@ -42,6 +52,31 @@ def load_local_manifest():
         for k in ('nucleus_x_0based','nucleus_y_0based','downstream_ux','downstream_uy','elongation_deg','antisolar_pa_deg'):
             row[k]=float(row[k])
     return rows
+
+
+def centroid_centerline_with_raw(z):
+    """Compatibility adapter around the exact frozen centroid calculation.
+
+    The frozen function already computes ``out`` and then returns only
+    ``bg.mask_center(out)`` (clean, flag, eligible), while its frozen caller
+    expects raw, clean, flag, eligible. Capture that exact pre-mask ``out`` at
+    the existing mask call; do not recompute, refit, or alter any value.
+    """
+    frozen_mask=p.bg.mask_center
+    captured={}
+
+    def capture_mask(raw):
+        captured['raw']=np.asarray(raw,float).copy()
+        return frozen_mask(raw)
+
+    p.bg.mask_center=capture_mask
+    try:
+        clean,flag,eligible=_FROZEN_CENTROID_CENTERLINE(z)
+    finally:
+        p.bg.mask_center=frozen_mask
+    if 'raw' not in captured:
+        raise RuntimeError('centroid compatibility adapter failed to capture frozen raw centerline')
+    return captured['raw'],clean,flag,eligible
 
 
 def corrected_target_decision(fit,clean,eligible):
@@ -96,12 +131,14 @@ def postprocess_secondary():
         sec['strengthening_requires_primary_confirmatory_band']=True
     d['provenance']['authoritative_entrypoint']='isef/punch_r3_primary_analysis_locked.py'
     d['provenance']['manifest_source']='local hash-locked runner copy; identical science-repo provenance copy'
+    d['provenance']['post_open_interface_repair']='centroid return-arity adapter only; exact frozen centroid and mask calculations unchanged; first authorized run crashed before result emission'
     path.write_text(json.dumps(d,indent=2,sort_keys=True)+'\n')
 
 
 def main():
     p.load_manifest=load_local_manifest
     p.target_decision=corrected_target_decision
+    p.centroid_centerline=centroid_centerline_with_raw
     p.MANIFEST_URL='local:isef/punch_r3_primary_roi_manifest.csv'
     p.MANIFEST_SHA256=MANIFEST_SHA256
     rc=p.main()
