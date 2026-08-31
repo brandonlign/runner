@@ -1,0 +1,26 @@
+name: ISEF TESS binary Year8 visibility pilot
+on:
+  push:
+    branches: [main]
+    paths: ['isef/TESS_BINARY_YEAR8_VISIBILITY_PILOT_TRIGGER']
+  workflow_dispatch:
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install numpy pandas requests tess-ephem
+      - name: Query metadata and ephemerides only
+        run: |
+          python -m py_compile isef/tess_binary_year8_visibility_pilot.py
+          cd isef
+          python tess_binary_year8_visibility_pilot.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-year8-visibility-pilot
+          path: isef/results/tess_binary_year8_visibility_pilot/
+          if-no-files-found: warn
