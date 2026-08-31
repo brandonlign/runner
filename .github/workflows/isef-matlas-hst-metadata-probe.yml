@@ -1,0 +1,32 @@
+name: ISEF MATLAS HST metadata probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/MATLAS_HST_METADATA_PROBE_TRIGGER'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install metadata-only MAST dependency
+        run: pip install astroquery
+      - name: Verify and run target-blind MAST inventory
+        run: |
+          python -m py_compile isef/matlas_hst_metadata_probe.py
+          cd isef
+          python matlas_hst_metadata_probe.py
+      - name: Preserve metadata-only inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-matlas-hst-metadata-probe
+          path: isef/results/matlas_hst_metadata_probe/report.json
+          if-no-files-found: error
