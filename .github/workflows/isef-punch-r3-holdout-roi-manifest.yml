@@ -1,0 +1,31 @@
+name: ISEF PUNCH R3 late-holdout ROI manifest freeze
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/PUNCH_R3_HOLDOUT_ROI_MANIFEST_TRIGGER'
+  workflow_dispatch:
+
+jobs:
+  manifest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install header-only geometry dependencies
+        run: pip install numpy astropy astroquery fsspec requests
+      - name: Compile and run sealed holdout geometry freeze
+        run: |
+          python -m py_compile isef/punch_r3_holdout_roi_manifest.py
+          cd isef
+          python punch_r3_holdout_roi_manifest.py
+      - name: Preserve holdout header-only geometry artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-punch-r3-holdout-roi-manifest-sealed
+          path: isef/results/punch_r3_holdout_roi_manifest/
+          if-no-files-found: error
