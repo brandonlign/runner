@@ -1,0 +1,50 @@
+name: ISEF PUNCH R3 primary analysis preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_r3_primary_analysis_frozen.py'
+      - '.github/workflows/isef-punch-r3-primary-analysis-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests
+      - name: Syntax check
+        run: python -m py_compile isef/punch_r3_primary_analysis_frozen.py
+      - name: Verify target-open interlock
+        run: |
+          set +e
+          python isef/punch_r3_primary_analysis_frozen.py > /tmp/interlock.txt 2>&1
+          rc=$?
+          cat /tmp/interlock.txt
+          test "$rc" -ne 0
+          grep -q 'REFUSING TARGET OPEN' /tmp/interlock.txt
+      - name: Verify detailed ridge center equals controlled fitter
+        run: |
+          PYTHONPATH=isef python - <<'PY'
+          import numpy as np
+          import punch_kh_real_background_controls_v2 as bg
+          import punch_r3_primary_analysis_frozen as p
+          rng=np.random.default_rng(20260831)
+          y=np.arange(p.NY)-(p.NY-1)/2
+          worst=0.0
+          n=0
+          for _ in range(100):
+              b=rng.normal(0,.2);m=rng.normal(0,.01);a=rng.uniform(.5,8);c=rng.uniform(-8,8);s=rng.uniform(1.5,6)
+              flux=b+m*y+a*np.exp(-.5*((y-c)/s)**2)+rng.normal(0,.08,len(y))
+              primary=bg.fitcol(y,flux)
+              detail=p.fitcol_detailed(y,flux)
+              if detail is None or not np.isfinite(primary):
+                  raise SystemExit('unexpected fit failure in equivalence preflight')
+              diff=abs(primary-detail['center_px']);worst=max(worst,diff);n+=1
+          print({'n':n,'worst_center_difference_px':worst})
+          if worst>1e-10: raise SystemExit('detailed target fitter differs from controlled primary fitter')
+          PY
