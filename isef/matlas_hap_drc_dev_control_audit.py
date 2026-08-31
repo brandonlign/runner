@@ -41,7 +41,6 @@ def choose(target):
             rows.append({'program':program,'filename':fn,'dataURI':str(r['dataURI']),'size':int(r['size']) if r['size'] is not None else None})
     rows={x['filename']:x for x in rows}.values(); rows=sorted(rows,key=lambda x:(len(x['filename']),x['filename']))
     if not rows:raise RuntimeError(f'No HAP DRC for {target}')
-    # Prefer shortest combined association root, as used in Oyashio control.
     return rows[0],rows
 
 def download(r):
@@ -58,7 +57,11 @@ def audit(path):
         idx=next((i for i,x in enumerate(h) if getattr(x,'data',None) is not None and np.ndim(x.data)==2),None)
         if idx is None:raise RuntimeError('no 2D science')
         a=np.asarray(h[idx].data,np.float32); hdr=h[idx].header; ph=h[0].header
-    finite=np.isfinite(a); zero=(a==0)&finite; valid=finite & ~(zero if zero.mean()>0.005 else False)
+    finite=np.isfinite(a)
+    zero=(a==0)&finite
+    valid=finite.copy()
+    if zero.mean()>0.005:
+        valid &= ~zero
     med=float(np.median(a[valid]));fill=np.where(valid,a,med).astype(np.float32);res=fill-gaussian_filter(fill,32,mode='nearest')
     return {'shape':list(a.shape),'science_hdu':idx,'exptime_s':hdr.get('EXPTIME',ph.get('EXPTIME')),'bunit':hdr.get('BUNIT',ph.get('BUNIT')),
             'finite_fraction':float(finite.mean()),'valid_fraction':float(valid.mean()),'raw_median':med,'broad32_residual_robust_sigma':float(rsig(res[valid]))}
