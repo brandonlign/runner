@@ -6,7 +6,7 @@ primary and holdout timestamps. No PUNCH image or FITS file is opened.
 """
 from __future__ import annotations
 
-import json,time
+import json,math,time
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
 
@@ -19,7 +19,7 @@ OBSERVER='500@399';DESIGNATION='C/2025 R3';CADENCE_MIN=8;BATCH=12;RETRIES=5
 PRIMARY_START=datetime(2026,4,21,18,0,29,tzinfo=timezone.utc);PRIMARY_N=80
 HOLDOUT_START=datetime(2026,4,22,4,56,29,tzinfo=timezone.utc);HOLDOUT_N=53
 PIXEL_DEG=0.0225
-AU_KM=float(u.au.to_value(u.km))
+AU_KM=float(u.au.to(u.km))
 
 
 def epochs(start,n):return [start+timedelta(minutes=CADENCE_MIN*i) for i in range(n)]
@@ -38,10 +38,12 @@ def query(times):
                 if attempt+1==RETRIES:raise RuntimeError('Horizons range query failed') from last
                 time.sleep(2*(attempt+1))
         if len(tab)!=len(chunk):raise RuntimeError('Horizons row mismatch')
+        rate_col='delta_rate' if 'delta_rate' in tab.colnames else ('deldot' if 'deldot' in tab.colnames else None)
+        if 'delta' not in tab.colnames or rate_col is None:raise RuntimeError(f'unexpected Horizons quantity-20 columns: {tab.colnames}')
         for dt,r in zip(chunk,tab):
-            delta=float(r['delta']);deldot=float(r['delta_rate']) if 'delta_rate' in r.colnames else float(r['deldot'])
+            delta=float(r['delta']);deldot=float(r[rate_col])
             # Exact transverse plane scale corresponding to one nominal CTM pixel.
-            km_per_pixel=delta*AU_KM*__import__('math').tan(__import__('math').radians(PIXEL_DEG))
+            km_per_pixel=delta*AU_KM*math.tan(math.radians(PIXEL_DEG))
             rows.append({'timestamp_utc':dt.isoformat().replace('+00:00','Z'),'delta_au':delta,'deldot_km_s':deldot,'projected_km_per_0p0225deg_pixel':km_per_pixel})
     return rows
 
