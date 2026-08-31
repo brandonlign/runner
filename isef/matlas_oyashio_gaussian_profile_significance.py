@@ -93,9 +93,13 @@ def fit_profile(profile,sigma):
                               'intercept':float(beta[0]),'linear_slope':float(beta[1]),'resid_rms':math.sqrt(s2),'offset_n':int(len(y))}
 
 
-def translation_bounds(track):
+def translation_bounds(track,img_shape):
+    # Runtime-only repair: use the actual loaded image dimensions. The original
+    # source incorrectly referenced nonexistent p.NX/p.NY constants. This does
+    # not alter any science grid, statistic, mask, random seed, or null rule.
+    ny,nx=img_shape
     m=TRANSVERSE_MAX_PX+3;xmin=track[:,0].min();xmax=track[:,0].max();ymin=track[:,1].min();ymax=track[:,1].max()
-    return int(math.ceil(m-xmin)),int(math.floor(p.NX-1-m-xmax)),int(math.ceil(m-ymin)),int(math.floor(p.NY-1-m-ymax))
+    return int(math.ceil(m-xmin)),int(math.floor(nx-1-m-xmax)),int(math.ceil(m-ymin)),int(math.floor(ny-1-m-ymax))
 
 
 def robust_z(v,a):
@@ -109,7 +113,7 @@ def main():
     truth_prof=sample_mean_profile(img,valid,track,normals)
     if truth_prof is None:raise RuntimeError('Published track has insufficient valid geometry')
     truth={str(i):fit_profile(truth_prof[0],s) for i,s in enumerate(SIGMA_GRID_PX)}
-    dxlo,dxhi,dylo,dyhi=translation_bounds(track);rng=np.random.default_rng(RNG_SEED);nullfits=[];attempts=0
+    dxlo,dxhi,dylo,dyhi=translation_bounds(track,img.shape);rng=np.random.default_rng(RNG_SEED);nullfits=[];attempts=0
     while len(nullfits)<NULL_TRANSLATIONS_N and attempts<NULL_TRANSLATIONS_N*80:
         attempts+=1;dx=int(rng.integers(dxlo,dxhi+1));dy=int(rng.integers(dylo,dyhi+1))
         if abs(dx)<=50 and abs(dy)<=50:continue
@@ -121,7 +125,7 @@ def main():
     for i,s in enumerate(SIGMA_GRID_PX):
         k=str(i);ta=truth[k]['amplitude'];ts=truth[k]['formal_amp_snr'];amps=[z['fits'][k]['amplitude'] for z in nullfits];snrs=[z['fits'][k]['formal_amp_snr'] for z in nullfits]
         za,amed,asc=robust_z(ta,amps);zs,smed,ssc=robust_z(ts,snrs)
-        results.append({'sigma_px':s,'corresponding_intrinsic_full_pm_sigma_width_pc':(W_PM_SIGMA_PC-W_PM_SIGMA_ERR_PC,W_PM_SIGMA_PC,W_PM_SIGMA_PC+W_PM_SIGMA_ERR_PC)[i],
+        results.append({'sigma_px':s,'corresponding_intrinsic_full_pm_sigma_width_pc':(W_PM_SIGMA_PC-W_PM_SIGMA_ERR_PC,W_PM_SIGMA_PC,W_PM_SIGMA_ERR_PC+W_PM_SIGMA_PC)[i],
                         'truth_fit':truth[k],
                         'amplitude_null':{'median':amed,'robust_sigma':asc,'empirical_ge_fraction':float(np.mean(np.asarray(amps)>=ta)),'truth_robust_z':float(za)},
                         'formal_snr_null':{'median':smed,'robust_sigma':ssc,'empirical_ge_fraction':float(np.mean(np.asarray(snrs)>=ts)),'truth_robust_z':float(zs)}})
