@@ -1,0 +1,35 @@
+name: ISEF PUNCH KH long radial temporal gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/punch_kh_long_radial_temporal_gate.py'
+      - 'isef/punch_kh_long_oriented_spatial_gate.py'
+      - 'isef/punch_kh_real_background_controls_v2.py'
+      - 'isef/punch_kh_real_background_wave_gate.py'
+      - '.github/workflows/isef-punch-kh-long-radial-temporal-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  longtemporal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy astropy requests 'fsspec[http]'
+      - name: Run final long/radial 48-epoch temporal gate
+        id: gate
+        continue-on-error: true
+        run: python isef/punch_kh_long_radial_temporal_gate.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-punch-kh-long-radial-temporal-gate
+          path: results/punch_kh_long_radial_temporal_gate/
+          if-no-files-found: error
+      - name: Preserve scientific gate status
+        if: steps.gate.outcome == 'failure'
+        run: exit 1
