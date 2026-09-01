@@ -1,0 +1,30 @@
+name: ISEF TESS binary Stage-4 metadata validation manifest
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_STAGE4_MANIFEST_TRIGGER'
+  workflow_dispatch:
+jobs:
+  manifest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+      - name: Verify metadata-only builder
+        run: python -m py_compile isef/tess_binary_stage4_validation_manifest.py
+      - name: Build manifest without opening light curves
+        run: |
+          cd isef
+          python tess_binary_stage4_validation_manifest.py
+      - name: Preserve manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage4-validation-manifest
+          path: isef/results/tess_binary_stage4_validation_manifest/
+          if-no-files-found: error
