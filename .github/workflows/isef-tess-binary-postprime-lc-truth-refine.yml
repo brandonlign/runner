@@ -27,8 +27,24 @@ jobs:
           github-token: ${{ github.token }}
           run-id: 33457113454
       - name: Refine to lightcurve-discovered known binaries
-        run: python isef/tess_binary_postprime_lc_truth_refine.py input_geometry
-      - uses: actions/upload-artifact@v4
+        id: refine
+        shell: bash
+        run: |
+          set +e
+          python isef/tess_binary_postprime_lc_truth_refine.py input_geometry > refine.log 2>&1
+          code=$?
+          cat refine.log
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload diagnostic and result
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: isef-tess-binary-postprime-lc-truth
-          path: results/tess_binary_postprime_lc_truth_refine/
+          path: |
+            refine.log
+            results/tess_binary_postprime_lc_truth_refine/
+          if-no-files-found: warn
+      - name: Preserve failure status
+        if: steps.refine.outputs.exit_code != '0'
+        run: exit 1
