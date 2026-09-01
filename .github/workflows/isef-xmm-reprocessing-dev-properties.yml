@@ -1,0 +1,26 @@
+name: ISEF XMM reprocessing development properties
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_reprocessing_dev_properties.py'
+      - '.github/workflows/isef-xmm-reprocessing-dev-properties.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install astropy numpy scipy
+      - run: python isef/xmm_reprocessing_dev_properties.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-reprocessing-dev-properties
+          path: results/xmm_reprocessing_dev_properties.json
+          if-no-files-found: error
