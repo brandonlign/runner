@@ -9,7 +9,7 @@ on:
 jobs:
   inventory:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,14 +22,14 @@ jobs:
           python - <<'PY'
           import json, time
           from pathlib import Path
+          from concurrent.futures import ThreadPoolExecutor, as_completed
           from tess_asteroids import MovingTPF
 
           positives=[x.strip() for x in Path('isef/tess_binary_stage4_validation_positives.txt').read_text().splitlines() if x.strip()]
           sectors=list(range(27,40))
-          rows=[]
-          for number in positives:
-              hits=[]
-              errs=[]
+
+          def one(number):
+              hits=[]; errs=[]
               for sector in sectors:
                   try:
                       mt=MovingTPF.from_name(number, sector=sector)
@@ -38,27 +38,26 @@ jobs:
                           hits.append({'sector':sector,'camera':int(mt.camera),'ccd':int(mt.ccd),'ephemeris_rows':n,
                                        'time_min':float(min(mt.ephem['time'])),'time_max':float(max(mt.ephem['time']))})
                   except Exception as e:
-                      msg=str(e)
-                      # Expected non-visibility is retained as metadata, not treated as a science null.
-                      if len(errs)<5:
-                          errs.append({'sector':sector,'error':msg[:240]})
-                  time.sleep(0.03)
-              rows.append({'asteroid_number':number,'visible_hits':hits,'sample_errors':errs})
-              print(number, [h['sector'] for h in hits], flush=True)
+                      if len(errs)<5: errs.append({'sector':sector,'error':str(e)[:240]})
+                  time.sleep(0.02)
+              return {'asteroid_number':number,'visible_hits':hits,'sample_errors':errs}
+
+          rows=[]
+          with ThreadPoolExecutor(max_workers=10) as ex:
+              futs={ex.submit(one,n):n for n in positives}
+              for fut in as_completed(futs):
+                  r=fut.result(); rows.append(r)
+                  print(r['asteroid_number'], [h['sector'] for h in r['visible_hits']], flush=True)
+          rows.sort(key=lambda r:int(r['asteroid_number']))
           visible=[r for r in rows if r['visible_hits']]
           sector_counts={str(s):sum(any(h['sector']==s for h in r['visible_hits']) for r in rows) for s in sectors}
-          report={
-              'role':'metadata/ephemeris-only independent-validation reservoir inventory',
-              'science_pixels_opened':False,
-              'source_positive_manifest':'isef/tess_binary_stage4_validation_positives.txt',
-              'positive_count':len(positives),
-              'tested_sectors':sectors,
-              'objects_visible_in_at_least_one_later_sector':len(visible),
-              'objects_not_visible':len(rows)-len(visible),
-              'sector_counts':sector_counts,
-              'rows':rows,
-          }
+          report={'role':'metadata/ephemeris-only independent-validation reservoir inventory',
+              'science_pixels_opened':False,'source_positive_manifest':'isef/tess_binary_stage4_validation_positives.txt',
+              'positive_count':len(positives),'tested_sectors':sectors,
+              'objects_visible_in_at_least_one_later_sector':len(visible),'objects_not_visible':len(rows)-len(visible),
+              'sector_counts':sector_counts,'rows':rows}
           Path('tess_binary_independent_reservoir.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps({'visible':len(visible),'not_visible':len(rows)-len(visible),'sector_counts':sector_counts},indent=2))
           PY
       - uses: actions/upload-artifact@v4
         with:
