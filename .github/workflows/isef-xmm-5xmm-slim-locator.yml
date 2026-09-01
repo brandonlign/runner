@@ -1,0 +1,23 @@
+name: ISEF XMM 5XMM slim locator
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_5xmm_slim_locator.py'
+      - '.github/workflows/isef-xmm-5xmm-slim-locator.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  locate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python isef/xmm_5xmm_slim_locator.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-5xmm-slim-locator
+          path: results/xmm_5xmm_slim_locator.json
+          if-no-files-found: error
