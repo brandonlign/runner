@@ -2,8 +2,8 @@
 """Build external-truth inventory for fresh TSSYS binary benchmarks without .lc access.
 
 The program reads TSSYS release.merge metadata, Johnston confirmed-binary object
-pages, and the consumed Stage-3 manifest.  It never requests a TSSYS light-curve
-file.  Its purpose is to identify *before raw-light-curve access* systems whose
+pages, and the consumed Stage-3 manifest. It never requests a TSSYS light-curve
+file. Its purpose is to identify *before raw-light-curve access* systems whose
 published satellite period (or half/double recurrence) agrees with the published
 TSSYS catalogue period while the primary spin period is distinct.
 """
@@ -19,13 +19,12 @@ JOHN='https://www.johnstonsarchive.net/astro/asteroidmoons.html'
 CONTROL=Path(__file__).with_name('tess_binary_stage3_null_controls.txt')
 CONSUMED_POS={1803,6764}
 ANCHOR_RE=re.compile(r'^\s*\(([0-9]{1,7})\)\s+(.+?)\s*$')
-NUM=r'([0-9]+(?:\.[0-9]+)?)'
 
 
 def get(url):
     for u in (url,url.replace('https://www.johnstonsarchive.net/','https://johnstonsarchive.net/')):
         try:
-            r=requests.get(u,timeout=120,headers={'User-Agent':'ISEF-TESS-binary-truth-inventory/1.0'})
+            r=requests.get(u,timeout=120,headers={'User-Agent':'ISEF-TESS-binary-truth-inventory/1.1'})
             if r.status_code==200:return r.text,u
         except Exception:pass
     raise RuntimeError(f'could not fetch {url}')
@@ -57,22 +56,27 @@ def designation_links(html):
     return out
 
 
-def vals(pattern,text):
-    return [float(x) for x in re.findall(pattern,text,re.I)]
+def unique(xs):
+    out=[]
+    for x in xs:
+        if not any(abs(x-y)<1e-10 for y in out):out.append(x)
+    return out
 
 
 def page_truth(html):
+    # Johnston uses labels rendered as P_{s}, RP_{p}, etc.  Match the semantic
+    # label up to the colon instead of assuming a particular subscript markup.
     soup=BeautifulSoup(html,'html.parser');txt=' '.join(soup.stripped_strings)
-    orbit_d=vals(r'orbital\s+period\s+P[_ ]?s\s*:\s*'+NUM+r'(?:\s*±\s*'+NUM+r')?\s*d',txt)
-    # re.findall returns tuples when uncertainty subcapture exists; recover using a simpler scan too.
     orbit=[]
-    for m in re.finditer(r'orbital\s+period\s+P[_ ]?s\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:±\s*[0-9]+(?:\.[0-9]+)?\s*)?(d|h)',txt,re.I):
+    for m in re.finditer(r'orbital\s+period\s+P[^:]{0,24}:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:±\s*[0-9]+(?:\.[0-9]+)?\s*)?(d|h)\b',txt,re.I):
         v=float(m.group(1));orbit.append(v*24 if m.group(2).lower()=='d' else v)
     rotation=[]
-    for m in re.finditer(r'rotation\s+period\s+RP[_ ]?p\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:±\s*[0-9]+(?:\.[0-9]+)?\s*)?h',txt,re.I):rotation.append(float(m.group(1)))
+    for m in re.finditer(r'rotation\s+period\s+RP[^:]{0,24}:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:±\s*[0-9]+(?:\.[0-9]+)?\s*)?h\b',txt,re.I):
+        rotation.append(float(m.group(1)))
     mutual=[]
-    for m in re.finditer(r'amplitude\s+in\s+mag\.?,?\s+mutual\s+events\s+ΔM\s*:\s*([0-9]+(?:\.[0-9]+)?)',txt,re.I):mutual.append(float(m.group(1)))
-    return {'satellite_orbit_periods_h':orbit,'primary_rotation_periods_h':rotation,'documented_mutual_event_amplitudes_mag':mutual}
+    for m in re.finditer(r'amplitude\s+in\s+mag\.?[^:]{0,40}mutual\s+events[^:]{0,24}:\s*([0-9]+(?:\.[0-9]+)?)',txt,re.I):
+        mutual.append(float(m.group(1)))
+    return {'satellite_orbit_periods_h':unique(orbit),'primary_rotation_periods_h':unique(rotation),'documented_mutual_event_amplitudes_mag':unique(mutual)}
 
 
 def rel(a,b):return abs(a-b)/b if b else math.inf
@@ -109,6 +113,7 @@ def main():
                                           -z['n_good'],z['number']))
     strong=[z for z in ranked if z['strong_orbital_timescale_benchmark']];very=[z for z in ranked if z['very_strong_mutual_event_benchmark']]
     rep={'role':'external-truth metadata-only fresh benchmark inventory; no TSSYS .lc values opened','lightcurve_values_opened':False,
+      'parser_version':'1.1 semantic labels tolerate Johnston brace/subscript markup',
       'selection_rule':{'orbit_or_half_double_relative_error_max':0.03,'rotation_or_half_double_relative_error_must_exceed':0.05,'n_good_min':300,
                         'very_strong_additionally_requires':'documented Johnston mutual-event amplitude'},
       'sources':{'tssys_release_merge':merge_url,'johnston_confirmed_list':john_url},
