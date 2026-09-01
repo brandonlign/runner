@@ -13,14 +13,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
+        with:
+          python-version: '3.11'
       - name: Install metadata stack
         run: pip install 'tess-asteroids==1.5.1' beautifulsoup4 requests
       - name: Bootstrap TESS SPICE cache serially
-        run: python - <<'PY'
+        run: |
+          python - <<'PY'
           from tess_asteroids import MovingTPF
-          m=MovingTPF.from_name('20325',sector=42)
-          print('bootstrap rows',len(m.ephem))
+          m = MovingTPF.from_name('20325', sector=42)
+          print('bootstrap rows', len(m.ephem))
           PY
       - name: Freeze metadata-only null identities
         run: |
