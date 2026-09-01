@@ -17,13 +17,14 @@ jobs:
           python-version: '3.11'
       - name: Install metadata stack
         run: pip install 'tess-asteroids==1.5.1' beautifulsoup4 requests
-      - name: Bootstrap TESS SPICE cache serially
-        run: |
-          python - <<'PY'
-          from tess_asteroids import MovingTPF
-          m = MovingTPF.from_name('20325', sector=42)
-          print('bootstrap rows', len(m.ephem))
-          PY
+      - uses: actions/cache@v4
+        id: spice-cache
+        with:
+          path: ~/.lkspacecraft/cache
+          key: lkspacecraft-1.3.1-tess-spice-2026-09-01
+      - name: Bootstrap TESS SPICE cache only if absent
+        if: steps.spice-cache.outputs.cache-hit != 'true'
+        run: python -c "from lkspacecraft import TESSSpacecraft; TESSSpacecraft(); print('SPICE bootstrap complete')"
       - name: Freeze metadata-only null identities
         run: |
           python -m py_compile isef/tess_binary_stage5_null_manifest.py
