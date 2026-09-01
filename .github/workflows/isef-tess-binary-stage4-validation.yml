@@ -1,0 +1,107 @@
+name: ISEF TESS binary Stage-4 frozen external validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_STAGE4_VALIDATION_TRIGGER'
+  workflow_dispatch:
+jobs:
+  positives:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen analyzer dependencies
+        run: pip install numpy scipy astropy requests
+      - name: Verify frozen provenance
+        run: |
+          test "$(git hash-object isef/tess_binary_stage4_frozen.py)" = "93ea1c2a1ac0b9f93b1992c9241c629d7a0ce192"
+          test "$(git hash-object isef/tess_binary_stage0_detector.py)" = "1552c535f592667ffc06e6171050c77944531ee3"
+          test "$(git hash-object isef/tess_binary_stage4_validation_positives.txt)" = "3ff72428b17a864e20c5c6abb6e373affc613d23"
+          test "$(sha256sum isef/tess_binary_stage4_validation_positives.txt | awk '{print $1}')" = "2898ee9da98776131d754a3e389f516ff08456a242fcd0e2c3ce4107f5c16aa8"
+          python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_stage4_frozen.py isef/tess_binary_stage4_validate.py
+      - name: Open only frozen positive shard
+        run: |
+          cd isef
+          python tess_binary_stage4_validate.py shard positive ${{ matrix.shard }}
+      - name: Preserve positive shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage4-positive-${{ matrix.shard }}
+          path: isef/results/tess_binary_stage4_validation/positive-shard-${{ matrix.shard }}/
+          if-no-files-found: warn
+
+  controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen analyzer dependencies
+        run: pip install numpy scipy astropy requests
+      - name: Verify frozen provenance
+        run: |
+          test "$(git hash-object isef/tess_binary_stage4_frozen.py)" = "93ea1c2a1ac0b9f93b1992c9241c629d7a0ce192"
+          test "$(git hash-object isef/tess_binary_stage0_detector.py)" = "1552c535f592667ffc06e6171050c77944531ee3"
+          test "$(git hash-object isef/tess_binary_stage4_validation_controls.txt)" = "92c2cad4812562cd641288ba4e1bcf919a3b8a08"
+          test "$(sha256sum isef/tess_binary_stage4_validation_controls.txt | awk '{print $1}')" = "bd1914196b75eb5019e0a5b29d29a3a9261d10b80aaa12e9a6ce881477273a05"
+          python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_stage4_frozen.py isef/tess_binary_stage4_validate.py
+      - name: Open only frozen control shard
+        run: |
+          cd isef
+          python tess_binary_stage4_validate.py shard control ${{ matrix.shard }}
+      - name: Preserve control shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage4-control-${{ matrix.shard }}
+          path: isef/results/tess_binary_stage4_validation/control-shard-${{ matrix.shard }}/
+          if-no-files-found: warn
+
+  aggregate:
+    needs: [positives, controls]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frozen aggregate dependencies
+        run: pip install numpy scipy astropy requests
+      - name: Download same-run validation shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: isef-tess-binary-stage4-*
+          path: downloaded
+          merge-multiple: false
+      - name: Verify all 15 shard artifacts exist
+        run: |
+          for i in 0 1 2 3 4; do test -d downloaded/isef-tess-binary-stage4-positive-$i; done
+          for i in 0 1 2 3 4 5 6 7 8 9; do test -d downloaded/isef-tess-binary-stage4-control-$i; done
+      - name: Apply frozen population validation gate
+        run: |
+          cd isef
+          python tess_binary_stage4_validate.py aggregate ../downloaded
+      - name: Preserve complete frozen validation decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-stage4-validation-final
+          path: isef/results/tess_binary_stage4_validation/final.json
+          if-no-files-found: warn
