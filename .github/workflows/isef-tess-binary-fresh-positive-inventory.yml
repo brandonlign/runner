@@ -1,0 +1,29 @@
+name: ISEF TESS binary fresh positive inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_FRESH_POSITIVE_INVENTORY_TRIGGER'
+  workflow_dispatch:
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Verify metadata-only inventory syntax
+        run: python -m py_compile isef/tess_binary_fresh_positive_inventory.py
+      - name: Inventory fresh confirmed binaries without opening light curves
+        run: |
+          cd isef
+          python tess_binary_fresh_positive_inventory.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-fresh-positive-inventory
+          path: isef/results/tess_binary_fresh_positive_inventory/
+          if-no-files-found: warn
