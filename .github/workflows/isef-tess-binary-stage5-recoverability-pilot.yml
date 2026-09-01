@@ -1,0 +1,46 @@
+name: ISEF TESS binary Stage-5 recoverability pilot
+
+on:
+  push:
+    paths:
+      - '.github/workflows/isef-tess-binary-stage5-recoverability-pilot.yml'
+  workflow_dispatch:
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        include:
+          - {number: 20325, period: 0.9808, sectors: '42,43'}
+          - {number: 2171, period: 0.9567, sectors: '43,44'}
+          - {number: 761, period: 2.3783, sectors: '44,45,46'}
+          - {number: 2680, period: 2.2170, sectors: '44,45,46'}
+          - {number: 2486, period: 7.1920, sectors: '71,73,91'}
+          - {number: 2280, period: 0.89496, sectors: '71,72,91'}
+          - {number: 854, period: 1.5720, sectors: '34,70,71'}
+          - {number: 2080, period: 1.0762, sectors: '71,72,92'}
+          - {number: 7393, period: 1.6426, sectors: '42,43,44'}
+          - {number: 2019, period: 0.74925, sectors: '55,71,72,91'}
+          - {number: 809, period: 0.6424, sectors: '72,91'}
+          - {number: 4528, period: 1.4592, sectors: '30,45,46'}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install frozen extraction/analysis stack
+        run: pip install 'tess-asteroids==1.5.1' scipy
+      - name: Run one frozen development identity
+        run: |
+          python -m py_compile isef/tess_binary_stage5_recoverability_pilot.py isef/tess_binary_stage0_detector.py
+          cd isef
+          python tess_binary_stage5_recoverability_pilot.py --number '${{ matrix.number }}' --period-days '${{ matrix.period }}' --sectors '${{ matrix.sectors }}'
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage5-pilot-${{ matrix.number }}
+          path: isef/results/tess_binary_stage5_recoverability_pilot/${{ matrix.number }}/report.json
+          if-no-files-found: warn
