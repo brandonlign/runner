@@ -1,0 +1,39 @@
+name: ISEF TESS binary 6764 raw extraction recovery
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_6764_RAW_RECOVERY_TRIGGER'
+  workflow_dispatch:
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install analysis dependencies
+        run: pip install numpy scipy astropy
+      - name: Verify syntax
+        run: python -m py_compile isef/tess_binary_stage0_detector.py isef/tess_binary_6764_raw_recovery.py
+      - name: Download existing consumed 6764 raw extraction artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: isef-tess-binary-6764-extraction-control
+          path: consumed-6764
+          repository: brandonlign/runner
+          run-id: 33450624985
+          github-token: ${{ github.token }}
+      - name: Analyze raw extraction against known 6764 periods
+        run: |
+          cd isef
+          python tess_binary_6764_raw_recovery.py ../consumed-6764
+      - name: Preserve recovery result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-6764-raw-recovery
+          path: isef/results/tess_binary_6764_raw_recovery/
+          if-no-files-found: warn
