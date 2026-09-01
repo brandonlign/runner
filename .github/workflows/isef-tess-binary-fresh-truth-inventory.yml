@@ -1,0 +1,29 @@
+name: ISEF TESS binary fresh truth inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/TESS_BINARY_FRESH_TRUTH_INVENTORY_TRIGGER'
+  workflow_dispatch:
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests beautifulsoup4
+      - name: Verify metadata-only truth inventory syntax
+        run: python -m py_compile isef/tess_binary_fresh_truth_inventory.py
+      - name: Build fresh external-truth benchmark inventory without .lc access
+        run: |
+          cd isef
+          python tess_binary_fresh_truth_inventory.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef-tess-binary-fresh-truth-inventory
+          path: isef/results/tess_binary_fresh_truth_inventory/
+          if-no-files-found: warn
