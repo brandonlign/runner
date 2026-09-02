@@ -1,0 +1,31 @@
+name: ISEF XMM Chandra Swift validation reality
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef-xmm-chandra-swift-reality-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install astropy numpy scipy
+      - name: Materialize identical preregistered validation implementation
+        run: |
+          cp isef/xmm_chandra_swift_reality_development.py /tmp/validation.py
+          sed -i "s/results\/xmm_chandra_swift_reality_development.json/results\/xmm_chandra_swift_reality_validation.json/" /tmp/validation.py
+          sed -i "s/range(0,180,5)/range(180,360,5)/" /tmp/validation.py
+          sed -i "s/'hemisphere':'development'/'hemisphere':'validation'/" /tmp/validation.py
+      - run: python /tmp/validation.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-chandra-swift-reality-validation
+          path: results/xmm_chandra_swift_reality_validation.json
+          if-no-files-found: error
