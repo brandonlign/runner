@@ -1,0 +1,22 @@
+name: ISEF SPHEREx asteroid MOST feasibility
+on:
+  push:
+    paths:
+      - 'isef/spherex_asteroid_most_feasibility.py'
+      - '.github/workflows/isef-spherex-asteroid-most-feasibility.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install 'astroquery>=0.4.10' 'astropy>=7.2.0'
+      - run: python isef/spherex_asteroid_most_feasibility.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-spherex-asteroid-most-feasibility
+          path: results/spherex_asteroid_most_feasibility.json
