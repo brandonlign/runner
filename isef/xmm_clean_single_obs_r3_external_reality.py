@@ -85,7 +85,7 @@ def hemi(lo,hi,cmain,cstack,old):
   c=SkyCoord([by[s][0] for s in ids]*u.deg,[by[s][1] for s in ids]*u.deg);_,sm,_=c.match_to_catalog_sky(cmain);mainclean=[ids[i] for i in range(len(ids)) if sm.arcsec[i]>20]
   if not mainclean:continue
   cc=SkyCoord([by[s][0] for s in mainclean]*u.deg,[by[s][1] for s in mainclean]*u.deg);_,ss,_=cc.match_to_catalog_sky(cstack);cases=[mainclean[i] for i in range(len(mainclean)) if ss.arcsec[i]>20 and nc.get(mainclean[i])==1]
-  ec=sky(vcat(qe('csc',b-PAD,b+5+PAD)));es=sky(vcat(qe('swiftlsxc',b-PAD,b+5+PAD)))
+  ec=sky(vcat(qe('csc',b-PAD,b+5+PAD)));es=sky(vcat(qe('swiftlsxps',b-PAD,b+5+PAD)))
   tot['cases']+=len(cases)
   for s in cases:
    ra,de=by[s];p=SkyCoord(ra*u.deg,de*u.deg);rc=hit(p,ec,RCSC);rs=hit(p,es,RLS);tot['real_csc']+=int(rc);tot['real_lsxps']+=int(rs);tot['real_union']+=int(rc or rs)
