@@ -1,0 +1,22 @@
+name: ISEF SPHEREx Vesta photometry pilot
+on:
+  push:
+    paths:
+      - 'isef/spherex_vesta_photometry_pilot.py'
+      - '.github/workflows/isef-spherex-vesta-photometry-pilot.yml'
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install 'astroquery>=0.4.10' 'astropy>=7.2.0' numpy
+      - run: python isef/spherex_vesta_photometry_pilot.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-spherex-vesta-photometry-pilot
+          path: results/spherex_vesta_photometry_pilot.json
