@@ -1,0 +1,22 @@
+name: ISEF XMM clean single-observation rebuild R2
+on:
+  push:
+    paths:
+      - 'isef/xmm_clean_single_obs_rebuild_r2.py'
+      - '.github/workflows/isef-xmm-clean-single-obs-rebuild-r2.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install astropy numpy scipy
+      - run: python isef/xmm_clean_single_obs_rebuild_r2.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-clean-single-obs-rebuild-r2
+          path: results/xmm_clean_single_obs_rebuild_r2.json
