@@ -1,0 +1,24 @@
+name: ISEF SPHEREx Vesta PSF stability
+on:
+  push:
+    paths:
+      - 'isef/spherex_vesta_psf_stability.py'
+      - '.github/workflows/isef-spherex-vesta-psf-stability.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          pip install 'astroquery>=0.4.10' 'astropy>=7.2.0' numpy
+          pip install 'git+https://github.com/fkiwy/spexpi.git'
+      - run: python isef/spherex_vesta_psf_stability.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-spherex-vesta-psf-stability
+          path: results/spherex_vesta_psf_stability.json
