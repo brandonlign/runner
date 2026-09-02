@@ -1,0 +1,26 @@
+name: ISEF XMM prior stack coverage diagnostic
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_prior_stack_coverage_diagnostic.py'
+      - '.github/workflows/isef-xmm-prior-stack-coverage-diagnostic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install astropy numpy scipy
+      - run: python isef/xmm_prior_stack_coverage_diagnostic.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-prior-stack-coverage-diagnostic
+          path: results/xmm_prior_stack_coverage_diagnostic.json
+          if-no-files-found: error
