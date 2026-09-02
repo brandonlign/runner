@@ -1,0 +1,22 @@
+name: ISEF XSA stack schema probe
+on:
+  push:
+    paths:
+      - 'isef/xsa_stack_schema_probe.py'
+      - '.github/workflows/isef-xsa-stack-schema-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install astroquery astropy
+      - run: python isef/xsa_stack_schema_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xsa-stack-schema-probe
+          path: results/xsa_stack_schema_probe.json
