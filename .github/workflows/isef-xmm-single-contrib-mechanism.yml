@@ -1,0 +1,26 @@
+name: ISEF XMM single-contrib mechanism
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_single_contrib_mechanism.py'
+      - '.github/workflows/isef-xmm-single-contrib-mechanism.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install astropy numpy scipy
+      - run: python isef/xmm_single_contrib_mechanism.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-single-contrib-mechanism
+          path: results/xmm_single_contrib_mechanism.json
+          if-no-files-found: error
