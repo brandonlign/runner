@@ -19,11 +19,11 @@ def fnum(x):
   v=float(x); return v if np.isfinite(v) else np.nan
  except: return np.nan
 def tap(q,timeout=300):
- url=EP+'?'+urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'votable','QUERY':q}); req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-strict-quality/2.0'})
+ url=EP+'?'+urllib.parse.urlencode({'REQUEST':'doQuery','LANG':'ADQL','FORMAT':'votable','QUERY':q}); req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-strict-quality/2.1'})
  with urllib.request.urlopen(req,timeout=timeout) as r: raw=r.read()
  return Table.read(io.BytesIO(raw),format='votable')
 def dl(url,p):
- req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-strict-quality/2.0'})
+ req=urllib.request.Request(url,headers={'User-Agent':'ISEF-XMM-strict-quality/2.1'})
  with urllib.request.urlopen(req,timeout=180) as r,p.open('wb') as f:
   while True:
    b=r.read(8*1024*1024)
@@ -43,20 +43,18 @@ def qbin(lo,hi,depth=0):
   if depth>=8: raise RuntimeError(f'cap {lo}-{hi}')
   m=(lo+hi)/2; return qbin(lo,m,depth+1)+qbin(m,hi,depth+1)
  return [t]
-def analyze_subset(c4,old,rows,hemi,flag0):
+def analyze(c4,old,t,hemi,flag0):
  props={}; obs=defaultdict(set)
- for row in rows:
+ for row in t:
   if flag0 and int(row['sf'])!=0: continue
   sid=norm(row['sid'])
   if sid not in props: props[sid]={'ra':fnum(row['sra']),'dec':fnum(row['sdec']),'flux':fnum(row['flux']),'detml':fnum(row['detml'])}
   o=norm(row['dobsid']);
   if o and o not in ('--','None','nan'): obs[sid].add(o)
- ids=list(props)
- if not ids: return {'eligible':0,'recoveries':0,'cases':{},'ctrls':{},'excluded':0}
- c=SkyCoord([props[s]['ra'] for s in ids]*u.deg,[props[s]['dec'] for s in ids]*u.deg); _,sep,_=c.match_to_catalog_sky(c4)
- cases=[ids[i] for i in range(len(ids)) if sep.arcsec[i]>20 and any(o in old for o in obs[ids[i]])]; ctrls=[ids[i] for i in range(len(ids)) if sep.arcsec[i]<=20 and any(o in old for o in obs[ids[i]])]
+ ids=list(props); c=SkyCoord([props[s]['ra'] for s in ids]*u.deg,[props[s]['dec'] for s in ids]*u.deg); _,sep,_=c.match_to_catalog_sky(c4)
+ cases=[ids[i] for i in range(len(ids)) if sep.arcsec[i]>20 and any(o in old for o in obs[ids[i]])]; pool=[ids[i] for i in range(len(ids)) if sep.arcsec[i]<=20 and any(o in old for o in obs[ids[i]])]
  om=defaultdict(list)
- for s in ctrls:
+ for s in pool:
   for o in obs[s]&old: om[o].append(s)
  used=set(); mc={}; cc={}; ex=0
  for s in sorted(cases,key=lambda x:hashlib.sha256(x.encode()).hexdigest()):
@@ -66,30 +64,26 @@ def analyze_subset(c4,old,rows,hemi,flag0):
   if not ch: ex+=1; continue
   mc[s]=props[s]
   for x in ch: cc[x]=props[x]; used.add(x)
- return {'eligible':len(ids),'recoveries':len(cases),'cases':mc,'ctrls':cc,'excluded':ex}
-def combine(parts,hemi):
- eligible=sum(p['eligible'] for p in parts); rec=sum(p['recoveries'] for p in parts); cases={}; ctrls={}; ex=sum(p['excluded'] for p in parts)
- for p in parts: cases.update(p['cases']); ctrls.update(p['ctrls'])
  tests={}
- if rec>=200:
+ if len(cases)>=200:
   for name,f in [('brightness','flux'),('detection_strength','detml')]:
-   a=np.array([p[f] for p in cases.values()]); b=np.array([p[f] for p in ctrls.values()]); a=np.log10(a[np.isfinite(a)&(a>0)]); b=np.log10(b[np.isfinite(b)&(b>0)]); pv=float(mannwhitneyu(a,b,alternative='two-sided').pvalue)
+   a=np.array([p[f] for p in mc.values()]); b=np.array([p[f] for p in cc.values()]); a=np.log10(a[np.isfinite(a)&(a>0)]); b=np.log10(b[np.isfinite(b)&(b>0)]); pv=float(mannwhitneyu(a,b,alternative='two-sided').pvalue)
    tests[name]={'case_n':len(a),'control_n':len(b),'case_median_log10':float(np.median(a)),'control_median_log10':float(np.median(b)),'median_difference':float(np.median(a)-np.median(b)),'raw_p':pv}
- return {'eligible':eligible,'recoveries':rec,'prevalence':rec/eligible if eligible else None,'retained_fraction_of_original':rec/ORIG[hemi],'matched_cases':len(cases),'unique_controls':len(ctrls),'excluded_no_control':ex,'tests':tests}
+ n=len(ids); r=len(cases)
+ return {'eligible':n,'recoveries':r,'prevalence':r/n if n else None,'retained_fraction_of_original':r/ORIG[hemi],'matched_cases':len(mc),'unique_controls':len(cc),'excluded_no_control':ex,'tests':tests}
 def main():
  try:
-  c4,old=refs(); buckets={h:{'strict':[],'very_strict':[]} for h in ('development','validation')}
+  c4,old=refs(); raw={'development':[],'validation':[]}
   for lo in range(0,360,10):
-   tabs=qbin(float(lo),float(lo+10)); t=vstack(tabs,metadata_conflicts='silent') if len(tabs)>1 else tabs[0]; h='development' if lo<180 else 'validation'
-   buckets[h]['strict'].append(analyze_subset(c4,old,t,h,False)); buckets[h]['very_strict'].append(analyze_subset(c4,old,t,h,True)); print(json.dumps({'progress':f'{lo}-{lo+10}'}),flush=True)
+   raw['development' if lo<180 else 'validation'] += qbin(float(lo),float(lo+10)); print(json.dumps({'progress':f'{lo}-{lo+10}'}),flush=True)
   out={'success':True,'results':{'strict':{},'very_strict':{}}}
-  for cut in ('strict','very_strict'):
-   for h in ('development','validation'): out['results'][cut][h]=combine(buckets[h][cut],h)
+  for h in ('development','validation'):
+   t=vstack(raw[h],metadata_conflicts='silent'); out['results']['strict'][h]=analyze(c4,old,t,h,False); out['results']['very_strict'][h]=analyze(c4,old,t,h,True)
   s=out['results']['strict']; enough=all(s[h]['recoveries']>=200 for h in ('development','validation')); ps=[]; dirs=[]
   if enough:
    for h in ('development','validation'):
     for k in ('brightness','detection_strength'): ps.append(s[h]['tests'][k]['raw_p']); dirs.append(s[h]['tests'][k]['median_difference']<0)
-  out['bonferroni_four_tests']=[min(1.0,p*4) for p in ps]; out['strict_quality_robust']=bool(enough and all(dirs) and all(p*4<=0.01 for p in ps)); out['privacy']='Aggregate statistics only.'
+  out['bonferroni_four_tests']=[min(1.0,p*4) for p in ps]; out['strict_quality_robust']=bool(enough and all(dirs) and all(p*4<=0.01 for p in ps)); out['privacy']='Aggregate statistics only; no identities or coordinates emitted.'
  except Exception as e: out={'success':False,'error':f'{type(e).__name__}: {e}'}
  OUT.write_text(json.dumps(out,indent=2,sort_keys=True)+'\n'); print(json.dumps(out,indent=2,sort_keys=True),flush=True)
 if __name__=='__main__': main()
