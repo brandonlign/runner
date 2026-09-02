@@ -1,0 +1,26 @@
+name: ISEF XMM observing condition robustness
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'isef/xmm_observing_condition_robustness.py'
+      - '.github/workflows/isef-xmm-observing-condition-robustness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install astropy numpy scipy
+      - run: python isef/xmm_observing_condition_robustness.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmm-observing-condition-robustness
+          path: results/xmm_observing_condition_robustness.json
+          if-no-files-found: error
