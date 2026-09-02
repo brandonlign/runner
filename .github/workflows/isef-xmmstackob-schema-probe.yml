@@ -1,0 +1,22 @@
+name: ISEF XMMSTACKOB schema probe
+on:
+  push:
+    paths:
+      - 'isef/xmmstackob_schema_probe.py'
+      - '.github/workflows/isef-xmmstackob-schema-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install astropy
+      - run: python isef/xmmstackob_schema_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef-xmmstackob-schema-probe
+          path: results/xmmstackob_schema_probe.json
