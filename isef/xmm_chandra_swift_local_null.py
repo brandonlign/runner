@@ -11,7 +11,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 EP='https://heasarc.gsfc.nasa.gov/xamin/vo/tap/sync';CAP=100000;PAD=.03;RCSC=5.;RSWIFT=10.
 U4='https://heasarc.gsfc.nasa.gov/FTP/xmm/data/catalogues/4XMM_DR14cat_slim_v1.0.fits.gz';U4O='http://xmmssc.irap.omp.eu/Catalogue/4XMM-DR14/4xmmdr14_obslist.fits';P4=Path('/tmp/4main.fits.gz');P4O=Path('/tmp/4mainobs.fits');OUT=Path('results/xmm_chandra_swift_local_null.json');OUT.parent.mkdir(parents=True,exist_ok=True);BASE='s.sum_flag<2 AND s.extent=0 AND s.ep_det_ml>=15'
-def n(x):
+def norm(x):
  if isinstance(x,(bytes,np.bytes_)):x=x.decode('utf-8','replace')
  return str(x).strip()
 def tap(q):
@@ -30,7 +30,7 @@ def refs():
  with fits.open(P4,memmap=True) as h:
   d=max([x for x in h if isinstance(x,(fits.BinTableHDU,fits.TableHDU)) and x.data is not None],key=lambda x:len(x.data)).data;nm={x.upper():x for x in d.names};ra=np.asarray(d[nm['SC_RA']],float);de=np.asarray(d[nm['SC_DEC']],float);ok=np.isfinite(ra)&np.isfinite(de);c=SkyCoord(ra[ok]*u.deg,de[ok]*u.deg)
  with fits.open(P4O,memmap=False) as h:
-  d=max([x for x in h if isinstance(x,(fits.BinTableHDU,fits.TableHDU)) and x.data is not None],key=lambda x:len(x.data)).data;nm={x.upper():x for x in d.names};old={n(x) for x in d[nm['OBS_ID']] if n(x)}
+  d=max([x for x in h if isinstance(x,(fits.BinTableHDU,fits.TableHDU)) and x.data is not None],key=lambda x:len(x.data)).data;nm={x.upper():x for x in d.names};old={norm(x) for x in d[nm['OBS_ID']] if norm(x)}
  return c,old
 def q5(lo,hi,dep=0):
  q=f'''SELECT TOP {CAP} s.srcid sid,s.ra sra,s.dec sdec,d.obsid obsid FROM xmmssc s JOIN xmmstack d ON s.srcid=d.srcid WHERE {BASE} AND s.ra>={lo:.8f} AND s.ra<{hi:.8f} AND d.pps_srcnum IS NOT NULL''';t=tap(q)
@@ -64,7 +64,7 @@ def hemi(lo,hi,c4,old):
  for b in range(lo,hi,5):
   t=cat(q5(b,b+5));by={};obs=defaultdict(set)
   for sid,ra,de,ob in zip(t['sid'],t['sra'],t['sdec'],t['obsid']):
-   s=n(sid);by.setdefault(s,(float(ra),float(de)));o=n(ob)
+   s=norm(sid);by.setdefault(s,(float(ra),float(de)));o=norm(ob)
    if o:obs[s].add(o)
   ids=list(by)
   if not ids:continue
@@ -72,7 +72,7 @@ def hemi(lo,hi,c4,old):
   for s in cases:
    ra,de=by[s];p=SkyCoord(ra*u.deg,de*u.deg);rc=hit(p,cc,RCSC);rs=hit(p,sc,RSWIFT);tot['real_csc']+=rc;tot['real_swift']+=rs;tot['real_union']+=int(rc or rs)
    for z in nulls(ra,de):tot['local_null_trials']+=1;tot['local_null_union_trials']+=int(hit(z,cc,RCSC) or hit(z,sc,RSWIFT))
- n=tot['cases'];m=tot['real_union'];q=tot['local_null_union_trials'];nn=tot['local_null_trials'];od,p=fisher_exact([[m,n-m],[q,nn-q]],alternative='greater');rr=m/n if n else None;nr=q/nn if nn else None;g={'g1_real_ge25':m>=25,'g2_real_rate_ge3x_null':nr==0 and m>0 or (nr>0 and rr>=3*nr),'g3_fisher_p_le0p001':p<=.001};return {**tot,'real_rate':rr,'local_null_rate':nr,'rate_ratio':rr/nr if nr else None,'fisher_odds':float(od),'fisher_p':float(p),'gates':g,'pass':all(g.values())}
+ case_n=tot['cases'];real_m=tot['real_union'];null_m=tot['local_null_union_trials'];null_n=tot['local_null_trials'];od,p=fisher_exact([[real_m,case_n-real_m],[null_m,null_n-null_m]],alternative='greater');rr=real_m/case_n if case_n else None;nr=null_m/null_n if null_n else None;g={'g1_real_ge25':real_m>=25,'g2_real_rate_ge3x_null':nr==0 and real_m>0 or (nr>0 and rr>=3*nr),'g3_fisher_p_le0p001':p<=.001};return {**tot,'real_rate':rr,'local_null_rate':nr,'rate_ratio':rr/nr if nr else None,'fisher_odds':float(od),'fisher_p':float(p),'gates':g,'pass':all(g.values())}
 def main():
  try:
   c,o=refs();d=hemi(0,180,c,o);v=hemi(180,360,c,o);out={'success':True,'science_status':'PASS' if d['pass'] and v['pass'] else 'FAIL','development':d,'validation':v,'null_offset_arcsec':60,'privacy':'Aggregate only.'}
