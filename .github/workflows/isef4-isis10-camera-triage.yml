@@ -20,6 +20,21 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Persist pre-install sentinel to distinguish environment failure
+        shell: bash
+        run: |
+          mkdir -p diagnostics
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p=Path("diagnostics/isef4_gambart_camera_status_isis10.json")
+          p.write_text(json.dumps({
+            "schema_version":"isef4-isis10-install-sentinel-v1",
+            "run_id":os.environ.get("GITHUB_RUN_ID"),
+            "scientific_status":"ISIS 10 environment installation or camera probe has not completed",
+            "stages":{"installation":{"status":"pending"}},
+          },indent=2)+"\\n")
+          PY
       - name: Install ISIS 10 with native SpiceQL integration
         uses: mamba-org/setup-micromamba@v3
         with:
