@@ -59,6 +59,7 @@ def main()->None:
                           "paragraph_index":entry["paragraph_index"]}
     source_row_section=False
     figures={}
+    duplicate_source_panel_labels=[]
     for row_index,row in enumerate(tabs[2]["all_original_rows"]):
         if row and "Supplementary Figs." in row[0]:
             source_row_section=True
@@ -70,10 +71,21 @@ def main()->None:
             if not marker:continue
             num=int(marker.group(1));letter=marker.group(2).lower()
             key=f"{num}{letter}"
+            item={"data_id":row[col+1],
+                  "source_table_3_row":row_index+1,
+                  "source_table_3_column":col+1}
             if key in figures:
-                raise RuntimeError(f"duplicate source table panel {key}")
-            figures[key]={"data_id":row[col+1],"source_table_3_row":row_index+1,
-                          "source_table_3_column":col+1}
+                # Table S3 actually labels BOTH 49b/49a and 49e/49d
+                # as "49c". Preserve the contradiction, not a silent
+                # auto-correction to a presumed "49f". Neither label is
+                # a before/after source image used for a positive site.
+                duplicate_source_panel_labels.append({
+                    "figure_panel":key,
+                    "first_occurrence":figures[key],
+                    "conflicting_occurrence":item,
+                })
+                continue
+            figures[key]=item
     if len(captions)<35:
         raise RuntimeError("too few original supplementary captions; index incomplete")
     all_events=[]
@@ -163,6 +175,7 @@ def main()->None:
         "source_table_2_endogenic_attributed_count":29,
         "event_count":len(all_events),
         "figure_caption_count":len(captions),
+        "duplicate_source_figure_panel_label_audit":duplicate_source_panel_labels,
         "figure_EDR_panel_count":sum(PRODUCT.fullmatch(item["data_id"]) is not None
                                      for item in figures.values()),
         "event_count_with_one_exact_matched_figure_EDR_pair":sum(
