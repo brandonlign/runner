@@ -35,6 +35,8 @@ jobs:
           export ISISDATA="$GITHUB_WORKSPACE/isisdata"
           mkdir -p "$ISISDATA" output
           echo "ISISROOT=$ISISROOT ISISDATA=$ISISDATA"
+          # ALE 1.x imports pkg_resources, removed by setuptools 81.
+          python -m pip install --quiet "setuptools<81"
           echo "SPICEQL_PREF_BEFORE"
           grep -A 5 -B 2 'Group = SpiceQL' "$ISISROOT/IsisPreferences" || true
           python - <<'PY'
