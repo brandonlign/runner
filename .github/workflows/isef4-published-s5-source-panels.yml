@@ -1,0 +1,63 @@
+name: LUNARSHIFT published Gambart C Figure S5 source panels
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-published-s5-source-panels.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  published-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Fetch original published open-access supplemental ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/isef4_figs5
+          python - <<'PY'
+          import hashlib,json,urllib.request,zipfile
+          from pathlib import Path
+          root=Path("output/isef4_figs5")
+          base="https://pmc-oa-opendata.s3.amazonaws.com/"
+          def get(url,max_bytes):
+              req=urllib.request.Request(url,headers={"User-Agent":"LUNARSHIFT-open-access-figure-reproducibility/1.0"})
+              with urllib.request.urlopen(req,timeout=100) as r:
+                  chunks=[];size=0
+                  for chunk in iter(lambda:r.read(1024*1024),b""):
+                      size+=len(chunk)
+                      if size>max_bytes:raise ValueError("source unexpectedly large")
+                      chunks.append(chunk)
+                  return b"".join(chunks)
+          metadata_url=base+"metadata/PMC12576953.1.json"
+          meta=json.loads(get(metadata_url,1_000_000))
+          urls=meta.get("media_urls",[])
+          candidates=[str(x) for x in urls if "supp" in str(x).lower() and str(x).lower().endswith(".zip")]
+          if not candidates:raise ValueError("official metadata has no supplemental ZIP")
+          url=candidates[0].replace("s3://pmc-oa-opendata/",base)
+          content=get(url,40_000_000)
+          path=root/"nwaf384_supplemental_files.zip"
+          path.write_bytes(content)
+          with zipfile.ZipFile(path) as z:
+              listing=[{"path":i.filename,"bytes":i.file_size} for i in z.infolist() if not i.is_dir()]
+          record={"paper":"Xiao et al. 2025 DOI 10.1093/nsr/nwaf384",
+                  "metadata_url":metadata_url,
+                  "source_url":url,"zip_bytes":len(content),
+                  "sha256":hashlib.sha256(content).hexdigest(),
+                  "members":listing,
+                  "scientific_note":"Open-access published Figure S5 benchmark; not a new event."}
+          (root/"published_figure_source.json").write_text(json.dumps(record,indent=2)+"\n")
+          print(json.dumps(record,indent=2),flush=True)
+          PY
+      - name: Preserve original source and provenance for independent pixel comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-published-xiao2025-supplemental-source
+          path: output/isef4_figs5/
+          retention-days: 30
+          if-no-files-found: warn
