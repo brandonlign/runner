@@ -93,8 +93,13 @@ def pair_geometry(im):
    "fixed_spatial_holdout_rule":"(17*xcell+7*ycell)%5==0",
    "fits":rows}
 def primary_figure(path):
- with zipfile.ZipFile(path) as z:
-  data=z.read("nwaf384_supplemental_files.zip")
+ # actions/download-artifact extracts the outer GitHub ZIP already.
+ # The supplied path is normally the ORIGINAL PMC supplementary ZIP.
+ if sha(path.read_bytes())==ZIP_SHA:
+  data=path.read_bytes()
+ else:
+  with zipfile.ZipFile(path) as z:
+   data=z.read("nwaf384_supplemental_files.zip")
  if sha(data)!=ZIP_SHA:raise ValueError("published source ZIP changed")
  with zipfile.ZipFile(io.BytesIO(data)) as z:
   docx=z.read("2025-434-supplementarymaterials.docx")
