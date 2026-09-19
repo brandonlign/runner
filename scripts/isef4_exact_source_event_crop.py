@@ -23,16 +23,18 @@ def sha(raw:bytes)->str:
 
 def main()->None:
     parser=argparse.ArgumentParser()
+    parser.add_argument("--role",choices=("before","after"),default="before")
     parser.add_argument("--raw-folder",type=Path,required=True)
     parser.add_argument("--camera-json",type=Path,required=True)
     parser.add_argument("--out-folder",type=Path,required=True)
     args=parser.parse_args()
+    product={"before":"M1138987659LE","after":"M1200206882LE"}[args.role]
     camera=json.loads(args.camera_json.read_text(encoding="utf-8"))
     source=json.loads((args.raw_folder/"source_labels_and_windows.json").read_text())
-    if camera.get("product")!="M1138987659LE" or camera.get("source_role")!="before":
-        raise RuntimeError("wrong source camera: expected original Gambart C before")
+    if camera.get("product")!=product or camera.get("source_role")!=args.role:
+        raise RuntimeError(f"wrong source camera: expected original Gambart C {args.role}")
     if camera["stages"]["csm_campt_event"]["returncode"]!=0:
-        raise RuntimeError("CSI event camera did not pass")
+        raise RuntimeError("CSM event camera did not pass")
     if camera["stages"]["csminit_linescan"]["returncode"]!=0:
         raise RuntimeError("CSM camera did not initialize")
     if camera["target_latitude_deg_n"]!=3.218 or camera["target_longitude_deg_e"]!=348.092:
@@ -48,11 +50,11 @@ def main()->None:
         raise RuntimeError("PVL ground point does not match published marker")
     if not math.isfinite(sample) or not math.isfinite(line):
         raise RuntimeError("nonfinite camera source location")
-    ref=[x for x in source if x["role"]=="before" and x["edr_id"]=="M1138987659LE"]
+    ref=[x for x in source if x["role"]==args.role and x["edr_id"]==product]
     if len(ref)!=1 or len(ref[0]["screening_windows"])!=1:
-        raise RuntimeError("source PDS original before artifact inconsistent")
+        raise RuntimeError(f"source PDS original {args.role} artifact inconsistent")
     entry=ref[0];window=entry["screening_windows"][0]
-    path=args.raw_folder/"M1138987659LE_mirror_raw_counts.npy"
+    path=args.raw_folder/f"{product}_mirror_raw_counts.npy"
     raw=np.load(path,mmap_mode="r",allow_pickle=False)
     if raw.shape!=(2048,5064) or raw.dtype!=np.uint8:
         raise RuntimeError("original EDR window shape changed")
@@ -71,9 +73,9 @@ def main()->None:
         xa=max(0,source_x-radius);xb=min(raw.shape[1],source_x+radius+1)
         ya=max(0,local_y-radius);yb=min(raw.shape[0],local_y+radius+1)
         part=np.asarray(raw[ya:yb,xa:xb]).copy()
-        path=args.out_folder/f"before_source_marker_r{radius}_original_dn.npy"
+        path=args.out_folder/f"{args.role}_source_marker_r{radius}_original_dn.npy"
         np.save(path,part,allow_pickle=False)
-        preview=args.out_folder/f"before_source_marker_r{radius}_preview.png"
+        preview=args.out_folder/f"{args.role}_source_marker_r{radius}_preview.png"
         lo,hi=np.percentile(part,[1,99])
         if hi<=lo:raise RuntimeError("degenerate original DN source crop")
         visual=np.rint(255*np.clip((part.astype(np.float32)-lo)/(hi-lo),0,1)).astype(np.uint8)
@@ -92,10 +94,11 @@ def main()->None:
             "scientific_scope":"raw uncalibrated DN crop, visualization is contrast stretched"
         })
     out={
-        "schema":"original-Gambart-C-before-campt-source-byte-crop-v1",
+        "schema":f"original-Gambart-C-{args.role}-campt-source-byte-crop-v1",
+        "source_role":args.role,
         "figure":"Xiao 2025 original supplementary S5",
-        "source_product":"M1138987659LE",
-        "source_pds3_label_sha256":entry["source_label_sha256"],
+        "source_product":product,
+        "source_metadata_label_sha256_from_raw_artifact":entry["source_label_sha256"],
         "source_raw_range_sha256":window["raw_window_sha256"],
         "original_raw_artifact_run_id":"35422390895",
         "camera_diagnostic_run_id":camera["run_id"],
@@ -105,12 +108,13 @@ def main()->None:
         "nearest_original_edr_index_zero_based_xy":[source_x,source_y],
         "raw_strip_first_line_zero_based":window["first_line"],
         "raw_strip_local_marker_xy":[source_x,local_y],
+        "nearest_original_source_pixel_dn":int(raw[local_y,source_x]),
         "marker_inside_byte_window":True,
         "crops":crops,
         "caveat":"ISIS cube-to-native PDS byte orientation/decompanding still needs independent cross-check. Published coordinate is rounded, NOT a landslide centroid. Raw uncalibrated DN is not a change detection.",
     }
     (args.out_folder/"source_crop_manifest.json").write_text(json.dumps(out,indent=2)+"\n")
-    Path("diagnostics/isef4_gambart_before_grounded_raw_crop.json").write_text(json.dumps(
+    Path(f"diagnostics/isef4_gambart_{args.role}_grounded_raw_crop.json").write_text(json.dumps(
         {**out,"crops":[{k:v for k,v in p.items() if k not in (
             "exact_original_dn_array_filename","visualization_only_png_filename"
         )} for p in crops]},indent=2)+"\n")
