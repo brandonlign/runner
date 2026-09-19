@@ -1,0 +1,73 @@
+name: LUNARSHIFT Gambart C fixed-ray height-only sensitivity
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-marker-geometry-sensitivity.yml"
+      - "scripts/isef4_marker_geometry_sensitivity.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-marker-geometry-sensitivity
+  cancel-in-progress: false
+jobs:
+  camera-height-sensitivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check ray model under synthetic known geometry
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/isef4_marker_geometry_sensitivity.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          p=Path('scripts/isef4_marker_geometry_sensitivity.py')
+          spec=importlib.util.spec_from_file_location('height_gate',p)
+          m=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          cam={'spacecraft_km':[2.,0.,0.],
+               'sphere_ground_km':[1.,0.,0.],
+               'ray_unit':[-1.,0.,0.],
+               'reference_radius_km':1.}
+          for height in (-500,0,100,1000):
+              x=m.intersection(cam,height)
+              assert abs(x[0]-(1.+height/1000.))<1e-10
+              assert abs(x[1])<1e-10 and abs(x[2])<1e-10
+          print('PASS synthetic concentric-sphere ray intersection')
+          PY
+      - name: Test real source-camera geometry against three frozen local radii
+        run: |
+          set -euo pipefail
+          python scripts/isef4_marker_geometry_sensitivity.py \
+            --before diagnostics/isef4_gambart_camera_before_verified_35453750360.json \
+            --after diagnostics/isef4_gambart_camera_after_verified_35454067791.json \
+            --local-audit diagnostics/isef4_gambart_marker_local_registration_audit.json \
+            --out diagnostics/isef4_gambart_marker_height_only_sensitivity.json
+      - name: Preserve reproducible quantitative audit, not a discovery claim
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_gambart_marker_height_only_sensitivity.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_gambart_marker_height_only_sensitivity.json
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record height-only lunar parallax constraint against local marker controls'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gambart-camera-height-only-small-audit
+          path: diagnostics/isef4_gambart_marker_height_only_sensitivity.json
+          retention-days: 30
+          if-no-files-found: warn
