@@ -176,7 +176,7 @@ def main() -> int:
     if not command("campt", [
         "campt", f"from={raw}", "type=ground",
         "latitude=3.218", "longitude=348.092",
-        "coordsys=universal", "allowoutside=false", f"to={point}",
+        "allowoutside=false", f"to={point}",
     ], timeout=90):
         return 1
 
