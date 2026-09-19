@@ -83,7 +83,8 @@ def fitting(src: np.ndarray,dst: np.ndarray,seed: int) -> dict:
     if M is None or mask is None or int(mask.sum())<8:
         return {"status":"affine_fit_failed","matches":int(len(src))}
     inl=mask.ravel().astype(bool)
-    resid=distance(cv2.transform(src.reshape(-1,1,2).astype(np.float32),M).reshape(-1,2),dst)
+    pred=cv2.transform(src.reshape(-1,1,2).astype(np.float32),M).reshape(-1,2)
+    resid=np.linalg.norm(pred-dst,axis=1)
     return {"status":"fit","matches":int(len(src)),
         "ransac_inliers":int(inl.sum()),
         "ransac_median_inlier_halfpx":float(np.median(resid[inl])),
