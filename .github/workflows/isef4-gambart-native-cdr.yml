@@ -1,0 +1,55 @@
+name: LUNARSHIFT Gambart C calibrated native CDR source acquisition
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-gambart-native-cdr.yml"
+      - "scripts/isef4_fetch_gambart_native_cdr.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-gambart-native-cdr
+  cancel-in-progress: false
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install source-crop dependencies
+        run: python -m pip install --quiet numpy pillow
+      - name: Verify and fetch both calibrated NAC CDR source-marker neighborhoods
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/isef4_fetch_gambart_native_cdr.py
+          python scripts/isef4_fetch_gambart_native_cdr.py
+      - name: Keep calibrated native source arrays as downloadable evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambart-c-strict-source-cdr-known-positive
+          path: |
+            output/isef4_gambart_cdr/
+            diagnostics/isef4_gambart_native_cdr_crops.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit provenance and test status, not image pixels
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_native_cdr_crops.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m "Record provenance of native calibrated Gambart C CDR ranges"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
