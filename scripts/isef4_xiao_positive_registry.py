@@ -29,7 +29,13 @@ def parsed_coordinates(text: str) -> list[tuple[float,float]]:
             if a[0]=="latitude" and b[0]=="longitude"]
 
 def date_iso(raw:str)->str:
-    return dt.datetime.strptime(raw,"%Y/%m/%d").date().isoformat()
+    # The ORIGINAL Word tables contain two "2018//7/26" tokens, one in
+    # each attribution table. Collapse redundant slashes but preserve
+    # source text and a visible anomaly field in every derived event.
+    normalized=re.sub(r"/+","/",raw)
+    if normalized.count("/")!=2:
+        raise ValueError("uninterpretable source date: "+repr(raw))
+    return dt.datetime.strptime(normalized,"%Y/%m/%d").date().isoformat()
 
 def main()->None:
     source=json.loads(SOURCE.read_text().replace("\\n",""))
@@ -123,6 +129,11 @@ def main()->None:
                 "longitude_deg_east_signed":longitude,
                 "before_date":prior,
                 "after_date":later,
+                "original_date_strings":[before,after],
+                "source_date_slash_typography_corrected":(
+                    before!=re.sub(r"/+","/",before)
+                    or after!=re.sub(r"/+","/",after)
+                ),
                 "slope_deg":float(slope),
                 "same_coordinate_figure_candidates":evidence,
                 "site_polygon_known":False,
