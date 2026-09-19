@@ -198,6 +198,20 @@ def csm_attempt(raw: Path) -> bool:
     # Small exact-format evidence only: preserve input values/types needed
     # to understand the USGSCSM C++ parser (no kernels, no source pixels).
     isd_data = json.loads(isd.read_text(encoding="utf-8"))
+    state = isd_data.get("instrument_position", {})
+    state_times = state.get("ephemeris_times", [])
+    state_velocities = state.get("velocities", [])
+    RESULT["ale_j2000_state_audit"] = {
+        "reference_frame": state.get("reference_frame"),
+        "state_samples": len(state_times),
+        "velocity_samples": len(state_velocities),
+        "time_range": [state_times[0], state_times[-1]] if state_times else [],
+        "first_velocity": state_velocities[0] if state_velocities else None,
+        "center_et": isd_data.get("center_ephemeris_time"),
+        "starting_et": isd_data.get("starting_ephemeris_time"),
+        "note": "only geometry summaries; no source image pixels",
+    }
+    persist()
     inspect = (
         "name_model", "image_lines", "image_samples",
         "focal2pixel_lines", "focal2pixel_samples",
