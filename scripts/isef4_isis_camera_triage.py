@@ -222,14 +222,18 @@ def csm_attempt(raw: Path) -> bool:
     # Probe the actual LROC driver property separately, without modifying
     # the scientific ISD or suppressing the CSM failure.
     driver_code = (
-        "from ale.drivers import get_driver_from_label; "
-        "d=get_driver_from_label(" + repr(str(raw)) +
+        "from ale.drivers import get_driver_from_label,pre_parse_label; "
+        "klass=get_driver_from_label(" + repr(str(raw)) +
         ',props={"web":True},verbose=False,'
         "only_isis_spice=False,only_naif_spice=True);"
-        'print("DRIVER_CLASS",type(d).__name__);'
-        'print("IKID",repr(d.ikid));'
-        'print("DIRECTION",repr(d.spacecraft_direction));'
-        'print("FOCAL_LINES",repr(d.focal2pixel_lines));'
+        'print("DRIVER_CLASS",klass.__name__);'
+        "d=klass(" + repr(str(raw)) +
+        ',props={"web":True},parsed_label=pre_parse_label(' +
+        repr(str(raw)) + '));'
+        "\\nwith d as active:\\n"
+        ' print("IKID",repr(active.ikid))\\n'
+        ' print("DIRECTION",repr(active.spacecraft_direction))\\n'
+        ' print("FOCAL_LINES",repr(active.focal2pixel_lines))\\n'
     )
     command("ale_direct_line_transform", [sys.executable, "-c", driver_code],
             timeout=130)
