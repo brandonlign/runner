@@ -30,7 +30,7 @@ def request_range(url:str,start:int,end:int,total:int|None=None)->tuple[bytes,in
  req=urllib.request.Request(url,headers={"Range":f"bytes={start}-{end}","User-Agent":"LUNARSHIFT-scientific-CDR-source/1.0"})
  with urllib.request.urlopen(req,timeout=180) as response:
   header=response.headers.get("Content-Range","")
-  m=re.fullmatch(r"bytes (\\d+)-(\\d+)/(\\d+)",header)
+  m=re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)",header)
   if response.status!=206 or not m or tuple(map(int,m.groups()[:2]))!=(start,end):
    raise RuntimeError(f"invalid strict HTTP 206: {response.status}, {header}")
   size=int(m.group(3))
@@ -43,7 +43,7 @@ def pds_fields(raw:bytes)->dict:
  keys=("PRODUCT_ID","LINES","LINE_SAMPLES","SAMPLE_BITS","SAMPLE_TYPE","LABEL_RECORDS","RECORD_BYTES","SCALING_FACTOR","NULL","VALID_MINIMUM")
  d={}
  for name in keys:
-  m=re.search(r"(?m)^\\s*"+name+r"\\s*=\\s*([^\\r\\n/]+)",s)
+  m=re.search(r"(?m)^\s*"+name+r"\s*=\s*([^\r\n/]+)",s)
   if m:d[name]=m.group(1).strip().strip('"')
  return d
 def main():
@@ -107,7 +107,7 @@ def main():
    "interpretation":"Native source pixels only; same index is not same ground location in other epoch",
   }
   DIAG.parent.mkdir(parents=True,exist_ok=True)
-  DIAG.write_text(json.dumps(diag,indent=2)+"\\n")
+  DIAG.write_text(json.dumps(diag,indent=2)+"\n")
   print(f"{role} {product} CDR marker={int(image[local,x])} range_sha={sha(raw)}",flush=True)
  print(json.dumps({"diagnostic":str(DIAG),"roles":list(diag["epochs"])}),flush=True)
 if __name__=="__main__":main()
