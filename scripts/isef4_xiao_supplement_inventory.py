@@ -144,8 +144,48 @@ def main():
         "counts_reconciled_not_coerced":True,
         "note":"pair rows require exact before/after IDs matching temporal pair key; target fill-down is unverified for merged labels",
     }
+    # Read primary-source captions and table rows directly from Word OOXML.
+    w="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    with zipfile.ZipFile(io.BytesIO(docx_blob)) as word_package:
+        document=ET.fromstring(word_package.read("word/document.xml"))
+    paragraphs=[]
+    for par in document.iter(w+"p"):
+        value="".join(t.text or "" for t in par.iter(w+"t")).strip()
+        if value:
+            paragraphs.append(value)
+    tables=[]
+    for tid,tab in enumerate(document.iter(w+"tbl")):
+        table_rows=[]
+        for tr in tab.findall(w+"tr"):
+            cells=[]
+            for tc in tr.findall(w+"tc"):
+                cell_text=" ".join(
+                    "".join(t.text or "" for t in par.iter(w+"t")).strip()
+                    for par in tc.iter(w+"p")
+                ).strip()
+                cells.append(cell_text[:260])
+            table_rows.append(cells)
+        tables.append({"table_index":tid,"row_count":len(table_rows),
+                       "max_columns":max(map(len,table_rows),default=0),
+                       "first_4_rows":table_rows[:4]})
+    keywords=("562","568","74","41","table s1","table s2","table s3",
+              "data s1","fig. s5","figure s5","gambart c","temporal pair")
+    matches=[{"paragraph_index":i,"text":p[:750]}
+             for i,p in enumerate(paragraphs)
+             if any(k in p.lower() for k in keywords)]
+    docx_audit={
+        "source_docx_filename":docx_names[0],
+        "source_docx_sha256":hashlib.sha256(docx_blob).hexdigest(),
+        "nonempty_paragraph_count":len(paragraphs),
+        "table_count":len(tables),
+        "table_structures":tables[:70],
+        "relevant_matching_paragraph_count":len(matches),
+        "relevant_matching_paragraphs":matches[:100],
+        "scientific_scope":"source document structure and captions; no inferred event coordinates",
+    }
     out={
-        "schema_version":"xiao2025-original-supplement-workbook-audit-v2",
+        "schema_version":"xiao2025-original-supplement-workbook-audit-v3",
+        "original_docx_structure_audit":docx_audit,
         "primary_pair_table_audit":pair_audit,
         "source_zip_sha256":ZIP_SHA,
         "source_workbook":names[0],
