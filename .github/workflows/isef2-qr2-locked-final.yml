@@ -34,6 +34,10 @@ jobs:
       - name: Clone exact locked isef2 state
         run: |
           set -euo pipefail
+          # actions/checkout injects a token-scoped github.com extraheader into
+          # the runner checkout. It is valid only for this repository and would
+          # poison an otherwise anonymous clone of public isef2.
+          git config --local --unset-all http.https://github.com/.extraheader || true
           git clone https://github.com/brandonlign/isef2.git work/isef2
           cd work/isef2
           git checkout main
