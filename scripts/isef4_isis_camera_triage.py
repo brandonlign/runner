@@ -26,7 +26,7 @@ PRODUCT = {"before": "M1138987659LE", "after": "M1200206882LE"}[ROLE]
 SOURCE_URL = (
     "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/"
     + {"before": "LROLRC_0017/DATA/ESM/2013317/NAC/",
-       "after": "LROLRC_0025/DATA/ESM/2015296/NAC/"}[ROLE]
+       "after": "LROLRC_0025/DATA/ESM2/2015296/NAC/"}[ROLE]
 )
 EXPECTED_IMG_BYTES = {"before": 77788104, "after": 140014536}[ROLE]
 ROOT = Path.cwd()
