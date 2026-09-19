@@ -174,7 +174,13 @@ def main():
     matches=[{"paragraph_index":i,"text":p[:750]}
              for i,p in enumerate(paragraphs)
              if any(k in p.lower() for k in keywords)]
+    figure_captions=[
+        {"paragraph_index":i,"text":p}
+        for i,p in enumerate(paragraphs)
+        if re.match(r"(?i)^Supplementary\s+Fig\.?\s*S\d+\.",p)
+    ]
     docx_audit={
+        "original_supplementary_figure_captions":figure_captions,
         "source_docx_filename":docx_names[0],
         "source_docx_sha256":hashlib.sha256(docx_blob).hexdigest(),
         "nonempty_paragraph_count":len(paragraphs),
