@@ -12,6 +12,7 @@ import json
 import re
 import urllib.request
 import zipfile
+from xml.etree import ElementTree as ET
 from pathlib import Path
 from openpyxl import load_workbook
 
@@ -32,6 +33,9 @@ def main():
         names=[x for x in outer.namelist() if x.endswith(".xlsx")]
         if len(names)!=1:raise RuntimeError("not exactly one original source workbook")
         xlsx=outer.read(names[0])
+        docx_names=[x for x in outer.namelist() if x.lower().endswith('.docx')]
+        if len(docx_names)!=1:raise RuntimeError('not exactly one original Word supplement')
+        docx_blob=outer.read(docx_names[0])
     book=load_workbook(io.BytesIO(xlsx),read_only=True,data_only=True)
     output=Path("output/isef4_original_xiao_tables")
     output.mkdir(parents=True,exist_ok=True)
