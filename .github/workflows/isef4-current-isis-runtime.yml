@@ -1,0 +1,46 @@
+name: LUNARSHIFT current ISIS runtime probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-current-isis-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-isis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Install current USGS ISIS from conda channel
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.11
+            isis
+          init-shell: bash
+          post-cleanup: all
+      - name: Record actual ISIS release and command capabilities
+        shell: bash -el {0}
+        run: |
+          echo "PATH=$PATH"
+          echo "ISISROOT=$ISISROOT ISISDATA=$ISISDATA"
+          command -v lronac2isis
+          command -v spiceinit
+          command -v cam2map
+          command -v mappt
+          command -v downloadIsisData
+          micromamba list isis
+          lronac2isis -help > /tmp/lronac2isis_help.log 2>&1 || true
+          spiceinit -help > /tmp/spiceinit_help.log 2>&1 || true
+          grep -E -i 'web|from|match' /tmp/spiceinit_help.log | head -15 || true
+          echo 'CURRENT_ISIS_RUNTIME_COMPLETE'
+      - name: Disk capacity
+        shell: bash
+        run: df -h /
