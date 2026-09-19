@@ -221,22 +221,50 @@ def csm_attempt(raw: Path) -> bool:
     persist()
     # Probe the actual LROC driver property separately, without modifying
     # the scientific ISD or suppressing the CSM failure.
-    driver_code = (
-        "from ale.drivers import get_driver_from_label,pre_parse_label; "
+    # Compute the exact signed NAC line transformation with the official ALE
+    # driver. If the remote SPK request needed *only for flight direction*
+    # fails, reproduce its own calculation using the time-matched J2000
+    # velocity returned in the successfully loaded ALE ISD and the driver's
+    # official J2000->LRO_SC_BUS frame chain. Never infer sign from an
+    # observation date, detector layout, or an arbitrary image flip.
+    driver_code = "\n".join([
+        "import json, numpy as np, pyspiceql, spiceypy as spice",
+        "from ale.drivers import get_driver_from_label, pre_parse_label",
         "klass=get_driver_from_label(" + repr(str(raw)) +
-        ',props={"web":True},verbose=False,'
-        "only_isis_spice=False,only_naif_spice=True);"
-        'print("DRIVER_CLASS",klass.__name__);'
+        ',props={"web":True},verbose=False,only_isis_spice=False,'
+        "only_naif_spice=True)",
+        'print("DRIVER_CLASS",klass.__name__)',
         "d=klass(" + repr(str(raw)) +
         ',props={"web":True},parsed_label=pre_parse_label(' +
-        repr(str(raw)) + '));'
-        "\nwith d as active:\n"
-        ' print("IKID",repr(active.ikid))\n'
-        ' print("DIRECTION",repr(active.spacecraft_direction))\n'
-        ' print("FOCAL_LINES",repr(active.focal2pixel_lines))\n'
-        ' print("FOCAL_LINES_JSON",__import__("json").dumps('
-        '__import__("numpy").asarray(active.focal2pixel_lines).tolist()))\n'
-    )
+        repr(str(raw)) + "))",
+        "with d as active:",
+        ' print("IKID",repr(active.ikid))',
+        " try:",
+        "  direction=float(active.spacecraft_direction)",
+        '  print("DIRECTION_PROVENANCE","remote_SpiceQL_state")',
+        " except Exception as error:",
+        '  print("REMOTE_DIRECTION_ERROR",repr(error))',
+        '  if "SPKINSUFFDATA" not in str(error): raise',
+        "  support=json.load(open(" + repr(str(isd)) + "))",
+        '  ip=support["instrument_position"]',
+        '  times=ip["ephemeris_times"]',
+        '  velocity=ip["velocities"][0]',
+        '  if ip["reference_frame"] != 1: raise ValueError("ALE velocity is not J2000")',
+        '  if len(velocity)!=3 or not np.isfinite(velocity).all(): raise ValueError("invalid spacecraft velocity")',
+        '  if abs(float(times[0])-float(active.ephemeris_start_time))>0.002: raise ValueError("ALE state epoch not NAC start")',
+        "  bus_id=pyspiceql.translateNameToCode(frame='LRO_SC_BUS',mission=active.spiceql_mission,searchKernels=active.search_kernels,useWeb=active.use_web)[0]",
+        '  rotate=active.frame_chain.compute_rotation(1,bus_id)',
+        '  bus_v=spice.mxv(rotate._rots.as_matrix()[0],velocity)',
+        '  direction=float(bus_v[0])',
+        '  if not np.isfinite(direction) or abs(direction)<0.01: raise ValueError("ambiguous LRO bus X velocity")',
+        '  active._spacecraft_direction=direction',
+        '  print("DIRECTION_PROVENANCE","ALE_ISD_J2000_velocity_rotated_using_official_ALE_frame_chain")',
+        '  print("SUPPORT_EPOCH",times[0])',
+        '  print("SUPPORT_J2000_VELOCITY",json.dumps(velocity))',
+        '  print("BUS_X_VELOCITY",direction)',
+        ' print("DIRECTION",direction)',
+        ' print("FOCAL_LINES_JSON",json.dumps(np.asarray(active.focal2pixel_lines).tolist()))',
+    ]) + "\n"
     compile(driver_code, "<ale_lroc_driver_probe>", "exec")
     direct_ok = command(
         "ale_direct_line_transform", [sys.executable, "-c", driver_code],
@@ -279,7 +307,11 @@ def csm_attempt(raw: Path) -> bool:
                     "direct_ale_driver": candidate,
                     "naif_itransl": coeff,
                     "detector_sample_summing": factor,
-                    "sign_from_live_driver_not_guessed": True,
+                    "sign_from_verified_ALE_spacecraft_state_not_guessed": True,
+                    "direction_provenance": (
+                        re.search(r"(?m)^DIRECTION_PROVENANCE (.+)$", direct_log)
+                        .group(1)
+                    ),
                     "original_isd_preserved_locally": str(original),
                 }
                 persist()
