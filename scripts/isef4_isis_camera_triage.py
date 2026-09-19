@@ -234,9 +234,67 @@ def csm_attempt(raw: Path) -> bool:
         ' print("IKID",repr(active.ikid))\n'
         ' print("DIRECTION",repr(active.spacecraft_direction))\n'
         ' print("FOCAL_LINES",repr(active.focal2pixel_lines))\n'
+        ' print("FOCAL_LINES_JSON",__import__("json").dumps('
+        '__import__("numpy").asarray(active.focal2pixel_lines).tolist()))\n'
     )
-    command("ale_direct_line_transform", [sys.executable, "-c", driver_code],
-            timeout=130)
+    compile(driver_code, "<ale_lroc_driver_probe>", "exec")
+    direct_ok = command(
+        "ale_direct_line_transform", [sys.executable, "-c", driver_code],
+        timeout=130,
+    )
+    if isd_data.get("focal2pixel_lines") is None:
+        # A CSM sensor model cannot be constructed from a null line
+        # transformation. Repair *only* if the same official ALE LROC
+        # driver independently returns the flight-direction-aware value;
+        # independently compare its magnitude against the actual PDS
+        # NAIF inverse pixel mapping. No guessed sign or replacement pixel.
+        direct_log = (OUTPUT / "ale_direct_line_transform.log").read_text()
+        observed = re.search(
+            r"(?m)^FOCAL_LINES_JSON (\[[^\r\n]+\])\s*$", direct_log
+        )
+        coeff = nk.get("INS-85600_ITRANSL")
+        factor = isd_data.get("detector_sample_summing")
+        if (direct_ok and observed is not None
+                and "LroLrocNac" in direct_log
+                and re.search(r"(?m)^IKID -85600\s*$", direct_log)
+                and isinstance(coeff, list) and len(coeff) == 3
+                and isinstance(factor, (int, float)) and factor > 0
+                and isd_data.get("name_model")
+                    == "USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL"):
+            candidate = json.loads(observed.group(1))
+            if (isinstance(candidate, list) and len(candidate) == 3
+                    and all(isinstance(v, (float, int)) and
+                            __import__("math").isfinite(v)
+                            for v in candidate)
+                    and all(abs(abs(float(v)) -
+                                abs(float(n) / float(factor))) < 0.0001
+                            for v, n in zip(candidate, coeff))):
+                original = OUTPUT / "before.original_ale_isd.json"
+                shutil.copyfile(isd, original)
+                isd_data["focal2pixel_lines"] = candidate
+                isd.write_text(json.dumps(isd_data))
+                RESULT["derived_isd_repair"] = {
+                    "field": "focal2pixel_lines",
+                    "original": None,
+                    "direct_ale_driver": candidate,
+                    "naif_itransl": coeff,
+                    "detector_sample_summing": factor,
+                    "sign_from_live_driver_not_guessed": True,
+                    "original_isd_preserved_locally": str(original),
+                }
+                persist()
+            else:
+                RESULT["derived_isd_repair"] = {
+                    "status": "rejected: driver's value does not match "
+                              "physical NAIF inverse pixel transform"
+                }
+                persist()
+        else:
+            RESULT["derived_isd_repair"] = {
+                "status": "not attempted: live-driver verified signed "
+                          "transformation is unavailable; no inferred sign"
+            }
+            persist()
     # Force the documented NAC line-scan model, not all five USGSCSM
     # models. The generic search can flood the diagnostic with irrelevant
     # frame/push-frame errors that hide the line scanner's actual failure.
