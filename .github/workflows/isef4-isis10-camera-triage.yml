@@ -30,10 +30,11 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          p=Path("diagnostics/isef4_gambart_camera_status_isis10.json")
+          p=Path("diagnostics/isef4_gambart_camera_pending_isis10.json")
           p.write_text(json.dumps({
             "schema_version":"isef4-isis10-install-sentinel-v1",
             "run_id":os.environ.get("GITHUB_RUN_ID"),
+            "source_commit":os.environ.get("GITHUB_SHA"),
             "scientific_status":"ISIS 10 environment installation or camera probe has not completed",
             "stages":{"installation":{"status":"pending"}},
           },indent=2)+"\\n")
@@ -64,10 +65,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f diagnostics/isef4_gambart_camera_status_isis10.json ]]; then
+          if [[ -f diagnostics/isef4_gambart_camera_status_isis10.json || -f diagnostics/isef4_gambart_camera_pending_isis10.json ]]; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add diagnostics/isef4_gambart_camera_status_isis10.json
+            git add -A diagnostics/isef4_gambart_camera_status_isis10.json diagnostics/isef4_gambart_camera_pending_isis10.json
             if ! git diff --cached --quiet; then
               git commit -m "Record ISIS 10 Gambart C camera geometry result"
               git pull --rebase origin main
@@ -82,5 +83,6 @@ jobs:
           path: |
             output/triage_isis10/*.log
             diagnostics/isef4_gambart_camera_status_isis10.json
+            diagnostics/isef4_gambart_camera_pending_isis10.json
           retention-days: 30
           if-no-files-found: warn
