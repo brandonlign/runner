@@ -103,19 +103,19 @@ def configure() -> None:
         RESULT["csm_plugin_directory"] = str(csm_dir)
         RESULT["csm_plugin_files"] = [p.name for p in files]
         plugin_group = (
-            "Group = Plugins\\n"
-            '  CSMDirectory = ("' + str(csm_dir) + '/")\\n'
-            "EndGroup\\n"
+            "Group = Plugins\n"
+            '  CSMDirectory = ("' + str(csm_dir) + '/")\n'
+            "EndGroup\n"
         )
-        if re.search(r"(?im)^\\s*Group\\s*=\\s*Plugins\\s*$", text):
+        if re.search(r"(?im)^\s*Group\s*=\s*Plugins\s*$", text):
             text, n = re.subn(
-                r"(?ims)^\\s*Group\\s*=\\s*Plugins\\s*\\n.*?^\\s*End[_ ]?Group\\s*\\n",
+                r"(?ims)^\s*Group\s*=\s*Plugins\s*\n.*?^\s*End[_ ]?Group\s*\n",
                 lambda _: plugin_group, text, count=1,
             )
             if n != 1:
                 raise RuntimeError("Plugins group exists but cannot be replaced")
-        elif re.search(r"(?m)^End\\s*$", text):
-            text = re.sub(r"(?m)^End\\s*$", lambda _: plugin_group + "End",
+        elif re.search(r"(?m)^End\s*$", text):
+            text = re.sub(r"(?m)^End\s*$", lambda _: plugin_group + "End",
                           text, count=1)
         else:
             raise RuntimeError("IsisPreferences lacks final End for plugins")
