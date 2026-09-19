@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/isef4-isis10-camera-triage.yml"
       - "scripts/isef4_isis_camera_triage.py"
+      - "scripts/test_isef4_distortion_repair.py"
   workflow_dispatch:
 
 permissions:
@@ -20,9 +21,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Python source before costly ISIS environment install
+      - name: Validate Python source and NAIF-backed distortion invariants
         shell: bash
-        run: python -m py_compile scripts/isef4_isis_camera_triage.py
+        run: |
+          python -m py_compile scripts/isef4_isis_camera_triage.py
+          python scripts/test_isef4_distortion_repair.py
       - name: Persist pre-install sentinel to distinguish environment failure
         shell: bash
         run: |
