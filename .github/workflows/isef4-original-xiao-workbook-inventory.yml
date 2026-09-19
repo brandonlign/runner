@@ -1,0 +1,48 @@
+name: LUNARSHIFT original Xiao source workbook audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-original-xiao-workbook-inventory.yml"
+      - "scripts/isef4_xiao_supplement_inventory.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  original-sheets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install original XLSX reader
+        run: python -m pip install --quiet openpyxl
+      - name: Audit every published source spreadsheet tab
+        run: python scripts/isef4_xiao_supplement_inventory.py
+      - name: Preserve full lossless sheet snapshots (not committed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-original-xiao2025-source-tab-csvs
+          path: output/isef4_original_xiao_tables/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish small source structure manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_original_xiao_workbook_inventory.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_original_xiao_workbook_inventory.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record original Xiao source workbook sheet provenance and counts"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
