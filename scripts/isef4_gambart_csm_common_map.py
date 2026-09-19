@@ -20,7 +20,7 @@ MAP=OUT/"gambart_fixed_common_sphere.map"
 ROLES=("before","after")
 PRODUCTS={"before":"M1138987659LE","after":"M1200206882LE"}
 TRIAGE={"before":"isis10_before","after":"isis10_after"}
-NUM=re.compile(r"(?m)^\\s*([A-Za-z][A-Za-z0-9_]*)\\s*=\\s*([-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)")
+NUM=re.compile(r"(?m)^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)")
 STATE={"schema":"gambart-c-official-CSM-common-map-first-gate-v1","published_positive_only":True,
        "source_ids":PRODUCTS,"published_lat_lon_e360":[3.218,348.092],
        "map_radius_m":1737400,"pixel_resolution_m":1.2,
@@ -52,7 +52,7 @@ def run(name,args,timeout=240):
  if code!=0:raise RuntimeError(f"{name}: {data[-800:]}")
  return data
 def get_num(p,field):
- m=re.search(r"(?m)^\\s*"+re.escape(field)+r"\\s*=\\s*([-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)",p.read_text(errors="replace"))
+ m=re.search(r"(?m)^\s*"+re.escape(field)+r"\s*=\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)",p.read_text(errors="replace"))
  if not m:raise RuntimeError(f"missing numeric {field} in {p}")
  val=float(m.group(1))
  if not math.isfinite(val):raise RuntimeError("nonfinite "+field)
@@ -126,7 +126,7 @@ def main():
        "allowoutside=false",f"to={mapped_pvl}"],timeout=150)
    mm={k:get_num(mapped_pvl,k) for k in ("Sample","Line")}
    text=mapped_pvl.read_text(errors="replace")
-   pm=re.search(r"(?m)^\\s*PixelValue\\s*=\\s*(\\S+)",text)
+   pm=re.search(r"(?m)^\s*PixelValue\s*=\s*(\S+)",text)
    pixel=pm.group(1) if pm else None
    STATE["stages"][role+"_mapped_location"]={
       "sample":mm["Sample"],"line":mm["Line"],
