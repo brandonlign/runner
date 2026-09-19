@@ -1,0 +1,72 @@
+name: LUNARSHIFT verified mapped terrain and original S5 crosswalk audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-map-figure-crosswalk.yml"
+      - "scripts/isef4_gambart_mapped_correspondence_audit.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-map-figure-crosswalk
+  cancel-in-progress: false
+jobs:
+  published-positive-crosswalk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify script parses
+        run: python -m py_compile scripts/isef4_gambart_mapped_correspondence_audit.py
+      - name: Restore exact NASA CSM mapped data from successful scientific step
+        uses: actions/download-artifact@v4
+        with:
+          name: gambart-c-csm-both-epochs-shared-spherical-map
+          run-id: 35459076420
+          github-token: ${{ github.token }}
+          path: work/recovered_map
+      - name: Restore original published Xiao et al. Figure S5 source
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-published-xiao2025-supplemental-source
+          run-id: 35451970384
+          github-token: ${{ github.token }}
+          path: work/recovered_paper
+      - name: Evaluate sphere-map physical terrain correspondence and figure identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless rasterio
+          python scripts/isef4_gambart_mapped_correspondence_audit.py \
+            --map-artifact-folder work/recovered_map/output/isef4_csm_common_map \
+            --supplement-artifact work/recovered_paper/nwaf384_supplemental_files.zip \
+            --out diagnostics/isef4_gambart_mapped_correspondence_audit.json
+      - name: Preserve ALL source pairs and negative visual crosswalk cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambart-exact-sphere-map-terrain-S5-crosswalk
+          path: diagnostics/isef4_gambart_mapped_correspondence_audit.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit small evidence only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_mapped_correspondence_audit.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Audit real sphere-map residual and published S5 crosswalk'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
