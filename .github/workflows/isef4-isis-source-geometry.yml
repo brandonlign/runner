@@ -1,0 +1,83 @@
+name: LUNARSHIFT Gambart C source camera geometry
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-isis-source-geometry.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-camera:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Install current ISIS
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.11
+            isis=8.3.0
+          init-shell: bash
+          post-cleanup: all
+      - name: Probe published Gambart C source NAC camera model
+        shell: bash -el {0}
+        run: |
+          set -u
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          mkdir -p "$ISISDATA" output
+          echo "ISISROOT=$ISISROOT ISISDATA=$ISISDATA"
+          python - <<'PY'
+          import urllib.request,hashlib,json
+          from pathlib import Path
+          root="https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/LROLRC_0017/DATA/ESM/2013317/NAC/"
+          for ext in ("IMG","xml"):
+              path=Path("output/M1138987659LE."+ext)
+              with urllib.request.urlopen(root+path.name,timeout=240) as r, path.open("wb") as f:
+                  import shutil
+                  shutil.copyfileobj(r,f)
+              print(json.dumps({"file":str(path),"size":path.stat().st_size,
+                 "sha256":hashlib.sha256(path.read_bytes()).hexdigest()}),flush=True)
+          PY
+          for operation in import spice ground; do
+            echo "ISIS_STAGE=$operation"
+            if [[ "$operation" == import ]]; then
+              lronac2isis from=output/M1138987659LE.IMG to=output/before.raw.cub >output/import.log 2>&1
+              rc=$?
+              echo "IMPORT_RC=$rc"
+              tail -35 output/import.log
+              if [[ $rc -ne 0 ]]; then break; fi
+            elif [[ "$operation" == spice ]]; then
+              spiceinit from=output/before.raw.cub web=true >output/spice.log 2>&1
+              rc=$?
+              echo "SPICE_RC=$rc"
+              tail -45 output/spice.log
+              if [[ $rc -ne 0 ]]; then break; fi
+            else
+              campt from=output/before.raw.cub type=ground latitude=3.218 longitude=348.092 coordsys=universal allowoutside=false to=output/event_campt.pvl >output/campt.log 2>&1
+              rc=$?
+              echo "CAMPT_RC=$rc"
+              tail -40 output/campt.log
+              test -f output/event_campt.pvl && cat output/event_campt.pvl || true
+            fi
+          done
+          df -h /
+          echo 'SOURCE_CAMERA_PROBE_COMPLETE'
+      - name: Upload geometry diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambart-c-isis-camera-geometry-probe
+          path: |
+            output/*.log
+            output/*.pvl
+            output/*.xml
+          retention-days: 30
+          if-no-files-found: warn
