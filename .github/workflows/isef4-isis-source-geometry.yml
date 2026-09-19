@@ -29,11 +29,21 @@ jobs:
       - name: Probe published Gambart C source NAC camera model
         shell: bash -el {0}
         run: |
+          set +e
           set -u
           export ISISROOT="$CONDA_PREFIX"
           export ISISDATA="$GITHUB_WORKSPACE/isisdata"
           mkdir -p "$ISISDATA" output
           echo "ISISROOT=$ISISROOT ISISDATA=$ISISDATA"
+          echo "SPICEQL_PREF_BEFORE"
+          grep -A 5 -B 2 'Group = SpiceQL' "$ISISROOT/IsisPreferences" || true
+          if grep -q 'Group = SpiceQL' "$ISISROOT/IsisPreferences"; then
+            sed -i -E '/Group = SpiceQL/,/EndGroup/s/UseSpiceQL *=.*/UseSpiceQL = "true"/' "$ISISROOT/IsisPreferences"
+          else
+            printf '\\nGroup = SpiceQL\\n  UseSpiceQL = "true"\\nEndGroup\\n' >> "$ISISROOT/IsisPreferences"
+          fi
+          echo "SPICEQL_PREF_AFTER"
+          grep -A 5 -B 2 'Group = SpiceQL' "$ISISROOT/IsisPreferences" || true
           python - <<'PY'
           import urllib.request,hashlib,json
           from pathlib import Path
