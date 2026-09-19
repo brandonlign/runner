@@ -1,0 +1,64 @@
+name: LUNARSHIFT verified calibrated Gambart C registration preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-cdr-registration-preflight.yml"
+      - "scripts/isef4_cdr_registration_preflight.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-calibrated-registration-preflight
+  cancel-in-progress: false
+jobs:
+  calibrated-positive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate calibration preflight source
+        run: python -m py_compile scripts/isef4_cdr_registration_preflight.py
+      - name: Recover exact published-positive original NASA reflectance only
+        uses: actions/download-artifact@v4
+        with:
+          name: gambart-c-official-calibrated-CDR-source-patches
+          run-id: 35454760984
+          github-token: ${{ github.token }}
+          path: output/gambart_cdr_native_source_patches
+      - name: Evaluate two fixed classical geometry models on real CDR pixels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_cdr_registration_preflight.py \
+            --source-folder output/gambart_cdr_native_source_patches \
+            --source-manifest diagnostics/isef4_gambart_official_cdr_native_marker_patches.json \
+            --out diagnostics/isef4_gambart_cdr_registration_preflight.json
+      - name: Preserve exact source hashes and all model outcomes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_cdr_registration_preflight.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record both controlled registration fits on calibrated Gambart C source data'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gambart-calibrated-positive-registration-preflight
+          path: diagnostics/isef4_gambart_cdr_registration_preflight.json
+          retention-days: 30
+          if-no-files-found: warn
