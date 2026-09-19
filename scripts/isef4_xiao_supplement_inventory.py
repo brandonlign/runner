@@ -167,7 +167,8 @@ def main():
             table_rows.append(cells)
         tables.append({"table_index":tid,"row_count":len(table_rows),
                        "max_columns":max(map(len,table_rows),default=0),
-                       "first_4_rows":table_rows[:4]})
+                       "first_4_rows":table_rows[:4],
+                       "all_original_rows":table_rows})
     keywords=("562","568","74","41","table s1","table s2","table s3",
               "data s1","fig. s5","figure s5","gambart c","temporal pair")
     matches=[{"paragraph_index":i,"text":p[:750]}
