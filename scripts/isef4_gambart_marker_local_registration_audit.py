@@ -51,7 +51,7 @@ def marker(path: Path,role: str, first_line: int) -> tuple[np.ndarray,dict]:
             raise ValueError(f"not successful {role} camera {name}")
     pvl=d["stages"]["csm_event_pvl"]["pvl_tail"]
     def num(k: str) -> float:
-        match=re.search(r"(?m)^\\s*"+re.escape(k)+r"\\s*=\\s*([-+]?[0-9]+(?:\\.[0-9]+)?)",pvl)
+        match=re.search(r"(?m)^\s*"+re.escape(k)+r"\s*=\s*([-+]?[0-9]+(?:\.[0-9]+)?)",pvl)
         if not match:raise ValueError(f"missing camera {role} PVL {k}")
         return float(match.group(1))
     if abs(num("PlanetocentricLatitude")-3.218)>1e-7 or abs(
@@ -172,7 +172,7 @@ def main()->None:
     x=p.parse_args()
     result=audit(x.source_folder,x.before_camera,x.after_camera)
     x.out.parent.mkdir(parents=True,exist_ok=True)
-    x.out.write_text(json.dumps(result,indent=2)+"\\n")
+    x.out.write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps({"out":str(x.out),"global":result["global_excluding_event"],
        "local":result["local_fixed_radii"]},indent=2),flush=True)
 if __name__=="__main__":
