@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/isef4-isis10-after-camera.yml"
       - "scripts/isef4_isis_camera_triage.py"
+      - "scripts/test_isef4_camera_download.py"
   workflow_dispatch:
 permissions:
   contents: write
@@ -17,8 +18,10 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Verify source code before real-source acquisition
-        run: python -m py_compile scripts/isef4_isis_camera_triage.py
+      - name: Verify source and exact-range transfer integrity offline
+        run: |
+          python -m py_compile scripts/isef4_isis_camera_triage.py scripts/test_isef4_camera_download.py
+          python scripts/test_isef4_camera_download.py
       - name: Install ISIS 10 and USGS line-scanner CSM
         uses: mamba-org/setup-micromamba@v3
         with:
