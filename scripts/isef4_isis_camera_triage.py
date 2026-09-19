@@ -19,11 +19,16 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-PRODUCT = "M1138987659LE"
+ROLE = os.environ.get("ISEF4_PRODUCT_ROLE", "before").strip()
+if ROLE not in ("before", "after"):
+    raise ValueError("ISEF4_PRODUCT_ROLE must be before or after")
+PRODUCT = {"before": "M1138987659LE", "after": "M1200206882LE"}[ROLE]
 SOURCE_URL = (
     "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/"
-    "LROLRC_0017/DATA/ESM/2013317/NAC/"
+    + {"before": "LROLRC_0017/DATA/ESM/2013317/NAC/",
+       "after": "LROLRC_0025/DATA/ESM/2015296/NAC/"}[ROLE]
 )
+EXPECTED_IMG_BYTES = {"before": 77788104, "after": 140014536}[ROLE]
 ROOT = Path.cwd()
 SUFFIX = os.environ.get("ISEF4_DIAGNOSTIC_SUFFIX", "").strip()
 if SUFFIX and not re.fullmatch(r"[a-z0-9_-]{1,20}", SUFFIX):
@@ -39,6 +44,8 @@ RESULT = {
     "runtime_label": SUFFIX or "isis83",
     "event": "Xiao et al. 2025 Figure S5 Gambart C (published positive)",
     "product": PRODUCT,
+    "source_role": ROLE,
+    "expected_edr_bytes": EXPECTED_IMG_BYTES,
     "target_latitude_deg_n": 3.218,
     "target_longitude_deg_e": 348.092,
     "generated_utc": datetime.now(timezone.utc).isoformat(),
@@ -106,7 +113,7 @@ def configure() -> None:
                       text, count=1)
     else:
         raise RuntimeError("IsisPreferences lacks final End")
-    if SUFFIX == "isis10":
+    if SUFFIX.startswith("isis10"):
         # CSM CameraFactory discovers dynamic .so plugins only through the
         # Plugins/CSMDirectory paths. ALE success alone does not register CSM.
         csm_dir = prefix / "lib" / "csmplugins"
@@ -152,6 +159,11 @@ def fetch() -> bool:
                     h.update(chunk)
                     n += len(chunk)
                     out.write(chunk)
+            if ext == "IMG" and n != EXPECTED_IMG_BYTES:
+                raise ValueError(
+                    f"source EDR length mismatch for {PRODUCT}: "
+                    f"{n} != {EXPECTED_IMG_BYTES}"
+                )
             RESULT["stages"]["download_" + ext] = {
                 "bytes": n, "sha256": h.hexdigest(),
                 "source_url": SOURCE_URL + destination.name,
@@ -242,7 +254,7 @@ def csm_attempt(raw: Path) -> bool:
     A failed CSM plugin/ground-point conversion remains separate from the
     success of ALE loading. Retain the original ISIS cube and ISD locally.
     """
-    isd = OUTPUT / "before.raw.cub.json"
+    isd = OUTPUT / (ROLE + ".raw.cub.json")
     ale_code = (
         "import ale,json; "
         "result=ale.load(" + repr(str(raw)) +
@@ -400,7 +412,7 @@ def csm_attempt(raw: Path) -> bool:
                     and all(abs(abs(float(v)) -
                                 abs(float(n) / float(factor))) < 0.0001
                             for v, n in zip(candidate, coeff))):
-                original = OUTPUT / "before.original_ale_isd.json"
+                original = OUTPUT / (ROLE + ".original_ale_isd.json")
                 shutil.copyfile(isd, original)
                 isd_data["focal2pixel_lines"] = candidate
                 isd.write_text(json.dumps(isd_data))
@@ -510,10 +522,10 @@ def main() -> int:
     # ALE's native web route is independently supported by ISIS 10 on this
     # published LROC EDR. Avoid downloading several GiB of irrelevant base
     # SPKs when testing CSM geometry; no provisional holdouts are accessed.
-    if SUFFIX == "isis10":
+    if SUFFIX.startswith("isis10"):
         if not fetch():
             return 1
-        raw = OUTPUT / "before.raw.cub"
+        raw = OUTPUT / (ROLE + ".raw.cub")
         if not command("import", [
             "lronac2isis", f"from={OUTPUT / (PRODUCT + '.IMG')}", f"to={raw}"
         ], timeout=180):
@@ -551,7 +563,7 @@ def main() -> int:
     if not fetch():
         return 1
 
-    raw = OUTPUT / "before.raw.cub"
+    raw = OUTPUT / (ROLE + ".raw.cub")
     if not command("import", [
         "lronac2isis", f"from={OUTPUT / (PRODUCT + '.IMG')}", f"to={raw}"
     ], timeout=180):
