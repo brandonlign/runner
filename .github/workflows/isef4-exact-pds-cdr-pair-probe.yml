@@ -1,0 +1,39 @@
+name: LUNARSHIFT exact calibrated CDR source metadata
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-exact-pds-cdr-pair-probe.yml"
+      - "scripts/isef4_probe_cdr_pair.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  nasa-calibration-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect only verified PDS3 headers, not full lunar imagery
+        run: python scripts/isef4_probe_cdr_pair.py
+      - name: Preserve verified match AND informative failure
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f diagnostics/isef4_gambart_exact_pds_cdr_pair_probe.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_gambart_exact_pds_cdr_pair_probe.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Audit NASA calibrated original CDR counterparts for Gambart C two epochs"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef4-gambart-exact-CDR-probe
+          path: diagnostics/isef4_gambart_exact_pds_cdr_pair_probe.json
+          retention-days: 30
+          if-no-files-found: warn
