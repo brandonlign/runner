@@ -195,6 +195,23 @@ def csm_attempt(raw: Path) -> bool:
     )
     if not command("ale_isd", [sys.executable, "-c", ale_code], timeout=150):
         return False
+    # Small exact-format evidence only: preserve input values/types needed
+    # to understand the USGSCSM C++ parser (no kernels, no source pixels).
+    isd_data = json.loads(isd.read_text(encoding="utf-8"))
+    inspect = (
+        "name_model", "image_lines", "image_samples",
+        "focal2pixel_lines", "focal2pixel_samples",
+        "line_scan_rate", "detector_center",
+        "starting_ephemeris_time", "center_ephemeris_time",
+        "detector_line_summing", "detector_sample_summing",
+    )
+    RESULT["ale_isd_interface"] = {
+        k: {"type": type(isd_data.get(k)).__name__,
+            "value": isd_data.get(k)[:4] if isinstance(isd_data.get(k), list)
+                     else isd_data.get(k)}
+        for k in inspect
+    }
+    persist()
     # Force the documented NAC line-scan model, not all five USGSCSM
     # models. The generic search can flood the diagnostic with irrelevant
     # frame/push-frame errors that hide the line scanner's actual failure.
