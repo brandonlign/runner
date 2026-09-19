@@ -80,11 +80,37 @@ jobs:
               tail -35 output/import.log
               if [[ $rc -ne 0 ]]; then break; fi
             elif [[ "$operation" == spice ]]; then
-              spiceinit from=output/before.raw.cub web=true >output/spice.log 2>&1
+              # web=true forces the obsolete legacy SpiceClient service.
+              # With SpiceQL preferences, web=false invokes the ALE driver.
+              spiceinit from=output/before.raw.cub web=false >output/spice.log 2>&1
               rc=$?
               echo "SPICE_RC=$rc"
-              tail -45 output/spice.log
-              if [[ $rc -ne 0 ]]; then break; fi
+              tail -65 output/spice.log
+              if [[ $rc -ne 0 ]]; then
+                echo "ALE_DIRECT_PROBE"
+                export ALESPICEQL_LOG_LEVEL=debug
+                python - <<'ALEPY' >output/ale.log 2>&1
+import ale
+try:
+    result=ale.load(
+        "output/before.raw.cub",
+        props={"web":True},
+        formatter="ale",
+        verbose=False,
+        only_isis_spice=False,
+        only_naif_spice=True,
+    )
+    print("ALE_DIRECT_SUCCESS",type(result).__name__)
+    if isinstance(result,dict):
+        print("ALE_KEYS",sorted(result.keys()))
+except Exception as exc:
+    print("ALE_DIRECT_FAILURE",type(exc).__name__,str(exc))
+    raise
+ALEPY
+                echo "ALE_RC=$?"
+                tail -85 output/ale.log
+                break
+              fi
             else
               campt from=output/before.raw.cub type=ground latitude=3.218 longitude=348.092 coordsys=universal allowoutside=false to=output/event_campt.pvl >output/campt.log 2>&1
               rc=$?
