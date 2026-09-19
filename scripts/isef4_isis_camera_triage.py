@@ -155,7 +155,8 @@ def csm_attempt(raw: Path) -> bool:
         "result=ale.load(" + repr(str(raw)) +
         ',props={"web":True},formatter="ale",verbose=False,'
         "only_isis_spice=False,only_naif_spice=True);"
-        "json.dump(result,open(" + repr(str(isd)) + ',"w"));'
+        "json.dump(result,open(" + repr(str(isd)) + ',"w"),"
+        'default=lambda o:o.tolist() if hasattr(o,"tolist") else str(o));'
         'print("ISD_KEYS", sorted(result));'
     )
     if not command("ale_isd", [sys.executable, "-c", ale_code], timeout=150):
