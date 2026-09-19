@@ -1,0 +1,124 @@
+name: ISEF2 QR2 locked final execution
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef2-qr2-locked-final.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isef2-qr2-locked-final
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      PYTHONUNBUFFERED: '1'
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      NUMEXPR_NUM_THREADS: '1'
+      ISEF2_EXPECTED_SHA: d0ebbfaf2c90112a2f82f5d163826ab25e2e3889
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Clone exact locked isef2 state
+        run: |
+          set -euo pipefail
+          git clone https://github.com/brandonlign/isef2.git work/isef2
+          cd work/isef2
+          git checkout main
+          test "$(git rev-parse HEAD)" = "$ISEF2_EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          echo "LOCKED_ISEF2_SHA=$(git rev-parse HEAD)"
+
+      - name: Install exact QR2 runtime
+        working-directory: work/isef2
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python - <<'PY'
+          import importlib.metadata, json
+          d=importlib.metadata.distribution("spexpi")
+          raw=d.read_text("direct_url.json")
+          info=json.loads(raw) if raw else {}
+          got=(info.get("vcs_info") or {}).get("commit_id")
+          expected="96b9ff95b4497f18b7cfc75dc6b38bcb3aff1b0f"
+          assert got==expected,(got,expected)
+          print("PINNED_SPEXPI_OK",got)
+          PY
+
+      - name: Execute frozen QR2 experiment through untouched replication
+        id: science
+        working-directory: work/isef2
+        shell: bash
+        run: |
+          set +e
+          export PYTHONPATH="$PWD/experiments"
+          python experiments/spherex_qr2_finish_local.py --workers 16 2>&1 | tee ../../qr2_execution.log
+          rc=${PIPESTATUS[0]}
+          echo "$rc" > ../../qr2_exit_code.txt
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      - name: Capture terminal scientific state
+        if: always()
+        working-directory: work/isef2
+        run: |
+          set +e
+          mkdir -p ../../qr2_terminal
+          git rev-parse HEAD > ../../qr2_terminal/final_git_sha.txt
+          git status --porcelain --untracked-files=all > ../../qr2_terminal/git_status.txt
+          git log --oneline --decorate -40 > ../../qr2_terminal/git_log.txt
+          find results/spherex_qr2_stage_seals -maxdepth 1 -type f -name '*.json' -print 2>/dev/null | sort > ../../qr2_terminal/seal_files.txt
+          cp -a results/spherex_qr2_stage_seals ../../qr2_terminal/stage_seals 2>/dev/null || true
+          for d in             results/spherex_qr2_development_pilot_extraction             results/spherex_qr2_development_model             results/spherex_qr2_threshold_calibration             results/spherex_qr2_heldout_gate             results/spherex_qr2_red_transfer_gate             results/spherex_qr2_lowb_technical_assessment             results/spherex_qr2_highpm_technical_assessment             results/spherex_qr2_postthreshold_null_summary             results/spherex_qr2_discovery_analysis             results/spherex_qr2_discovery_region_localization             results/spherex_qr2_discovery_trajectory             results/spherex_qr2_replication_analysis             results/spherex_qr2_replication_region_localization             results/spherex_qr2_replication_trajectory; do
+            if [ -f "$d/summary.json" ]; then
+              mkdir -p "../../qr2_terminal/$d"
+              cp "$d/summary.json" "../../qr2_terminal/$d/summary.json"
+            fi
+          done
+          {
+            echo '=== QR2 EXIT CODE ==='
+            cat ../../qr2_exit_code.txt 2>/dev/null || true
+            echo '=== FINAL GIT SHA ==='
+            git rev-parse HEAD
+            echo '=== SEALS ==='
+            find results/spherex_qr2_stage_seals -maxdepth 1 -type f -name '*.json' -print 2>/dev/null | sort
+            echo '=== DISCOVERY SEAL ==='
+            cat results/spherex_qr2_stage_seals/discovery_result_frozen.json 2>/dev/null || true
+            echo '=== REPLICATION SEAL ==='
+            cat results/spherex_qr2_stage_seals/replication_result_frozen.json 2>/dev/null || true
+          } | tee ../../qr2_terminal/terminal_report.txt
+
+      - name: Preserve exact local git history
+        if: always()
+        working-directory: work/isef2
+        run: |
+          set +e
+          git bundle create ../../isef2-qr2-final.bundle HEAD
+          sha256sum ../../isef2-qr2-final.bundle > ../../qr2_terminal/git_bundle_sha256.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isef2-qr2-locked-final
+          path: |
+            qr2_execution.log
+            qr2_exit_code.txt
+            qr2_terminal
+            isef2-qr2-final.bundle
+          if-no-files-found: error
+          retention-days: 90
