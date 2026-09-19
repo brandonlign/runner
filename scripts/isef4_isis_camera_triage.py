@@ -68,9 +68,19 @@ def command(name: str, argv: list[str], timeout: int = 180) -> bool:
         logfile = f"{type(exc).__name__}: {exc}"
         rc = -1
     p.write_text(logfile)
+    # Retain *all relevant error lines* when a noisy USGSCSM plugin dumps
+    # the entire large ISD repeatedly, which can bury the first cause beyond
+    # the final log tail. Never include image bytes or full large ISDs.
+    error_lines = [
+        line[-1500:] for line in logfile.splitlines()
+        if re.search(r"\berror\b|invalid|could not|exception|missing|\bwarn", line, re.I)
+    ]
     RESULT["stages"][name] = {
         "returncode": rc,
         "log_tail": logfile[-6500:],
+        "diagnostic_lines": error_lines[:12] + error_lines[-20:]
+                            if len(error_lines) > 32 else error_lines,
+        "full_log_bytes": len(logfile.encode("utf-8")),
     }
     persist()
     print(name, "RC", rc, logfile[-1000:], flush=True)
