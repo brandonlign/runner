@@ -1,0 +1,120 @@
+name: LUNARSHIFT public benchmark and SomBench inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-public-benchmark-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install public benchmark spreadsheet reader
+        run: python -m pip install --quiet openpyxl
+      - name: Inventory public Xiao supplement and SomBench object keys
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os,io,json,re,hashlib,zipfile,urllib.request,urllib.parse,urllib.error
+          from xml.etree import ElementTree as ET
+          from pathlib import Path
+          from openpyxl import load_workbook
+          out=Path("public_lunar_inventory");out.mkdir(exist_ok=True)
+          def req(url,method="GET",limit=None):
+              q=urllib.request.Request(url,method=method,headers={"User-Agent":"LUNARSHIFT-public-acquisition/0.3"})
+              with urllib.request.urlopen(q,timeout=120) as r:
+                  if method=="HEAD":
+                      return {"status":r.status,"bytes":r.headers.get("Content-Length"),"url":r.url}
+                  data=r.read() if limit is None else r.read(limit)
+                  return data
+          def list_s3(base,prefix="",delimiter="/",max_keys=100):
+              url=base+"?"+urllib.parse.urlencode({"list-type":"2","prefix":prefix,"delimiter":delimiter,"max-keys":max_keys})
+              try:
+                  data=req(url)
+                  root=ET.fromstring(data)
+                  prefixes=[(x.text or "") for x in root.iter() if x.tag.rsplit("}",1)[-1]=="Prefix"]
+                  keys=[(x.text or "") for x in root.iter() if x.tag.rsplit("}",1)[-1]=="Key"]
+                  return {"url":url,"prefixes":prefixes,"keys":keys,"bytes":len(data)}
+              except Exception as exc:
+                  return {"url":url,"error":f"{type(exc).__name__}: {exc}"}
+          bucket="nasa-lunar-fm-bench"
+          hosts=[
+            f"https://{bucket}.s3.us-west-2.amazonaws.com/",
+            f"https://s3.us-west-2.amazonaws.com/{bucket}/",
+            f"https://{bucket}.s3.amazonaws.com/"
+          ]
+          listings={}
+          for base in hosts:
+              for prefix in ("","NAC_HighRes/","Sombench-pretraining-data/"):
+                  result=list_s3(base,prefix)
+                  listings[base+"|"+prefix]=result
+                  print("SOMBENCH "+json.dumps(result),flush=True)
+          (out/"sombench_listing.json").write_text(json.dumps(listings,indent=2))
+          base="https://pmc-oa-opendata.s3.amazonaws.com/"
+          meta=json.loads(req(base+"metadata/PMC12576953.1.json"))
+          (out/"pmc_metadata.json").write_text(json.dumps(meta,indent=2))
+          urls=meta.get("media_urls",[])
+          supplements=[u for u in urls if "supp" in str(u).lower() and ".zip" in str(u).lower()]
+          if not supplements:raise RuntimeError("no supplement URL in PMC metadata")
+          url=supplements[0].replace("s3://pmc-oa-opendata/",base)
+          print("SUPPLEMENT_URL "+url,flush=True)
+          print("SUPPLEMENT_HEAD "+json.dumps(req(url,"HEAD")),flush=True)
+          data=req(url)
+          if len(data)>150_000_000:raise RuntimeError("supplement exceeds 150MB cap")
+          source=out/"nwaf384_supplemental_files.zip";source.write_bytes(data)
+          rows=[];ids=[];catalog=[];rx=re.compile(r"\bM\d{8,13}[A-Z]{0,4}\b",re.I)
+          def inspect(name,content,level):
+              if level>3:return
+              p=Path(name);ext=p.suffix.lower()
+              catalog.append({"path":name,"bytes":len(content),"sha256":hashlib.sha256(content).hexdigest()})
+              if ext==".zip":
+                  with zipfile.ZipFile(io.BytesIO(content)) as z:
+                      for n in z.namelist():
+                          if n.endswith("/"):continue
+                          inspect(name+"!"+n,z.read(n),level+1)
+              if ext in (".xlsx",".xlsm"):
+                  try:
+                      wb=load_workbook(io.BytesIO(content),read_only=True,data_only=True)
+                      for sheet in wb:
+                          print("SHEET "+json.dumps({"file":name,"sheet":sheet.title,"rows":sheet.max_row,"cols":sheet.max_column}),flush=True)
+                          for i,row in enumerate(sheet.values,1):
+                              for j,value in enumerate(row,1):
+                                  if value is None:continue
+                                  for pid in rx.findall(str(value)):
+                                      rows.append({"file":name,"sheet":sheet.title,"row":i,"col":j,"product_id":pid.upper(),"value":str(value)[:180]})
+                                      ids.append(pid.upper())
+                      wb.close()
+                  except Exception as exc:
+                      print("SHEET_ERROR "+name+" "+repr(exc),flush=True)
+              elif ext in (".csv",".tsv",".txt"):
+                  for i,line in enumerate(content.decode("utf8","replace").splitlines(),1):
+                      for pid in rx.findall(line):
+                          rows.append({"file":name,"sheet":None,"row":i,"col":None,"product_id":pid.upper(),"value":line[:180]})
+                          ids.append(pid.upper())
+          inspect(source.name,data,0)
+          report={"pmcid":meta["pmcid"],"doi":meta["doi"],"zip_bytes":len(data),
+              "zip_sha256":hashlib.sha256(data).hexdigest(),"file_count":len(catalog),
+              "files":catalog,"occurrence_count":len(rows),
+              "unique_product_id_count":len(set(ids)),
+              "unique_product_ids":sorted(set(ids)),
+              "occurrences":rows[:1000]}
+          (out/"xiao_public_inventory.json").write_text(json.dumps(report,indent=2))
+          print("XIAO_SUMMARY "+json.dumps({k:v for k,v in report.items() if k not in ("files","occurrences","unique_product_ids")}),flush=True)
+          print("XIAO_FILES "+json.dumps(catalog),flush=True)
+          print("XIAO_IDS "+json.dumps(sorted(set(ids))[:100]),flush=True)
+          print("PUBLIC_BENCHMARK_INVENTORY_COMPLETE",flush=True)
+          PY
+      - name: Upload public acquisition manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-public-xiao-sombench-inventory
+          path: public_lunar_inventory/
+          if-no-files-found: warn
+          retention-days: 30
