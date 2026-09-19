@@ -1,0 +1,89 @@
+name: LUNARSHIFT Gambart C two-epoch ISIS CSM common-map geometry
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-gambart-csm-common-map.yml"
+      - "scripts/isef4_gambart_csm_common_map.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-gambart-csm-common-map
+  cancel-in-progress: false
+jobs:
+  published-source-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile source-camera and projection implementation
+        run: |
+          python -m py_compile scripts/isef4_isis_camera_triage.py
+          python -m py_compile scripts/isef4_gambart_csm_common_map.py
+      - name: Install current ISIS CSM camera runtime
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis10
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.13
+            isis=10.0.0
+            usgscsm
+          init-shell: bash
+          post-cleanup: all
+      - name: Initialize official source cameras for both published epochs
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          mkdir -p "$ISISDATA/base/kernels/lsk"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls" \
+            --output "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          grep -q 'KPL/LSK' "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          python -m pip install --quiet 'setuptools<81'
+          export ISEF4_PRODUCT_ROLE=before
+          export ISEF4_DIAGNOSTIC_SUFFIX=isis10_before
+          python scripts/isef4_isis_camera_triage.py
+          export ISEF4_PRODUCT_ROLE=after
+          export ISEF4_DIAGNOSTIC_SUFFIX=isis10_after
+          python scripts/isef4_isis_camera_triage.py
+      - name: Physical crop and common-map projection on one shared grid
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          python scripts/isef4_gambart_csm_common_map.py
+      - name: Keep small mapped scientific geometry outputs, never full EDR
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambart-c-csm-both-epochs-shared-spherical-map
+          path: |
+            diagnostics/isef4_gambart_csm_common_map_probe.json
+            output/isef4_csm_common_map/*.map
+            output/isef4_csm_common_map/*.pvl
+            output/isef4_csm_common_map/*.log
+            output/isef4_csm_common_map/*.commonmap.cub
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Preserve precise success or failure marker audit
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_csm_common_map_probe.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m "Record exact two-epoch CSM common-map geometry outcome"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
