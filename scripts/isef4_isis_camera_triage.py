@@ -143,6 +143,58 @@ def ale_probe(name: str, path: Path) -> None:
     command("ale_" + name, [sys.executable, "-c", probe], timeout=90)
 
 
+def csm_attempt(raw: Path) -> bool:
+    """Use the working ALE 1.2+ LROC web ISD without local LRO CK databases.
+
+    A failed CSM plugin/ground-point conversion remains separate from the
+    success of ALE loading. Retain the original ISIS cube and ISD locally.
+    """
+    isd = OUTPUT / "before.raw.cub.json"
+    ale_code = (
+        "import ale,json; "
+        "result=ale.load(" + repr(str(raw)) +
+        ',props={"web":True},formatter="ale",verbose=False,'
+        "only_isis_spice=False,only_naif_spice=True);"
+        "json.dump(result,open(" + repr(str(isd)) + ',"w"));'
+        'print("ISD_KEYS", sorted(result));'
+    )
+    if not command("ale_isd", [sys.executable, "-c", ale_code], timeout=150):
+        return False
+    if not command("csminit", [
+        "csminit", f"from={raw}", f"isd={isd}", "targetname=Moon",
+    ], timeout=120):
+        return False
+    center = OUTPUT / "csm_center_campt.pvl"
+    center_ok = command("csm_campt_center", [
+        "campt", f"from={raw}", "type=image",
+        "sample=2532", "line=7680", f"to={center}",
+    ], timeout=120)
+    point = OUTPUT / "csm_event_campt.pvl"
+    event_ok = command("csm_campt_event", [
+        "campt", f"from={raw}", "type=ground",
+        "latitude=3.218", "longitude=348.092",
+        "allowoutside=false", f"to={point}",
+    ], timeout=120)
+    for tag, p in (("center", center), ("event", point)):
+        if p.exists():
+            RESULT["stages"]["csm_" + tag + "_pvl"] = {
+                "pvl_tail": p.read_text(errors="replace")[-6000:]
+            }
+    if center_ok and event_ok:
+        RESULT["scientific_status"] = (
+            "ALE/CSM camera ground-coordinate query succeeded for the "
+            "published BEFORE EDR; calibration, AFTER geometry, common "
+            "projection, and geological event recovery remain untested"
+        )
+    else:
+        RESULT["scientific_status"] = (
+            "ALE/CSM initialized but camera image and/or published ground "
+            "coordinate query failed; inspect CSM stage diagnostics"
+        )
+    persist()
+    return center_ok and event_ok
+
+
 def main() -> int:
     persist()
     RESULT["tool_versions"] = {}
@@ -157,6 +209,27 @@ def main() -> int:
         }
         persist()
         return 1
+    # ALE's native web route is independently supported by ISIS 10 on this
+    # published LROC EDR. Avoid downloading several GiB of irrelevant base
+    # SPKs when testing CSM geometry; no provisional holdouts are accessed.
+    if SUFFIX == "isis10":
+        if not fetch():
+            return 1
+        raw = OUTPUT / "before.raw.cub"
+        if not command("import", [
+            "lronac2isis", f"from={OUTPUT / (PRODUCT + '.IMG')}", f"to={raw}"
+        ], timeout=180):
+            return 1
+        if csm_attempt(raw):
+            return 0
+        for name, path in (
+            ("cube", raw),
+            ("pds3", OUTPUT / (PRODUCT + ".IMG")),
+            ("pds4", OUTPUT / (PRODUCT + ".xml")),
+        ):
+            ale_probe(name, path)
+        return 1
+
     # A conda ISIS install contains binaries but NOT the $ISISDATA/base
     # databases. In particular, WEB=false still needs the base LSK database
     # even when remote SPICE/SpiceQL supplies mission kernels.
