@@ -1,0 +1,67 @@
+name: LUNARSHIFT original published S5 to NASA raw EDR feature search
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-s5-source-feature-match.yml"
+      - "scripts/isef4_s5_source_match.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: isef4-source-S5-raw-feature-crossmatch
+  cancel-in-progress: true
+
+jobs:
+  source-panel-match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate script before downloading public source arrays
+        run: python -m py_compile scripts/isef4_s5_source_match.py
+      - name: Download exact wider original NASA raw-count image windows
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-gambart-c-wider-raw-counts
+          run-id: 35422390895
+          github-token: ${{ github.token }}
+          path: output/isef4_s5_match/raw
+      - name: Measure published Figure S5 to native source correspondence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_s5_source_match.py \
+            --raw-folder output/isef4_s5_match/raw \
+            --source-manifest diagnostics/isef4_published_s5_source_status.json \
+            --out diagnostics/isef4_s5_source_feature_match.json
+      - name: Preserve independent machine-readable metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-source-S5-feature-match-diagnostics
+          path: diagnostics/isef4_s5_source_feature_match.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit metrics, not NASA source pixels
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_s5_source_feature_match.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_s5_source_feature_match.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record original published Figure S5 source-band match diagnostic"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
