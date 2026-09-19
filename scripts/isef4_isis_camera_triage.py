@@ -195,8 +195,13 @@ def csm_attempt(raw: Path) -> bool:
     )
     if not command("ale_isd", [sys.executable, "-c", ale_code], timeout=150):
         return False
-    if not command("csminit", [
+    # Force the documented NAC line-scan model, not all five USGSCSM
+    # models. The generic search can flood the diagnostic with irrelevant
+    # frame/push-frame errors that hide the line scanner's actual failure.
+    if not command("csminit_linescan", [
         "csminit", f"from={raw}", f"isd={isd}", "targetname=Moon",
+        "pluginname=UsgsAstroPluginCSM",
+        "modelname=USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL",
     ], timeout=120):
         return False
     center = OUTPUT / "csm_center_campt.pvl"
