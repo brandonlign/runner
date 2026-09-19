@@ -1,0 +1,85 @@
+name: LUNARSHIFT Gambart C raw-image range and label probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-gambart-edr-geometry-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gambart-pds-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Test published positive full-resolution EDR image transport
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib,json,urllib.request,urllib.error
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          root=Path("gambart_public_necessary_metadata");root.mkdir(exist_ok=True)
+          pairs=[
+            ("M1138987659LE",
+             "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/LROLRC_0017/DATA/ESM/2013317/NAC/M1138987659LE"),
+            ("M1200206882LE",
+             "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/LROLRC_0025/DATA/ESM2/2015296/NAC/M1200206882LE"),
+          ]
+          results=[]
+          for pid,base in pairs:
+            item={"source_fig":"Xiao2025_S5","edr_id":pid}
+            for extension in (".xml",".IMG"):
+              url=base+extension
+              headers={"User-Agent":"LUNARSHIFT-scientific-EDR-geometry-probe/0.4"}
+              if extension==".IMG":headers["Range"]="bytes=0-65535"
+              req=urllib.request.Request(url,headers=headers)
+              try:
+                with urllib.request.urlopen(req,timeout=60) as r:
+                  content=r.read(65537)
+                  item[extension]={
+                    "status":r.status,"content_range":r.headers.get("Content-Range"),
+                    "content_length":r.headers.get("Content-Length"),
+                    "content_type":r.headers.get("Content-Type"),
+                    "bytes_read":len(content),"sha256_sample":hashlib.sha256(content).hexdigest(),
+                    "url":r.url
+                  }
+                  if extension==".xml":
+                    xml_file=root/(pid+".xml");xml_file.write_bytes(content)
+                    if r.read(1):raise RuntimeError("XML metadata exceeded 65537 bytes")
+                    parsed=ET.fromstring(content)
+                    tags={}
+                    keys=("lines","line_samples","sample_bits","sample_type",
+                      "scaling_factor","offset","record_bytes","file_records",
+                      "start_time","stop_time","center_latitude",
+                      "center_longitude","minimum_latitude",
+                      "maximum_latitude","instrument_id","product_id")
+                    for elem in parsed.iter():
+                      tag=elem.tag.rsplit("}",1)[-1].lower()
+                      if any(x in tag for x in keys) and elem.text and len(elem.text)<250:
+                        tags.setdefault(tag,[]).append(elem.text.strip())
+                    item["xml_tag_examples"]={k:v[:10] for k,v in tags.items()}
+                  else:
+                    if r.status!=206:
+                      item["range_policy"]="FAIL: server did not return HTTP 206; no full download attempted"
+                    elif len(content)!=65536:
+                      item["range_policy"]="FAIL: short/long byte-range response"
+                    else:item["range_policy"]="PASS: exact 64KiB range"
+              except Exception as exc:
+                item[extension+"_error"]=type(exc).__name__+": "+str(exc)
+            results.append(item)
+            print("GAMBART_EDR "+json.dumps(item),flush=True)
+          (root/"transport_and_geometry.json").write_text(json.dumps(results,indent=2))
+          print("GAMBART_EDR_PROBE_COMPLETE",flush=True)
+          PY
+      - name: Preserve source XML and transport checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-gambart-raw-edr-geometry-probe
+          path: gambart_public_necessary_metadata/
+          if-no-files-found: warn
+          retention-days: 30
