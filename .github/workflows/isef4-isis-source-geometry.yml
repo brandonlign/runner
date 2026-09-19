@@ -94,6 +94,14 @@ jobs:
                 python -c 'import ale; result=ale.load("output/before.raw.cub", props={"web":True}, formatter="ale", verbose=False, only_isis_spice=False, only_naif_spice=True); print("ALE_DIRECT_SUCCESS",type(result).__name__); print("ALE_KEYS",sorted(result.keys()) if isinstance(result,dict) else "")' >output/ale.log 2>&1
                 echo "ALE_RC=$?"
                 tail -85 output/ale.log
+                echo "ALE_PDS3_ATTACHED_LABEL_PROBE"
+                python -c 'import ale; result=ale.load("output/M1138987659LE.IMG", props={"web":True}, formatter="ale", verbose=False, only_isis_spice=False, only_naif_spice=True); print("ALE_PDS3_SUCCESS",type(result).__name__); print("ALE_PDS3_KEYS",sorted(result.keys()) if isinstance(result,dict) else "")' >output/ale_pds3.log 2>&1
+                echo "ALE_PDS3_RC=$?"
+                tail -75 output/ale_pds3.log
+                echo "ALE_PDS4_LABEL_PROBE"
+                python -c 'import ale; result=ale.load("output/M1138987659LE.xml", props={"web":True}, formatter="ale", verbose=False, only_isis_spice=False, only_naif_spice=True); print("ALE_PDS4_SUCCESS",type(result).__name__); print("ALE_PDS4_KEYS",sorted(result.keys()) if isinstance(result,dict) else "")' >output/ale_pds4.log 2>&1
+                echo "ALE_PDS4_RC=$?"
+                tail -45 output/ale_pds4.log
                 break
               fi
             else
