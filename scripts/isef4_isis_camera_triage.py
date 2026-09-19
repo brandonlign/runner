@@ -232,6 +232,24 @@ def csm_attempt(raw: Path) -> bool:
         k: v for k, v in nk.items()
         if re.search(r"ITRANSL|ITRANSS|TRANSY|TRANSX|PIXEL_SIZE|SAMPLING_FACTOR", k)
     }
+    # Preserve enough of the actual ALE spacecraft-state table to tell
+    # whether the needed exposure epoch is bracketed by returned data.
+    # This is technical camera telemetry, never the lunar source pixels.
+    ip = isd_data.get("instrument_position") or {}
+    ets = ip.get("ephemeris_times") or []
+    velocities = ip.get("velocities") or []
+    RESULT["ale_state_table_audit"] = {
+        "reference_frame": ip.get("reference_frame"),
+        "time_count": len(ets),
+        "first_time": ets[0] if ets else None,
+        "last_time": ets[-1] if ets else None,
+        "velocity_count": len(velocities),
+        "first_velocity": velocities[0] if velocities else None,
+        "first_time_minus_start_s": (
+            float(ets[0]) - float(isd_data["starting_ephemeris_time"])
+            if ets else None
+        ),
+    }
     persist()
     # Probe the actual LROC driver property separately, without modifying
     # the scientific ISD or suppressing the CSM failure.
