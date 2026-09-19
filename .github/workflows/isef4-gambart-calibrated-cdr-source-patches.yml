@@ -1,0 +1,56 @@
+name: LUNARSHIFT exact calibrated Gambart C NASA CDR source patches
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-gambart-calibrated-cdr-source-patches.yml"
+      - "scripts/isef4_gambart_cdr_marker_rois.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  cdr-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate NASA calibrated-source byte-range reader
+        run: python -m py_compile scripts/isef4_gambart_cdr_marker_rois.py
+      - name: Acquire 16-bit official CDR pixels around each predeclared published marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy
+          python scripts/isef4_gambart_cdr_marker_rois.py \
+            --pds-probe diagnostics/isef4_gambart_exact_pds_cdr_pair_probe.json \
+            --before-camera diagnostics/isef4_gambart_camera_before_verified_35453750360.json \
+            --after-camera diagnostics/isef4_gambart_camera_after_verified_35454067791.json \
+            --artifact-folder output/gambart_cdr_native_marker_patches \
+            --diagnostic diagnostics/isef4_gambart_official_cdr_native_marker_patches.json
+      - name: Commit only tiny calibrated-patch source identity and quality audit
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_official_cdr_native_marker_patches.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m "Record source-grounded official Gambart C calibrated reflectance patches"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - name: Keep calibrated I/F source pixels in expiring artifact, not git
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gambart-c-official-calibrated-CDR-source-patches
+          path: output/gambart_cdr_native_marker_patches/
+          retention-days: 30
+          if-no-files-found: warn
