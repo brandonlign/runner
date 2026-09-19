@@ -60,7 +60,7 @@ def make_opener(fault=None):
     def opener(req, timeout):
         assert timeout == 240
         r = req.get_header("Range")
-        m = re.fullmatch(r"bytes=(\\d+)-(\\d+)", r or "")
+        m = re.fullmatch(r"bytes=(\d+)-(\d+)", r or "")
         assert m is not None, r
         start, end = map(int, m.groups())
         requested.append((start, end))
