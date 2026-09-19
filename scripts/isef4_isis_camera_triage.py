@@ -145,7 +145,14 @@ def configure() -> None:
     persist()
 
 
-def fetch_verified_after_ranges(url: str, destination: Path) -> tuple[int, str]:
+def fetch_verified_after_ranges(
+    url: str, destination: Path, *,
+    expected_size: int | None = None,
+    chunk_bytes: int = 4 * 1024 * 1024,
+    known_first_5064_sha: str = (
+        "f1017730d414583ace4165f95d04955b7028af7980101b7e42ccf9c3f9f5beab"
+    ),
+) -> tuple[int, str]:
     """Reconstruct exact published AFTER IMG from independently verified PDS 206 ranges.
 
     A 5064-byte Range probe succeeded on the same archive URL even though
@@ -153,11 +160,9 @@ def fetch_verified_after_ranges(url: str, destination: Path) -> tuple[int, str]:
     200/full-object fallback, truncated chunk, shifted byte range or
     different-size source is accepted as scientific input.
     """
-    chunk_bytes = 4 * 1024 * 1024
-    known_first_5064_sha = (
-        "f1017730d414583ace4165f95d04955b7028af7980101b7e42ccf9c3f9f5beab"
-    )
-    total = EXPECTED_IMG_BYTES
+    total = EXPECTED_IMG_BYTES if expected_size is None else expected_size
+    if total < 5064 or chunk_bytes < 5064:
+        raise ValueError("range download must contain original complete PDS3 header")
     digest = hashlib.sha256()
     temporary = destination.with_suffix(destination.suffix + ".part")
     count = 0
