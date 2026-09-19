@@ -1,0 +1,107 @@
+name: LUNARSHIFT published S5-to-source artifact preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-s5-raw-crosswalk-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve verified original EDR row-window arrays
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-gambart-c-wider-raw-counts
+          run-id: 35422390895
+          github-token: ${{ github.token }}
+          path: output/isef4_s5_raw_crosswalk/source
+      - name: Inspect raw EDR array products and exact published Figure S5
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy pillow
+          python - <<'PY'
+          import hashlib,io,json,urllib.request,zipfile
+          from pathlib import Path
+          import numpy as np
+          from PIL import Image
+
+          src=json.loads(Path("diagnostics/isef4_published_s5_source_status.json").read_text().replace("\\n",""))
+          req=urllib.request.Request(src["source_url"],
+                 headers={"User-Agent":"LUNARSHIFT-S5-raw-EDR-crosswalk/1.0"})
+          with urllib.request.urlopen(req,timeout=120) as r:
+              archive=r.read(40_000_001)
+          if len(archive)>40_000_000 or hashlib.sha256(archive).hexdigest()!=src["sha256"]:
+              raise RuntimeError("published supplemental ZIP does not match frozen source hash")
+          root=Path("output/isef4_s5_raw_crosswalk")
+          with zipfile.ZipFile(io.BytesIO(archive)) as outer:
+              docx=outer.read("2025-434-supplementarymaterials.docx")
+          with zipfile.ZipFile(io.BytesIO(docx)) as doc:
+              data=doc.read("word/media/image5.jpeg")
+          panel_sha=hashlib.sha256(data).hexdigest()
+          if panel_sha!="3d0e494c40b92e7de66ce54f8317c646ad1d8a19e328bc2811cd7cc13d48dc7f":
+              raise RuntimeError("published S5 image differs from OOXML relationship index")
+          fig=Image.open(io.BytesIO(data))
+          listing=[]
+          for p in sorted((root/"source").rglob("*")):
+              if not p.is_file():continue
+              row={"name":str(p.relative_to(root/"source")),"size":p.stat().st_size}
+              if p.suffix.lower()==".npy":
+                  try:
+                      array=np.load(p,mmap_mode="r",allow_pickle=False)
+                      row.update(shape=list(array.shape),dtype=str(array.dtype),
+                                 min=int(array.min()) if array.dtype==np.uint8 else None,
+                                 max=int(array.max()) if array.dtype==np.uint8 else None)
+                  except Exception as exc:
+                      row["npy_error"]=type(exc).__name__+": "+str(exc)
+              listing.append(row)
+          record={
+              "schema_version":"isef4-published-S5-raw-source-crosswalk-preflight-v1",
+              "source_raw_run_id":"35422390895",
+              "figure_s5_image_path":"word/media/image5.jpeg",
+              "figure_s5_sha256":panel_sha,
+              "figure_s5_image_size":[fig.width,fig.height],
+              "figure_s5_mode":fig.mode,
+              "raw_products":listing,
+              "status":"Figure identity and raw source artifact inventory only; no event localized"
+          }
+          Path("diagnostics/isef4_s5_raw_crosswalk_preflight.json").write_text(
+              json.dumps(record,indent=2)+"\\n"
+          )
+          (root/"published_S5_original.jpg").write_bytes(data)
+          (root/"manifest.json").write_text(json.dumps(record,indent=2)+"\\n")
+          print(json.dumps(record,indent=2),flush=True)
+          PY
+      - name: Preserve matched source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-original-S5-raw-source-crosswalk-preflight
+          path: |
+            output/isef4_s5_raw_crosswalk/published_S5_original.jpg
+            output/isef4_s5_raw_crosswalk/manifest.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish source-identity inventory without image data
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_s5_raw_crosswalk_preflight.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_s5_raw_crosswalk_preflight.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record original S5 figure and exact real EDR raw-array provenance"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
