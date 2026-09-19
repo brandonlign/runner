@@ -1,0 +1,44 @@
+name: LUNARSHIFT primary source 41 published lunar events
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-xiao-primary-event-registry.yml"
+      - "scripts/isef4_xiao_positive_registry.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  curate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate primary-source parser syntax
+        run: python -m py_compile scripts/isef4_xiao_positive_registry.py
+      - name: Crosswalk Tables S1/S2 and Figure S source EDR panels
+        run: python scripts/isef4_xiao_positive_registry.py
+      - name: Retain original row and ambiguity audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-xiao2025-primary-41-event-registry
+          path: diagnostics/isef4_xiao_41_published_event_registry.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit validated published ground-truth audit
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_xiao_41_published_event_registry.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_xiao_41_published_event_registry.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record 41 source-attributed lunar events and exact published EDR-panel provenance"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
