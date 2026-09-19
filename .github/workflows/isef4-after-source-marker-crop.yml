@@ -1,0 +1,62 @@
+name: LUNARSHIFT published Gambart C exact AFTER source-byte crop
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-after-source-marker-crop.yml"
+      - "scripts/isef4_exact_source_event_crop.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  grounded-original-edr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate original source-crop implementation
+        run: python -m py_compile scripts/isef4_exact_source_event_crop.py
+      - name: Recover unmodified published AFTER byte-range arrays
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-gambart-c-wider-raw-counts
+          run-id: 35422390895
+          github-token: ${{ github.token }}
+          path: output/isef4_grounded_after/source
+      - name: Extract original raw counts at published ground marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy pillow
+          python scripts/isef4_exact_source_event_crop.py \
+            --role after \
+            --raw-folder output/isef4_grounded_after/source \
+            --camera-json diagnostics/isef4_gambart_camera_status_isis10.json \
+            --out-folder output/isef4_grounded_after/crops
+      - name: Preserve actual NASA source pixel arrays only in artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-GambartC-grounded-original-AFTER-source-pixels
+          path: output/isef4_grounded_after/crops/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit source byte hashes and coordinate preflight only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_gambart_after_grounded_raw_crop.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_gambart_after_grounded_raw_crop.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Verify real Gambart C pre-event source DN crop at CSM geolocation"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
