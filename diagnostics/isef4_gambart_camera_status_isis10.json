@@ -84,15 +84,18 @@
       0.0
     ]
   },
-  "commit_sha": "77ea1ec714c5e49aa69bf63e65570b6c37f3da29",
+  "commit_sha": "ae288ddc7f7ddc31eaad294c5b52192a43a548f5",
   "csm_plugin_directory": "/home/runner/micromamba/envs/lunar-isis10/lib/csmplugins",
   "csm_plugin_files": [
     "libusgscsm.so"
   ],
+  "derived_isd_repair": {
+    "status": "not attempted: live-driver verified signed transformation is unavailable; no inferred sign"
+  },
   "event": "Xiao et al. 2025 Figure S5 Gambart C (published positive)",
-  "generated_utc": "2026-09-19T14:19:51.598203+00:00",
+  "generated_utc": "2026-09-19T15:00:14.595051+00:00",
   "product": "M1138987659LE",
-  "run_id": "35448342359",
+  "run_id": "35450383848",
   "runtime_label": "isis10",
   "schema_version": "isef4-public-source-camera-triage-v1",
   "scientific_status": "camera-stage feasibility only; no recovered event",
@@ -105,9 +108,11 @@
       "returncode": 0
     },
     "ale_direct_line_transform": {
-      "diagnostic_lines": [],
-      "full_log_bytes": 1216,
-      "log_tail": "  File \"<string>\", line 1\n    from ale.drivers import get_driver_from_label,pre_parse_label; klass=get_driver_from_label('/home/runner/work/runner/runner/output/triage_isis10/before.raw.cub',props={\"web\":True},verbose=False,only_isis_spice=False,only_naif_spice=True);print(\"DRIVER_CLASS\",klass.__name__);d=klass('/home/runner/work/runner/runner/output/triage_isis10/before.raw.cub',props={\"web\":True},parsed_label=pre_parse_label('/home/runner/work/runner/runner/output/triage_isis10/before.raw.cub'));\\nwith d as active:\\n print(\"IKID\",repr(active.ikid))\\n print(\"DIRECTION\",repr(active.spacecraft_direction))\\n print(\"FOCAL_LINES\",repr(active.focal2pixel_lines))\\n\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ^\nSyntaxError: unexpected character after line continuation character\n",
+      "diagnostic_lines": [
+        "RuntimeError: std::exception: REST API Error Response: [{\"body\":{\"error\":\"std::exception: Error Occured:SPICE(SPKINSUFFDATA) Insufficient ephemeris data has been loaded to compute the state of -85 (LUNAR RECONNAISSANCE ORBITER) relative to 301 (MOON) at the ephemeris epoch 2013 NOV 13 13:14:19.550.\"},\"statusCode\":500}]"
+      ],
+      "full_log_bytes": 1506,
+      "log_tail": "Traceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n    print(\"DIRECTION\",repr(active.spacecraft_direction))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/micromamba/envs/lunar-isis10/lib/python3.13/site-packages/ale/drivers/lro_drivers.py\", line 528, in spacecraft_direction\n    lt_states = pyspiceql.getTargetStates(ets=[time],\n                ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\n                                          target=self.spacecraft_name,\n                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ...<4 lines>...\n                                          searchKernels=self.search_kernels,\n                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                          useWeb=self.use_web)[0]\n                                          ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/micromamba/envs/lunar-isis10/lib/python3.13/site-packages/pyspiceql/pyspiceql.py\", line 4345, in getTargetStates\n    return _pyspiceql.getTargetStates(*args, **kwargs)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\nRuntimeError: std::exception: REST API Error Response: [{\"body\":{\"error\":\"std::exception: Error Occured:SPICE(SPKINSUFFDATA) Insufficient ephemeris data has been loaded to compute the state of -85 (LUNAR RECONNAISSANCE ORBITER) relative to 301 (MOON) at the ephemeris epoch 2013 NOV 13 13:14:19.550.\"},\"statusCode\":500}]\nDRIVER_CLASS LroLrocNacIsisLabelNaifSpiceDriver\nIKID -85600\n",
       "returncode": 1
     },
     "ale_isd": {
@@ -133,12 +138,12 @@
     },
     "csminit_linescan": {
       "diagnostic_lines": [
-        "[USGSCSM][ERROR][2026-09-19 14:20:28][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]",
-        "[USGSCSM][ERROR][2026-09-19 14:20:29][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]",
+        "[USGSCSM][ERROR][2026-09-19 15:01:33][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]",
+        "[USGSCSM][ERROR][2026-09-19 15:01:33][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]",
         "**USER ERROR** No loaded model could be created from the ISD [/home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json].Loaded plugin & model names:"
       ],
       "full_log_bytes": 1969,
-      "log_tail": "[USGSCSM][INFO][2026-09-19 14:20:28][constructModelFromISD:491] Running constructModelFromISD\n[USGSCSM][INFO][2026-09-19 14:20:28][loadImageSupportData:334] Load Image Support Data using: /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, 52, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, before.raw.cub, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json\n[USGSCSM][ERROR][2026-09-19 14:20:28][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]\n[USGSCSM][INFO][2026-09-19 14:20:28][constructModelFromISD:491] Running constructModelFromISD\n[USGSCSM][INFO][2026-09-19 14:20:28][loadImageSupportData:334] Load Image Support Data using: /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, 52, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, before.raw.cub, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json\n[USGSCSM][ERROR][2026-09-19 14:20:29][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]\n**USER ERROR** No loaded model could be created from the ISD [/home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json].Loaded plugin & model names:\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_FRAME_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_PROJECTED_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_SAR_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_PUSH_FRAME_SENSOR_MODEL].\n",
+      "log_tail": "[USGSCSM][INFO][2026-09-19 15:01:32][constructModelFromISD:491] Running constructModelFromISD\n[USGSCSM][INFO][2026-09-19 15:01:32][loadImageSupportData:334] Load Image Support Data using: /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, 52, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, before.raw.cub, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json\n[USGSCSM][ERROR][2026-09-19 15:01:33][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]\n[USGSCSM][INFO][2026-09-19 15:01:33][constructModelFromISD:491] Running constructModelFromISD\n[USGSCSM][INFO][2026-09-19 15:01:33][loadImageSupportData:334] Load Image Support Data using: /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, 52, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json, before.raw.cub, /home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json\n[USGSCSM][ERROR][2026-09-19 15:01:33][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the focal plane coordinate to detector lines transformation.]]\n**USER ERROR** No loaded model could be created from the ISD [/home/runner/work/runner/runner/output/triage_isis10/before.raw.cub.json].Loaded plugin & model names:\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_FRAME_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_PROJECTED_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_SAR_SENSOR_MODEL]\nPlugin [UsgsAstroPluginCSM], Model [USGS_ASTRO_PUSH_FRAME_SENSOR_MODEL].\n",
       "returncode": 2
     },
     "download_IMG": {
