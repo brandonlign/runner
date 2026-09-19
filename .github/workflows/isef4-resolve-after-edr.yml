@@ -1,0 +1,41 @@
+name: LUNARSHIFT resolve original Gambart C AFTER EDR source
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-resolve-after-edr.yml"
+      - "scripts/isef4_resolve_gambart_after_edr.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  original-after-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify only PDS3 header ranges for the published AFTER EDR
+        run: python scripts/isef4_resolve_gambart_after_edr.py
+      - name: Persist exact PDS archive match or falsifiable unresolved audit
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f diagnostics/isef4_gambart_after_edr_source_resolution.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_gambart_after_edr_source_resolution.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record exact original published 2015 Gambart C EDR archive source"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gambart-after-original-pds-source
+          path: diagnostics/isef4_gambart_after_edr_source_resolution.json
+          retention-days: 30
+          if-no-files-found: warn
