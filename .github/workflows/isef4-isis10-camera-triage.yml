@@ -1,0 +1,66 @@
+name: LUNARSHIFT Gambart C ISIS 10 source-camera experiment
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-isis10-camera-triage.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: isef4-isis10-camera-triage
+  cancel-in-progress: false
+
+jobs:
+  source-camera:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ISIS 10 with native SpiceQL integration
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis10
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.11
+            isis=10.0.0
+          init-shell: bash
+          post-cleanup: all
+      - name: Probe published development source EDR
+        shell: bash -el {0}
+        run: |
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          mkdir -p "$ISISDATA"
+          python -m pip install --quiet 'setuptools<81'
+          export ISEF4_DIAGNOSTIC_SUFFIX=isis10
+          python scripts/isef4_isis_camera_triage.py
+      - name: Publish small diagnostic
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_gambart_camera_status_isis10.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_gambart_camera_status_isis10.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record ISIS 10 Gambart C camera geometry result"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - name: Preserve logs without image bytes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambart-isis10-camera-triage
+          path: |
+            output/triage_isis10/*.log
+            diagnostics/isef4_gambart_camera_status_isis10.json
+          retention-days: 30
+          if-no-files-found: warn
