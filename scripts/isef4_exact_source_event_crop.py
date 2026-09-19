@@ -27,7 +27,7 @@ def main()->None:
     parser.add_argument("--camera-json",type=Path,required=True)
     parser.add_argument("--out-folder",type=Path,required=True)
     args=parser.parse_args()
-    camera=json.loads(args.camera_json.read_text().replace("\\n",""))
+    camera=json.loads(args.camera_json.read_text(encoding="utf-8"))
     source=json.loads((args.raw_folder/"source_labels_and_windows.json").read_text())
     if camera.get("product")!="M1138987659LE" or camera.get("source_role")!="before":
         raise RuntimeError("wrong source camera: expected original Gambart C before")
