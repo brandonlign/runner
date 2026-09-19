@@ -540,12 +540,16 @@ def csm_attempt(raw: Path) -> bool:
             }
             persist()
     # ALE may serialize the single official NAC optical distortion as a
-    # scalar/null, while USGSCSM requires a vector<double>. Correct ONLY
-    # the derived JSON, checking the exact NAC-L NAIF instrument keyword.
-    # Deliberately require successful direction/line-transform recovery
-    # before attempting this independent secondary camera-field repair.
-    if (RESULT.get("derived_isd_repair", {}).get("field")
-            == "focal2pixel_lines"):
+    # scalar/null, while USGSCSM requires a vector<double>. Repair this
+    # independently of whether ALE ALREADY supplied valid focal2pixel_lines.
+    # The 2015 AFTER observation has a native, non-null line transform, and
+    # the former condition erroneously skipped its distortion normalization.
+    # Require a complete numeric line map and verify the distortion against
+    # the original exact NAC-L NAIF IK, never invent either quantity.
+    lines = isd_data.get("focal2pixel_lines")
+    if (isinstance(lines, list) and len(lines) == 3
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                    and math.isfinite(v) for v in lines)):
         try:
             audit = normalize_lroc_nac_distortion(isd_data)
             RESULT["distortion_shape_audit"] = audit
