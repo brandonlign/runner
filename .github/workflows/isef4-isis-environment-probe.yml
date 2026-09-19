@@ -1,0 +1,40 @@
+name: LUNARSHIFT public ISIS geometry environment probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-isis-environment-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Check free disk before pulling official ISIS image
+        shell: bash
+        run: |
+          df -h /
+          docker --version
+      - name: Pull and inspect USGS ISIS image
+        shell: bash
+        run: |
+          docker pull usgsastro/isis
+          docker image inspect usgsastro/isis --format 'ISIS_IMAGE_ID={{.Id}} SIZE={{.Size}}'
+          docker run --rm --entrypoint /bin/bash usgsastro/isis -lc '
+            echo "ISISROOT=$ISISROOT ISISDATA=$ISISDATA"
+            for cmd in lronac2isis spiceinit cam2map mappt mosrange getkey isis2raw downloadIsisData; do
+              echo "COMMAND=$cmd"
+              command -v "$cmd" || true
+            done
+            echo BASE_CONTENTS
+            ls -lah "$ISISDATA" 2>/dev/null | head -25 || true
+            echo COMPLETE
+          '
+      - name: Check free disk after image
+        shell: bash
+        run: df -h /
