@@ -24,12 +24,18 @@ SOURCE_URL = (
     "LROLRC_0017/DATA/ESM/2013317/NAC/"
 )
 ROOT = Path.cwd()
-OUTPUT = ROOT / "output" / "triage"
-STATUS = ROOT / "diagnostics" / "isef4_gambart_camera_status.json"
+SUFFIX = os.environ.get("ISEF4_DIAGNOSTIC_SUFFIX", "").strip()
+if SUFFIX and not re.fullmatch(r"[a-z0-9_-]{1,20}", SUFFIX):
+    raise ValueError("invalid diagnostic suffix")
+OUTPUT = ROOT / "output" / ("triage_" + SUFFIX if SUFFIX else "triage")
+STATUS = ROOT / "diagnostics" / (
+    "isef4_gambart_camera_status" + ("_" + SUFFIX if SUFFIX else "") + ".json"
+)
 OUTPUT.mkdir(parents=True, exist_ok=True)
 STATUS.parent.mkdir(parents=True, exist_ok=True)
 RESULT = {
     "schema_version": "isef4-public-source-camera-triage-v1",
+    "runtime_label": SUFFIX or "isis83",
     "event": "Xiao et al. 2025 Figure S5 Gambart C (published positive)",
     "product": PRODUCT,
     "target_latitude_deg_n": 3.218,
