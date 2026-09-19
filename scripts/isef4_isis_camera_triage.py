@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -144,35 +145,126 @@ def configure() -> None:
     persist()
 
 
+def fetch_verified_after_ranges(url: str, destination: Path) -> tuple[int, str]:
+    """Reconstruct exact published AFTER IMG from independently verified PDS 206 ranges.
+
+    A 5064-byte Range probe succeeded on the same archive URL even though
+    the runner's non-Range full-object GET returned HTTP 404. No silent
+    200/full-object fallback, truncated chunk, shifted byte range or
+    different-size source is accepted as scientific input.
+    """
+    chunk_bytes = 4 * 1024 * 1024
+    known_first_5064_sha = (
+        "f1017730d414583ace4165f95d04955b7028af7980101b7e42ccf9c3f9f5beab"
+    )
+    total = EXPECTED_IMG_BYTES
+    digest = hashlib.sha256()
+    temporary = destination.with_suffix(destination.suffix + ".part")
+    count = 0
+    try:
+        with temporary.open("wb") as out:
+            for start in range(0, total, chunk_bytes):
+                end = min(total - 1, start + chunk_bytes - 1)
+                req = urllib.request.Request(
+                    url,
+                    headers={
+                        "Range": f"bytes={start}-{end}",
+                        "User-Agent": "LUNARSHIFT-PDS-source-audit/1.0",
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=240) as response:
+                    header = response.headers.get("Content-Range", "")
+                    expected = f"bytes {start}-{end}/{total}"
+                    if response.status != 206 or header.strip() != expected:
+                        raise ValueError(
+                            f"unverified PDS range {start}-{end}: "
+                            f"HTTP {response.status}, Content-Range={header!r}; "
+                            f"expected 206 and {expected!r}"
+                        )
+                    # Bound the read to the exact requested interval, plus
+                    # one sentinel to detect a misbehaving transfer.
+                    content = response.read(end - start + 2)
+                if len(content) != end - start + 1:
+                    raise ValueError(
+                        f"PDS range {start}-{end} returned {len(content)} "
+                        f"bytes, expected {end - start + 1}"
+                    )
+                if start == 0:
+                    label = content[:5064]
+                    if (hashlib.sha256(label).hexdigest()
+                            != known_first_5064_sha
+                            or PRODUCT.encode("ascii") not in label
+                            or b"PDS_VERSION_ID" not in label):
+                        raise ValueError(
+                            "AFTER original PDS3 header differs from the "
+                            "independently verified 5064-byte archive range"
+                        )
+                digest.update(content)
+                out.write(content)
+                count += len(content)
+        if count != total or temporary.stat().st_size != total:
+            raise ValueError("incomplete PDS3 original AFTER EDR reconstruction")
+        temporary.replace(destination)
+        return count, digest.hexdigest()
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def fetch() -> bool:
+    current_ext = "IMG"
     try:
         for ext in ("IMG", "xml"):
+            current_ext = ext
             destination = OUTPUT / (PRODUCT + "." + ext)
-            h = hashlib.sha256()
-            n = 0
-            req = urllib.request.Request(
-                SOURCE_URL + destination.name,
-                headers={"User-Agent": "LUNARSHIFT-reproducible-public-probe/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=240) as src, destination.open("wb") as out:
-                for chunk in iter(lambda: src.read(1024 * 1024), b""):
-                    h.update(chunk)
-                    n += len(chunk)
-                    out.write(chunk)
+            url = SOURCE_URL + destination.name
+            if ext == "IMG" and ROLE == "after":
+                n, file_sha = fetch_verified_after_ranges(url, destination)
+                acquisition = "strict_206_byte_ranges_4MiB"
+            else:
+                h = hashlib.sha256()
+                n = 0
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent":
+                             "LUNARSHIFT-reproducible-public-probe/1.0"},
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=240) as src, destination.open("wb") as out:
+                        for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                            h.update(chunk)
+                            n += len(chunk)
+                            out.write(chunk)
+                except urllib.error.HTTPError as exc:
+                    destination.unlink(missing_ok=True)
+                    if ext == "xml" and exc.code == 404:
+                        # CSM uses the exact embedded PDS3 label or imported
+                        # ISIS cube; this separate PDS4 sidecar is not needed.
+                        RESULT["stages"]["optional_pds4_xml"] = {
+                            "status": "unavailable_http_404",
+                            "url": url,
+                            "scientific_effect": "none on PDS3/ISIS camera input",
+                        }
+                        persist()
+                        continue
+                    raise
+                file_sha = h.hexdigest()
+                acquisition = "full_object_get"
             if ext == "IMG" and n != EXPECTED_IMG_BYTES:
                 raise ValueError(
                     f"source EDR length mismatch for {PRODUCT}: "
                     f"{n} != {EXPECTED_IMG_BYTES}"
                 )
             RESULT["stages"]["download_" + ext] = {
-                "bytes": n, "sha256": h.hexdigest(),
-                "source_url": SOURCE_URL + destination.name,
+                "bytes": n, "sha256": file_sha,
+                "source_url": url, "acquisition": acquisition,
             }
             persist()
         return True
     except Exception as exc:
         RESULT["stages"]["download_error"] = {
-            "error": type(exc).__name__ + ": " + str(exc)
+            "extension": current_ext,
+            "error": type(exc).__name__ + ": " + str(exc),
         }
         persist()
         return False
