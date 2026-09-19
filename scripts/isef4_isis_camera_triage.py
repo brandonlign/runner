@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Public, source-pixel-free LUNARSHIFT Gambart C camera-stage triage.
+
+The workflow downloads one *published* positive development observation,
+tests official ISIS 8.3/ALE geolocation, and commits only small diagnostics.
+It does not touch the private isef4 repository or provisional holdouts.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+PRODUCT = "M1138987659LE"
+SOURCE_URL = (
+    "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/"
+    "LROLRC_0017/DATA/ESM/2013317/NAC/"
+)
+ROOT = Path.cwd()
+OUTPUT = ROOT / "output" / "triage"
+STATUS = ROOT / "diagnostics" / "isef4_gambart_camera_status.json"
+OUTPUT.mkdir(parents=True, exist_ok=True)
+STATUS.parent.mkdir(parents=True, exist_ok=True)
+RESULT = {
+    "schema_version": "isef4-public-source-camera-triage-v1",
+    "event": "Xiao et al. 2025 Figure S5 Gambart C (published positive)",
+    "product": PRODUCT,
+    "target_latitude_deg_n": 3.218,
+    "target_longitude_deg_e": 348.092,
+    "generated_utc": datetime.now(timezone.utc).isoformat(),
+    "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+    "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+    "commit_sha": os.environ.get("GITHUB_SHA", ""),
+    "stages": {},
+    "scientific_status": "camera-stage feasibility only; no recovered event",
+}
+
+
+def persist() -> None:
+    tmp = STATUS.with_suffix(".json.part")
+    tmp.write_text(json.dumps(RESULT, indent=2, sort_keys=True) + "\n")
+    tmp.replace(STATUS)
+
+
+def command(name: str, argv: list[str], timeout: int = 180) -> bool:
+    p = OUTPUT / (name + ".log")
+    try:
+        process = subprocess.run(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, errors="replace", timeout=timeout, check=False,
+        )
+        logfile = process.stdout
+        rc = process.returncode
+    except Exception as exc:
+        logfile = f"{type(exc).__name__}: {exc}"
+        rc = -1
+    p.write_text(logfile)
+    RESULT["stages"][name] = {
+        "returncode": rc,
+        "log_tail": logfile[-6500:],
+    }
+    persist()
+    print(name, "RC", rc, logfile[-1000:], flush=True)
+    return rc == 0
+
+
+def configure() -> None:
+    prefix = Path(os.environ["ISISROOT"])
+    prefs = prefix / "IsisPreferences"
+    text = prefs.read_text()
+    group = 'Group = SpiceQL\n  UseSpiceQL = "true"\nEndGroup\n'
+    if re.search(r"(?im)^\s*Group\s*=\s*SpiceQL\s*$", text):
+        # Replace the whole group, not an unrelated UseSpiceQL keyword.
+        text, count = re.subn(
+            r"(?ims)^\s*Group\s*=\s*SpiceQL\s*\n.*?^\s*End[_ ]?Group\s*\n",
+            group, text, count=1,
+        )
+        if count != 1:
+            raise RuntimeError("SpiceQL group exists but could not be replaced")
+    elif re.search(r"(?m)^End\s*$", text):
+        text = re.sub(r"(?m)^End\s*$", lambda _: group + "End",
+                      text, count=1)
+    else:
+        raise RuntimeError("IsisPreferences lacks final End")
+    prefs.write_text(text)
+    RESULT["spiceql_preference_enabled"] = bool(
+        group.strip() in text
+    )
+    persist()
+
+
+def fetch() -> bool:
+    try:
+        for ext in ("IMG", "xml"):
+            destination = OUTPUT / (PRODUCT + "." + ext)
+            h = hashlib.sha256()
+            n = 0
+            req = urllib.request.Request(
+                SOURCE_URL + destination.name,
+                headers={"User-Agent": "LUNARSHIFT-reproducible-public-probe/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=240) as src, destination.open("wb") as out:
+                for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                    h.update(chunk)
+                    n += len(chunk)
+                    out.write(chunk)
+            RESULT["stages"]["download_" + ext] = {
+                "bytes": n, "sha256": h.hexdigest(),
+                "source_url": SOURCE_URL + destination.name,
+            }
+            persist()
+        return True
+    except Exception as exc:
+        RESULT["stages"]["download_error"] = {
+            "error": type(exc).__name__ + ": " + str(exc)
+        }
+        persist()
+        return False
+
+
+def ale_probe(name: str, path: Path) -> None:
+    probe = (
+        "import ale; "
+        "r=ale.load(" + repr(str(path)) +
+        ',props={"web":True},formatter="ale",verbose=False,'
+        "only_isis_spice=False,only_naif_spice=True); "
+        'print("ALE_SUCCESS",type(r).__name__); '
+        'print("ALE_TOP_KEYS",sorted(r) if isinstance(r,dict) else "")'
+    )
+    command("ale_" + name, [sys.executable, "-c", probe], timeout=90)
+
+
+def main() -> int:
+    persist()
+    RESULT["tool_versions"] = {}
+    for name in ("lronac2isis", "spiceinit", "campt", "getkey"):
+        RESULT["tool_versions"][name] = shutil.which(name)
+    persist()
+    try:
+        configure()
+    except Exception as exc:
+        RESULT["stages"]["preference_error"] = {
+            "error": type(exc).__name__ + ": " + str(exc)
+        }
+        persist()
+        return 1
+    if not fetch():
+        return 1
+
+    raw = OUTPUT / "before.raw.cub"
+    if not command("import", [
+        "lronac2isis", f"from={OUTPUT / (PRODUCT + '.IMG')}", f"to={raw}"
+    ], timeout=180):
+        return 1
+
+    ok = command("spiceinit", [
+        "spiceinit", f"from={raw}", "web=false"
+    ], timeout=160)
+    if not ok:
+        for name, path in (
+            ("cube", raw),
+            ("pds3", OUTPUT / (PRODUCT + ".IMG")),
+            ("pds4", OUTPUT / (PRODUCT + ".xml")),
+        ):
+            ale_probe(name, path)
+        return 1
+
+    point = OUTPUT / "event_campt.pvl"
+    if not command("campt", [
+        "campt", f"from={raw}", "type=ground",
+        "latitude=3.218", "longitude=348.092",
+        "coordsys=universal", "allowoutside=false", f"to={point}",
+    ], timeout=90):
+        return 1
+
+    if point.exists():
+        RESULT["stages"]["event_campt"] = {
+            "pvl_tail": point.read_text()[-6500:]
+        }
+        persist()
+    RESULT["scientific_status"] = (
+        "source camera event-coordinate query succeeded for BEFORE EDR; "
+        "after EDR, calibration, mapping and event recovery remain untested"
+    )
+    persist()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
