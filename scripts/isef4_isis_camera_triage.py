@@ -151,6 +151,26 @@ def main() -> int:
         }
         persist()
         return 1
+    # A conda ISIS install contains binaries but NOT the $ISISDATA/base
+    # databases. In particular, WEB=false still needs the base LSK database
+    # even when remote SPICE/SpiceQL supplies mission kernels.
+    if not command("base_data", [
+        "downloadIsisData", "base", os.environ["ISISDATA"],
+        "--include={kernels/**,dems/*.db}",
+    ], timeout=900):
+        RESULT["scientific_status"] = (
+            "ISISDATA base bootstrap failed, before any scientific geometry test"
+        )
+        persist()
+        return 1
+    required = Path(os.environ["ISISDATA"]) / "base" / "kernels" / "lsk"
+    lsk = sorted(required.glob("kernels.????.db"))
+    RESULT["base_lsk_databases"] = [str(p.relative_to(Path(os.environ["ISISDATA"]))) for p in lsk]
+    persist()
+    if not lsk:
+        RESULT["scientific_status"] = "base download returned success without required LSK kernel database"
+        persist()
+        return 1
     if not fetch():
         return 1
 
