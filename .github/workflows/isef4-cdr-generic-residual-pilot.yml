@@ -1,0 +1,65 @@
+name: LUNARSHIFT calibrated Gambart C generic residual controls
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-cdr-generic-residual-pilot.yml"
+      - "scripts/isef4_gambart_cdr_generic_residual_pilot.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-cdr-generic-residual-pilot
+  cancel-in-progress: false
+jobs:
+  published-positive-residual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile source without viewing held-out scientific targets
+        run: python -m py_compile scripts/isef4_gambart_cdr_generic_residual_pilot.py
+      - name: Restore original published-positive CDR source image patches
+        uses: actions/download-artifact@v4
+        with:
+          name: gambart-c-official-calibrated-CDR-source-patches
+          run-id: 35454760984
+          github-token: ${{ github.token }}
+          path: output/gambart_cdr_original_source_patches
+      - name: Audit both fixed registrations and photometric modes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_gambart_cdr_generic_residual_pilot.py \
+            --source-folder output/gambart_cdr_original_source_patches \
+            --source-manifest diagnostics/isef4_gambart_official_cdr_native_marker_patches.json \
+            --registration diagnostics/isef4_gambart_cdr_registration_preflight.json \
+            --out diagnostics/isef4_gambart_cdr_generic_residual_pilot.json
+      - name: Retain all negative as well as positive score outcomes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_cdr_generic_residual_pilot.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record fixed-window known-positive generic reflectance residual and null controls'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gambart-fixed-calibrated-residual-controls
+          path: diagnostics/isef4_gambart_cdr_generic_residual_pilot.json
+          retention-days: 30
+          if-no-files-found: warn
