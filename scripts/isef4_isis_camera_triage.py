@@ -222,9 +222,10 @@ def csm_attempt(raw: Path) -> bool:
     # Probe the actual LROC driver property separately, without modifying
     # the scientific ISD or suppressing the CSM failure.
     driver_code = (
-        "import ale; d=ale.load(" + repr(str(raw)) +
-        ',props={"web":True},formatter="ale",verbose=False,'
-        "only_isis_spice=False,only_naif_spice=True,return_driver=True);"
+        "from ale.drivers import get_driver_from_label; "
+        "d=get_driver_from_label(" + repr(str(raw)) +
+        ',props={"web":True},verbose=False,'
+        "only_isis_spice=False,only_naif_spice=True);"
         'print("DRIVER_CLASS",type(d).__name__);'
         'print("IKID",repr(d.ikid));'
         'print("DIRECTION",repr(d.spacecraft_direction));'
