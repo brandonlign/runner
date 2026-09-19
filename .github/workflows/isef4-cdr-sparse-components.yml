@@ -1,0 +1,68 @@
+name: LUNARSHIFT Gambart C calibrated signed sparse-change control
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-cdr-sparse-components.yml"
+      - "scripts/isef4_cdr_sparse_components.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-cdr-sparse-components
+  cancel-in-progress: false
+jobs:
+  known-published-positive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check code parses
+        run: python -m py_compile scripts/isef4_cdr_sparse_components.py
+      - name: Get source-authenticated published-positive CDR patches
+        uses: actions/download-artifact@v4
+        with:
+          name: gambart-c-official-calibrated-CDR-source-patches
+          run-id: 35454760984
+          github-token: ${{ github.token }}
+          path: output/gambart_cdr_native_source_patches
+      - name: Evaluate fixed sign-separated connected components and null controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_cdr_sparse_components.py \
+            --source-folder output/gambart_cdr_native_source_patches \
+            --source-manifest diagnostics/isef4_gambart_official_cdr_native_marker_patches.json \
+            --registration diagnostics/isef4_gambart_cdr_registration_preflight.json \
+            --out diagnostics/isef4_gambart_cdr_sparse_components.json
+      - name: Keep complete computed diagnostic and visualized residuals
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambart-c-published-positive-sparse-change-audit
+          path: |
+            diagnostics/isef4_gambart_cdr_sparse_components.json
+            diagnostics/gambart_sparse_*.png
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit small controls without source lunar pixels
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_cdr_sparse_components.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record known-positive signed sparse residual and off-marker controls'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
