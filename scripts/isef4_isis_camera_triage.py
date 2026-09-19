@@ -230,10 +230,10 @@ def csm_attempt(raw: Path) -> bool:
         "d=klass(" + repr(str(raw)) +
         ',props={"web":True},parsed_label=pre_parse_label(' +
         repr(str(raw)) + '));'
-        "\\nwith d as active:\\n"
-        ' print("IKID",repr(active.ikid))\\n'
-        ' print("DIRECTION",repr(active.spacecraft_direction))\\n'
-        ' print("FOCAL_LINES",repr(active.focal2pixel_lines))\\n'
+        "\nwith d as active:\n"
+        ' print("IKID",repr(active.ikid))\n'
+        ' print("DIRECTION",repr(active.spacecraft_direction))\n'
+        ' print("FOCAL_LINES",repr(active.focal2pixel_lines))\n'
     )
     command("ale_direct_line_transform", [sys.executable, "-c", driver_code],
             timeout=130)
