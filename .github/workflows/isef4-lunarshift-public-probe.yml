@@ -1,0 +1,73 @@
+name: LUNARSHIFT public archive access probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-lunarshift-public-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-archive-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Probe ODE, PMC and SomBench without private-repo credentials
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, urllib.request, urllib.parse, urllib.error
+          from xml.etree import ElementTree as ET
+
+          def get(name,url,method="GET"):
+              print("\n=== "+name+" ===",flush=True)
+              print("URL "+url,flush=True)
+              req=urllib.request.Request(url,method=method,headers={
+                "User-Agent":"LUNARSHIFT-research/0.3 (public metadata probe)"
+              })
+              try:
+                  with urllib.request.urlopen(req,timeout=40) as r:
+                      content=r.read(150000) if method=="GET" else b""
+                      print(json.dumps({
+                        "status":r.status,"final_url":r.url,
+                        "content_type":r.headers.get("Content-Type"),
+                        "content_length":r.headers.get("Content-Length"),
+                        "bytes_sampled":len(content),
+                        "body_preview":content[:2200].decode("utf-8","replace")
+                      },indent=2),flush=True)
+                      return content
+              except Exception as exc:
+                  print(f"ERROR {type(exc).__name__}: {exc}",flush=True)
+                  return b""
+
+          ode="https://oderest.rsl.wustl.edu/live2/?"+urllib.parse.urlencode({
+              "query":"product","results":"fmpc","output":"JSON","target":"moon",
+              "ihid":"LRO","iid":"LROC","pt":"CDRNAC4",
+              "westernlon":346.955,"easternlon":346.995,
+              "minlat":-43.358,"maxlat":-43.318,
+              "limit":2,"offset":0
+          })
+          get("ODE Tycho 2-product query",ode)
+          base="https://pmc-oa-opendata.s3.amazonaws.com/"
+          listing=get("PMC article prefix",base+"?"+urllib.parse.urlencode({
+              "list-type":"2","prefix":"PMC12576953.","delimiter":"/"
+          }))
+          if listing:
+              try:
+                  root=ET.fromstring(listing)
+                  prefixes=[(x.text or "").strip() for x in root.iter()
+                      if x.tag.rsplit("}",1)[-1]=="Prefix"
+                      and (x.text or "").strip().startswith("PMC12576953.")]
+                  for prefix in sorted(set(prefixes)):
+                      v=prefix.rstrip("/")
+                      get("PMC metadata "+v,base+"metadata/"+v+".json")
+              except Exception as exc:
+                  print("PMC PARSE ERROR "+repr(exc),flush=True)
+          get("SomBench full NAC catalog metadata",
+              "https://nasa-lunar-fm-bench.s3.amazonaws.com/NAC_HighRes/NAC_HighRes.parquet",
+              "HEAD")
+          print("PUBLIC_ARCHIVE_PROBE_COMPLETE",flush=True)
+          PY
