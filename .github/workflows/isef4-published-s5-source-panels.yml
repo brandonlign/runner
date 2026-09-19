@@ -21,7 +21,8 @@ jobs:
           set -euo pipefail
           mkdir -p output/isef4_figs5
           python - <<'PY'
-          import hashlib,json,urllib.request,zipfile
+          import hashlib,json,urllib.request,urllib.parse,zipfile
+          from xml.etree import ElementTree as ET
           from pathlib import Path
           root=Path("output/isef4_figs5")
           base="https://pmc-oa-opendata.s3.amazonaws.com/"
@@ -37,8 +38,35 @@ jobs:
           metadata_url=base+"metadata/PMC12576953.1.json"
           meta=json.loads(get(metadata_url,1_000_000))
           urls=meta.get("media_urls",[])
-          candidates=[str(x) for x in urls if "supp" in str(x).lower() and str(x).lower().endswith(".zip")]
-          if not candidates:raise ValueError("official metadata has no supplemental ZIP")
+          print("METADATA_FIELDS",sorted(meta),flush=True)
+          print("METADATA_MEDIA_URLS",json.dumps(urls)[:9000],flush=True)
+          def urlify(x):
+              if isinstance(x,dict):
+                  return [urlify(v) for v in x.values()]
+              if isinstance(x,(list,tuple)):
+                  return [y for v in x for y in urlify(v)]
+              if isinstance(x,str):
+                  return [x]
+              return []
+          url_options=urlify(urls)
+          candidates=[x for x in url_options
+                      if "supp" in x.lower() and ".zip" in x.lower()]
+          if not candidates:
+              params=urllib.parse.urlencode({
+                  "list-type":"2","prefix":"PMC12576953.1/","max-keys":"1000"})
+              keys=[]
+              try:
+                  listing=get(base+"?"+params,2_000_000)
+                  root_xml=ET.fromstring(listing)
+                  keys=[n.text for n in root_xml.iter()
+                        if n.tag.rsplit("}",1)[-1]=="Key" and n.text]
+                  print("PMC_PREFIX_KEYS",json.dumps(keys)[:12000],flush=True)
+              except Exception as exc:
+                  print("PMC_PREFIX_LISTING_ERROR",repr(exc),flush=True)
+              candidates=[base+key for key in keys
+                          if "supp" in key.lower() and key.lower().endswith(".zip")]
+          if not candidates:
+              raise ValueError("no supplementary ZIP in metadata or public article prefix; inspect listing")
           url=candidates[0].replace("s3://pmc-oa-opendata/",base)
           content=get(url,40_000_000)
           path=root/"nwaf384_supplemental_files.zip"
