@@ -1,0 +1,64 @@
+name: LUNARSHIFT preserve verified Gambart C common-map result
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-publish-common-map-diagnostic.yml"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-publish-common-map-diagnostic
+  cancel-in-progress: false
+jobs:
+  publish-source-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch exact completed NASA data experiment
+        uses: actions/download-artifact@v4
+        with:
+          name: gambart-c-csm-both-epochs-shared-spherical-map
+          run-id: 35459076420
+          github-token: ${{ github.token }}
+          path: recovered/
+      - name: Verify both scientific camera markers and publish SMALL JSON only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, shutil
+          path=Path("recovered/diagnostics/isef4_gambart_csm_common_map_probe.json")
+          d=json.loads(path.read_text())
+          assert d["schema"]=="gambart-c-official-CSM-common-map-first-gate-v1"
+          assert d["source_ids"]=={"before":"M1138987659LE","after":"M1200206882LE"}
+          assert d["published_lat_lon_e360"]==[3.218,348.092]
+          assert d["mapped_marker_disagreement_px"]=={"sample":0.0,"line":0.0}
+          assert "Both CSM source crops" in d["scientific_status"]
+          for role in ("before","after"):
+              assert d["stages"][role+"_crop_coordinate"]["error_px"]<.1
+              assert d["stages"][role+"_mapped_location"]["pixel_value"].lower()!="null"
+              for k in ("native_crop","crop_ground_marker","cam2map","mapped_ground_marker"):
+                  assert d["stages"][role+"_"+k]["returncode"]==0
+          assert d["stages"]["before_mapping"]==d["stages"]["after_mapping"]
+          d["result_source_run_id"]="35459076420"
+          d["result_artifact_id"]="10589666797"
+          d["publication_scope"]="original publicly published event source geolocation on the same spherical grid; NOT DEM-aligned mass-wasting recognition"
+          out=Path("diagnostics/isef4_gambart_csm_common_map_probe.json")
+          out.parent.mkdir(exist_ok=True)
+          out.write_text(json.dumps(d,indent=2)+"\n")
+          print("BOTH_SOURCE_CAMERAS_AND_MATCHED_MAP_VERIFIED",d["mapped_marker_disagreement_px"])
+          PY
+      - name: Commit result without any source EDR/cube pixels
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add diagnostics/isef4_gambart_csm_common_map_probe.json
+          git commit -m "Preserve both verified published Gambart C common-map camera results"
+          git pull --rebase origin main
+          git push origin HEAD:main
