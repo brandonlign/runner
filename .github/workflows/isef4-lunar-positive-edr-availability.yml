@@ -1,0 +1,124 @@
+name: LUNARSHIFT published-positive NAC availability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-lunar-positive-edr-availability.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  positive-edr-availability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Resolve five verified Xiao figure pairs in public ODE
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.parse,re,time
+          from pathlib import Path
+          targets=[
+            ("Aristillus_S2",33.491,2.098,"M1164795427LE","M1432732655RE"),
+            ("BriggsB_S3_S22_S23",28.535,-70.924,"M1137010370LE","M1167624847LE"),
+            ("GambartC_S5",3.218,-11.908,"M1138987659LE","M1200206882LE"),
+            ("Naumann_S6_S30",35.410,-62.188,"M1154635620RE","M1394483018RE"),
+            ("Reiner_S32",7.354,-55.040,"M1252250955LE","M1341576286RE"),
+          ]
+          out=Path("public_lunar_edr");out.mkdir(exist_ok=True)
+          def get(url,method="GET"):
+            req=urllib.request.Request(url,method=method,headers={
+              "User-Agent":"LUNARSHIFT-public-positive-EDR-access-probe/0.3"
+            })
+            with urllib.request.urlopen(req,timeout=90) as response:
+              return response.read() if method=="GET" else {
+                "status":response.status,
+                "content_length":response.headers.get("Content-Length"),
+                "content_type":response.headers.get("Content-Type"),
+                "accept_ranges":response.headers.get("Accept-Ranges"),
+              }
+          def getfiles(row):
+            container=row.get("Product_files") or {}
+            files=container.get("Product_file",[]) if isinstance(container,dict) else []
+            if isinstance(files,dict):files=[files]
+            return [{"url":f.get("URL"),"filename":f.get("FileName"),"kib":f.get("KBytes")}
+                    for f in files if isinstance(f,dict)]
+          report=[]
+          for name,lat,lon,before,after in targets:
+            desired={before,after}
+            found={};request_audit=[]
+            # Use broad enough latitude/longitude box to include both views.
+            # These results are observations, not event-pixel confirmations.
+            for pt in ("EDRNAC4","CDRNAC4"):
+              if len(found)>=2:break
+              for offset in (0,500,1000,1500):
+                params={
+                  "query":"product","results":"fmpc","output":"JSON",
+                  "target":"moon","ihid":"LRO","iid":"LROC",
+                  "pt":pt,"westernlon":(lon-0.08)%360,
+                  "easternlon":(lon+0.08)%360,
+                  "minlat":max(-90,lat-0.08),"maxlat":min(90,lat+0.08),
+                  "limit":500,"offset":offset
+                }
+                url="https://oderest.rsl.wustl.edu/live2/?"+urllib.parse.urlencode(params)
+                try:
+                  raw=json.loads(get(url))
+                  result=raw.get("ODEResults") or {}
+                  product=result.get("Products") or {}
+                  items=product.get("Product",[]) if isinstance(product,dict) else []
+                  if isinstance(items,dict):items=[items]
+                  if not isinstance(items,list):items=[]
+                  request_audit.append({"pt":pt,"offset":offset,
+                   "reported_count":result.get("Count"),"returned":len(items),
+                   "url":url})
+                  for item in items:
+                    if not isinstance(item,dict):continue
+                    pid=str(item.get("pdsid") or item.get("Product_name") or
+                            item.get("Product_id") or "").upper().strip()
+                    if pt=="CDRNAC4" and pid.endswith("C"):pid=pid[:-1]+"E"
+                    if pid in desired and pid not in found:
+                      found[pid]={
+                        "response_product_id":str(item.get("pdsid") or item.get("Product_name") or item.get("Product_id") or ""),
+                        "queried_product_type":pt,
+                        "observation_time":item.get("UTC_start_time") or item.get("Observation_time"),
+                        "footprint_geometry":item.get("Footprint_geometry"),
+                        "label_url":item.get("LabelURL"),
+                        "files":getfiles(item),
+                      }
+                  if desired.issubset(found):break
+                  if len(items)<500:break
+                except Exception as exc:
+                  request_audit.append({"pt":pt,"offset":offset,
+                    "error":type(exc).__name__+": "+str(exc)})
+                  break
+            for pid,value in found.items():
+              urls=[x["url"] for x in value["files"] if x.get("url") and
+                    str(x.get("filename") or x["url"]).upper().split("?")[0].endswith(".IMG")]
+              if urls:
+                try:value["image_head"]=get(urls[0],"HEAD")
+                except Exception as exc:value["image_head_error"]=type(exc).__name__+": "+str(exc)
+            item={"site":name,"target_lat":lat,"target_lon180":lon,
+             "expected_ids":[before,after],"found_ids":list(found),
+             "exact_edr_ids_recovered":all(x in found and found[x]["queried_product_type"]=="EDRNAC4" for x in desired),
+             "records":found,"request_audit":request_audit}
+            report.append(item)
+            print("POSITIVE_PAIR "+json.dumps({
+              "site":name,"expected_ids":item["expected_ids"],
+              "found_ids":item["found_ids"],
+              "exact_edr_ids_recovered":item["exact_edr_ids_recovered"],
+              "image_head":[found[k].get("image_head") for k in found]
+            }),flush=True)
+          (out/"five_figure_pairs_ode_availability.json").write_text(json.dumps(report,indent=2))
+          print("POSITIVE_AVAILABILITY_COMPLETE",flush=True)
+          PY
+      - name: Upload public ODE provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-five-positive-pair-ode-probe
+          path: public_lunar_edr/
+          if-no-files-found: warn
+          retention-days: 30
