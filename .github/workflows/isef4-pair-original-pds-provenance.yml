@@ -1,0 +1,61 @@
+name: LUNARSHIFT exact Gambart C original EDR pair source metadata
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-pair-original-pds-provenance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  audit-two-edrs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: isef4-gambart-c-wider-raw-counts
+          run-id: 35422390895
+          github-token: ${{ github.token }}
+          path: output/isef4_original_pair/source
+      - name: Preserve archived exact NASA image origins and source row windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path("output/isef4_original_pair/source")
+          p=root/"source_labels_and_windows.json"
+          if not p.exists():raise FileNotFoundError(str(p))
+          data=json.loads(p.read_text())
+          out={
+            "schema_version":"isef4-exact-Gambart-C-both-EDR-source-metadata-v1",
+            "original_raw_artifact_run_id":"35422390895",
+            "source_metadata_sha256":hashlib.sha256(p.read_bytes()).hexdigest(),
+            "original_source_labels_and_windows":data,
+            "note":"unmodified acquisition metadata and raw strips; no camera geometry or landslide recovery",
+          }
+          Path("diagnostics/isef4_exact_pair_pds_origins.json").write_text(
+              json.dumps(out,indent=2)+"\n")
+          print(json.dumps(out,indent=2),flush=True)
+          PY
+      - name: Commit small original pair provenance only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_exact_pair_pds_origins.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_exact_pair_pds_origins.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record both exact Gambart C PDS EDR source URLs and raw window origins"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
