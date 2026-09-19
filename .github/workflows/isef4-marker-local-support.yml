@@ -1,0 +1,62 @@
+name: LUNARSHIFT Gambart C camera-marker local registration control
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-marker-local-support.yml"
+      - "scripts/isef4_gambart_marker_local_registration_audit.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  local-support:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate source-only local support implementation
+        run: python -m py_compile scripts/isef4_gambart_marker_local_registration_audit.py
+      - name: Retrieve ONLY original published Gambart C development source byte strips
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-gambart-c-wider-raw-counts
+          run-id: 35422390895
+          github-token: ${{ github.token }}
+          path: output/known_positive_source
+      - name: Local geometry control around both independently verified original source markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_gambart_marker_local_registration_audit.py \
+            --source-folder output/known_positive_source \
+            --before-camera diagnostics/isef4_gambart_camera_status_isis10.json \
+            --after-camera diagnostics/isef4_gambart_camera_status_isis10_after.json \
+            --out diagnostics/isef4_gambart_marker_local_registration_audit.json
+      - name: Preserve audit outcome, never source images
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_marker_local_registration_audit.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m "Record Gambart C local camera-marker feature support and parallax control"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gambart-c-local-geometry-small-audit
+          path: diagnostics/isef4_gambart_marker_local_registration_audit.json
+          retention-days: 30
+          if-no-files-found: warn
