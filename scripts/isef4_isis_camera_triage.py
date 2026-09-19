@@ -211,7 +211,27 @@ def csm_attempt(raw: Path) -> bool:
                      else isd_data.get(k)}
         for k in inspect
     }
+    # Compare *observed* NAIF distortion/mapping coefficients with ALE's
+    # missing focal2pixel_lines. Never fabricate a camera parameter.
+    nk = isd_data.get("naif_keywords", {})
+    RESULT["ale_naif_transform_keys"] = {
+        k: v for k, v in nk.items()
+        if re.search(r"ITRANSL|ITRANSS|TRANSY|TRANSX|PIXEL_SIZE|SAMPLING_FACTOR", k)
+    }
     persist()
+    # Probe the actual LROC driver property separately, without modifying
+    # the scientific ISD or suppressing the CSM failure.
+    driver_code = (
+        "import ale; d=ale.load(" + repr(str(raw)) +
+        ',props={"web":True},formatter="ale",verbose=False,'
+        "only_isis_spice=False,only_naif_spice=True,return_driver=True);"
+        'print("DRIVER_CLASS",type(d).__name__);'
+        'print("IKID",repr(d.ikid));'
+        'print("DIRECTION",repr(d.spacecraft_direction));'
+        'print("FOCAL_LINES",repr(d.focal2pixel_lines));'
+    )
+    command("ale_direct_line_transform", [sys.executable, "-c", driver_code],
+            timeout=130)
     # Force the documented NAC line-scan model, not all five USGSCSM
     # models. The generic search can flood the diagnostic with irrelevant
     # frame/push-frame errors that hide the line scanner's actual failure.
