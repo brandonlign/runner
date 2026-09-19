@@ -89,23 +89,7 @@ jobs:
               if [[ $rc -ne 0 ]]; then
                 echo "ALE_DIRECT_PROBE"
                 export ALESPICEQL_LOG_LEVEL=debug
-                python - <<'ALEPY' >output/ale.log 2>&1
-                import ale
-                try:
-                    result=ale.load(
-                        "output/before.raw.cub",
-                        props={"web":True},
-                        formatter="ale",
-                        verbose=False,
-                        only_isis_spice=False,
-                        only_naif_spice=True,
-                    )
-                    print("ALE_DIRECT_SUCCESS",type(result).__name__)
-                    if isinstance(result,dict):
-                        print("ALE_KEYS",sorted(result.keys()))
-                except Exception as exc:
-                    print("ALE_DIRECT_FAILURE",type(exc).__name__,str(exc))
-                    raise                ALEPY
+                python -c 'import ale; result=ale.load("output/before.raw.cub", props={"web":True}, formatter="ale", verbose=False, only_isis_spice=False, only_naif_spice=True); print("ALE_DIRECT_SUCCESS",type(result).__name__); print("ALE_KEYS",sorted(result.keys()) if isinstance(result,dict) else "")' >output/ale.log 2>&1
                 echo "ALE_RC=$?"
                 tail -85 output/ale.log
                 break
