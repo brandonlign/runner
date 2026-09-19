@@ -172,12 +172,26 @@ def main() -> int:
             ale_probe(name, path)
         return 1
 
+    # Independent camera-model positive control: an interior image-space
+    # pixel must return geometry even if the rounded published event location
+    # is incompatible with a particular DEM, overlap, or footprint.
+    center = OUTPUT / "center_campt.pvl"
+    center_ok = command("campt_center", [
+        "campt", f"from={raw}", "type=image",
+        "sample=2532", "line=7680", f"to={center}",
+    ], timeout=90)
     point = OUTPUT / "event_campt.pvl"
-    if not command("campt", [
+    event_ok = command("campt", [
         "campt", f"from={raw}", "type=ground",
         "latitude=3.218", "longitude=348.092",
         "allowoutside=false", f"to={point}",
-    ], timeout=90):
+    ], timeout=90)
+    if not center_ok or not event_ok:
+        RESULT["scientific_status"] = (
+            "camera initialized but one or both ground/image coordinate "
+            "probes failed; consult separate stages; no event recovery"
+        )
+        persist()
         return 1
 
     if point.exists():
