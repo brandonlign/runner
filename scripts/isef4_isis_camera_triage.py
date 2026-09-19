@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -175,6 +176,64 @@ def ale_probe(name: str, path: Path) -> None:
         'print("ALE_TOP_KEYS",sorted(r) if isinstance(r,dict) else "")'
     )
     command("ale_" + name, [sys.executable, "-c", probe], timeout=90)
+
+
+def normalize_lroc_nac_distortion(isd_data: dict) -> dict:
+    """Repair a serialization-only shape defect using the same NAC-L NAIF IK.
+
+    This modifies only a derived ALE ISD, NEVER a raw cube/PDS label.
+    Refuse if the source calibration is missing or disagrees with the ISD.
+    """
+    if isd_data.get("name_model") != "USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL":
+        raise ValueError("not a supported line-scanner ISD")
+    keywords = isd_data.get("naif_keywords")
+    if not isinstance(keywords, dict):
+        raise ValueError("NAIF source calibration missing")
+    source = keywords.get("INS-85600_OD_K")
+    if isinstance(source, list):
+        if len(source) != 1:
+            raise ValueError("NAC-L source OD_K does not have one element")
+        source = source[0]
+    if isinstance(source, bool) or not isinstance(source, (int, float)):
+        raise ValueError("source OD_K is not numeric")
+    source = float(source)
+    if not math.isfinite(source):
+        raise ValueError("source OD_K is not finite")
+
+    distortion = isd_data.get("optical_distortion")
+    if not isinstance(distortion, dict) or set(distortion) != {"lrolrocnac"}:
+        raise ValueError("ISD is not the official LRO NAC distortion model")
+    model = distortion["lrolrocnac"]
+    if not isinstance(model, dict) or set(model) != {"coefficients"}:
+        raise ValueError("unexpected NAC distortion structure")
+    previous = model["coefficients"]
+    if isinstance(previous, list):
+        if len(previous) != 1:
+            raise ValueError("NAC optical distortion must contain exactly one coefficient")
+        candidate = previous[0]
+    else:
+        candidate = previous
+    if candidate is None:
+        candidate = source
+    if isinstance(candidate, bool) or not isinstance(candidate, (int, float)):
+        raise ValueError("derived NAC distortion is not numeric")
+    candidate = float(candidate)
+    if not math.isfinite(candidate):
+        raise ValueError("derived NAC distortion is not finite")
+    if not math.isclose(candidate, source, rel_tol=1e-10, abs_tol=1e-13):
+        raise ValueError("derived NAC distortion disagrees with original NAIF IK")
+
+    model["coefficients"] = [source]
+    return {
+        "instrument": "NAC-L (-85600)",
+        "field": "optical_distortion.lrolrocnac.coefficients",
+        "original_type": type(previous).__name__,
+        "original_value": previous,
+        "verified_source_key": "INS-85600_OD_K",
+        "verified_source_value": source,
+        "repaired_coefficients": [source],
+        "status": "already_vector" if isinstance(previous, list) else "repaired_derived_isd_only",
+    }
 
 
 def csm_attempt(raw: Path) -> bool:
@@ -369,6 +428,29 @@ def csm_attempt(raw: Path) -> bool:
             RESULT["derived_isd_repair"] = {
                 "status": "not attempted: live-driver verified signed "
                           "transformation is unavailable; no inferred sign"
+            }
+            persist()
+    # ALE may serialize the single official NAC optical distortion as a
+    # scalar/null, while USGSCSM requires a vector<double>. Correct ONLY
+    # the derived JSON, checking the exact NAC-L NAIF instrument keyword.
+    # Deliberately require successful direction/line-transform recovery
+    # before attempting this independent secondary camera-field repair.
+    if (RESULT.get("derived_isd_repair", {}).get("field")
+            == "focal2pixel_lines"):
+        try:
+            audit = normalize_lroc_nac_distortion(isd_data)
+            RESULT["distortion_shape_audit"] = audit
+            if audit["status"] == "repaired_derived_isd_only":
+                isd.write_text(json.dumps(isd_data))
+            persist()
+        except ValueError as exc:
+            RESULT["distortion_shape_audit"] = {
+                "status": "rejected_without_fabrication",
+                "reason": str(exc),
+                "naif_od_k": nk.get("INS-85600_OD_K"),
+                "raw_derived_optical_distortion": isd_data.get(
+                    "optical_distortion"
+                ),
             }
             persist()
     # Force the documented NAC line-scan model, not all five USGSCSM
