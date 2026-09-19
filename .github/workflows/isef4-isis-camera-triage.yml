@@ -1,0 +1,61 @@
+name: LUNARSHIFT camera geometry triage with durable diagnostic
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-isis-camera-triage.yml"
+      - "scripts/isef4_isis_camera_triage.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  camera-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official ISIS runtime
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.11
+            isis=8.3.0
+          init-shell: bash
+          post-cleanup: all
+      - name: Probe source-camera location and record every failure
+        shell: bash -el {0}
+        run: |
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          mkdir -p "$ISISDATA"
+          python -m pip install --quiet 'setuptools<81'
+          python scripts/isef4_isis_camera_triage.py
+      - name: Publish small immutable public diagnostics without source pixels
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_gambart_camera_status.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_gambart_camera_status.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Record Gambart C ISIS source-camera probe outcome"
+              git push origin HEAD:main
+            fi
+          fi
+      - name: Preserve detailed logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-gambart-isis-camera-triage
+          path: |
+            output/triage/*.log
+            diagnostics/isef4_gambart_camera_status.json
+          retention-days: 30
+          if-no-files-found: warn
