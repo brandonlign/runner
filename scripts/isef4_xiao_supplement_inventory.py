@@ -70,8 +70,79 @@ def main():
             "id_preview":sorted(products)[:18],
             "first_nonempty_rows":sample,
         })
+    # Preserve the provenance of every source row; reconcile published
+    # denominators without silently discarding metadata, blanks or repeats.
+    primary=book["WithReliableTemporalPairs"]
+    rows=list(primary.iter_rows(values_only=True))
+    headers=["" if x is None else str(x) for x in rows[0]]
+    before_col=headers.index("Before Image ID")
+    after_col=headers.index("After Image ID")
+    no_col=headers.index("No.")
+    name_col=headers.index("Terrain Name")
+    type_col=headers.index("Terrain Type")
+    pair_col=headers.index("Temporal Pair")
+    valid=[]
+    invalid=[]
+    targets=set()
+    cur_name=None
+    cur_type=None
+    for excel_row,row in enumerate(rows[1:],start=2):
+        serial=row[no_col]
+        before="" if row[before_col] is None else str(row[before_col]).strip()
+        after="" if row[after_col] is None else str(row[after_col]).strip()
+        pair="" if row[pair_col] is None else str(row[pair_col]).strip()
+        if row[name_col] is not None:cur_name=str(row[name_col]).strip()
+        if row[type_col] is not None:cur_type=str(row[type_col]).strip()
+        item={"excel_row":excel_row,"serial":serial,"before":before,
+              "after":after,"pair":pair,"terrain_name_fill_down":cur_name,
+              "terrain_type_fill_down":cur_type}
+        if (PRODUCT.fullmatch(before) and PRODUCT.fullmatch(after)
+                and pair.upper()==(before+"_"+after).upper()):
+            valid.append(item)
+            if cur_name:targets.add((cur_type,cur_name))
+        else:
+            item["cells"]={str(i+1):str(v)[:160] for i,v in enumerate(row)
+                           if v is not None and str(v).strip()}
+            invalid.append(item)
+    duplicates={}
+    for item in valid:
+        duplicates[item["pair"]]=duplicates.get(item["pair"],0)+1
+    serials=[int(x["serial"]) for x in valid
+             if isinstance(x["serial"],(int,float))
+             and float(x["serial"]).is_integer()]
+    gambart=[x for x in valid
+             if "M1138987659LE" in x["pair"].upper()
+             or "M1200206882LE" in x["pair"].upper()
+             or "GAMBART" in str(x["terrain_name_fill_down"]).upper()]
+    pair_audit={
+        "header_exact":headers,
+        "source_excel_max_row":primary.max_row,
+        "source_data_rows":len(rows)-1,
+        "exact_pair_id_and_key_reconciled":len(valid),
+        "excluded_or_ambiguous_row_count":len(invalid),
+        "excluded_or_ambiguous_rows":invalid[:30],
+        "pair_duplicate_keys":[{"pair":key,"copies":count} for key,count
+                               in sorted(duplicates.items()) if count>1][:50],
+        "serial_numeric_row_count":len(serials),
+        "serial_min_max":[min(serials),max(serials)] if serials else None,
+        "serial_missing_in_1_through_max":sorted(set(range(1,max(serials)+1))-set(serials))
+            if serials else [],
+        "filled_down_target_name_type_count":len(targets),
+        "gambart_or_exact_product_rows":gambart[:35],
+        "last_12_excel_rows":[
+            {"excel_row":idx,
+             "cells":{str(j+1):str(v)[:220] for j,v in enumerate(row)
+                      if v is not None and str(v).strip()}}
+            for idx,row in list(enumerate(rows,start=1))[-12:]
+        ],
+        "expected_paper_temporal_pairs":562,
+        "expected_paper_targets":74,
+        "counts_reconciled_not_coerced":True,
+        "note":"pair rows require exact before/after IDs matching temporal pair key; target fill-down is unverified for merged labels",
+    }
     out={
-        "schema_version":"xiao2025-original-supplement-workbook-audit-v1",
+        "schema_version":"xiao2025-original-supplement-workbook-audit-v2",
+        "primary_pair_table_audit":pair_audit,
         "source_zip_sha256":ZIP_SHA,
         "source_workbook":names[0],
         "source_workbook_sha256":hashlib.sha256(xlsx).hexdigest(),
