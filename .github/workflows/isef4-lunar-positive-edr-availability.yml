@@ -73,6 +73,8 @@ jobs:
                   if not isinstance(items,list):items=[]
                   request_audit.append({"pt":pt,"offset":offset,
                    "reported_count":result.get("Count"),"returned":len(items),
+                   "sample_ids":[str(x.get("pdsid") or x.get("Product_name") or x.get("Product_id") or "") for x in items[:20]],
+                   "sample_product_types":[str(x.get("Label_product_type") or x.get("Product_type") or "") for x in items[:6]],
                    "url":url})
                   for item in items:
                     if not isinstance(item,dict):continue
