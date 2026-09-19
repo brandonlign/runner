@@ -1,0 +1,115 @@
+name: LUNARSHIFT Figure S5 original panel index
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-s5-figure-index.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  source-figure-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Link original S5 caption to OOXML embedded image
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,io,json,re,urllib.request,zipfile
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+
+          src=json.loads(Path("diagnostics/isef4_published_s5_source_status.json").read_text().replace("\\n",""))
+          url=src["source_url"]
+          req=urllib.request.Request(url,headers={"User-Agent":"LUNARSHIFT-published-S5-OOXML-provenance/1.0"})
+          with urllib.request.urlopen(req,timeout=150) as response:
+              zip_bytes=response.read(40_000_001)
+          if len(zip_bytes)>40_000_000 or hashlib.sha256(zip_bytes).hexdigest()!=src["sha256"]:
+              raise RuntimeError("original supplemental source hash or size differs from frozen acquisition")
+          root=Path("output/isef4_figs5_index")
+          root.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(zip_bytes)) as outer:
+              originals=[x for x in outer.namelist() if x.lower().endswith(".docx")]
+              if len(originals)!=1:raise RuntimeError("original supplement does not contain exactly one DOCX")
+              docx_bytes=outer.read(originals[0])
+          with zipfile.ZipFile(io.BytesIO(docx_bytes)) as doc:
+              w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              a="http://schemas.openxmlformats.org/drawingml/2006/main"
+              r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+              p="http://schemas.openxmlformats.org/package/2006/relationships"
+              body=ET.fromstring(doc.read("word/document.xml"))
+              rels=ET.fromstring(doc.read("word/_rels/document.xml.rels"))
+              relmap={item.attrib["Id"]:item.attrib.get("Target","")
+                      for item in rels.findall(f"{{{p}}}Relationship")}
+              paragraphs=[]
+              for para in body.iter(f"{{{w}}}p"):
+                  text="".join(t.text or "" for t in para.iter(f"{{{w}}}t"))
+                  imageids=[el.attrib.get(f"{{{r}}}embed") for el in para.iter(f"{{{a}}}blip")]
+                  paragraphs.append({"text":text,"images":[rid for rid in imageids if rid]})
+              caption_pat=re.compile(r"\\b(?:fig(?:ure)?\\.?\\s*S\\s*5)\\b",re.I)
+              matches=[]
+              selected=set()
+              for idx,para in enumerate(paragraphs):
+                  if not caption_pat.search(para["text"]):continue
+                  context=[]
+                  for near in range(max(0,idx-5),min(len(paragraphs),idx+4)):
+                      item=paragraphs[near]
+                      images=[]
+                      for rid in item["images"]:
+                          target=relmap.get(rid)
+                          if not target:continue
+                          name="word/"+target.lstrip("/") if not target.startswith("/word/") else target.lstrip("/")
+                          if name not in doc.namelist():continue
+                          data=doc.read(name)
+                          selected.add(name)
+                          images.append({"relationship_id":rid,"media":name,"bytes":len(data),
+                                         "sha256":hashlib.sha256(data).hexdigest()})
+                      context.append({"paragraph_index":near,"delta":near-idx,
+                                      "text_excerpt":item["text"][:240],"images":images})
+                  matches.append({"caption_paragraph_index":idx,
+                                  "caption_excerpt":para["text"][:350],"context":context})
+              media=[{"filename":p,"bytes":doc.getinfo(p).file_size}
+                     for p in doc.namelist() if p.startswith("word/media/")]
+              for name in sorted(selected):
+                  out=root/Path(name).name
+                  out.write_bytes(doc.read(name))
+          record={"schema_version":"published-xiao-S5-OOXML-panel-index-v1",
+                  "source_zip_sha256":src["sha256"],"source_run_id":src["run_id"],
+                  "original_docx":originals[0],"original_docx_sha256":hashlib.sha256(docx_bytes).hexdigest(),
+                  "matching_caption_count":len(matches),"matching_caption_contexts":matches,
+                  "embedded_media_inventory":media,
+                  "scientific_status":"original published figure provenance only; no recovered LROC event"}
+          (root/"figure_s5_context.json").write_text(json.dumps(record,indent=2)+"\n")
+          Path("diagnostics/isef4_figure_s5_index.json").write_text(json.dumps(record,indent=2)+"\n")
+          print(json.dumps({"matching_captions":len(matches),"selected_media":sorted(selected),
+                            "total_media":len(media)},indent=2),flush=True)
+          if not matches:raise RuntimeError("Figure S5 caption not located in original Word source")
+          PY
+      - name: Preserve verified original S5 image neighbors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-published-figure-s5-neighbor-panels
+          path: output/isef4_figs5_index/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit image-to-caption provenance (no figure pixels)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f diagnostics/isef4_figure_s5_index.json ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add diagnostics/isef4_figure_s5_index.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Index original published S5 OOXML caption and image provenance"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
