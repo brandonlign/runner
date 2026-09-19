@@ -1,0 +1,154 @@
+name: LUNARSHIFT Gambart C bounded raw-image strips
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-gambart-edr-strips.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-raw-strips:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Install image preview dependencies
+        run: python -m pip install --quiet numpy pillow
+      - name: Decode source-verified Gambart C EDR row windows
+        shell: bash
+        run: |
+          python - <<'PY'
+          import io,json,re,urllib.request,urllib.parse,hashlib,math
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          import numpy as np
+          from PIL import Image
+          ROOT=Path("gambart_raw_strips");ROOT.mkdir(exist_ok=True)
+          TARGET_LAT=3.218
+          TARGET_LON=348.092
+          PAIR=[
+            ("before","M1138987659LE",
+             "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/LROLRC_0017/DATA/ESM/2013317/NAC/M1138987659LE"),
+            ("after","M1200206882LE",
+             "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/LROLRC_0025/DATA/ESM2/2015296/NAC/M1200206882LE")
+          ]
+          def lname(x):return x.tag.rsplit("}",1)[-1]
+          def child(e,key):
+            for c in e.iter():
+              if lname(c)==key and c.text:return c.text.strip()
+            return None
+          def request(url,start=None,end=None,max_bytes=2_000_000):
+            headers={"User-Agent":"LUNARSHIFT-source-image-crop-probe/0.4"}
+            if start is not None:headers["Range"]=f"bytes={start}-{end}"
+            req=urllib.request.Request(url,headers=headers)
+            with urllib.request.urlopen(req,timeout=120) as r:
+              code=r.status;length=int(r.headers.get("Content-Length") or 0)
+              if start is not None:
+                if code!=206:raise RuntimeError(f"Range fallback denied: {code} {url}")
+                if r.headers.get("Content-Range")!=f"bytes {start}-{end}/{r.headers['Content-Range'].split('/')[-1]}":
+                  raise RuntimeError("range response mismatch")
+                if length!=(end-start+1):raise RuntimeError("invalid byte-range length")
+              elif length>max_bytes:raise RuntimeError("oversized metadata")
+              data=r.read(max_bytes+1 if start is None else length+1)
+              if start is not None and len(data)!=(end-start+1):
+                raise RuntimeError("partial or overlong row-window response")
+              if start is None and len(data)>max_bytes:raise RuntimeError("oversized metadata")
+              return data,dict(r.headers),code
+          def observation():
+            q={"query":"product","results":"fmpc","output":"JSON",
+               "target":"moon","ihid":"LRO","iid":"LROC",
+               "pt":"EDRNAC4","westernlon":TARGET_LON-0.05,
+               "easternlon":TARGET_LON+0.05,
+               "minlat":TARGET_LAT-0.05,"maxlat":TARGET_LAT+0.05,
+               "limit":500,"offset":0}
+            b,_,_=request("https://oderest.rsl.wustl.edu/live2/?"+
+                          urllib.parse.urlencode(q),max_bytes=5_000_000)
+            data=json.loads(b);p=data["ODEResults"]["Products"]["Product"]
+            if isinstance(p,dict):p=[p]
+            return {
+              str(r.get("pdsid","")).upper().removeprefix("NAC."):r
+              for r in p if isinstance(r,dict)
+            }
+          obs=observation()
+          outputs=[]
+          for role,pid,base in PAIR:
+            if pid not in obs:raise RuntimeError("source-verified EDR not in ODE query: "+pid)
+            record=obs[pid]
+            xml,_,_=request(base+".xml")
+            root=ET.fromstring(xml)
+            arr=next(e for e in root.iter() if lname(e)=="Array_2D_Image")
+            axes={
+              child(e,"axis_name"):int(child(e,"elements"))
+              for e in arr.iter() if lname(e)=="Axis_Array"
+            }
+            lines,samples=axes["Line"],axes["Sample"]
+            offset=int(child(arr,"offset"))
+            dtype=child(arr,"data_type")
+            if dtype!="UnsignedByte":raise RuntimeError("expected raw byte EDR")
+            expected_file_size=offset+lines*samples
+            file_node=next(e for e in root.iter() if lname(e)=="File_Area_Observational")
+            file_size=int(child(file_node,"file_size"))
+            if file_size!=expected_file_size:
+              raise RuntimeError(f"PDS4 file-size mismatch: {file_size} vs {expected_file_size}")
+            metadata={"source_figure":"Xiao2025_S5","role":role,"edr_id":pid,
+              "lines":lines,"samples":samples,"array_offset":offset,
+              "file_size":file_size,
+              "source_label_sha256":hashlib.sha256(xml).hexdigest(),
+              "target_latitude":TARGET_LAT,"target_longitude_east_360":TARGET_LON}
+            for src,dst in (("Start_latitude","start"),("Stop_latitude","stop"),
+                            ("Minimum_latitude","minimum"),("Maximum_latitude","maximum")):
+              try:metadata[dst+"_latitude"]=float(record[src])
+              except (KeyError,ValueError,TypeError):metadata[dst+"_latitude"]=None
+            fracs={}
+            start=metadata["start_latitude"];stop=metadata["stop_latitude"]
+            if start is not None and stop is not None and abs(stop-start)>0.00001:
+              frac=(TARGET_LAT-start)/(stop-start)
+              if -0.05<=frac<=1.05:
+                fracs["startstop"]=min(1,max(0,frac))
+            low=metadata["minimum_latitude"];high=metadata["maximum_latitude"]
+            if low is not None and high is not None and abs(high-low)>0.00001:
+              frac=(TARGET_LAT-low)/(high-low)
+              if -0.05<=frac<=1.05:
+                fracs["minmax_forward"]=min(1,max(0,frac))
+                fracs["minmax_mirror"]=1-min(1,max(0,frac))
+            if not fracs:fracs["center_fallback"]=0.5
+            seen=set()
+            crops=[]
+            for label,fraction in fracs.items():
+              center=round(fraction*(lines-1))
+              startrow=max(0,min(lines-512,center-256))
+              if startrow in seen:continue
+              seen.add(startrow)
+              first=offset+startrow*samples
+              last=offset+(startrow+512)*samples-1
+              raw,header,status=request(base+".IMG",first,last,max_bytes=3_000_000)
+              image=np.frombuffer(raw,dtype=np.uint8).reshape((512,samples))
+              img=np.percentile(image,[1,99])
+              lo,hi=float(img[0]),float(img[1])
+              scaled=np.clip((image.astype(np.float32)-lo)/
+                max(hi-lo,1.0)*255,0,255).astype(np.uint8)
+              name=f"{pid}_{label}_rows_{startrow}-{startrow+511}"
+              Image.fromarray(scaled).save(ROOT/(name+".png"))
+              crops.append({"method":label,"latitude_fraction":fraction,
+                "center_line":center,"first_line":startrow,"last_line":startrow+511,
+                "range_start_byte":first,"range_end_byte":last,
+                "response_status":status,"range":header.get("Content-Range"),
+                "raw_window_sha256":hashlib.sha256(raw).hexdigest(),
+                "raw_p01":lo,"raw_p99":hi,"preview_png":name+".png"})
+            metadata["screening_windows"]=crops
+            outputs.append(metadata)
+            print("GAMBART_C_STRIPS "+json.dumps(metadata),flush=True)
+          (ROOT/"source_labels_and_windows.json").write_text(
+            json.dumps(outputs,indent=2))
+          print("GAMBART_C_STRIPS_COMPLETE",flush=True)
+          PY
+      - name: Preserve source-range audit and raw-count previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-gambart-c-event-latitude-row-windows
+          path: gambart_raw_strips/
+          retention-days: 30
