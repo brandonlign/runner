@@ -23,32 +23,51 @@ from pathlib import Path
 ROLE = os.environ.get("ISEF4_PRODUCT_ROLE", "before").strip()
 if ROLE not in ("before", "after"):
     raise ValueError("ISEF4_PRODUCT_ROLE must be before or after")
-PRODUCT = {"before": "M1138987659LE", "after": "M1200206882LE"}[ROLE]
-SOURCE_URL = (
-    "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/"
-    + {"before": "LROLRC_0017/DATA/ESM/2013317/NAC/",
-       "after": "LROLRC_0025/DATA/ESM2/2015296/NAC/"}[ROLE]
-)
-EXPECTED_IMG_BYTES = {"before": 77788104, "after": 140014536}[ROLE]
+TARGET=os.environ.get("ISEF4_DEVELOPMENT_EVENT","gambart_c").strip()
+TARGET_CONFIGS={
+ "gambart_c":{
+  "products":{"before":"M1138987659LE","after":"M1200206882LE"},
+  "archives":{"before":"LROLRC_0017/DATA/ESM/2013317/NAC/","after":"LROLRC_0025/DATA/ESM2/2015296/NAC/"},
+  "bytes":{"before":77788104,"after":140014536},
+  "first_5064_sha":{"before":None,"after":"f1017730d414583ace4165f95d04955b7028af7980101b7e42ccf9c3f9f5beab"},
+  "coordinates":(3.218,348.092),
+  "event":"Xiao et al. 2025 Figure S5 Gambart C (published positive)"
+ },
+ "heis_s26":{
+  "products":{"before":"M1197976848LE","after":"M1376643242LE"},
+  "archives":{"before":"LROLRC_0025/DATA/ESM2/2015270/NAC/","after":"LROLRC_0047C/DATA/ESM4/2021146/NAC/"},
+  "bytes":{"before":108901320,"after":264467400},
+  "first_5064_sha":{"before":"825f64b190b45ff83b5fbfd4181189d324e579ee167899c8e626ba5a0f4c7774",
+                    "after":"1df99407f0b2fb403ffd967b1d06c848afe94fd7f2df15b1873fe4e2f9bfc515"},
+  "coordinates":(32.547,327.792),
+  "event":"Xiao et al. 2025 Figure S26 Heis (published non-impact development positive)"
+ }
+}
+if TARGET not in TARGET_CONFIGS:
+ raise ValueError("only published Gambart C and designated development Heis S26 supported")
+CONFIG=TARGET_CONFIGS[TARGET]
+PRODUCT=CONFIG["products"][ROLE]
+SOURCE_URL="https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/"+CONFIG["archives"][ROLE]
+EXPECTED_IMG_BYTES=CONFIG["bytes"][ROLE]
 ROOT = Path.cwd()
 SUFFIX = os.environ.get("ISEF4_DIAGNOSTIC_SUFFIX", "").strip()
 if SUFFIX and not re.fullmatch(r"[a-z0-9_-]{1,20}", SUFFIX):
     raise ValueError("invalid diagnostic suffix")
 OUTPUT = ROOT / "output" / ("triage_" + SUFFIX if SUFFIX else "triage")
 STATUS = ROOT / "diagnostics" / (
-    "isef4_gambart_camera_status" + ("_" + SUFFIX if SUFFIX else "") + ".json"
+    "isef4_" + TARGET + "_camera_status" + ("_" + SUFFIX if SUFFIX else "") + ".json"
 )
 OUTPUT.mkdir(parents=True, exist_ok=True)
 STATUS.parent.mkdir(parents=True, exist_ok=True)
 RESULT = {
     "schema_version": "isef4-public-source-camera-triage-v1",
     "runtime_label": SUFFIX or "isis83",
-    "event": "Xiao et al. 2025 Figure S5 Gambart C (published positive)",
+    "event": CONFIG["event"],
     "product": PRODUCT,
     "source_role": ROLE,
     "expected_edr_bytes": EXPECTED_IMG_BYTES,
-    "target_latitude_deg_n": 3.218,
-    "target_longitude_deg_e": 348.092,
+    "target_latitude_deg_n": CONFIG["coordinates"][0],
+    "target_longitude_deg_e": CONFIG["coordinates"][1],
     "generated_utc": datetime.now(timezone.utc).isoformat(),
     "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
     "run_id": os.environ.get("GITHUB_RUN_ID", ""),
@@ -224,7 +243,9 @@ def fetch() -> bool:
             destination = OUTPUT / (PRODUCT + "." + ext)
             url = SOURCE_URL + destination.name
             if ext == "IMG" and ROLE == "after":
-                n, file_sha = fetch_verified_after_ranges(url, destination)
+                n, file_sha = fetch_verified_after_ranges(
+                    url, destination,
+                    known_first_5064_sha=CONFIG["first_5064_sha"]["after"])
                 acquisition = "strict_206_byte_ranges_4MiB"
             else:
                 h = hashlib.sha256()
@@ -255,6 +276,12 @@ def fetch() -> bool:
                     raise
                 file_sha = h.hexdigest()
                 acquisition = "full_object_get"
+                if ext == "IMG" and CONFIG["first_5064_sha"]["before"] is not None:
+                    with destination.open("rb") as first_source:
+                        head = first_source.read(5064)
+                    if (hashlib.sha256(head).hexdigest()!=CONFIG["first_5064_sha"]["before"]
+                            or PRODUCT.encode("ascii") not in head):
+                        raise ValueError("BEFORE source differs from independently measured ODE first-5064 header")
             if ext == "IMG" and n != EXPECTED_IMG_BYTES:
                 raise ValueError(
                     f"source EDR length mismatch for {PRODUCT}: "
@@ -583,7 +610,7 @@ def csm_attempt(raw: Path) -> bool:
     point = OUTPUT / "csm_event_campt.pvl"
     event_ok = command("csm_campt_event", [
         "campt", f"from={raw}", "type=ground",
-        "latitude=3.218", "longitude=348.092",
+        f"latitude={CONFIG['coordinates'][0]}", f"longitude={CONFIG['coordinates'][1]}",
         "allowoutside=false", f"to={point}",
     ], timeout=120)
     for tag, p in (("center", center), ("event", point)):
@@ -693,7 +720,7 @@ def main() -> int:
     point = OUTPUT / "event_campt.pvl"
     event_ok = command("campt", [
         "campt", f"from={raw}", "type=ground",
-        "latitude=3.218", "longitude=348.092",
+        f"latitude={CONFIG['coordinates'][0]}", f"longitude={CONFIG['coordinates'][1]}",
         "allowoutside=false", f"to={point}",
     ], timeout=90)
     if not center_ok or not event_ok:
