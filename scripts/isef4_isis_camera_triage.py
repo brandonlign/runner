@@ -42,6 +42,27 @@ TARGET_CONFIGS={
   "coordinates":(32.547,327.792),
   "event":"Heis 2021-05 to 2024-09 actual-coverage post-publication temporal comparison; no new event claimed"
  },
+ "ryder_2022_2024":{
+  "products":{"before":"M1418893006RE","after":"M1488112243LE"},
+  "archives":{"before":"LROLRC_0053A/DATA/ESM4/2022270/NAC/",
+              "after":"LROLRC_0061C/DATA/ESM5/2024341/NAC/"},
+  "bytes":{"before":264467400,"after":264467400},
+  "first_5064_sha":{"before":"9d379d1d49ab2285058d54be2607a60f63fe60684128d079887f671f4f9636df",
+                     "after":"b7e6505aa2c0b57b31ae08edc14ddccf6bea5ad0c5f5161828bede951ff6da16"},
+  "coordinates":(-44.043,143.514),
+  "event":"Ryder already-published site, actually overlapping 2022-2024 original lunar discovery-interval source gate"
+ },
+ "ryder_2026":{
+  "products":{"before":"M1531340568LE","after":"M1533682639LE"},
+  "archives":{"before":"LROLRC_0067B/DATA/ESM6/2026110/NAC/",
+              "after":"LROLRC_0067C/DATA/ESM6/2026137/NAC/"},
+  "source_root":"https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-2-edr/",
+  "bytes":{"before":264467400,"after":264467400},
+  "first_5064_sha":{"before":"a07e794e5b48c6c8e528cffd2fd6d0802a1f09037f3cf08f2e812ed7f1420f2e",
+                     "after":"033c626dce964ae873867232b98748ed8eabe6a0f55339c236f0eb393bb6a761"},
+  "coordinates":(-44.043,143.514),
+  "event":"Ryder already-published site, actually overlapping 2026 April-May original NAC repeat observations"
+ },
  "heis_s26":{
   "products":{"before":"M1197976848LE","after":"M1376643242LE"},
   "archives":{"before":"LROLRC_0025/DATA/ESM2/2015270/NAC/","after":"LROLRC_0047C/DATA/ESM4/2021146/NAC/"},
@@ -53,10 +74,10 @@ TARGET_CONFIGS={
  }
 }
 if TARGET not in TARGET_CONFIGS:
- raise ValueError("only published development Gambart, Heis S26 or Heis post-2021 exact actual coverage supported")
+ raise ValueError("only explicitly verified Gambart, Heis or Ryder exact actual-covered NASA products supported")
 CONFIG=TARGET_CONFIGS[TARGET]
 PRODUCT=CONFIG["products"][ROLE]
-SOURCE_URL="https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/"+CONFIG["archives"][ROLE]
+SOURCE_URL=CONFIG.get("source_root","https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/")+CONFIG["archives"][ROLE]
 EXPECTED_IMG_BYTES=CONFIG["bytes"][ROLE]
 ROOT = Path.cwd()
 SUFFIX = os.environ.get("ISEF4_DIAGNOSTIC_SUFFIX", "").strip()
