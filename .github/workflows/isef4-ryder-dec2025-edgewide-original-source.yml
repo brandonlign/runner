@@ -1,0 +1,68 @@
+name: LUNARSHIFT Ryder Dec2025 edge-safe expanded original NAC source
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-dec2025-edgewide-original-source.yml'
+      - 'scripts/isef4_ryder_dec2025_edgewide_original_source.py'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-ryder-dec2025-1281-original-edge-safe-NAC
+  cancel-in-progress: false
+jobs:
+  full-original-camera-scene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check edge-safe crop exactly follows official camera pixel margins
+        run: python -m py_compile scripts/isef4_ryder_dec2025_edgewide_original_source.py
+      - name: Restore exact original 2025 December EDR NASA CSM proof
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-ryder-Dec2025-exact-original-camera
+          run-id: 35518665224
+          github-token: ${{ github.token }}
+          path: work/original_camera
+      - name: Extract expanded original NAC PDS3 scene using strict 206 byte-ranges
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy
+          python scripts/isef4_ryder_dec2025_edgewide_original_source.py \
+            --original-archive-gate diagnostics/isef4_ryder_2025dec_original_PDS3_EDR_CDR_gate.json \
+            --camera-proof work/original_camera/diagnostics/isef4_ryder_2025dec_camera_status_isis10_ry25.json \
+            --source-folder output/ryder_dec2025_edgewide_original_CDR \
+            --out diagnostics/isef4_ryder_dec2025_edgewide_original_source_roi.json
+      - name: Preserve exact full original source and negative verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-Dec2025-original-edgewide-camera-safe-NAC-scene
+          path: |
+            output/ryder_dec2025_edgewide_original_CDR/
+            diagnostics/isef4_ryder_dec2025_edgewide_original_source_roi.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit original source identity and unmodified metadata
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_dec2025_edgewide_original_source_roi.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Recover expanded camera-edge-safe Ryder December2025 original NAC scene'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
