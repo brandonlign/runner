@@ -29,7 +29,7 @@ def fields(b):
         output[key]=m.group(1).strip().strip('"')
     return output
 def inside_polygon(wkt,lon=327.792,lat=32.547):
-    vertices=[(float(x),float(y)) for x,y in re.findall(r"(-?\\d+(?:\\.\\d+)?)\\s+(-?\\d+(?:\\.\\d+)?)",wkt or "")]
+    vertices=[tuple(map(float,part.strip().split()[:2])) for part in (wkt or "").replace("POLYGON ((","").replace("))","").split(",") if len(part.strip().split())>=2]
     if len(vertices)<4:raise ValueError("missing actual ODE lunar footprint")
     result=False
     for i in range(len(vertices)):
