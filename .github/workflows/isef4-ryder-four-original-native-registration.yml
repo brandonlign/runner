@@ -1,0 +1,64 @@
+name: LUNARSHIFT Ryder four epoch independent original native source registration
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-four-original-native-registration.yml'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-ryder-four-original-source-geometry
+  cancel-in-progress: false
+jobs:
+  original-ryder-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify registration program syntax and exact source manifest
+        run: python -m py_compile scripts/isef4_ryder_four_epoch_native_registration.py
+      - name: Restore all four independently camera-proven native source NAC patches
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Ryder-four-exact-source-calibrated-r640-NAC-patches
+          run-id: 35517962160
+          github-token: ${{ github.token }}
+          path: work/ryder_source
+      - name: Run off-known-site original camera-scaled source geometry only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_ryder_four_epoch_native_registration.py \
+            --source-folder work/ryder_source/output/ryder_four_verified_original_CDR_r640 \
+            --source-manifest diagnostics/isef4_ryder_four_native_original_calibrated_ROIs.json \
+            --out diagnostics/isef4_ryder_four_epoch_independent_native_registration.json
+      - name: Preserve all fit failures and spatial withheld matches
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-four-original-NAC-source-geometry
+          path: diagnostics/isef4_ryder_four_epoch_independent_native_registration.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Record pre-change frozen native geometric selection
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_four_epoch_independent_native_registration.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Freeze independent Ryder 2022 to 2024 2026 native source geometry before temporal search'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
