@@ -1,0 +1,64 @@
+name: LUNARSHIFT Heis S26 true published landslide morphology pilot
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-s26-figure-baseline.yml"
+      - "scripts/isef4_heis_s26_figure_baseline.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: isef4-heis-s26-figure-baseline
+  cancel-in-progress: false
+jobs:
+  genuine-nonimpact-positive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify reproducible morphological source test
+        run: python -m py_compile scripts/isef4_heis_s26_figure_baseline.py
+      - name: Restore verified primary-source Xiao 2025 supplementary archive
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-published-xiao2025-supplemental-source
+          run-id: 35451970384
+          github-token: ${{ github.token }}
+          path: work/recovered_paper
+      - name: Measure true non-impact Heis published slope change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_heis_s26_figure_baseline.py \
+            --supplement-artifact work/recovered_paper/nwaf384_supplemental_files.zip \
+            --out diagnostics/isef4_heis_s26_true_figure_morphology.json
+      - name: Preserve both models and all fixed thresholds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-heis-S26-figure-nonimpact-morphology
+          path: diagnostics/isef4_heis_s26_true_figure_morphology.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit only measurement metadata not authors' figure pixels
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_s26_true_figure_morphology.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Measure published Heis elongated temporal change under two registrations'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
