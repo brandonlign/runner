@@ -1,0 +1,77 @@
+name: LUNARSHIFT Heis S26 exact two-epoch USGS CSM source-camera gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-s26-csm-source-cameras.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-heis-s26-csm-source-cameras
+  cancel-in-progress: false
+jobs:
+  published-nonimpact-Heis-cameras:
+    runs-on: ubuntu-latest
+    timeout-minutes: 48
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source camera configuration syntax
+        run: python -m py_compile scripts/isef4_isis_camera_triage.py
+      - name: Install ISIS 10 and official line scanner plugin
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis10
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.13
+            isis=10.0.0
+            usgscsm
+          init-shell: bash
+          post-cleanup: all
+      - name: Initialize source-verified cameras for the original Heis published positive
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          mkdir -p "$ISISDATA/base/kernels/lsk"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls" \
+            --output "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          grep -q 'KPL/LSK' "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          python -m pip install --quiet 'setuptools<81'
+          export ISEF4_DEVELOPMENT_EVENT=heis_s26
+          export ISEF4_PRODUCT_ROLE=before
+          export ISEF4_DIAGNOSTIC_SUFFIX=isis10_heis_before
+          python scripts/isef4_isis_camera_triage.py
+          export ISEF4_PRODUCT_ROLE=after
+          export ISEF4_DIAGNOSTIC_SUFFIX=isis10_heis_after
+          python scripts/isef4_isis_camera_triage.py
+      - name: Preserve independent original camera marker coordinates and source SHA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-heis-s26-exact-both-CSM-camera-proofs
+          path: |
+            diagnostics/isef4_heis_s26_camera_status_isis10_heis_before.json
+            diagnostics/isef4_heis_s26_camera_status_isis10_heis_after.json
+            output/triage_isis10_heis_before/csm_event_campt.pvl
+            output/triage_isis10_heis_after/csm_event_campt.pvl
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit bounded source-camera diagnostics only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f diagnostics/isef4_heis_s26_camera_status_isis10_heis_before.json \
+                     diagnostics/isef4_heis_s26_camera_status_isis10_heis_after.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m 'Record exact non-impact Heis S26 two-epoch lunar camera result'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
