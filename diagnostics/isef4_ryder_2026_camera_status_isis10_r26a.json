@@ -1,0 +1,221 @@
+{
+  "ale_isd_interface": {
+    "center_ephemeris_time": {
+      "type": "float",
+      "value": 829973390.5830743
+    },
+    "detector_center": {
+      "type": "dict",
+      "value": {
+        "line": 0.0,
+        "sample": 2547.5
+      }
+    },
+    "detector_line_summing": {
+      "type": "int",
+      "value": 1
+    },
+    "detector_sample_summing": {
+      "type": "int",
+      "value": 1
+    },
+    "focal2pixel_lines": {
+      "type": "list",
+      "value": [
+        0.0,
+        142.857,
+        0.0
+      ]
+    },
+    "focal2pixel_samples": {
+      "type": "list",
+      "value": [
+        0.0,
+        0.0,
+        142.857
+      ]
+    },
+    "image_lines": {
+      "type": "int",
+      "value": 52224
+    },
+    "image_samples": {
+      "type": "int",
+      "value": 5064
+    },
+    "line_scan_rate": {
+      "type": "list",
+      "value": [
+        [
+          0.5,
+          -20.04634439945221,
+          0.0007677062015
+        ]
+      ]
+    },
+    "name_model": {
+      "type": "str",
+      "value": "USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL"
+    },
+    "starting_ephemeris_time": {
+      "type": "float",
+      "value": 829973370.5367299
+    }
+  },
+  "ale_j2000_state_audit": {
+    "center_et": 829973390.5830743,
+    "first_velocity": [
+      0.7836674881148161,
+      0.37984285362761067,
+      1.362780569012551
+    ],
+    "note": "only geometry summaries; no source image pixels",
+    "reference_frame": 1,
+    "starting_et": 829973370.5367299,
+    "state_samples": 52225,
+    "time_range": [
+      829973370.5367299,
+      829973410.6294186
+    ],
+    "velocity_samples": 52225
+  },
+  "ale_naif_transform_keys": {
+    "INS-85600_ITRANSL": [
+      0.0,
+      142.857,
+      0.0
+    ],
+    "INS-85600_ITRANSS": [
+      0.0,
+      0.0,
+      142.857
+    ],
+    "INS-85600_PIXEL_SIZE": [
+      0.007,
+      0.007
+    ],
+    "INS-85600_TRANSX": [
+      0.0,
+      0.0,
+      0.007
+    ],
+    "INS-85600_TRANSY": [
+      0.0,
+      0.007,
+      0.0
+    ]
+  },
+  "ale_state_table_audit": {
+    "first_time": 829973370.5367299,
+    "first_time_minus_start_s": 0.0,
+    "first_velocity": [
+      0.7836674881148161,
+      0.37984285362761067,
+      1.362780569012551
+    ],
+    "last_time": 829973410.6294186,
+    "reference_frame": 1,
+    "time_count": 52225,
+    "velocity_count": 52225
+  },
+  "commit_sha": "f0b8030240865db3914a91dff0bd107f620aea13",
+  "csm_plugin_directory": "/home/runner/micromamba/envs/lunar-isis10/lib/csmplugins",
+  "csm_plugin_files": [
+    "libusgscsm.so"
+  ],
+  "distortion_shape_audit": {
+    "field": "optical_distortion.lrolrocnac.coefficients",
+    "instrument": "NAC-L (-85600)",
+    "original_type": "float",
+    "original_value": 1.81e-05,
+    "repaired_coefficients": [
+      1.81e-05
+    ],
+    "status": "repaired_derived_isd_only",
+    "verified_source_key": "INS-85600_OD_K",
+    "verified_source_value": 1.81e-05
+  },
+  "event": "Ryder already-published site, actually overlapping 2026 April-May original NAC repeat observations",
+  "expected_edr_bytes": 264467400,
+  "generated_utc": "2026-09-20T04:48:34.326924+00:00",
+  "product": "M1531340568LE",
+  "run_id": "35490028439",
+  "runtime_label": "isis10_r26a",
+  "schema_version": "isef4-public-source-camera-triage-v1",
+  "scientific_status": "ALE/CSM camera ground-coordinate query succeeded for the published BEFORE EDR; calibration, AFTER geometry, common projection, and geological event recovery remain untested",
+  "source_role": "before",
+  "spiceql_preference_enabled": true,
+  "stages": {
+    "ale_direct_line_transform": {
+      "diagnostic_lines": [
+        "lo=hi=0\\n  elif hi>=len(times): lo=hi=len(times)-1\\n  else: lo=hi-1\\n  if hi!=lo and times[hi]-times[lo]>30.0: raise ValueError(\"ALE state sampling gap too large for directional inference\")\\n  weight=0.0 if hi==lo else float((epoch-times[lo])/(times[hi]-times[lo]))\\n  velocity=(1-weight)*velocities[lo]+weight*velocities[hi]\\n  bus_id=pyspiceql.translateNameToCode(frame=\\'LRO_SC_BUS\\',mission=active.spiceql_mission,searchKernels=active.search_kernels,useWeb=active.use_web)[0]\\n  rotate=active.frame_chain.compute_rotation(1,bus_id)\\n  if (rotate.source,rotate.dest)!=(1,bus_id): raise ValueError(\"ALE bus rotation frame mismatch\")\\n  if hasattr(rotate,\"times\") and not (rotate.times[0]<=epoch<=rotate.times[-1]): raise ValueError(\"ALE bus rotation does not cover NAC start\")\\n  bus_v=np.asarray(rotate.apply_at(velocity,epoch),dtype=float).reshape(-1,3)[0]\\n  direction=float(bus_v[0])\\n  if not np.isfinite(direction) or abs(direction)<0.01: raise ValueError(\"ambiguous LRO bus X velocity\")\\n  active._spacecraft_direction=direction\\n  print(\"DIRECTION_PROVENANCE\",\"ALE_ISD_J2000_velocity_rotated_using_official_ALE_frame_chain\")\\n  print(\"SUPPORT_EPOCH\",epoch)\\n  print(\"SUPPORT_STATE_BRACKET\",json.dumps([float(times[lo]),float(times[hi])]))\\n  print(\"SUPPORT_J2000_VELOCITY\",json.dumps(velocity.tolist()))\\n  print(\"BUS_X_VELOCITY\",direction)\\n print(\"DIRECTION\",direction)\\n print(\"FOCAL_LINES_JSON\",json.dumps(np.asarray(active.focal2pixel_lines).tolist()))\\n']' timed out after 130 seconds"
+      ],
+      "full_log_bytes": 3236,
+      "log_tail": "TimeoutExpired: Command '['/home/runner/micromamba/envs/lunar-isis10/bin/python', '-c', 'import json, numpy as np, pyspiceql, spiceypy as spice\\nfrom ale.drivers import get_driver_from_label, pre_parse_label\\nklass=get_driver_from_label(\\'/home/runner/work/runner/runner/output/triage_isis10_r26a/before.raw.cub\\',props={\"web\":True},verbose=False,only_isis_spice=False,only_naif_spice=True)\\nprint(\"DRIVER_CLASS\",klass.__name__)\\nd=klass(\\'/home/runner/work/runner/runner/output/triage_isis10_r26a/before.raw.cub\\',props={\"web\":True},parsed_label=pre_parse_label(\\'/home/runner/work/runner/runner/output/triage_isis10_r26a/before.raw.cub\\'))\\nwith d as active:\\n print(\"IKID\",repr(active.ikid))\\n try:\\n  direction=float(active.spacecraft_direction)\\n  print(\"DIRECTION_PROVENANCE\",\"remote_SpiceQL_state\")\\n except Exception as error:\\n  print(\"REMOTE_DIRECTION_ERROR\",repr(error))\\n  if \"SPKINSUFFDATA\" not in str(error): raise\\n  support=json.load(open(\\'/home/runner/work/runner/runner/output/triage_isis10_r26a/before.raw.cub.json\\'))\\n  ip=support[\"instrument_position\"]\\n  times=np.asarray(ip[\"ephemeris_times\"],dtype=float)\\n  velocities=np.asarray(ip[\"velocities\"],dtype=float)\\n  epoch=float(active.ephemeris_start_time)\\n  if ip[\"reference_frame\"] != 1: raise ValueError(\"ALE velocity is not J2000\")\\n  if times.ndim!=1 or velocities.shape!=(len(times),3) or len(times)<2: raise ValueError(\"bad ALE state array shape\")\\n  if not (np.isfinite(times).all() and np.isfinite(velocities).all() and np.all(np.diff(times)>0)): raise ValueError(\"invalid ALE state samples\")\\n  if not (times[0]<=epoch<=times[-1]): raise ValueError(\"ALE state does not cover NAC start\")\\n  hi=int(np.searchsorted(times,epoch,side=\"left\"))\\n  if hi==0: lo=hi=0\\n  elif hi>=len(times): lo=hi=len(times)-1\\n  else: lo=hi-1\\n  if hi!=lo and times[hi]-times[lo]>30.0: raise ValueError(\"ALE state sampling gap too large for directional inference\")\\n  weight=0.0 if hi==lo else float((epoch-times[lo])/(times[hi]-times[lo]))\\n  velocity=(1-weight)*velocities[lo]+weight*velocities[hi]\\n  bus_id=pyspiceql.translateNameToCode(frame=\\'LRO_SC_BUS\\',mission=active.spiceql_mission,searchKernels=active.search_kernels,useWeb=active.use_web)[0]\\n  rotate=active.frame_chain.compute_rotation(1,bus_id)\\n  if (rotate.source,rotate.dest)!=(1,bus_id): raise ValueError(\"ALE bus rotation frame mismatch\")\\n  if hasattr(rotate,\"times\") and not (rotate.times[0]<=epoch<=rotate.times[-1]): raise ValueError(\"ALE bus rotation does not cover NAC start\")\\n  bus_v=np.asarray(rotate.apply_at(velocity,epoch),dtype=float).reshape(-1,3)[0]\\n  direction=float(bus_v[0])\\n  if not np.isfinite(direction) or abs(direction)<0.01: raise ValueError(\"ambiguous LRO bus X velocity\")\\n  active._spacecraft_direction=direction\\n  print(\"DIRECTION_PROVENANCE\",\"ALE_ISD_J2000_velocity_rotated_using_official_ALE_frame_chain\")\\n  print(\"SUPPORT_EPOCH\",epoch)\\n  print(\"SUPPORT_STATE_BRACKET\",json.dumps([float(times[lo]),float(times[hi])]))\\n  print(\"SUPPORT_J2000_VELOCITY\",json.dumps(velocity.tolist()))\\n  print(\"BUS_X_VELOCITY\",direction)\\n print(\"DIRECTION\",direction)\\n print(\"FOCAL_LINES_JSON\",json.dumps(np.asarray(active.focal2pixel_lines).tolist()))\\n']' timed out after 130 seconds",
+      "returncode": -1
+    },
+    "ale_isd": {
+      "diagnostic_lines": [],
+      "full_log_bytes": 554,
+      "log_tail": "ISD_KEYS ['body_rotation', 'center_ephemeris_time', 'detector_center', 'detector_line_summing', 'detector_sample_summing', 'focal2pixel_lines', 'focal2pixel_samples', 'focal_length_model', 'image_lines', 'image_samples', 'instrument_pointing', 'instrument_position', 'interpolation_method', 'isis_camera_version', 'kernels', 'line_scan_rate', 'naif_keywords', 'name_model', 'name_platform', 'name_sensor', 'optical_distortion', 'radii', 'reference_height', 'starting_detector_line', 'starting_detector_sample', 'starting_ephemeris_time', 'sun_position']\n",
+      "returncode": 0
+    },
+    "csm_campt_center": {
+      "diagnostic_lines": [],
+      "full_log_bytes": 40242762,
+      "log_tail": "s result of point (-1.05737e+06, 782663, -1.30173e+06) direction (0.585737, -0.397997, 0.706053).\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7679.5, 2531.5)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7679.5, 2531.5)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7679.5, 2531.5)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990975, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7678.85, 2531)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737551, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7679.79, 2530.62)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7680.2, 2531.41)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7679.5, 2531.5)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990975, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7678.85, 2531)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737551, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7679.79, 2530.62)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990976, 737550, -1.2217e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7680.2, 2531.41)\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:760] Computing groundToImage(No adjustments) for (-990975, 737550, -1.2217e+06), with desired precision 0.01\n[USGSCSM][INFO][2026-09-20 04:52:45][groundToImage:768] groundToImage result of (7679.01, 2531.58)\n[USGSCSM][INFO][2026-09-20 04:52:45][imageToRemoteImagingLocus:1257] Calculating imageToRemoteImagingLocus for point 7679.01, 2531.58 with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][imageToRemoteImagingLocus:1276] imageToProximateImagingLocus result of point (-1.05737e+06, 782663, -1.30173e+06) direction (0.585736, -0.397998, 0.706053).\n[USGSCSM][INFO][2026-09-20 04:52:45][imageToRemoteImagingLocus:1257] Calculating imageToRemoteImagingLocus for point 7679.5, 2531.5 with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:45][imageToRemoteImagingLocus:1276] imageToProximateImagingLocus result of point (-1.05737e+06, 782663, -1.30173e+06) direction (0.585737, -0.397997, 0.706053).\nGroup = GroundPoint\n  Filename                   = /home/runner/work/runner/runner/output/triage_-\n                               isis10_r26a/before.raw.cub\n  Sample                     = 2532.0\n  Line                       = 7680.0\n  PixelValue                 = 791.5\n  RightAscension             = 325.80423548446 <DEGREE>\n  Declination                = 44.914595614824 <DEGREE>\n  PlanetocentricLatitude     = -44.682369255682 <DEGREE>\n  PlanetographicLatitude     = -44.682369255682 <DEGREE>\n  PositiveEast360Longitude   = 143.34091738686 <DEGREE>\n  PositiveEast180Longitude   = 143.34091738686 <DEGREE>\n  PositiveWest360Longitude   = 216.65908261314 <DEGREE>\n  PositiveWest180Longitude   = -143.34091738686 <DEGREE>\n  BodyFixedCoordinate        = (-990.97565498701, 737.55018777991,\n                                -1221.6978888943) <km>\n  LocalRadius                = 1737400.0 <meters>\n  SampleResolution           = 1.1336584110258 <meters/pixel>\n  LineResolution             = 1.1592881974274 <meters/pixel>\n  ObliqueDetectorResolution  = 1.1464733042266 <meters>\n  ObliquePixelResolution     = 1.1464733042266 <meters/pix>\n  ObliqueLineResolution      = 1.1592881974274 <meters>\n  ObliqueSampleResolution    = 1.1336584110258 <meters>\n\n  # Spacecraft Information\n  SpacecraftPosition         = (-1057.369314838, 782.66342243786,\n                                -1301.7294080802) <km>\n  SpacecraftAzimuth          = 0.45294756673365 <DEGREE>\n  SlantDistance              = 113.35063331493 <km>\n  TargetCenterDistance       = 1850.7002330588 <km>\n  SubSpacecraftLatitude      = -44.698112684292 <DEGREE>\n  SubSpacecraftLongitude     = 143.49120218232 <DEGREE>\n  SpacecraftAltitude         = 113.30023305876 <km>\n  OffNadirAngle              = 1.6555254203193 <DEGREE>\n  SubSpacecraftGroundAzimuth = 98.435319859148 <DEGREE>\n\n  # Sun Information\n  SunPosition                = (Null, Null, Null)\n  SubSolarAzimuth            = NULL\n  SolarDistance              = NULL\n  SubSolarLatitude           = NULL\n  SubSolarLongitude          = NULL\n  SubSolarGroundAzimuth      = NULL\n\n  # Illumination and Other\n  Phase                      = 46.729685167335 <DEGREE>\n  Incidence                  = 46.199692459667 <DEGREE>\n  Emission                   = 1.7635194662316 <DEGREE>\n  NorthAzimuth               = 98.769878622575 <DEGREE>\n\n  # Time\n  EphemerisTime              = 829973375.85085 <seconds>\n  UTC                        = 2026-04-20T16:08:26.6652553\n  LocalSolarTime             = Null\n  SolarLongitude             = Null\n\n  # Look Direction Unit Vectors in Body Fixed, J2000, and Camera Coordinate Systems.\n  LookDirectionBodyFixed     = (0.58573699951445, -0.3979971998269,\n                                0.70605268665289)\n  LookDirectionJ2000         = (Null, Null, Null)\n  LookDirectionCamera        = (Null, Null, Null)\nEnd_Group\n",
+      "returncode": 0
+    },
+    "csm_campt_event": {
+      "diagnostic_lines": [],
+      "full_log_bytes": 40243304,
+      "log_tail": ", -1.28689e+06) direction (0.589375, -0.407845, 0.697352).\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24614.8, 3278.87)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24614.8, 3278.87)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24614.8, 3278.87)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24614.1, 3278.37)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742615, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24615, 3277.99)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24615.5, 3278.78)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24614.8, 3278.87)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24614.1, 3278.37)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742615, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24615, 3277.99)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24615.5, 3278.78)\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:760] Computing groundToImage(No adjustments) for (-1.0041e+06, 742614, -1.20784e+06), with desired precision 0.01\n[USGSCSM][INFO][2026-09-20 04:52:50][groundToImage:768] groundToImage result of (24614.3, 3278.94)\n[USGSCSM][INFO][2026-09-20 04:52:50][imageToRemoteImagingLocus:1257] Calculating imageToRemoteImagingLocus for point 24614.3, 3278.94 with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][imageToRemoteImagingLocus:1276] imageToProximateImagingLocus result of point (-1.07091e+06, 788849, -1.28689e+06) direction (0.589374, -0.407845, 0.697352).\n[USGSCSM][INFO][2026-09-20 04:52:50][imageToRemoteImagingLocus:1257] Calculating imageToRemoteImagingLocus for point 24614.8, 3278.87 with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:50][imageToRemoteImagingLocus:1276] imageToProximateImagingLocus result of point (-1.07091e+06, 788849, -1.28689e+06) direction (0.589375, -0.407845, 0.697352).\nGroup = GroundPoint\n  Filename                   = /home/runner/work/runner/runner/output/triage_-\n                               isis10_r26a/before.raw.cub\n  Sample                     = 3279.3695255489\n  Line                       = 24615.255012623\n  PixelValue                 = 2095.5\n  RightAscension             = 325.31655788541 <DEGREE>\n  Declination                = 44.214876119326 <DEGREE>\n  PlanetocentricLatitude     = -44.043 <DEGREE>\n  PlanetographicLatitude     = -44.043 <DEGREE>\n  PositiveEast360Longitude   = 143.514 <DEGREE>\n  PositiveEast180Longitude   = 143.514 <DEGREE>\n  PositiveWest360Longitude   = 216.486 <DEGREE>\n  PositiveWest180Longitude   = -143.514 <DEGREE>\n  BodyFixedCoordinate        = (-1004.0981004854, 742.61389291898,\n                                -1207.837062954) <km>\n  LocalRadius                = 1737400.0 <meters>\n  SampleResolution           = 1.1325793240737 <meters/pixel>\n  LineResolution             = 1.1659125910015 <meters/pixel>\n  ObliqueDetectorResolution  = 1.1492459575376 <meters>\n  ObliquePixelResolution     = 1.1492459575376 <meters/pix>\n  ObliqueLineResolution      = 1.1659125910015 <meters>\n  ObliqueSampleResolution    = 1.1325793240737 <meters>\n\n  # Spacecraft Information\n  SpacecraftPosition         = (-1070.9118871356, 788.84871429369,\n                                -1286.8915142506) <km>\n  SpacecraftAzimuth          = 0.57860906745074 <DEGREE>\n  SlantDistance              = 113.36378197559 <km>\n  TargetCenterDistance       = 1850.7361598838 <km>\n  SubSpacecraftLatitude      = -44.054344270053 <DEGREE>\n  SubSpacecraftLongitude     = 143.62411874131 <DEGREE>\n  SpacecraftAltitude         = 113.33615988381 <km>\n  OffNadirAngle              = 1.2254989824699 <DEGREE>\n  SubSpacecraftGroundAzimuth = 98.194940918671 <DEGREE>\n\n  # Sun Information\n  SunPosition                = (Null, Null, Null)\n  SubSolarAzimuth            = NULL\n  SolarDistance              = NULL\n  SubSolarLatitude           = NULL\n  SubSolarLongitude          = NULL\n  SubSolarGroundAzimuth      = NULL\n\n  # Illumination and Other\n  Phase                      = 45.975636630284 <DEGREE>\n  Incidence                  = 45.585517708117 <DEGREE>\n  Emission                   = 1.3054556141312 <DEGREE>\n  NorthAzimuth               = 98.702534810883 <DEGREE>\n\n  # Time\n  EphemerisTime              = 829973388.85215 <seconds>\n  UTC                        = 2026-04-20T16:08:39.6665556\n  LocalSolarTime             = Null\n  SolarLongitude             = Null\n\n  # Look Direction Unit Vectors in Body Fixed, J2000, and Camera Coordinate Systems.\n  LookDirectionBodyFixed     = (0.58937506788633, -0.40784473322108,\n                                0.69735192187145)\n  LookDirectionJ2000         = (Null, Null, Null)\n  LookDirectionCamera        = (Null, Null, Null)\nEnd_Group\n",
+      "returncode": 0
+    },
+    "csm_center_pvl": {
+      "pvl_tail": "Group = GroundPoint\n  Filename                   = /home/runner/work/runner/runner/output/triage_-\n                               isis10_r26a/before.raw.cub\n  Sample                     = 2532.0\n  Line                       = 7680.0\n  PixelValue                 = 791.5\n  RightAscension             = 325.80423548446 <DEGREE>\n  Declination                = 44.914595614824 <DEGREE>\n  PlanetocentricLatitude     = -44.682369255682 <DEGREE>\n  PlanetographicLatitude     = -44.682369255682 <DEGREE>\n  PositiveEast360Longitude   = 143.34091738686 <DEGREE>\n  PositiveEast180Longitude   = 143.34091738686 <DEGREE>\n  PositiveWest360Longitude   = 216.65908261314 <DEGREE>\n  PositiveWest180Longitude   = -143.34091738686 <DEGREE>\n  BodyFixedCoordinate        = (-990.97565498701, 737.55018777991,\n                                -1221.6978888943) <km>\n  LocalRadius                = 1737400.0 <meters>\n  SampleResolution           = 1.1336584110258 <meters/pixel>\n  LineResolution             = 1.1592881974274 <meters/pixel>\n  ObliqueDetectorResolution  = 1.1464733042266 <meters>\n  ObliquePixelResolution     = 1.1464733042266 <meters/pix>\n  ObliqueLineResolution      = 1.1592881974274 <meters>\n  ObliqueSampleResolution    = 1.1336584110258 <meters>\n\n  # Spacecraft Information\n  SpacecraftPosition         = (-1057.369314838, 782.66342243786,\n                                -1301.7294080802) <km>\n  SpacecraftAzimuth          = 0.45294756673365 <DEGREE>\n  SlantDistance              = 113.35063331493 <km>\n  TargetCenterDistance       = 1850.7002330588 <km>\n  SubSpacecraftLatitude      = -44.698112684292 <DEGREE>\n  SubSpacecraftLongitude     = 143.49120218232 <DEGREE>\n  SpacecraftAltitude         = 113.30023305876 <km>\n  OffNadirAngle              = 1.6555254203193 <DEGREE>\n  SubSpacecraftGroundAzimuth = 98.435319859148 <DEGREE>\n\n  # Sun Information\n  SunPosition                = (Null, Null, Null)\n  SubSolarAzimuth            = NULL\n  SolarDistance              = NULL\n  SubSolarLatitude           = NULL\n  SubSolarLongitude          = NULL\n  SubSolarGroundAzimuth      = NULL\n\n  # Illumination and Other\n  Phase                      = 46.729685167335 <DEGREE>\n  Incidence                  = 46.199692459667 <DEGREE>\n  Emission                   = 1.7635194662316 <DEGREE>\n  NorthAzimuth               = 98.769878622575 <DEGREE>\n\n  # Time\n  EphemerisTime              = 829973375.85085 <seconds>\n  UTC                        = 2026-04-20T16:08:26.6652553\n  LocalSolarTime             = Null\n  SolarLongitude             = Null\n\n  # Look Direction Unit Vectors in Body Fixed, J2000, and Camera Coordinate Systems.\n  LookDirectionBodyFixed     = (0.58573699951445, -0.3979971998269,\n                                0.70605268665289)\n  LookDirectionJ2000         = (Null, Null, Null)\n  LookDirectionCamera        = (Null, Null, Null)\nEnd_Group\n"
+    },
+    "csm_event_pvl": {
+      "pvl_tail": "Group = GroundPoint\n  Filename                   = /home/runner/work/runner/runner/output/triage_-\n                               isis10_r26a/before.raw.cub\n  Sample                     = 3279.3695255489\n  Line                       = 24615.255012623\n  PixelValue                 = 2095.5\n  RightAscension             = 325.31655788541 <DEGREE>\n  Declination                = 44.214876119326 <DEGREE>\n  PlanetocentricLatitude     = -44.043 <DEGREE>\n  PlanetographicLatitude     = -44.043 <DEGREE>\n  PositiveEast360Longitude   = 143.514 <DEGREE>\n  PositiveEast180Longitude   = 143.514 <DEGREE>\n  PositiveWest360Longitude   = 216.486 <DEGREE>\n  PositiveWest180Longitude   = -143.514 <DEGREE>\n  BodyFixedCoordinate        = (-1004.0981004854, 742.61389291898,\n                                -1207.837062954) <km>\n  LocalRadius                = 1737400.0 <meters>\n  SampleResolution           = 1.1325793240737 <meters/pixel>\n  LineResolution             = 1.1659125910015 <meters/pixel>\n  ObliqueDetectorResolution  = 1.1492459575376 <meters>\n  ObliquePixelResolution     = 1.1492459575376 <meters/pix>\n  ObliqueLineResolution      = 1.1659125910015 <meters>\n  ObliqueSampleResolution    = 1.1325793240737 <meters>\n\n  # Spacecraft Information\n  SpacecraftPosition         = (-1070.9118871356, 788.84871429369,\n                                -1286.8915142506) <km>\n  SpacecraftAzimuth          = 0.57860906745074 <DEGREE>\n  SlantDistance              = 113.36378197559 <km>\n  TargetCenterDistance       = 1850.7361598838 <km>\n  SubSpacecraftLatitude      = -44.054344270053 <DEGREE>\n  SubSpacecraftLongitude     = 143.62411874131 <DEGREE>\n  SpacecraftAltitude         = 113.33615988381 <km>\n  OffNadirAngle              = 1.2254989824699 <DEGREE>\n  SubSpacecraftGroundAzimuth = 98.194940918671 <DEGREE>\n\n  # Sun Information\n  SunPosition                = (Null, Null, Null)\n  SubSolarAzimuth            = NULL\n  SolarDistance              = NULL\n  SubSolarLatitude           = NULL\n  SubSolarLongitude          = NULL\n  SubSolarGroundAzimuth      = NULL\n\n  # Illumination and Other\n  Phase                      = 45.975636630284 <DEGREE>\n  Incidence                  = 45.585517708117 <DEGREE>\n  Emission                   = 1.3054556141312 <DEGREE>\n  NorthAzimuth               = 98.702534810883 <DEGREE>\n\n  # Time\n  EphemerisTime              = 829973388.85215 <seconds>\n  UTC                        = 2026-04-20T16:08:39.6665556\n  LocalSolarTime             = Null\n  SolarLongitude             = Null\n\n  # Look Direction Unit Vectors in Body Fixed, J2000, and Camera Coordinate Systems.\n  LookDirectionBodyFixed     = (0.58937506788633, -0.40784473322108,\n                                0.69735192187145)\n  LookDirectionJ2000         = (Null, Null, Null)\n  LookDirectionCamera        = (Null, Null, Null)\nEnd_Group\n"
+    },
+    "csminit_linescan": {
+      "diagnostic_lines": [
+        "[USGSCSM][ERROR][2026-09-20 04:52:27][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the geo_transform. ERROR: ",
+        "[json.exception.out_of_range.403] key 'geotransform' not found]",
+        "[USGSCSM][ERROR][2026-09-20 04:52:34][constructModelFromISD:513] Could not construct model [USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL] with error [Could not parse the geo_transform. ERROR: ",
+        "[json.exception.out_of_range.403] key 'geotransform' not found]"
+      ],
+      "full_log_bytes": 40246084,
+      "log_tail": "3,\n    458.9461837940012,\n    1168.649784761436,\n    -1018.4877344100809,\n    458.94571391608116,\n    1168.6505346994797,\n    -1018.4870839058453,\n    458.94524403840643,\n    1168.6512846369974,\n    -1018.4864334013699,\n    458.94477416006566,\n    1168.6520345739777,\n    -1018.4857828964289,\n    458.94430428150304,\n    1168.652784510425,\n    -1018.4851323910156,\n    458.94383440273356,\n    1168.6535344463327,\n    -1018.4844818851502,\n    458.94336452375006,\n    1168.6542843817138,\n    -1018.4838313790239,\n    458.9428946440881,\n    1168.6550343165525,\n    -1018.4831808722272,\n    458.94242476469435,\n    1168.6557842508596,\n    -1018.4825303647707,\n    458.94195488553555,\n    1168.6565341846335,\n    -1018.4818798570539,\n    458.94148500570014,\n    1168.6572841178727,\n    -1018.4812293488767,\n    458.9410151256589,\n    1168.6580340505802,\n    -1018.4805788402286,\n    458.9405452454076,\n    1168.6587839827437,\n    -1018.4799283311244,\n    458.9400753649467,\n    1168.6595339143828,\n    -1018.4792778217726,\n    458.93960548379636,\n    1168.660283845474,\n    -1018.4786273115383,\n    458.93913560338007,\n    1168.66103377604,\n    -1018.4779768010521,\n    458.9386657222783,\n    1168.6617837060685,\n    -1018.4773262898879,\n    458.9381958414236,\n    1168.662533635565,\n    -1018.4766757784769,\n    458.93772595989526,\n    1168.663283564528,\n    -1018.4760252666052,\n    458.93725607816606,\n    1168.6640334929546,\n    -1018.4753747542719,\n    458.93678619621863,\n    1168.6647834208425,\n    -1018.4747242414702,\n    458.93631631405503,\n    1168.6655333481988,\n    -1018.4740737284177,\n    458.935846431218,\n    1168.6662832750221,\n    -1018.473423214698,\n    458.9353765486315,\n    1168.6670332013077,\n    -1018.4727727002985,\n    458.9349066662977,\n    1168.6677831270667,\n    -1018.4721221856568,\n    458.93443678329123,\n    1168.6685330522826\n  ],\n  \"m_zDirection\": 1.0\n}\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 0, 0, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -983748 737346 -1.22765e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 0, 2532, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -985185 734896 -1.22796e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 0, 5064, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -986618 732447 -1.22828e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 26112, 0, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.00335e+06 746298 -1.20618e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 26112, 2532, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.00479e+06 743846 -1.2065e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 26112, 5064, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.00623e+06 741397 -1.20681e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 52224, 0, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.02265e+06 755032 -1.18435e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 52224, 2532, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.02409e+06 752580 -1.18467e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 52224, 5064, 4.65661e-10, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.02552e+06 750129 -1.18498e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 0, 0, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -983807 737384 -1.22772e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 0, 2532, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -985244 734936 -1.22804e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 0, 5064, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -986675 732489 -1.22835e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 26112, 0, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.00342e+06 746336 -1.20625e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 26112, 2532, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.00485e+06 743887 -1.20657e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 26112, 5064, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.00629e+06 741439 -1.20688e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 52224, 0, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.02271e+06 755071 -1.18442e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 52224, 2532, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.02415e+06 752621 -1.18473e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:983] Computing imageToGround for 52224, 5064, 100, with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][imageToGround:1005] imageToGround result -1.02558e+06 750172 -1.18505e+06\n[USGSCSM][INFO][2026-09-20 04:52:40][groundToImage:760] Computing groundToImage(No adjustments) for (-1.00479e+06, 743846, -1.2065e+06), with desired precision 0.001\n[USGSCSM][INFO][2026-09-20 04:52:40][groundToImage:768] groundToImage result of (26112, 2532)\n",
+      "returncode": 0
+    },
+    "download_IMG": {
+      "acquisition": "full_object_get",
+      "bytes": 264467400,
+      "sha256": "958886409823b84a12db814c6cd463f9536a780f60f0cdc49721831ac10f37da",
+      "source_url": "https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-2-edr/LROLRC_0067B/DATA/ESM6/2026110/NAC/M1531340568LE.IMG"
+    },
+    "download_xml": {
+      "acquisition": "full_object_get",
+      "bytes": 12493,
+      "sha256": "9afa97a39498ebf70782ffa94699acb615695eac5ca470768c1e0aa6b08d1dc9",
+      "source_url": "https://pds.mcp.nasa.gov/data/store/img/lunar_reconnaissance_orbiter/pds4/lroc/lro-l-lroc-2-edr/LROLRC_0067B/DATA/ESM6/2026110/NAC/M1531340568LE.xml"
+    },
+    "import": {
+      "diagnostic_lines": [],
+      "full_log_bytes": 0,
+      "log_tail": "",
+      "returncode": 0
+    }
+  },
+  "target_key": "ryder_2026",
+  "target_latitude_deg_n": -44.043,
+  "target_longitude_deg_e": 143.514,
+  "tool_versions": {
+    "campt": "/home/runner/micromamba/envs/lunar-isis10/bin/campt",
+    "getkey": "/home/runner/micromamba/envs/lunar-isis10/bin/getkey",
+    "lronac2isis": "/home/runner/micromamba/envs/lunar-isis10/bin/lronac2isis",
+    "spiceinit": "/home/runner/micromamba/envs/lunar-isis10/bin/spiceinit"
+  },
+  "workflow": "LUNARSHIFT Ryder four exact original NASA source CSM cameras"
+}
