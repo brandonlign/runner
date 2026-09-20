@@ -18,7 +18,7 @@ import rasterio
 
 PAIR_IDS={"before":"M1138987659LE","after":"M1200206882LE"}
 ZIP_SHA="132f3d2c2d6c8a5fcb102fe9dcfa5e2d33c6e60b6600c1c94d0d2bafb282c233"
-FIG_SHA="f59dcc4a79b218002931d88341d764dd62d1b7c461b98fc542555e39fc4a9db2"
+FIG_SHA="3d0e494c40b92e7de66ce54f8317c646ad1d8a19e328bc2811cd7cc13d48dc7f"
 MARKER=np.array([253.5,253.3819459058],np.float64)
 def sha(raw):return hashlib.sha256(raw).hexdigest()
 def browse(im):
@@ -104,7 +104,7 @@ def primary_figure(path):
  with zipfile.ZipFile(io.BytesIO(data)) as z:
   docx=z.read("2025-434-supplementarymaterials.docx")
  with zipfile.ZipFile(io.BytesIO(docx)) as z:
-  raw=z.read("word/media/image6.jpeg")
+  raw=z.read("word/media/image5.jpeg")
  if sha(raw)!=FIG_SHA:raise ValueError("not verified original Figure S5")
  img=cv2.imdecode(np.frombuffer(raw,np.uint8),cv2.IMREAD_COLOR)
  if img.shape[:2]!=(469,1430):raise ValueError("unexpected original panel dimensions")
@@ -151,7 +151,7 @@ def main():
  raw=read_maps(x.map_artifact_folder,proof)
  geometry=pair_geometry(raw)
  figure=figure_match(primary_figure(x.supplement_artifact),raw)
- out={"schema":"Gambart-C-real-spherical-common-map-relative-geolocation-audit-v1",
+ out={"schema":"Gambart-C-correct-figure-S5-spherical-map-relative-geolocation-audit-v2",
     "camera_result_source_run_id":"35459076420",
     "source_image_ids":PAIR_IDS,"source_map_nominal_m_per_px":1.2,
     "source_map_projection":"shared spherical Moon reference; no DEM",
