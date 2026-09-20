@@ -1,0 +1,69 @@
+name: LUNARSHIFT Heis S26 exact calibrated original NAC source pixels
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-s26-original-calibrated-rois.yml"
+      - "scripts/isef4_heis_calibrated_rois.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-heis-s26-calibrated-source-rois
+  cancel-in-progress: false
+jobs:
+  published-original-heis-calibrated-rois:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test official source-index calculation and strict archive byte code
+        run: python -m py_compile scripts/isef4_heis_calibrated_rois.py
+      - name: Restore authenticated Heis original camera solutions
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-heis-s26-exact-both-CSM-camera-proofs
+          run-id: 35487004051
+          github-token: ${{ github.token }}
+          path: work/heis_verified_cameras
+      - name: Acquire source-pixel ROIs from exact official calibrated NAC counterparts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy
+          python scripts/isef4_heis_calibrated_rois.py \
+            --ode-manifest diagnostics/isef4_heis_s26_exact_edr_resolution.json \
+            --before-camera work/heis_verified_cameras/diagnostics/isef4_heis_s26_camera_status_isis10_heis_before.json \
+            --after-camera work/heis_verified_cameras/diagnostics/isef4_heis_s26_camera_status_isis10_heis_after.json \
+            --output-dir output/heis_s26_verified_calibrated_pixels \
+            --out diagnostics/isef4_heis_s26_calibrated_original_source_rois.json
+      - name: Retain original calibrated source pixels and source provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-heis-S26-exact-official-calibrated-original-rois
+          path: |
+            output/heis_s26_verified_calibrated_pixels/
+            diagnostics/isef4_heis_s26_calibrated_original_source_rois.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish only small independently source-hashed ROI manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_s26_calibrated_original_source_rois.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record exact calibrated Heis S26 original NASA source pixel cutouts'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
