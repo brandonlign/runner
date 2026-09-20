@@ -346,57 +346,64 @@ def ale_probe(name: str, path: Path) -> None:
 
 
 def normalize_lroc_nac_distortion(isd_data: dict) -> dict:
-    """Repair a serialization-only shape defect using the same NAC-L NAIF IK.
+    """Fix only official original NAC-L/NAC-R scalar ISD serialization.
 
-    This modifies only a derived ALE ISD, NEVER a raw cube/PDS label.
-    Refuse if the source calibration is missing or disagrees with the ISD.
+    USGS/ALE #736 documents that a valid one-coefficient original NAC radial
+    distortion can be serialized by older ALE as a scalar. USGSCSM needs a
+    one-element array. Require equality to the ACTUAL camera-specific NAIF
+    instrument kernel, reject ambiguous or foreign coefficients. Never alter
+    the original EDR, ISIS cube or PDS label.
     """
     if isd_data.get("name_model") != "USGS_ASTRO_LINE_SCANNER_SENSOR_MODEL":
-        raise ValueError("not a supported line-scanner ISD")
+        raise ValueError("not the original line-scanner ISD")
     keywords = isd_data.get("naif_keywords")
     if not isinstance(keywords, dict):
-        raise ValueError("NAIF source calibration missing")
-    source = keywords.get("INS-85600_OD_K")
+        raise ValueError("official NAIF source instrument calibration missing")
+    keys = [key for key in ("INS-85600_OD_K", "INS-85610_OD_K")
+            if key in keywords]
+    if len(keys) != 1:
+        raise ValueError("the exact original NAC-L or NAC-R distortion source key is not unambiguous")
+    source_key = keys[0]
+    instrument = "NAC-L (-85600)" if source_key == "INS-85600_OD_K" else "NAC-R (-85610)"
+    source = keywords[source_key]
     if isinstance(source, list):
         if len(source) != 1:
-            raise ValueError("NAC-L source OD_K does not have one element")
+            raise ValueError("original NAC OD_K source must contain exactly one coefficient")
         source = source[0]
     if isinstance(source, bool) or not isinstance(source, (int, float)):
-        raise ValueError("source OD_K is not numeric")
+        raise ValueError("original NAC OD_K source is not numeric")
     source = float(source)
     if not math.isfinite(source):
-        raise ValueError("source OD_K is not finite")
-
+        raise ValueError("original NAC OD_K source is not finite")
     distortion = isd_data.get("optical_distortion")
     if not isinstance(distortion, dict) or set(distortion) != {"lrolrocnac"}:
-        raise ValueError("ISD is not the official LRO NAC distortion model")
+        raise ValueError("ISD does not claim the original LRO NAC distortion model")
     model = distortion["lrolrocnac"]
     if not isinstance(model, dict) or set(model) != {"coefficients"}:
-        raise ValueError("unexpected NAC distortion structure")
+        raise ValueError("nonstandard original NAC distortion structure")
     previous = model["coefficients"]
     if isinstance(previous, list):
         if len(previous) != 1:
-            raise ValueError("NAC optical distortion must contain exactly one coefficient")
+            raise ValueError("derived NAC coefficients not a singleton")
         candidate = previous[0]
     else:
         candidate = previous
     if candidate is None:
         candidate = source
     if isinstance(candidate, bool) or not isinstance(candidate, (int, float)):
-        raise ValueError("derived NAC distortion is not numeric")
+        raise ValueError("derived NAC distortion coefficient invalid")
     candidate = float(candidate)
     if not math.isfinite(candidate):
-        raise ValueError("derived NAC distortion is not finite")
+        raise ValueError("derived NAC distortion coefficient nonfinite")
     if not math.isclose(candidate, source, rel_tol=1e-10, abs_tol=1e-13):
-        raise ValueError("derived NAC distortion disagrees with original NAIF IK")
-
+        raise ValueError("derived NAC distortion coefficient differs from original camera IK")
     model["coefficients"] = [source]
     return {
-        "instrument": "NAC-L (-85600)",
+        "instrument": instrument,
         "field": "optical_distortion.lrolrocnac.coefficients",
         "original_type": type(previous).__name__,
         "original_value": previous,
-        "verified_source_key": "INS-85600_OD_K",
+        "verified_source_key": source_key,
         "verified_source_value": source,
         "repaired_coefficients": [source],
         "status": "already_vector" if isinstance(previous, list) else "repaired_derived_isd_only",
@@ -618,7 +625,7 @@ def csm_attempt(raw: Path) -> bool:
             RESULT["distortion_shape_audit"] = {
                 "status": "rejected_without_fabrication",
                 "reason": str(exc),
-                "naif_od_k": nk.get("INS-85600_OD_K"),
+                "naif_od_k": {k: v for k, v in nk.items() if k in ("INS-85600_OD_K", "INS-85610_OD_K")},
                 "raw_derived_optical_distortion": isd_data.get(
                     "optical_distortion"
                 ),
