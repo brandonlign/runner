@@ -26,7 +26,7 @@ C=np.array([640.,640.])
 EXCLUDE=185
 MIN_AREA=20
 TH=(2,3,5)
-def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def sha(p):return hashlib.sha256(p if isinstance(p,bytes) else p.read_bytes()).hexdigest()
 def disk(point,r):
     yy,xx=np.ogrid[:N,:N]
     return (xx-point[0])**2+(yy-point[1])**2<=r*r
