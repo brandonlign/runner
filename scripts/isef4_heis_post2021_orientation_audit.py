@@ -91,7 +91,7 @@ def assess(src,dst,train,held,model,rot,flip):
        "relative_orientation_determinant":float(np.linalg.det(raw_M[:,:2])),
        "mapped_2024_camera_marker_in_2021_roi":mapped.tolist(),
        "nominal_ground_marker_discordance_px":float(np.linalg.norm(mapped-CENTER))})
-    plausible=bool(np.linalg.det(raw_M[:,:2])>0 and np.all(np.abs(col_ratio-1)<.15))
+    plausible=bool(abs(np.linalg.det(raw_M[:,:2]))>0.75*np.prod(CAMERA_SCALE) and abs(np.linalg.det(raw_M[:,:2]))<1.25*np.prod(CAMERA_SCALE) and np.all(np.abs(col_ratio-1)<.15))
     row["camera_scale_plausible"]=plausible
     row["gate"]=bool(plausible and kept.sum()>=60 and row["inlier_cells_8x8"]>=8
          and held.sum()>=18 and np.median(errors)<3 and np.mean(errors<3)>.55)
@@ -133,7 +133,7 @@ def main():
                         "flip_after_rotation":flip,"ratio":ratio,"matches":len(good),
                         "off_nominal_markers":int(off.sum()),
                         "models":fits})
-    out={"schema":"Heis-2021-to-2024-orientation-illumination-invariant-original-source-geometry-v1",
+    out={"schema":"Heis-2021-to-2024-true-camera-chirality-source-registration-v2",
         "source_manifest_SHA256":sha(a.source_manifest),
         "actual_calibrated_products":["M1376643242LC","M1481045431LC"],
         "pixel_scales_expected_from_USGS_CSM":CAMERA_SCALE.tolist(),
@@ -144,6 +144,7 @@ def main():
         "orientation_screen":"original and 180deg rotation, with and without horizontal flip",
         "all_models":allcases,
         "scientific_limits":["No source temporal differencing performed; geometric feasibility only.",
+             "Original orbital scan direction may reverse one image axis; negative native-pixel affine determinant is valid, not by itself a bad terrain match.",
              "Significant incidence-angle mismatch may make true surface features look changed.",
              "No novelty or new lunar landslide established."]}
     a.out.parent.mkdir(parents=True,exist_ok=True)
