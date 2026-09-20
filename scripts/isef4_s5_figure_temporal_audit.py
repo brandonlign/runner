@@ -135,7 +135,31 @@ def score(before,after,mask,model,which,M):
         row["background_control_at_least_candidate"]=int(sum(v>=row["fraction_abs_above_5sigma"] for v in co))
         row["background_control_max_fraction"]=max(co) if co else None
         row["control_rank_is_not_a_pvalue"]=True
+    # Independently enumerate complete positive/negative difference components in
+    # the published paper, without centering connected-component search on the
+    # earlier CDR residual. Use the published marker as the bounded target.
+    component_summary={}
+    for sign,selection in (("positive",normalized>5),("negative",normalized< -5)):
+        number,labels,stats,centroids=cv2.connectedComponentsWithStats(
+            (selection&valid).astype(np.uint8),8)
+        rows=[]
+        for i in range(1,number):
+            x,y,ww,hh,area=map(int,stats[i])
+            if area<6:continue
+            px,py=map(float,centroids[i])
+            if math.dist((px,py),marker)>110:continue
+            rows.append({"centroid_original_S5_xy":[px+16,py+16],
+                         "bbox_original_S5_xywh":[x+16,y+16,ww,hh],
+                         "area_paper_px":area,
+                         "distance_to_CDR_residual_paper_px":math.dist((px,py),candidate),
+                         "distance_to_published_marker_paper_px":math.dist((px,py),marker),
+                         "candidate_point_inside_component":bool(
+                           0<=int(round(candidate[1]))<h and
+                           0<=int(round(candidate[0]))<w and
+                           labels[int(round(candidate[1])),int(round(candidate[0]))]==i)})
+        component_summary[sign]=sorted(rows,key=lambda z:-z["area_paper_px"])
     return {"registration":model,"photometry":which,"gain":gain,
+            "marker_bounded_components_threshold_5sigma_min_area_6":component_summary,
             "published_paper_noise_gray_level":sigma,
             "valid_fraction":float(valid.mean()),
             "candidate_point_full_S5_xy":PAPER_RESIDUAL,
@@ -157,7 +181,7 @@ def main():
         M,info=fit(b,a,withheld,model)
         info["scores"]=[score(before,after,None,model,mode,M) for mode in ("raw_gray","median_gain")]
         trials.append(info)
-    data={"schema":"true-S5-published-panel-known-figure-residual-audit-v1",
+    data={"schema":"true-S5-published-panel-localized-components-audit-v2",
           "source":"Xiao et al. 2025 real Figure S5 image5.jpeg",
           "figure_sha256":FIG_SHA,
           "scoring_policy":"fixed candidate from earlier CALIBRATED full-affine-only CDR residual, NOT trained on paper difference",
