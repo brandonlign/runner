@@ -1,0 +1,64 @@
+name: LUNARSHIFT genuine published S5 independent temporal residual audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-s5-figure-temporal-audit.yml"
+      - "scripts/isef4_s5_figure_temporal_audit.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: isef4-genuine-s5-temporal-audit
+  cancel-in-progress: false
+jobs:
+  known-published-positive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check candidate-independent published-panel code
+        run: python -m py_compile scripts/isef4_s5_figure_temporal_audit.py
+      - name: Restore hash-locked original supplemental Figure S5 source
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-published-xiao2025-supplemental-source
+          run-id: 35451970384
+          github-token: ${{ github.token }}
+          path: work/recovered_paper
+      - name: Compute fixed local concordance and same-figure spatial controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_s5_figure_temporal_audit.py \
+            --source work/recovered_paper/nwaf384_supplemental_files.zip \
+            --out diagnostics/isef4_true_s5_paper_temporal_residual.json
+      - name: Preserve all models and radius controls regardless of publish status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-true-S5-published-temporal-residual
+          path: diagnostics/isef4_true_s5_paper_temporal_residual.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish computed diagnostics without source image bytes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_true_s5_paper_temporal_residual.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record actual Figure S5 temporal residual concordance and controls'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
