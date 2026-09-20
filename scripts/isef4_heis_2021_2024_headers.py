@@ -74,7 +74,7 @@ def main():
     available={r["product"]:r for r in catalog["original_EDR_records_sorted"]}
     result={"schema":"Heis-2021-to-2024-actual-overlap-NAC-source-header-pair-v1",
         "discovery_interval_is_after_paper_2021":True,
-        "selected_for_similar_incidence_not_after_viewing_source_changes":True,
+        "selected_as_only_catalog_post2021_center_coverer_not_after_viewing_source_changes":True,
         "original_EDR_2021_2024_pair":PAIR,
         "ODE_Heis_inventory_SHA256":hashlib.sha256(x.inventory.read_bytes()).hexdigest(),
         "record":{},"scientific_status":"original post-2021 source header check in progress"}
@@ -82,7 +82,9 @@ def main():
     try:
         for role,edr in PAIR.items():
             epoch=available[edr]
-            if not inside_polygon(epoch["footprint_geometry"]):\n                raise ValueError("chosen NAC footprint does not CONTAIN exact published Heis marker: "+edr)\n            result["record"][role]={"ODE":{k:epoch[k] for k in
+            if not inside_polygon(epoch["footprint_geometry"]):
+                raise ValueError("chosen NAC footprint does not CONTAIN exact published Heis marker: "+edr)
+            result["record"][role]={"ODE":{k:epoch[k] for k in
                 ("product","UTC_start_time","incidence_angle","phase_angle","footprint_geometry")}}
             for kind in ("EDR","CDR"):
                 result["record"][role][kind]=verify(role,epoch,kind)
