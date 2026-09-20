@@ -139,6 +139,61 @@ def compare(
     return out
 
 
+
+def anchored_search(panel_features, raw_images):
+    """Fixed source-camera marker ROI, rotations and mirrors; development only."""
+    markers={"before":(3945.112,9406.253,8356),
+             "after":(4475.082,1920.066,993)}
+    rows=[]
+    for role,(sample,line,firstrow) in markers.items():
+        image=raw_images[role]
+        cx,cy=sample*0.5,(line-1-firstrow)*0.5
+        x0=max(0,int(cx-850));x1=min(image.shape[1],int(cx+850))
+        y0=max(0,int(cy-480));y1=min(image.shape[0],int(cy+480))
+        crop=image[y0:y1,x0:x1]
+        pk,pd,pshape=panel_features[role]
+        for rot in range(4):
+            rotated=np.ascontiguousarray(np.rot90(crop,rot))
+            for flip in (False,True):
+                oriented=np.ascontiguousarray(np.fliplr(rotated)) if flip else rotated
+                rk,rd=extract(oriented,12000)
+                pairs=cv2.BFMatcher(cv2.NORM_L2).knnMatch(pd,rd,k=2)
+                for ratio in (.78,.88):
+                    match=[a for a,b in pairs if a.distance<ratio*b.distance]
+                    x=np.float32([pk[m.queryIdx].pt for m in match])
+                    y=np.float32([rk[m.trainIdx].pt for m in match])
+                    entry={"role":role,"source_id":("M1138987659LE" if role=="before" else "M1200206882LE"),
+                           "rotation_90_ccw":rot,"flip_after_rotation":flip,
+                           "ratio":ratio,"tentative":len(match),
+                           "marker_half_source_xy":[cx,cy],"crop_xyxy_half_source":[x0,y0,x1,y1],
+                           "models":{}}
+                    if len(x)>=6:
+                        for model,fn in (("partial",cv2.estimateAffinePartial2D),
+                                         ("full",cv2.estimateAffine2D)):
+                            cv2.setRNGSeed(20260919)
+                            M,mask=fn(x,y,method=cv2.RANSAC,
+                                      ransacReprojThreshold=4.,maxIters=15000,
+                                      confidence=.999,refineIters=20)
+                            n=int(mask.sum()) if M is not None and mask is not None else 0
+                            cells=0;p95=None
+                            if n:
+                                keep=mask.reshape(-1).astype(bool)
+                                a=x[keep]
+                                occupied=np.stack([np.clip((a[:,0]/pshape[1]*6).astype(int),0,5),
+                                                   np.clip((a[:,1]/pshape[0]*6).astype(int),0,5)],axis=1)
+                                cells=len({tuple(z) for z in occupied})
+                                err=np.linalg.norm(a@M[:,:2].T+M[:,2]-y[keep],axis=1)
+                                p95=float(np.percentile(err,95))
+                            entry["models"][model]={"inliers":n,"occupied_6x6_cells":cells,
+                                 "p95_px":p95,
+                                 "matrix":M.tolist() if M is not None else None,
+                                 "provisional":bool(n>=12 and cells>=4 and p95 is not None and p95<4)}
+                    rows.append(entry)
+    return {"scope":"exploratory source-camera anchored same-epoch source match, not event recovery",
+            "test_count":len(rows),
+            "maximum_inliers":max((v.get("inliers",0) for z in rows for v in z["models"].values()),default=0),
+            "cases":rows}
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--raw-folder", type=Path, required=True)
@@ -154,7 +209,7 @@ def main() -> int:
         "after": ("M1200206882LE_mirror_raw_counts.npy", 993),
     }
     record = {
-        "schema_version": "isef4-corrected-S5-vs-EDR-raw-features-v2",
+        "schema_version": "isef4-corrected-S5-vs-EDR-raw-features-v3-anchored-orientation",
         "figure_media": "word/media/image6.jpeg",
         "figure_sha256": S5_HASH,
         "prior_v1_invalid": "v1 inadvertently used image5.jpeg (Supplementary Figure S4, Delisle), not Gambart C S5; discard all v1 negative matches.",
@@ -171,6 +226,7 @@ def main() -> int:
         keypoints, desc = extract(image, 7000)
         panel_features[label] = (keypoints, desc, image.shape)
     raw_features = {}
+    raw_images = {}
     for label, (filename, row_start) in arrays.items():
         path = args.raw_folder / filename
         if not path.is_file():
@@ -183,6 +239,7 @@ def main() -> int:
             interpolation=cv2.INTER_AREA,
         )
         kps, desc = extract(thumb, 18000)
+        raw_images[label] = thumb
         raw_features[label] = (kps, desc, thumb.shape, row_start)
     for source_label in ("before", "after"):
         panel_kp, panel_desc, panel_shape = panel_features[source_label]
@@ -206,6 +263,7 @@ def main() -> int:
                         out["panel_center_raw_full_xy"][1] + row_start,
                     ]
                 record["pairs"].append(out)
+    record["anchored_search"]=anchored_search(panel_features,raw_images)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(record, indent=2) + "\n")
     print(json.dumps(record, indent=2), flush=True)
