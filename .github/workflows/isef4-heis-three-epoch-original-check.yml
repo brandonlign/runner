@@ -1,0 +1,77 @@
+name: LUNARSHIFT Heis six weak spots original three-epoch check
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-three-epoch-original-check.yml"
+      - "scripts/isef4_heis_three_epoch_candidate_audit.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-heis-2015-2021-2024-weak-spot-check
+  cancel-in-progress: false
+jobs:
+  retrospective-original-NAC:
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate code
+        run: python -m py_compile scripts/isef4_heis_three_epoch_candidate_audit.py
+      - name: Restore original 2015 and 2021 calibrated NASA source pair
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-heis-S26-exact-official-calibrated-original-rois
+          run-id: 35487310753
+          github-token: ${{ github.token }}
+          path: work/earlier
+      - name: Restore original 2021 and 2024 calibrated NASA source pair
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Heis-2021-2024-actual-original-calibrated-NAC-pair
+          run-id: 35488946344
+          github-token: ${{ github.token }}
+          path: work/later
+      - name: Check all four-trial 3-MAD spots in independently recovered earlier epoch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_heis_three_epoch_candidate_audit.py \
+            --source-2021-2024-folder work/later/output/heis_2021_2024_verified_original_CDR \
+            --source-2015-2021-folder work/earlier/output/heis_s26_verified_calibrated_pixels \
+            --manifest-2021-2024 diagnostics/isef4_heis_2021_2024_original_calibrated_source_pair.json \
+            --manifest-2015-2021 diagnostics/isef4_heis_s26_calibrated_original_source_rois.json \
+            --reg-2015-2021 diagnostics/isef4_heis_s26_original_cdr_registration.json \
+            --reg-2021-2024 diagnostics/isef4_heis_2021_2024_orientation_illumination_registration.json \
+            --screen diagnostics/isef4_heis_2021_2024_original_change_screen.json \
+            --out diagnostics/isef4_heis_three_epoch_weak_source_spot_audit.json
+      - name: Preserve exact results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-2015-2021-2024-original-spot-chronology
+          path: diagnostics/isef4_heis_three_epoch_weak_source_spot_audit.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit small retrospective observations
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_three_epoch_weak_source_spot_audit.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Measure all surviving weak Heis spots in three exact original calibrated epochs'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
