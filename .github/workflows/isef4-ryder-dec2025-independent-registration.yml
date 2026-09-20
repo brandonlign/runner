@@ -1,0 +1,74 @@
+name: LUNARSHIFT Ryder matched-sun December 2025 original CDR registration
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-dec2025-independent-registration.yml'
+      - 'scripts/isef4_ryder_2025dec_independent_registration.py'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-ryder-dec2025-original-source-terrain-geometry
+  cancel-in-progress: false
+jobs:
+  original-third-epoch-scene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify camera-ground original source geometry analysis syntax
+        run: python -m py_compile scripts/isef4_ryder_2025dec_independent_registration.py
+      - name: Restore original NASA Ryder 2024 calibrated NAC source image
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Ryder-four-exact-source-calibrated-r640-NAC-patches
+          run-id: 35517962160
+          github-token: ${{ github.token }}
+          path: work/original2024
+      - name: Restore new exact original NASA December2025 source
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Ryder-dec2025-exact-original-calibrated-third-epoch
+          run-id: 35518960885
+          github-token: ${{ github.token }}
+          path: work/original2025
+      - name: Freeze source-camera-compatible off-published-site terrain correspondence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_ryder_2025dec_independent_registration.py \
+            --original-four-manifest diagnostics/isef4_ryder_four_native_original_calibrated_ROIs.json \
+            --original-four-folder work/original2024/output/ryder_four_verified_original_CDR_r640 \
+            --dec2025-manifest diagnostics/isef4_ryder_dec2025_exact_original_source_roi.json \
+            --dec2025-folder work/original2025/output/ryder_dec2025_verified_original_source \
+            --out diagnostics/isef4_ryder_dec2025_independent_NAC_to_2024_registration.json
+      - name: Preserve every source fit and geometry failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-Dec2025-to-2024-original-geometry-holdout
+          path: diagnostics/isef4_ryder_dec2025_independent_NAC_to_2024_registration.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit exact original third-epoch terrain geometry before examining changes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_dec2025_independent_NAC_to_2024_registration.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Freeze true Ryder December2025 original camera-terrain alignment'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
