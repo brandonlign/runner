@@ -105,7 +105,7 @@ def main():
     DEST.write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps({"EDRs_found":result["EDR_IDs_exact_from_public_ODE"],
          "CDRs_found":result["CDR_IDs_exact_from_public_ODE"],
-         "products":result["verified_products"],"query_count":len(result["query_audit"])},flush=True))
+         "products":result["verified_products"],"query_count":len(result["query_audit"])}),flush=True)
     if not result["EDR_IDs_exact_from_public_ODE"]:
         raise RuntimeError("original HEIS S26 EDRs not both found in queried public ODE window")
 if __name__=="__main__":main()
