@@ -1,0 +1,52 @@
+name: LUNARSHIFT Ryder original December 2025 matched-light source gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-2025dec-original-source-gate.yml'
+      - 'scripts/isef4_ryder_2025dec_original_source_gate.py'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-Ryder-2025Dec-exact-original-source
+  cancel-in-progress: false
+jobs:
+  original-ryder-2025-december:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify PDS3 original archive source gate syntax
+        run: python -m py_compile scripts/isef4_ryder_2025dec_original_source_gate.py
+      - name: Independently verify original Ryder December 2025 EDR/CDR archived image identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/isef4_ryder_2025dec_original_source_gate.py \
+            --inventory diagnostics/isef4_multisite_actual_overlapping_postevent_NAC_pairs.json \
+            --out diagnostics/isef4_ryder_2025dec_original_PDS3_EDR_CDR_gate.json
+      - name: Preserve exact 2025 source record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-ryder-2025dec-original-EDR-CDR-identity
+          path: diagnostics/isef4_ryder_2025dec_original_PDS3_EDR_CDR_gate.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Preserve source gate outcomes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_2025dec_original_PDS3_EDR_CDR_gate.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Verify original 2025 December Ryder matched-illumination NAC products'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
