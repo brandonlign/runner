@@ -129,10 +129,29 @@ def figure_match(figure,im):
      source=np.float64([pk[m.queryIdx].pt for m in matches])
      target=np.float64([mk[m.trainIdx].pt for m in matches])
      result=fit(source,target,"full_affine",thresh=4.)
+     # Only a high-support source-panel fit warrants a reported pixel crosswalk.
+     if result.get("inliers",0)>=100:
+      M=np.float64(result["matrix"])
+      residual=np.linalg.norm(source@M[:,:2].T+M[:,2]-target,axis=1)
+      agree=residual<=4.
+      ix=cv2.invertAffineTransform(M)
+      origin=(MARKER@ix[:,:2].T+ix[:,2])
+      result["source_marker_in_published_panel_cropped_xy"]=origin.tolist()
+      result["source_marker_in_original_S5_image_xy"]=[
+         float(origin[0]+16+round((0 if p_role=="before" else 1)*figure.shape[1]/3)),
+         float(origin[1]+16)]
+      result["corresponding_points_within_4px"]=int(agree.sum())
+      result["tentative_fit_residual_median_px"]=float(np.median(residual[agree]))
+      result["tentative_fit_residual_p95_px"]=float(np.percentile(residual[agree],95))
      rows.append({"published_panel":p_role,"source_map":m_role,
        "orientation_90deg_ccw":rotation,"flipped_horizontal":flip,
        "ratio":.82,"tentative":len(matches),"affine_inliers":result.get("inliers",0),
-       "status":result["status"]})
+       "status":result["status"],
+       "panel_to_source_affine":result.get("matrix"),
+       "map_nominal_marker_in_original_S5_xy":result.get("source_marker_in_original_S5_image_xy"),
+       "map_nominal_marker_in_panel_cropped_xy":result.get("source_marker_in_published_panel_cropped_xy"),
+       "residual_p95_mapped_px":result.get("tentative_fit_residual_p95_px"),
+       "agreement_count_4px":result.get("corresponding_points_within_4px")})
  return {"image_sha256":FIG_SHA,"source_figure":"Xiao et al. 2025 Supplementary Figure S5 (image6.jpeg)",
          "model":"SIFT+CLAHE+full-affine 4px RANSAC; exploratory 32-case orientation screen",
          "tested_cases":len(rows),"max_affine_inliers":max(z["affine_inliers"] for z in rows),
@@ -151,7 +170,7 @@ def main():
  raw=read_maps(x.map_artifact_folder,proof)
  geometry=pair_geometry(raw)
  figure=figure_match(primary_figure(x.supplement_artifact),raw)
- out={"schema":"Gambart-C-correct-figure-S5-spherical-map-relative-geolocation-audit-v2",
+ out={"schema":"Gambart-C-correct-figure-S5-spherical-map-pixel-crosswalk-v3",
     "camera_result_source_run_id":"35459076420",
     "source_image_ids":PAIR_IDS,"source_map_nominal_m_per_px":1.2,
     "source_map_projection":"shared spherical Moon reference; no DEM",
