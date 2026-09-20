@@ -1,0 +1,65 @@
+name: LUNARSHIFT Heis S26 real calibrated terrain registration gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-s26-native-cdr-registration.yml"
+      - "scripts/isef4_heis_cdr_registration_preflight.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-heis-original-terrain-registration
+  cancel-in-progress: false
+jobs:
+  exact-published-Heis-terrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify native calibrated registration script
+        run: python -m py_compile scripts/isef4_heis_cdr_registration_preflight.py
+      - name: Restore authenticated original Heis calibrated source pixels
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-heis-S26-exact-official-calibrated-original-rois
+          run-id: 35487310753
+          github-token: ${{ github.token }}
+          path: work/source
+      - name: Fit original terrain independently outside both camera-marker neighborhoods
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_heis_cdr_registration_preflight.py \
+            --source-folder work/source/output/heis_s26_verified_calibrated_pixels \
+            --source-manifest diagnostics/isef4_heis_s26_calibrated_original_source_rois.json \
+            --out diagnostics/isef4_heis_s26_original_cdr_registration.json
+      - name: Save both successful and failed geometry models
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-true-native-CDR-registration-evidence
+          path: diagnostics/isef4_heis_s26_original_cdr_registration.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit complete bounded registration diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_s26_original_cdr_registration.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record independent Heis non-impact original NAC terrain registration'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
