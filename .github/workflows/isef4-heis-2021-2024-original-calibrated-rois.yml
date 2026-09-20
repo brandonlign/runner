@@ -1,0 +1,77 @@
+name: LUNARSHIFT real Heis 2021-2024 exact calibrated source pair
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-2021-2024-original-calibrated-rois.yml"
+      - "scripts/isef4_heis_post2021_calibrated_source.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-heis-2021-2024-original-IF
+  cancel-in-progress: false
+jobs:
+  actual-original-calibrated-pair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test original source range geometry and provenance code
+        run: python -m py_compile scripts/isef4_heis_post2021_calibrated_source.py
+      - name: Restore original 2024 source camera success proof
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-heis-2024-postpublication-original-CSM-source
+          run-id: 35488727500
+          github-token: ${{ github.token }}
+          path: work/2024-camera
+      - name: Reuse exact previously retrieved 2021 original source-calibrated pixels
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-heis-S26-exact-official-calibrated-original-rois
+          run-id: 35487310753
+          github-token: ${{ github.token }}
+          path: work/2021-pixels
+      - name: Build strict 2024 source cutout and original 2021-to-2024 pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy
+          python scripts/isef4_heis_post2021_calibrated_source.py \
+            --candidate-headers diagnostics/isef4_heis_2021_2024_original_source_headers.json \
+            --camera work/2024-camera/diagnostics/isef4_heis_post2021_camera_status_isis10_heis2024.json \
+            --reference-2021-manifest diagnostics/isef4_heis_s26_calibrated_original_source_rois.json \
+            --reference-2021-folder work/2021-pixels/output/heis_s26_verified_calibrated_pixels \
+            --output-folder output/heis_2021_2024_verified_original_CDR \
+            --out diagnostics/isef4_heis_2021_2024_original_calibrated_source_pair.json
+      - name: Preserve original calibrated source pixels only in bounded artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-2021-2024-actual-original-calibrated-NAC-pair
+          path: |
+            output/heis_2021_2024_verified_original_CDR/
+            diagnostics/isef4_heis_2021_2024_original_calibrated_source_pair.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit small source provenance only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_2021_2024_original_calibrated_source_pair.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Recover genuine 2021-2024 post-publication Heis original NASA calibrated source pair'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
