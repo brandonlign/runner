@@ -1,0 +1,66 @@
+name: LUNARSHIFT Ryder exact source geometry with 2024 reference
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-four-original-native-ref2024.yml'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-ryder-four-original-source-geometry-ref2024
+  cancel-in-progress: false
+jobs:
+  true-original-2024-reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check source geometry code and manifest
+        run: python -m py_compile scripts/isef4_ryder_four_epoch_native_registration.py
+      - name: Restore all original calibrated Ryder native NASA source pixels
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Ryder-four-exact-source-calibrated-r640-NAC-patches
+          run-id: 35517962160
+          github-token: ${{ github.token }}
+          path: work/ryder_source
+      - name: Independently test 2024-based Ryder actual terrain overlap
+        shell: bash
+        env:
+          ISEF4_RYDER_REFERENCE: followup_2024
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_ryder_four_epoch_native_registration.py \
+            --source-folder work/ryder_source/output/ryder_four_verified_original_CDR_r640 \
+            --source-manifest diagnostics/isef4_ryder_four_native_original_calibrated_ROIs.json \
+            --out diagnostics/isef4_ryder_four_epoch_independent_native_registration_ref2024.json
+      - name: Preserve all original geometry fits and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-original-NAC-source-geometry-reference-2024
+          path: diagnostics/isef4_ryder_four_epoch_independent_native_registration_ref2024.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit independent reference-2024 geometry before any source temporal differences
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_four_epoch_independent_native_registration_ref2024.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Retain 2024-reference Ryder terrain fits and all failed four-epoch geometry gates'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
