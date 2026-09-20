@@ -33,6 +33,15 @@ TARGET_CONFIGS={
   "coordinates":(3.218,348.092),
   "event":"Xiao et al. 2025 Figure S5 Gambart C (published positive)"
  },
+ "heis_post2021":{
+  "products":{"before":"M1376643242LE","after":"M1481045431LE"},
+  "archives":{"before":"LROLRC_0047C/DATA/ESM4/2021146/NAC/","after":"LROLRC_0060C/DATA/ESM5/2024259/NAC/"},
+  "bytes":{"before":264467400,"after":264467400},
+  "first_5064_sha":{"before":"1df99407f0b2fb403ffd967b1d06c848afe94fd7f2df15b1873fe4e2f9bfc515",
+                    "after":"74ba17fd383f2b90c370943e7bf5da05bea308158d64e206ab32f679a07d354e"},
+  "coordinates":(32.547,327.792),
+  "event":"Heis 2021-05 to 2024-09 actual-coverage post-publication temporal comparison; no new event claimed"
+ },
  "heis_s26":{
   "products":{"before":"M1197976848LE","after":"M1376643242LE"},
   "archives":{"before":"LROLRC_0025/DATA/ESM2/2015270/NAC/","after":"LROLRC_0047C/DATA/ESM4/2021146/NAC/"},
@@ -44,7 +53,7 @@ TARGET_CONFIGS={
  }
 }
 if TARGET not in TARGET_CONFIGS:
- raise ValueError("only published Gambart C and designated development Heis S26 supported")
+ raise ValueError("only published development Gambart, Heis S26 or Heis post-2021 exact actual coverage supported")
 CONFIG=TARGET_CONFIGS[TARGET]
 PRODUCT=CONFIG["products"][ROLE]
 SOURCE_URL="https://pds.lroc.im-ldi.com/data/LRO-L-LROC-2-EDR-V1.0/"+CONFIG["archives"][ROLE]
@@ -62,6 +71,7 @@ STATUS.parent.mkdir(parents=True, exist_ok=True)
 RESULT = {
     "schema_version": "isef4-public-source-camera-triage-v1",
     "runtime_label": SUFFIX or "isis83",
+    "target_key": TARGET,
     "event": CONFIG["event"],
     "product": PRODUCT,
     "source_role": ROLE,
