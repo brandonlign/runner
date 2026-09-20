@@ -1,0 +1,74 @@
+name: LUNARSHIFT Ryder Dec2025 independent original NAC source camera
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-dec2025-original-camera.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-ryder-2025dec-independent-NASA-CSM
+  cancel-in-progress: false
+jobs:
+  original-Dec2025-camera:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify independent original NAC-CAM source syntax
+        run: python -m py_compile scripts/isef4_isis_camera_triage.py
+      - name: Install USGS ISIS10 original LROC NASA camera
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis10
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.13
+            isis=10.0.0
+            usgscsm
+          init-shell: bash
+          post-cleanup: all
+      - name: Download full verified December2025 EDR and independently camera-locate Ryder site
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          mkdir -p "$ISISDATA/base/kernels/lsk"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls" \
+            --output "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          grep -q 'KPL/LSK' "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          python -m pip install --quiet 'setuptools<81'
+          export ISEF4_DEVELOPMENT_EVENT=ryder_2025dec
+          export ISEF4_PRODUCT_ROLE=before
+          export ISEF4_DIAGNOSTIC_SUFFIX=isis10_ry25
+          python scripts/isef4_isis_camera_triage.py
+      - name: Preserve exact NASA EDR hash and camera proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-ryder-Dec2025-exact-original-camera
+          path: |
+            diagnostics/isef4_ryder_2025dec_camera_status_isis10_ry25.json
+            output/triage_isis10_ry25/csm_event_campt.pvl
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit December2025 original Ryder CSM success or failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_2025dec_camera_status_isis10_ry25.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Independently camera-locate true Ryder December 2025 original NAC observation'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
