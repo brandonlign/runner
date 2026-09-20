@@ -18,7 +18,7 @@ C=np.array([640.,640.])
 EXCLUDE=190.
 THREE_MODES=("CLAHE","highpass")
 RATIOS=(.76,.84)
-def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+def sha(p):return hashlib.sha256(p if isinstance(p,bytes) else p.read_bytes()).hexdigest()
 def original(root,manifest,tag):
     row=manifest["source_products"][tag]
     path=root/(tag+"_original_NAC_CDR_r640.npy")
