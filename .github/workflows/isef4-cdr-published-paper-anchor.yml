@@ -1,0 +1,68 @@
+name: LUNARSHIFT original S5 independently identified change on calibrated NAC pixels
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-cdr-published-paper-anchor.yml"
+      - "scripts/isef4_cdr_paper_anchored_check.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-known-paper-change-calibrated-anchor
+  cancel-in-progress: false
+jobs:
+  published-positive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check independent paper-to-calibrated-source experiment
+        run: python -m py_compile scripts/isef4_cdr_paper_anchored_check.py
+      - name: Restore exact original calibrated I/F NASA patches
+        uses: actions/download-artifact@v4
+        with:
+          name: gambart-c-official-calibrated-CDR-source-patches
+          run-id: 35454760984
+          github-token: ${{ github.token }}
+          path: output/gambart_cdr_native_source_patches
+      - name: Score all preselected paper-derived change pixels with both source geometry models
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_cdr_paper_anchored_check.py \
+            --source-folder output/gambart_cdr_native_source_patches \
+            --source-manifest diagnostics/isef4_gambart_official_cdr_native_marker_patches.json \
+            --registration diagnostics/isef4_gambart_cdr_registration_preflight.json \
+            --paper-audit diagnostics/isef4_true_s5_paper_temporal_residual.json \
+            --raw-crosswalk diagnostics/isef4_s5_source_feature_match.json \
+            --out diagnostics/isef4_gambart_independent_paper_to_CDR_change.json
+      - name: Preserve complete scientific result even if git conflicts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-gambart-authentic-paper-component-calibrated-test
+          path: diagnostics/isef4_gambart_independent_paper_to_CDR_change.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit small test results only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_gambart_independent_paper_to_CDR_change.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Measure true S5 paper-defined change directly on calibrated NASA images'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
