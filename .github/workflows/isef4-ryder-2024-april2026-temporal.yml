@@ -1,0 +1,69 @@
+name: LUNARSHIFT Ryder actual 2024 to April 2026 original source temporal screen
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-2024-april2026-temporal.yml'
+      - 'scripts/isef4_ryder_2024_april_2026_true_source_screen.py'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-ryder-2024-April2026-original-temporal
+  cancel-in-progress: false
+jobs:
+  genuine-lunar-2024-April2026-original-pixel-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile complete science screen
+        run: python -m py_compile scripts/isef4_ryder_2024_april_2026_true_source_screen.py
+      - name: Restore four exact original NASA source image cutouts
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Ryder-four-exact-source-calibrated-r640-NAC-patches
+          run-id: 35517962160
+          github-token: ${{ github.token }}
+          path: work/ryder_source
+      - name: Evaluate 2024-April2026 real calibrated original NASA source differences
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_ryder_2024_april_2026_true_source_screen.py \
+            --source-folder work/ryder_source/output/ryder_four_verified_original_CDR_r640 \
+            --source-manifest diagnostics/isef4_ryder_four_native_original_calibrated_ROIs.json \
+            --registration diagnostics/isef4_ryder_four_epoch_independent_native_registration_ref2024.json \
+            --out diagnostics/isef4_ryder_2024_to_April2026_true_original_NAC_change_screen.json \
+            --debug-folder output/ryder_2024_to_April2026_original_temporal_previews
+      - name: Preserve all components, underlying residual previews, and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-2024-to-April2026-exact-original-NAC-temporal
+          path: |
+            diagnostics/isef4_ryder_2024_to_April2026_true_original_NAC_change_screen.json
+            output/ryder_2024_to_April2026_original_temporal_previews/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit exact predeclared original-source temporal measurements
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_2024_to_April2026_true_original_NAC_change_screen.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record exploratory original Ryder 2024 to 2026 exact NASA source changes'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
