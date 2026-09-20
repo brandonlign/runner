@@ -158,7 +158,39 @@ def score(before,after,mask,model,which,M):
                            0<=int(round(candidate[0]))<w and
                            labels[int(round(candidate[1])),int(round(candidate[0]))]==i)})
         component_summary[sign]=sorted(rows,key=lambda z:-z["area_paper_px"])
+    # Fixed sensitivity sweep to determine whether the localized paper change
+    # grows into an extended runout-like component or remains a compact scar.
+    # This remains purely morphology *of paper contrast*, not a rockslide label.
+    threshold_sweep={}
+    for factor in (2,3,4,5):
+        fixed={}
+        for sign,selection in (("positive",normalized>factor),("negative",normalized< -factor)):
+            number,labels,stats,centroids=cv2.connectedComponentsWithStats(
+                (selection&valid).astype(np.uint8),8)
+            rows=[]
+            for i in range(1,number):
+                x,y,bw,bh,area=map(int,stats[i])
+                if area<12:continue
+                cx,cy=map(float,centroids[i])
+                if math.dist((cx,cy),marker)>110:continue
+                component_xy=np.column_stack(np.where(labels==i))[:,::-1].astype(float)
+                if len(component_xy)>1:
+                    cov=np.cov(component_xy,rowvar=False)
+                    eig=np.maximum(np.linalg.eigvalsh(cov),0)
+                    elongation=float(np.sqrt((eig[-1]+1e-6)/(eig[0]+1e-6)))
+                else:
+                    elongation=1.0
+                rows.append({"centroid_original_S5_xy":[cx+16,cy+16],
+                    "bbox_original_S5_xywh":[x+16,y+16,bw,bh],
+                    "area_paper_px":area,"elongation_covariance_axis_ratio":elongation,
+                    "centroid_distance_to_calibrated_residual_paper_px":math.dist((cx,cy),candidate),
+                    "centroid_distance_to_published_marker_paper_px":math.dist((cx,cy),marker),
+                    "contains_prelocalized_CDR_residual_point":bool(
+                        labels[int(round(candidate[1])),int(round(candidate[0]))]==i)})
+            fixed[sign]=sorted(rows,key=lambda z:-z["area_paper_px"])[:25]
+        threshold_sweep[str(factor)]=fixed
     return {"registration":model,"photometry":which,"gain":gain,
+            "marker_bounded_component_sensitivity_at_fixed_2_3_4_5MAD":threshold_sweep,
             "marker_bounded_components_threshold_5sigma_min_area_6":component_summary,
             "published_paper_noise_gray_level":sigma,
             "valid_fraction":float(valid.mean()),
@@ -181,7 +213,7 @@ def main():
         M,info=fit(b,a,withheld,model)
         info["scores"]=[score(before,after,None,model,mode,M) for mode in ("raw_gray","median_gain")]
         trials.append(info)
-    data={"schema":"true-S5-published-panel-localized-components-audit-v2",
+    data={"schema":"true-S5-published-panel-morphology-sensitivity-audit-v3",
           "source":"Xiao et al. 2025 real Figure S5 image5.jpeg",
           "figure_sha256":FIG_SHA,
           "scoring_policy":"fixed candidate from earlier CALIBRATED full-affine-only CDR residual, NOT trained on paper difference",
