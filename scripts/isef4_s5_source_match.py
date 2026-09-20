@@ -21,7 +21,7 @@ import numpy as np
 
 
 SOURCE_ZIP_HASH = "132f3d2c2d6c8a5fcb102fe9dcfa5e2d33c6e60b6600c1c94d0d2bafb282c233"
-S5_HASH = "f59dcc4a79b218002931d88341d764dd62d1b7c461b98fc542555e39fc4a9db2"
+S5_HASH = "3d0e494c40b92e7de66ce54f8317c646ad1d8a19e328bc2811cd7cc13d48dc7f"
 
 
 def original_s5(manifest: Path) -> np.ndarray:
@@ -39,7 +39,7 @@ def original_s5(manifest: Path) -> np.ndarray:
     with zipfile.ZipFile(io.BytesIO(content)) as outer:
         docx = outer.read("2025-434-supplementarymaterials.docx")
     with zipfile.ZipFile(io.BytesIO(docx)) as doc:
-        image = doc.read("word/media/image6.jpeg")
+        image = doc.read("word/media/image5.jpeg")
     if hashlib.sha256(image).hexdigest() != S5_HASH:
         raise RuntimeError("Word relationship image6 is not the original verified S5")
     raster = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
@@ -209,10 +209,10 @@ def main() -> int:
         "after": ("M1200206882LE_mirror_raw_counts.npy", 993),
     }
     record = {
-        "schema_version": "isef4-corrected-S5-vs-EDR-raw-features-v3-anchored-orientation",
-        "figure_media": "word/media/image6.jpeg",
+        "schema_version": "isef4-correct-caption-adjacency-S5-vs-EDR-v4-anchored-orientation",
+        "figure_media": "word/media/image5.jpeg",
         "figure_sha256": S5_HASH,
-        "prior_v1_invalid": "v1 inadvertently used image5.jpeg (Supplementary Figure S4, Delisle), not Gambart C S5; discard all v1 negative matches.",
+        "prior_v1_invalid": "v1 used correct Figure S5 image5.jpeg. v2/v3 used image6.jpeg, which is Figure S6 Naumann; discard v2/v3 figure-crosswalk results.",
         "original_figure_sha256": S5_HASH,
         "original_fig5_shape": list(original.shape),
         "EDR_pixel_units": "original uncalibrated unsigned 8-bit counts",
