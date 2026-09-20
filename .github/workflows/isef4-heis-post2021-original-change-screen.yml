@@ -1,0 +1,69 @@
+name: LUNARSHIFT Heis 2021-2024 original calibrated change screen
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-post2021-original-change-screen.yml"
+      - "scripts/isef4_heis_post2021_candidate_screen.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-heis-2021-2024-original-calibrated-change
+  cancel-in-progress: false
+jobs:
+  exploratory-same-site-original-pixels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify analysis syntax
+        run: python -m py_compile scripts/isef4_heis_post2021_candidate_screen.py
+      - name: Restore SHA-verified 2021 and 2024 native original calibrated NACs
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Heis-2021-2024-actual-original-calibrated-NAC-pair
+          run-id: 35488946344
+          github-token: ${{ github.token }}
+          path: work/source
+      - name: Run frozen original-pixel temporal screen excluding prior slide
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_heis_post2021_candidate_screen.py \
+            --source-folder work/source/output/heis_2021_2024_verified_original_CDR \
+            --source-manifest diagnostics/isef4_heis_2021_2024_original_calibrated_source_pair.json \
+            --registration diagnostics/isef4_heis_2021_2024_orientation_illumination_registration.json \
+            --debug-folder output/heis_post2021_diff_debug \
+            --out diagnostics/isef4_heis_2021_2024_original_change_screen.json
+      - name: Preserve full generated data and all residual previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-2021-2024-original-temporal-signed-changes
+          path: |
+            diagnostics/isef4_heis_2021_2024_original_change_screen.json
+            output/heis_post2021_diff_debug/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit bounded exploratory source-change diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_2021_2024_original_change_screen.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record original Heis 2021-to-2024 post-publication source change screen'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
