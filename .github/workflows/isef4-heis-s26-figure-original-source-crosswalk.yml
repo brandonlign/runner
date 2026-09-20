@@ -1,0 +1,74 @@
+name: LUNARSHIFT Heis authentic landslide paper to calibrated NAC terrain
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-s26-figure-original-source-crosswalk.yml"
+      - "scripts/isef4_heis_figure_to_source.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-heis-s26-figure-native-pixels
+  cancel-in-progress: false
+jobs:
+  verified-figure-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check exact native pixel crosswalk source code
+        run: python -m py_compile scripts/isef4_heis_figure_to_source.py
+      - name: Restore two original calibrated NAC source patches
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-heis-S26-exact-official-calibrated-original-rois
+          run-id: 35487310753
+          github-token: ${{ github.token }}
+          path: work/source
+      - name: Restore actual Xiao supplementary Figure S26
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-published-xiao2025-supplemental-source
+          run-id: 35451970384
+          github-token: ${{ github.token }}
+          path: work/paper
+      - name: Fit paper to native source features outside measured change footprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_heis_figure_to_source.py \
+            --source-folder work/source/output/heis_s26_verified_calibrated_pixels \
+            --source-manifest diagnostics/isef4_heis_s26_calibrated_original_source_rois.json \
+            --supplement-artifact work/paper/nwaf384_supplemental_files.zip \
+            --paper-temporal diagnostics/isef4_heis_s26_true_figure_morphology.json \
+            --out diagnostics/isef4_heis_s26_paper_to_CDR_source_crosswalk.json
+      - name: Preserve complete crosswalk including every negative model
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-original-figure-native-source-crosswalk
+          path: diagnostics/isef4_heis_s26_paper_to_CDR_source_crosswalk.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit bounded crosswalk metadata only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_s26_paper_to_CDR_source_crosswalk.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Localize genuine Heis S26 paper slope change on calibrated original NASA images'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
