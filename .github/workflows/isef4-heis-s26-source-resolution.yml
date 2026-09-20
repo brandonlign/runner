@@ -1,0 +1,47 @@
+name: LUNARSHIFT Heis S26 development non-impact event source gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-s26-source-resolution.yml"
+      - "scripts/isef4_heis_s26_source_resolution.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-heis-s26-metadata-gate
+  cancel-in-progress: false
+jobs:
+  exact-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check exact published Heis event source plan
+        run: python -m py_compile scripts/isef4_heis_s26_source_resolution.py
+      - name: Query exact two published EDRs and calibrated source product metadata
+        run: python scripts/isef4_heis_s26_source_resolution.py
+      - name: Preserve source results irrespective of query success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-heis-S26-real-source-metadata
+          path: diagnostics/isef4_heis_s26_exact_edr_resolution.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit only source metadata and signed header hashes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_s26_exact_edr_resolution.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Document real Heis S26 non-impact pair source availability'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
