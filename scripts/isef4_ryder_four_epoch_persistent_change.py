@@ -184,8 +184,8 @@ def main():
     global geo
     geo=json.loads(a.registration.read_text())
     meta=json.loads(a.source_manifest.read_text())
-    if geo["schema"]!="Ryder-four-original-calibrated-NAC-off-marker-terrain-registration-v1" or
-       geo["source_manifest_SHA256"]!=sha(a.source_manifest.read_bytes()):
+    if (geo["schema"]!="Ryder-four-original-calibrated-NAC-off-marker-terrain-registration-v1" or
+        geo["source_manifest_SHA256"]!=sha(a.source_manifest.read_bytes())):
         raise ValueError("not a frozen camera-ground original NASA Ryder geometry")
     if meta["schema"]!="Ryder-2022-2024-2026-four-original-calibrated-source-r640-v1":
         raise ValueError("not exact official four Ryder source images")
