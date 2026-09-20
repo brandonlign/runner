@@ -1,0 +1,65 @@
+name: LUNARSHIFT Heis post-2021 orientation/illumination source audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-post2021-orientation-illumination-audit.yml"
+      - "scripts/isef4_heis_post2021_orientation_audit.py"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-heis-post2021-geometric-illumination-audit
+  cancel-in-progress: false
+jobs:
+  actual-original-NAC-terrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax check all predeclared source fitting variants
+        run: python -m py_compile scripts/isef4_heis_post2021_orientation_audit.py
+      - name: Restore exact post-publication original calibrated NASA source pixels
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-Heis-2021-2024-actual-original-calibrated-NAC-pair
+          run-id: 35488946344
+          github-token: ${{ github.token }}
+          path: work/source
+      - name: Compare original and 180 degree native orientation with illumination robust terrain descriptors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy opencv-python-headless
+          python scripts/isef4_heis_post2021_orientation_audit.py \
+            --source-folder work/source/output/heis_2021_2024_verified_original_CDR \
+            --source-manifest diagnostics/isef4_heis_2021_2024_original_calibrated_source_pair.json \
+            --out diagnostics/isef4_heis_2021_2024_orientation_illumination_registration.json
+      - name: Preserve full positive and negative geometry screen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-2021-2024-orientation-illumination-source-geometry
+          path: diagnostics/isef4_heis_2021_2024_orientation_illumination_registration.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit only bounded tested camera-geometry model results
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_2021_2024_orientation_illumination_registration.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Audit Heis post-publication lunar source registration across camera orientations'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
