@@ -1,0 +1,47 @@
+name: LUNARSHIFT Heis unsearched post-2021 original observation inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-unsearched-epoch-inventory.yml"
+      - "scripts/isef4_heis_unsearched_epoch_inventory.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-heis-epoch-catalog
+  cancel-in-progress: false
+jobs:
+  public-ode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source epoch scan
+        run: python -m py_compile scripts/isef4_heis_unsearched_epoch_inventory.py
+      - name: Enumerate all public original NAC observation times in Heis development region
+        run: python scripts/isef4_heis_unsearched_epoch_inventory.py
+      - name: Preserve exact observed source product list
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-post2021-full-original-epoch-ODE-inventory
+          path: diagnostics/isef4_heis_unsearched_epoch_inventory.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit source catalog evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_unsearched_epoch_inventory.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Inventory original Heis lunar epochs for new-event search'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
