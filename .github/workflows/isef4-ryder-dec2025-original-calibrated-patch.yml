@@ -1,0 +1,68 @@
+name: LUNARSHIFT Ryder December 2025 exact original CDR third epoch
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/isef4-ryder-dec2025-original-calibrated-patch.yml'
+      - 'scripts/isef4_ryder_dec2025_exact_original_cdr_roi.py'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-ryder-dec2025-third-original-NAC-patch
+  cancel-in-progress: false
+jobs:
+  exact-original-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile source PDS3 extraction and camera gates
+        run: python -m py_compile scripts/isef4_ryder_dec2025_exact_original_cdr_roi.py
+      - name: Restore independent December2025 full original EDR CSM camera proof
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-ryder-Dec2025-exact-original-camera
+          run-id: 35518665224
+          github-token: ${{ github.token }}
+          path: work/ryder_camera25
+      - name: Extract full-row SHA-verified official calibrated 2025 NASA source pixels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy
+          python scripts/isef4_ryder_dec2025_exact_original_cdr_roi.py \
+            --original-archive-gate diagnostics/isef4_ryder_2025dec_original_PDS3_EDR_CDR_gate.json \
+            --camera-proof work/ryder_camera25/diagnostics/isef4_ryder_2025dec_camera_status_isis10_ry25.json \
+            --source-folder output/ryder_dec2025_verified_original_source \
+            --out diagnostics/isef4_ryder_dec2025_exact_original_source_roi.json
+      - name: Save original true source pixels and all independent hashes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-dec2025-exact-original-calibrated-third-epoch
+          path: |
+            output/ryder_dec2025_verified_original_source/
+            diagnostics/isef4_ryder_dec2025_exact_original_source_roi.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Preserve verified Dec2025 original pixels' scientific provenance
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_dec2025_exact_original_source_roi.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Verify camera-ground true Ryder December2025 original calibrated NAC pixels'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
