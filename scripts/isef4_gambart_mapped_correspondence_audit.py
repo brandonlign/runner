@@ -152,7 +152,7 @@ def figure_match(figure,im):
        "map_nominal_marker_in_panel_cropped_xy":result.get("source_marker_in_published_panel_cropped_xy"),
        "residual_p95_mapped_px":result.get("tentative_fit_residual_p95_px"),
        "agreement_count_4px":result.get("corresponding_points_within_4px")})
- return {"image_sha256":FIG_SHA,"source_figure":"Xiao et al. 2025 Supplementary Figure S5 (image6.jpeg)",
+ return {"image_sha256":FIG_SHA,"source_figure":"Xiao et al. 2025 Supplementary Figure S5 (image5.jpeg)",
          "model":"SIFT+CLAHE+full-affine 4px RANSAC; exploratory 32-case orientation screen",
          "tested_cases":len(rows),"max_affine_inliers":max(z["affine_inliers"] for z in rows),
          "all_cases":rows,
