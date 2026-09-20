@@ -52,6 +52,16 @@ TARGET_CONFIGS={
   "coordinates":(-44.043,143.514),
   "event":"Ryder already-published site, actually overlapping 2022-2024 original lunar discovery-interval source gate"
  },
+ "ryder_2025dec":{
+  "products":{"before":"M1520890667LE","after":"M1520890667LE"},
+  "archives":{"before":"LROLRC_0066A/DATA/ESM6/2025354/NAC/",
+              "after":"LROLRC_0066A/DATA/ESM6/2025354/NAC/"},
+  "bytes":{"before":264467400,"after":264467400},
+  "first_5064_sha":{"before":"7a0b667848b8deb6072595c348428a1d35ae1a6eebc36b833d7278218ba7b1e8",
+                     "after":"7a0b667848b8deb6072595c348428a1d35ae1a6eebc36b833d7278218ba7b1e8"},
+  "coordinates":(-44.043,143.514),
+  "event":"Ryder independently actual-footprint true-covering December2025 source with 2024/2026 matched illumination; pre-selected from catalog"
+ },
  "ryder_2026":{
   "products":{"before":"M1531340568LE","after":"M1533682639LE"},
   "archives":{"before":"LROLRC_0067B/DATA/ESM6/2026110/NAC/",
