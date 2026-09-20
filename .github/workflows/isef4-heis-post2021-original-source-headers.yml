@@ -1,0 +1,50 @@
+name: LUNARSHIFT unsearched Heis 2024-2025 exact NASA original source gates
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-post2021-original-source-headers.yml"
+      - "scripts/isef4_heis_post2021_candidate_headers.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-heis-post2021-NAC-source-headers
+  cancel-in-progress: false
+jobs:
+  real-heis-nasa-products:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check exact candidate source guards
+        run: python -m py_compile scripts/isef4_heis_post2021_candidate_headers.py
+      - name: Strict HTTP206 PDS3 EDR/CDR header and length validation
+        run: |
+          python scripts/isef4_heis_post2021_candidate_headers.py \
+            --inventory diagnostics/isef4_heis_unsearched_epoch_inventory.json \
+            --out diagnostics/isef4_heis_2024_2025_original_source_headers.json
+      - name: Preserve evidence even on original archive failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Heis-unsearched-2024-2025-original-source-header-check
+          path: diagnostics/isef4_heis_2024_2025_original_source_headers.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit only actual archive metadata
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_2024_2025_original_source_headers.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record verified post-publication original Heis image sources'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
