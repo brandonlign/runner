@@ -1,0 +1,52 @@
+name: LUNARSHIFT Ryder true-covering 2022 2024 2026 original NAC source
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-ryder-2022-2026-original-source-gate.yml"
+      - "scripts/isef4_ryder_original_source_gate.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-Ryder-original-source-record-gate
+  cancel-in-progress: false
+jobs:
+  original-EDR-CDR-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test strict original source gate
+        run: python -m py_compile scripts/isef4_ryder_original_source_gate.py
+      - name: Verify exact selected unexamined original Ryder LROC EDR/CDR products
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/isef4_ryder_original_source_gate.py \
+            --inventory diagnostics/isef4_multisite_actual_overlapping_postevent_NAC_pairs.json \
+            --out diagnostics/isef4_ryder_postevent_original_EDR_CDR_source_gate.json
+      - name: Preserve source validation and any failed product
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-2022-2024-2026-original-source-product-audit
+          path: diagnostics/isef4_ryder_postevent_original_EDR_CDR_source_gate.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit only exact NASA original source metadata
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_postevent_original_EDR_CDR_source_gate.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Verify selected unexamined Ryder original source pairs'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
