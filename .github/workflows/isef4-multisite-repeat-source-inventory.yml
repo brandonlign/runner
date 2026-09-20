@@ -1,0 +1,52 @@
+name: LUNARSHIFT multi-site true-overlap unexplored lunar intervals
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-multisite-repeat-source-inventory.yml"
+      - "scripts/isef4_multi_site_true_overlap_inventory.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-multisite-original-NAC-metadata
+  cancel-in-progress: false
+jobs:
+  original-lunar-catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 29
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test scientific source metadata query before remote requests
+        run: python -m py_compile scripts/isef4_multi_site_true_overlap_inventory.py
+      - name: Enumerate post-event genuine NAC footprint intersection across unsealed lunar slope sites
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/isef4_multi_site_true_overlap_inventory.py \
+            --registry diagnostics/isef4_xiao_41_published_event_registry.json \
+            --out diagnostics/isef4_multisite_actual_overlapping_postevent_NAC_pairs.json
+      - name: Preserve full sampled original ODE archives and all failed site queries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-multisite-actual-source-overlap-NAC-postevent-catalog
+          path: diagnostics/isef4_multisite_actual_overlapping_postevent_NAC_pairs.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Publish only metadata not original NASA source pixels
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_multisite_actual_overlapping_postevent_NAC_pairs.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Inventory multi-site true-covering post-event lunar observation pairs'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
