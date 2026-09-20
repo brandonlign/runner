@@ -126,7 +126,7 @@ def main():
         raise ValueError("calibrated CDR registration not bound to retrieved official source")
     if cross["original_figure_sha256"]!=FIG_SHA or paper["figure_sha256"]!=FIG_SHA:
         raise ValueError("wrong published Figure S5")
-    if paper["schema"]!="true-S5-published-panel-localized-components-audit-v2":
+    if paper["schema"] not in ("true-S5-published-panel-localized-components-audit-v2",\n                             "true-S5-published-panel-morphology-sensitivity-audit-v3"):
         raise ValueError("no independent figure component before source scoring")
     before_cases=[z for z in cross["anchored_search"]["cases"]
                   if z["role"]=="before" and z["rotation_90_ccw"]==0
