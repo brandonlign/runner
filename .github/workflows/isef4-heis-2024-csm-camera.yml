@@ -1,0 +1,74 @@
+name: LUNARSHIFT genuine post-publication Heis 2024 source camera check
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/isef4-heis-2024-csm-camera.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: isef4-heis-2024-exact-csm
+  cancel-in-progress: false
+jobs:
+  exactly-covered-Heis-2024:
+    runs-on: ubuntu-latest
+    timeout-minutes: 47
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact 2024 post-publication source configuration
+        run: python -m py_compile scripts/isef4_isis_camera_triage.py
+      - name: Install official ISIS 10 source camera model
+        uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-name: lunar-isis10
+          create-args: >-
+            -c usgs-astrogeology
+            -c conda-forge
+            python=3.13
+            isis=10.0.0
+            usgscsm
+          init-shell: bash
+          post-cleanup: all
+      - name: Fetch exactly validated 2024 original NAC and camera-ground published coordinate
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          export ISISROOT="$CONDA_PREFIX"
+          export ISISDATA="$GITHUB_WORKSPACE/isisdata"
+          mkdir -p "$ISISDATA/base/kernels/lsk"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls" \
+            --output "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          grep -q 'KPL/LSK' "$ISISDATA/base/kernels/lsk/naif0012.tls"
+          python -m pip install --quiet 'setuptools<81'
+          export ISEF4_DEVELOPMENT_EVENT=heis_post2021
+          export ISEF4_PRODUCT_ROLE=after
+          export ISEF4_DIAGNOSTIC_SUFFIX=isis10_heis2024
+          python scripts/isef4_isis_camera_triage.py
+      - name: Preserve source camera and geometry evidence on either outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-heis-2024-postpublication-original-CSM-source
+          path: |
+            diagnostics/isef4_heis_post2021_camera_status_isis10_heis2024.json
+            output/triage_isis10_heis2024/csm_event_campt.pvl
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit bounded science diagnostic only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_heis_post2021_camera_status_isis10_heis2024.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Test true-coverage 2024 Heis original NAC geometry'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
