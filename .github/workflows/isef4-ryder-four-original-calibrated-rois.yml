@@ -1,0 +1,73 @@
+name: LUNARSHIFT Ryder four camera-ground original calibrated NAC source cutouts
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: isef4-ryder-four-original-source-cutouts
+  cancel-in-progress: false
+jobs:
+  verified-official-NAC-pixels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Source and PDS3 strict geometry syntax check
+        run: python -m py_compile scripts/isef4_ryder_original_cdr_four_rois.py
+      - name: Restore original right-2022 and left-2024 CSM camera source proofs
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-ryder_2022_2024-exact-Ryder-CSM-cameras-FIXED
+          run-id: 35490443866
+          github-token: ${{ github.token }}
+          path: work/camera22_24
+      - name: Restore exact NASA 2026 April and May CSM camera source proofs
+        uses: actions/download-artifact@v4
+        with:
+          name: isef4-ryder_2026-exact-Ryder-CSM-cameras
+          run-id: 35490028439
+          github-token: ${{ github.token }}
+          path: work/camera26
+      - name: Strict official original 2022 2024 2026 CDR native pixels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet numpy
+          python scripts/isef4_ryder_original_cdr_four_rois.py \
+            --original-gate diagnostics/isef4_ryder_postevent_original_EDR_CDR_source_gate.json \
+            --camera-2022 work/camera22_24/diagnostics/isef4_ryder_2022_2024_camera_status_isis10_r22.json \
+            --camera-2024 work/camera22_24/diagnostics/isef4_ryder_2022_2024_camera_status_isis10_r24.json \
+            --camera-2026-april work/camera26/diagnostics/isef4_ryder_2026_camera_status_isis10_r26a.json \
+            --camera-2026-may work/camera26/diagnostics/isef4_ryder_2026_camera_status_isis10_r26m.json \
+            --output-folder output/ryder_four_verified_original_CDR_r640 \
+            --out diagnostics/isef4_ryder_four_native_original_calibrated_ROIs.json
+      - name: Preserve all original NASA source bytes in bounded artifact and full hashes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isef4-Ryder-four-exact-source-calibrated-r640-NAC-patches
+          path: |
+            output/ryder_four_verified_original_CDR_r640/
+            diagnostics/isef4_ryder_four_native_original_calibrated_ROIs.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Commit only independently source-verified diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=diagnostics/isef4_ryder_four_native_original_calibrated_ROIs.json
+          if [[ -f "$f" ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$f"
+            if ! git diff --cached --quiet; then
+              git commit -m 'Record four exact original Ryder source-calibrated NAC patches'
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          fi
