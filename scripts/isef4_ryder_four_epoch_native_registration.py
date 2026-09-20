@@ -7,12 +7,14 @@ orientations, independent source-scene preprocessing, match ratios and rejected
 fits survive in the complete diagnostic.
 """
 from __future__ import annotations
-import argparse,hashlib,json,math
+import argparse,hashlib,json,math,os
 from pathlib import Path
 import cv2,numpy as np
 
-BASE="baseline_2022"
-LATER=("followup_2024","followup_2026_April","followup_2026_May")
+ALL_TAGS=("baseline_2022","followup_2024","followup_2026_April","followup_2026_May")
+BASE=os.environ.get("ISEF4_RYDER_REFERENCE","baseline_2022")
+if BASE not in ALL_TAGS:raise ValueError("unknown original verified Ryder source reference")
+LATER=tuple(t for t in ALL_TAGS if t!=BASE)
 N=1281
 C=np.array([640.,640.])
 EXCLUDE=190.
