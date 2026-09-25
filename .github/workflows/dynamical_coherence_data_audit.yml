@@ -1,0 +1,48 @@
+name: Dynamical-coherence data feasibility audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - stream_fdr_stage0/dynamical_coherence_data_audit.py
+      - stream_fdr_stage0/DYNAMICAL_COHERENCE_PROTOCOL.md
+      - .github/workflows/dynamical_coherence_data_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dynamical-coherence-audit-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/stream-fdr-stage0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile frozen audit
+        run: python -m py_compile stream_fdr_stage0/dynamical_coherence_data_audit.py
+      - name: Audit labeled GMN event data and uncertainty schema
+        run: python stream_fdr_stage0/dynamical_coherence_data_audit.py
+      - name: Record provenance
+        run: |
+          mkdir -p stream_fdr_stage0/results/dynamical_coherence_audit
+          sha256sum stream_fdr_stage0/dynamical_coherence_data_audit.py stream_fdr_stage0/DYNAMICAL_COHERENCE_PROTOCOL.md > stream_fdr_stage0/results/dynamical_coherence_audit/source_sha256.txt
+          python --version > stream_fdr_stage0/results/dynamical_coherence_audit/python_version.txt
+      - name: Upload feasibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamical-coherence-data-audit
+          path: stream_fdr_stage0/results/dynamical_coherence_audit
+          if-no-files-found: error
+          retention-days: 90
