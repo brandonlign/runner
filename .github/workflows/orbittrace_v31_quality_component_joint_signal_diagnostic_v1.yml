@@ -1,0 +1,93 @@
+name: OrbitTrace v31 quality-component joint-signal diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_quality_component_joint_signal_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_quality_component_joint_signal_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-quality-component-joint-signal-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin diagnostic source
+        run: |
+          set -euo pipefail
+          mkdir -p input/quality input/component output/diag
+          test "$(git hash-object orbittrace_v31_quality_component_joint_signal_diagnostic_v1/PROTOCOL.md)" = '89ca5320dbb3a7d08736374f856b9d8fce9fa162'
+          test "$(git hash-object orbittrace_v31_quality_component_joint_signal_diagnostic_v1/diagnose.py)" = '306210fe456d09072ec3e619a2ff6907385a7bd4'
+          python -m py_compile orbittrace_v31_quality_component_joint_signal_diagnostic_v1/diagnose.py
+      - name: Restore exact authoritative diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088169870/zip' -o input/quality.zip
+          echo 'b0f9499280f9e8cc4d1f6f8a04d4871a306ea085a8eaee03bba0d002c35d5641  input/quality.zip' | sha256sum -c -
+          unzip -q input/quality.zip -d input/quality
+          echo 'b7b1acc48472deb4faa0867a8414260c52b87378d20f380d824272de7b36b9ec  input/quality/diag/V31_QUALITY_SUPPRESSION_DIAGNOSTIC.json' | sha256sum -c -
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9087743465/zip' -o input/component.zip
+          echo '8c45c00fd70300efb2f6f32bbb339141f8c34884ee5b1098c1bbb45ccf1a59cc  input/component.zip' | sha256sum -c -
+          unzip -q input/component.zip -d input/component
+          echo 'a886977139074a1c2e8beaca54c065fd16fed5bce4c00e888ac2081dabed7222  input/component/diag/V31_CROSSROUTE_COMPONENT_CLOSURE_DIAGNOSTIC.json' | sha256sum -c -
+      - name: Diagnose predeclared joint signal
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_quality_component_joint_signal_diagnostic_v1/diagnose.py \
+            --quality-result input/quality/diag/V31_QUALITY_SUPPRESSION_DIAGNOSTIC.json \
+            --component-result input/component/diag/V31_CROSSROUTE_COMPONENT_CLOSURE_DIAGNOSTIC.json \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json'))
+          assert r['verdict'] in {'PASS_V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC','FAIL_V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC'}
+          assert r['joint_signal_definition']=='(quality_suppression > 0) AND component_closure_opportunity'
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          for y in ('2013','2014'):
+              a=r['annual_diagnostics'][y]
+              assert a['recoverable_groups']==18
+              assert a['surfaced']['groups']==9 and a['missed']['groups']==9
+          for k in ('new_rank_or_score_evaluated','selector_evaluated','replacement_rule_evaluated','successor_selected','oracle_identity_hardcoded','threshold_search','effect_size_threshold_selected','boolean_combination_search','alternate_or_rule_evaluated','suppression_transform_search','component_size_rule_search','component_score_rule_search','rank_window_search','top_k_search','route_specific_rule','year_specific_rule','budget_specific_rule','graph_or_component_redefinition','feature_search','model_search','k_search','scaling_search','diversity_search','fusion_search','source_quota_selected','post_result_second_search'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'])
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_quality_component_joint_signal_diagnostic_v1/PROTOCOL.md orbittrace_v31_quality_component_joint_signal_diagnostic_v1/diagnose.py input/quality/diag/V31_QUALITY_SUPPRESSION_DIAGNOSTIC.json input/component/diag/V31_CROSSROUTE_COMPONENT_CLOSURE_DIAGNOSTIC.json > output/V31_QUALITY_COMPONENT_JOINT_SIGNAL_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-quality-component-joint-signal-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

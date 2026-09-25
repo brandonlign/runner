@@ -1,0 +1,53 @@
+name: OrbitTrace P14 matched evaluator transport source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p14-matched-literature-freeze
+    paths:
+      - orbittrace_support_safe_rank_p14/prepare_transport_compatible_p13_finalizer.py
+      - orbittrace_support_safe_rank_p14/validate_transport_v3_pretruth_checkpoint.py
+      - orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py
+      - .github/workflows/orbittrace_p14_matched_evaluator_transport_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove evaluator compatibility changes provenance only
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py)" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py)" = 'd1ce98f443b2039d70421e76dadb6ada77d1b0d5'
+          python -m py_compile orbittrace_support_safe_rank_p14/prepare_transport_compatible_p13_finalizer.py orbittrace_support_safe_rank_p14/validate_transport_v3_pretruth_checkpoint.py orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py
+          python orbittrace_support_safe_rank_p14/prepare_transport_compatible_p13_finalizer.py orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py /tmp/finalize_p13_transport_v3.py
+          python -m py_compile /tmp/finalize_p13_transport_v3.py
+          python - <<'PY'
+          from pathlib import Path
+          old=Path('orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py').read_text()
+          new=Path('/tmp/finalize_p13_transport_v3.py').read_text()
+          parent="P13_TRANSPORT_SOURCE_SHA256='f511a012693b7db05495985e32793177c9844196bf82e6f7fe868070ffed34ae'\n"
+          tech="P13_TRANSPORT_SOURCE_SHA256='55a1efed550498d51b859ffec555797ba8473d7d8b5f20ad6831c5f15b43b415'\n"
+          assert old.count(parent)==1 and new.count(tech)==1
+          assert new.replace(tech,parent,1)==old
+          gates=('four_to_nine_gain_ge_0_10','four_to_twentyfour_gain_ge_0_10','macro_f1_not_more_than_0_10_lower','retain_at_least_80pct_f1_gt_0_5_count')
+          assert all(old.count(x)==new.count(x)>0 for x in gates)
+          assert "PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS" in new
+          assert "FAIL_P13_MATCHED_SPARSE_SUPERIORITY_NO_GO" in new
+          validator=Path('orbittrace_support_safe_rank_p14/validate_transport_v3_pretruth_checkpoint.py').read_text()
+          final=Path('orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py').read_text()
+          for x in ('p13_transport_parent_source_sha256','p14_p12_snm_id_transport_repair_audit_run','p14_p12_snm_id_transport_scientific_delta'):
+              assert x in validator,x
+          for x in ('PASS_P14_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS','FAIL_P14_MATCHED_SPARSE_SUPERIORITY_NO_GO','target_access_authorized','external_validation_authorized','p14_p12_snm_id_transport_scientific_delta'):
+              assert x in final,x
+          for x in ('OrbitTrace-April','target_coordinate'):
+              assert x not in new+validator+final,x
+          print('PASS_P14_MATCHED_EVALUATOR_TRANSPORT_PROVENANCE_ONLY_SOURCE_AUDIT')
+          PY
+          echo NO_COMPARATOR_ARTIFACT_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS

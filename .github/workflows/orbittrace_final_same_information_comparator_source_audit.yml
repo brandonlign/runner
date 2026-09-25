@@ -1,0 +1,54 @@
+name: OrbitTrace final same-information comparator source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_governance/FINAL_COMPARATOR_SAME_INFORMATION_FREEZE_V1.md
+      - .github/workflows/orbittrace_final_same_information_comparator_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify comparator freeze is label-free and zero-data
+        run: |
+          set -euo pipefail
+          p=orbittrace_governance/FINAL_COMPARATOR_SAME_INFORMATION_FREEZE_V1.md
+          for x in \
+            '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb' \
+            'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2' \
+            '23rd percentile of fourth-nearest-neighbor distances on the exact final-year pairwise common-row universe' \
+            '1,000 Gaussian uncertainty-clone catalogues' \
+            'seed root `20170209`' \
+            'Do **not** remove a row because of native shower/background designation' \
+            '`min_cluster_size=100`' \
+            'cluster selection method `eom`' \
+            'Do **not** remove or retain a row because of native shower/background designation' \
+            'common-row manifest frozen and hashed' \
+            'only then reveal the known-shower truth'; do
+            grep -F "$x" "$p"
+          done
+          # This freeze is protocol/provenance only and must expose no final archive transport.
+          for forbidden in \
+            '013a.zip' '014a.zip' 'SNMv3/013' 'SNMv3/014' \
+            'curl ' 'wget ' 'requests.get' 'h5py' \
+            'OrbitTrace-April' 'target_coordinate' 'F0059'; do
+            if grep -Fq "$forbidden" "$p"; then
+              echo "final-test data/target surface leaked into comparator freeze: $forbidden" >&2
+              exit 1
+            fi
+          done
+          # Explicitly reject the two historical truth-dependent detector-input filters.
+          grep -F 'reference-label-filtered primary analysis is ineligible' "$p"
+          grep -F 'inability to map a native shower code to a truth catalogue' "$p"
+          grep -F 'No row may be included or excluded because of native shower code' "$p"
+          echo PASS_FINAL_SAME_INFORMATION_COMPARATOR_SOURCE_FREEZE
+          echo SONOTACO_2013_2014_VALUES_UNOPENED
+          echo TARGET_REGION_UNAVAILABLE

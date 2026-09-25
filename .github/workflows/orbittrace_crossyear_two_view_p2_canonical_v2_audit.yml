@@ -1,0 +1,67 @@
+name: OrbitTrace P2 canonical v2 activation audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/CANONICAL_RUNTIME.md
+      - orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py
+      - .github/workflows/orbittrace_crossyear_two_view_p2_development_v2.yml
+      - .github/workflows/orbittrace_crossyear_two_view_p2_canonical_v2_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-p2-canonical-v2-activation-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-crossyear-two-view-membership-p2-freeze
+      - name: Reconstruct and verify the single canonical runtime
+        run: |
+          set -euo pipefail
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_v2.py' | sha256sum -c -
+          python -m py_compile /tmp/p2_v2.py
+      - name: Prove guarded workflow pins exact runtime and prerequisites
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_crossyear_two_view_p2_development_v2.yml').read_text()
+          required=[
+              "orbittrace_crossyear_two_view_membership_p2/RUN_V2.md",
+              "EXECUTE_CANONICAL_P2_V2_AFTER_EXACT_P1_NO_GO",
+              "FAIL_PROBABILISTIC_MEMBERSHIP_P1_NO_GO",
+              "f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/run_p2_canonical_v2.py",
+              "88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip",
+              "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b  input/v8/pooled_year_centroid_v8_development.json",
+              "85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py",
+              "r['configuration']['parameter_search'] is False",
+              "r['configuration']['new_members_can_seed_growth'] is False",
+          ]
+          for token in required: assert token in w, token
+          assert "input/v8.zip' | sha256sum -c - || true" not in w
+          assert '|| true' not in w[w.index("input/v8.zip"):w.index("unzip -q input/v8.zip")]
+          c=Path('orbittrace_crossyear_two_view_membership_p2/CANONICAL_RUNTIME.md').read_text()
+          assert 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb' in c
+          assert 'No alternate P2 source package' in c
+          print('PASS_P2_CANONICAL_V2_ACTIVATION_AUDIT')
+          PY
+      - name: Assert source-only firewall
+        run: |
+          test ! -e input
+          test ! -e output
+          test ! -e orbittrace_crossyear_two_view_membership_p2/RUN_V2.md
+          echo NO_P2_SCIENCE_NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION

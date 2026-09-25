@@ -1,0 +1,67 @@
+name: SonotaCo 2025 Mondrian feasibility gate
+
+on:
+  pull_request:
+    branches:
+      - agent/mondrian-clique-coverage-normalized-development
+    paths:
+      - .github/workflows/mondrian_clique_development.yml
+      - sonotaco_mondrian_stage0/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonotaco-2025-mondrian-feasibility
+  cancel-in-progress: true
+
+jobs:
+  feasibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sonotaco-2025-mondrian-feasibility
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download exact official SonotaCo archive
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl \
+            --fail \
+            --location \
+            --retry 3 \
+            --retry-all-errors \
+            --output input/025a.zip \
+            https://www.astro.sk/iaumdcDB/public/data/SNMv3/025a.zip
+          test -s input/025a.zip
+      - name: Run frozen data-only feasibility audit
+        run: |
+          python sonotaco_mondrian_stage0/audit_sonotaco_2025.py \
+            --archive input/025a.zip \
+            --output output
+          cat output/SONOTACO_2025_FEASIBILITY.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            sonotaco_mondrian_stage0/FEASIBILITY_PROTOCOL.md \
+            sonotaco_mondrian_stage0/audit_sonotaco_2025.py \
+            > output/source_sha256.txt
+          if test -f input/025a.zip; then
+            sha256sum input/025a.zip > output/archive_sha256.txt
+          fi
+          python --version > output/python_version.txt
+      - name: Upload frozen feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonotaco-2025-mondrian-feasibility
+          path: output
+          if-no-files-found: error
+          retention-days: 90

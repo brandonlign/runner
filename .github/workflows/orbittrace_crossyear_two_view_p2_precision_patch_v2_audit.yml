@@ -1,0 +1,74 @@
+name: OrbitTrace P2 precision patch v2 audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v6-catalogue-base
+    paths:
+      - orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py
+      - .github/workflows/orbittrace_crossyear_two_view_p2_precision_patch_v2_audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbittrace-p2-precision-patch-v2-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-crossyear-two-view-membership-p2-freeze
+      - name: Reconstruct exact protocol-compliant v1 runtime
+        run: |
+          set -euo pipefail
+          echo '7637b6fb310ee3f24f1de8479a34d10c594dc55471eee55b8854e1c28787e8dd  orbittrace_crossyear_two_view_membership_p2/run_development.py' | sha256sum -c -
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          echo '169ed0a276cdcae628cd830130cfb03d6511a972df50d4dc10ffddfc1c8e05da  /tmp/p2_v1.py' | sha256sum -c -
+      - name: Apply reversible precision patch and prove scope
+        run: |
+          set -euo pipefail
+          mkdir -p audit_output
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2_v2.py | tee audit_output/patch.log
+          python -m py_compile /tmp/p2_v2.py
+          sha256sum /tmp/p2_v2.py | tee audit_output/runtime_sha256.txt
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          text=Path('/tmp/p2_v2.py').read_text()
+          tree=ast.parse(text)
+          defs={n.name:n for n in tree.body if isinstance(n,ast.FunctionDef)}
+          cov=ast.get_source_segment(text,defs['source_observation_model'])
+          assert 'covariance_rank = int(np.linalg.matrix_rank(cov))' in cov
+          assert 'if covariance_rank < cov.shape[0]:' in cov
+          assert cov.index('np.linalg.pinv(cov)') < cov.index('np.linalg.inv(cov)')
+          assert '"covariance_rank": covariance_rank' in cov
+          window=ast.get_source_segment(text,defs['wrapped_window_mask'])
+          assert 'return delta <= WINDOW_HALF_WIDTH_DEG' in window
+          assert '+ 1e-15' not in window
+          main=ast.get_source_segment(text,defs['main'])
+          assert 'nonseed_by_year = {' in main
+          assert 'missing_orbit_ids =' in main
+          assert 'P2 input-ineligible: required target-window nonseed lacks valid orbit' in main
+          model_freeze=main.index('(args.output / "p2_model_pretruth.sha256").write_text')
+          membership_freeze=main.index('(args.output / "p2_membership_pretruth.sha256").write_text')
+          truth=main.index('baseline_full = v8.mult.evaluate_order(hidden_labels')
+          assert model_freeze < membership_freeze < truth
+          print('PASS_P2_PRECISION_PATCH_V2_SOURCE_ONLY_AUDIT')
+          PY
+      - name: Assert no-data boundary
+        run: |
+          test ! -e input
+          test ! -e output
+          echo NO_CATALOGUE_NO_LABEL_VALUES_NO_TARGET_REGION_NO_P2_SCIENCE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-p2-precision-patch-v2-audit
+          path: audit_output
+          if-no-files-found: error
+          retention-days: 7

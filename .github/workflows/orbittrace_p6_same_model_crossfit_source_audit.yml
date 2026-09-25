@@ -1,0 +1,98 @@
+name: OrbitTrace P6 same-model crossfit source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p5-joint-seed-support-freeze
+    paths:
+      - orbittrace_same_model_crossfit_p6/**
+      - .github/workflows/orbittrace_p6_same_model_crossfit_source_audit.yml
+      - .github/workflows/orbittrace_p6_same_model_crossfit_development.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact P5 and audit same-model P6 transform
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py \
+            orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py \
+            /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py \
+            /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py \
+            /tmp/run_p3.py /tmp/run_p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/run_p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py \
+            /tmp/run_p4.py /tmp/run_p5.py
+          echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/run_p5.py' | sha256sum -c -
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py \
+            /tmp/run_p5.py /tmp/run_p6.py
+          python -m py_compile /tmp/run_p6.py orbittrace_same_model_crossfit_p6/run_header_compatible.py
+
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/run_p6.py').read_text()
+          protocol=Path('orbittrace_same_model_crossfit_p6/PROTOCOL.md').read_text()
+          required=(
+              'crossfit_runtime_models: dict[int, tuple[Any, Any]] = {}',
+              'crossfit_runtime_models[held_fold] = (scf, clf)',
+              'scoring_fold = int(gate["fold"])',
+              'scoring_scaler, scoring_classifier = crossfit_runtime_models[scoring_fold]',
+              'probabilities = scoring_classifier.predict_proba(scoring_scaler.transform(features))[:, 1]',
+              '"scoring_fold": scoring_fold',
+              'p6_same_crossfit_model_sets_floor_and_scores_candidate',
+              'p6_final_all_family_model_not_used_for_proposal_scoring',
+              'PASS_SAME_MODEL_CROSSFIT_MEMBERSHIP_P6_DEVELOPMENT',
+              'FAIL_SAME_MODEL_CROSSFIT_MEMBERSHIP_P6_NO_GO',
+              '"p6_parameter_search": False',
+              'same_model_crossfit_membership_p6_development.json',
+              'p6_membership_pretruth.sha256',
+              'p6_decisions_pretruth.sha256',
+          )
+          for token in required:
+              assert token in p, token
+          protocol_required=(
+              '43 have this contradiction',
+              'score that direction\'s candidate rows with the same held-out-fold scaler/logistic model',
+              'qualified known-shower matches >=95',
+              'recovery@100 >=58',
+              'top-100 dominant precision >=0.65',
+              'large-shower mean precision >=0.85',
+              'There is exactly one primary P6 configuration',
+          )
+          for token in protocol_required:
+              assert token in protocol, token
+          forbidden=('OrbitTrace-April','target_coordinate','20°–55° may be used')
+          for token in forbidden:
+              assert token not in p, token
+          assert 'RESPONSIBILITY_THRESHOLD = 0.5' in p
+          assert 'P3_FOLD_COUNT = 5' in p
+          assert 'P3_NEGATIVE_TAIL_MAX = 0.10' in p
+          assert 'P3_SEED_FLOOR_MIN = 0.5' in p
+          assert 'p4_two_view_seed_envelope' in p
+          assert 'p5_joint_seed_support' in p
+          assert 'new_members_can_seed_growth' in p
+          assert 'ranking_after_membership' in p
+          # The final P2 all-family model may remain frozen, but the candidate-scoring
+          # site must no longer call classifier.predict_proba(scaler.transform(features)).
+          assert 'probabilities = classifier.predict_proba(scaler.transform(features))[:, 1]' not in p
+          print('PASS_P6_SAME_MODEL_CROSSFIT_SOURCE_AUDIT')
+          PY
+          sha256sum /tmp/run_p6.py
+
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_same_model_crossfit_p6/RUN.md
+          test ! -e target
+          echo NO_P6_TRUTH_EXECUTION_NO_TARGET_ACCESS

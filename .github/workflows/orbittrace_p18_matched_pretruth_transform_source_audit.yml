@@ -1,0 +1,71 @@
+name: OrbitTrace P18 pretruth-transform source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - .github/workflows/orbittrace_p18_matched_pretruth_transform.yml
+      - .github/workflows/orbittrace_p18_matched_pretruth_transform_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove P18 handoff accepts identities only and stops pretruth
+        run: |
+          set -euo pipefail
+          w=.github/workflows/orbittrace_p18_matched_pretruth_transform.yml
+          test "$(git hash-object "$w")" = 'ee34a09e7107b058d49c61ee2433ba11ce392e96'
+          test "$(git hash-object orbittrace_p17_rank_halo_membership_p18/promote_p17_checkpoint_to_p18.py)" = '3f53e1ffeabb1b32d2de124cbf903d193012b9af'
+          python -m py_compile orbittrace_p17_rank_halo_membership_p18/promote_p17_checkpoint_to_p18.py
+          for x in \
+            'EXECUTE_P18_PRETRUTH_TRANSFORM' \
+            'P17_RUN=' 'P17_ARTIFACT=' 'P17_DIGEST=' 'HDB_SHA=' 'SUGAR_SHA=' \
+            "r['name']=='OrbitTrace P17 main-base activation relay'" \
+            "r['event']=='pull_request'" \
+            "r['head_branch']=='agent/orbittrace-p17-main-activation-run-v1'" \
+            "a['name']=='orbittrace-p17-matched-pretruth-checkpoints-main-relay'" \
+            "m['classification']=='P17_MATCHED_PRETRUTH'" \
+            "m['matched_source_sha256']=='c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a'" \
+            "m['competitor_cluster_values_accessed'] is False" \
+            "m['known_shower_truth_accessed'] is False" \
+            "cp['p18_architecture']=='P18_P17_RANK_LABEL_FREE_HALO_MEMBERSHIP'" \
+            "cp['p18_primary_candidate_for_matched_verdict'] is True" \
+            "cp['p18_p17_core_only_is_diagnostic_ablation'] is True" \
+            "cp['p18_no_new_detector_score_distance_threshold_family_proposal_growth_merge_or_rank'] is True" \
+            "cp['p18_new_members_can_seed_growth'] is False" \
+            "cp['p17_architecture']=='P17_FAIL_CLOSED_RECIPROCAL_SUPPORT_CLOSURE'" \
+            "cp['p17_reciprocal_closure_frozen_before_truth'] is True" \
+            "'competitor_cluster_values_accessed':False" \
+            "'known_shower_truth_accessed':False" \
+            "'external_data_access':False" \
+            "'target_information_access':False" \
+            'PASS_P18_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH'; do
+            grep -F "$x" "$w"
+          done
+          # Exact provenance repair only: stale relay name/event assumptions must be absent.
+          for stale in 'OrbitTrace P17 fixed main pretruth relay' "r['event'] in {'push','schedule'}" "r['head_branch']=='main'"; do
+            if grep -Fq "$stale" "$w"; then echo "stale P17 relay provenance survived: $stale" >&2; exit 1; fi
+          done
+          # The future marker is identity-only: no metric, label, gate outcome, family choice,
+          # external value, or target value can be supplied through it.
+          for forbidden in \
+            'macro_f1' 'SPARSE_STREAM_SUPERIORITY' 'known_shower_label' \
+            'evaluate_frozen_blindsafe.py' 'finalize_p3_evaluator_result.py' \
+            'MAARSY' 'OrbitTrace-April' 'target_coordinate'; do
+            if grep -Fq "$forbidden" "$w"; then
+              echo "result/external/target surface leaked into P18 pretruth transform: $forbidden" >&2
+              exit 1
+            fi
+          done
+          test ! -e orbittrace_p17_rank_halo_membership_p18/MATCHED_PRETRUTH_RUN.md
+          echo PASS_P18_PRETRUTH_TRANSFORM_SOURCE_FREEZE_CURRENT_P17_RELAY_PROVENANCE
+          echo FUTURE_MARKER_IDENTITIES_ONLY_NO_RESULT_DEPENDENT_SELECTION
+          echo NO_COMPARATOR_CLUSTER_VALUES_NO_KNOWN_SHOWER_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS

@@ -1,0 +1,53 @@
+name: OrbitTrace P18 MAARSY addendum source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/P18_MAARSY_2020_2021_EXTERNAL_ADDENDUM.md
+      - .github/workflows/orbittrace_p18_maarsy_addendum_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify P18 external route preserves frozen MAARSY panel, gates, and output semantics
+        run: |
+          set -euo pipefail
+          p=orbittrace_p17_rank_halo_membership_p18/P18_MAARSY_2020_2021_EXTERNAL_ADDENDUM.md
+          for x in \
+            'MAARSY 2020 and 2021' \
+            '3e0bcc3db805f60310ec9b01d6d48f76b29544780119c05e71fc225c04e3fe48' \
+            '10,000 events per bin' \
+            '20°–55°' \
+            'at least 5 truth labels with >=4 usable events in each year and at least 5 recurrent cores' \
+            'halo macro-F1 must exceed core macro-F1 by >=0.08' \
+            'halo recall must be >=1.5x core recall' \
+            'halo precision must be >=0.85' \
+            'MIN_DIRECTION_NEGATIVES=128' \
+            'CHARACTERIZATION_UNAVAILABLE_INSUFFICIENT_NEGATIVES' \
+            'reciprocal reliability is false' \
+            'cannot switch to P17 core-only membership' \
+            '31332157812' '9043232586' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            '31331471689' '9043046136' \
+            '3f53e1ffeabb1b32d2de124cbf903d193012b9af' \
+            'PASS_P18_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'PASS_P18_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            'POWER_INCONCLUSIVE_MAARSY_2020_2021' \
+            'ARCHITECTURE_INCOMPATIBLE' \
+            'authorizes no OrbitTrace target access'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'MAARSY 2018|MAARSY 2019|lower.*0\.08|lower.*0\.85|target_coordinate|OrbitTrace-April|prior.*rank 59|247\.|-14\.|37\.62|95 canonical' "$p"; then
+            echo 'P18 external addendum changes panel/gates or contains target-specific material' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_p17_rank_halo_membership_p18/EXTERNAL_RUN.md
+          echo PASS_P18_MAARSY_EXTERNAL_ADDENDUM_SOURCE_FREEZE
+          echo NO_MAARSY_EVENT_NO_EXTERNAL_TRUTH_NO_TARGET_ACCESS

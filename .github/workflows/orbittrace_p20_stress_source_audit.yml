@@ -1,0 +1,100 @@
+name: OrbitTrace P20 preregistered stress source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p20_recurrent_isolated_quartet/run_stress.py
+      - .github/workflows/orbittrace_p20_stress_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove P20 stress implementation matches preregistration and has no target/external surface
+        run: |
+          set -euo pipefail
+          s=orbittrace_p20_recurrent_isolated_quartet/run_stress.py
+          p=orbittrace_p20_recurrent_isolated_quartet/P20_STRESS_PROTOCOL.md
+          main=orbittrace_p20_recurrent_isolated_quartet/run_development.py
+          test "$(git hash-object "$s")" = '63c15023226595614cc6a11363839911dc5c783a'
+          test "$(git hash-object "$p")" = '3a18a9aebd179f6e214bd92cd54fec08fa51e56a'
+          test "$(git hash-object "$main")" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          python -m py_compile "$s"
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          s=Path('orbittrace_p20_recurrent_isolated_quartet/run_stress.py').read_text()
+          tree=ast.parse(s)
+          defs={n.name:n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef)}
+          for name in ('retained_by_hash','thin_panel','panel_run','main'):
+              assert name in defs, name
+          thin=ast.get_source_segment(s,defs['thin_panel'])
+          panel=ast.get_source_segment(s,defs['panel_run'])
+          main=ast.get_source_segment(s,defs['main'])
+          assert 'hidden_labels' not in ast.get_source_segment(s,defs['retained_by_hash'])
+          assert 'hidden_labels' in thin
+          assert 'retained_by_hash(str(event["id"]), salt, drop_fraction)' in thin
+          assert 'restricted_labels' in thin
+          for x in (
+              '("P20-STRESS-A-10", "P20-STRESS-A", 0.10)',
+              '("P20-STRESS-B-10", "P20-STRESS-B", 0.10)',
+              '("P20-STRESS-A-20", "P20-STRESS-A", 0.20)',
+              '("P20-STRESS-B-20", "P20-STRESS-B", 0.20)',
+              'EXPECTED_V8_RESULT_SHA256 = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"',
+              'BLIND = (20.0, 55.0)',
+          ):
+              assert x in s, x
+          assert 'v6.label_free_scan_year' in panel
+          assert 'support.build_families' in panel
+          assert 'v8.repair_year_centroids' in panel
+          assert 'p20.isolated_quartets' in panel
+          assert 'p20.build_recurrent_isolated_quartets' in panel
+          assert 'combined_order = hard_order +' in panel
+          assert 'prelabel_sha = canonical_sha(prelabel_payload)' in panel
+          assert panel.index('prelabel_sha = canonical_sha(prelabel_payload)') < panel.index('baseline = mult.evaluate_order(labels')
+          assert 'PASS_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT' in main
+          assert 'primary["verdict"] == "PASS_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT"' in main
+          for x in (
+              '"qualified_nonregression_all_four"',
+              '"recovery100_nonregression_all_four"',
+              '"top100_precision_equal_all_four"',
+              '"macro_f1_gain_all_four"',
+              '"combined_4_24_gain_both_years_all_four"',
+              '"sparse_4_9_gain_both_years_at_least_three_of_four"',
+              '"no_sparse_4_9_decrement_below_minus_002"',
+              '"no_target_information_access": True',
+              'PASS_P20_PREREGISTERED_THINNING_STRESS',
+              'FAIL_P20_PREREGISTERED_THINNING_STRESS',
+          ):
+              assert x in main, x
+          imported=set()
+          for node in ast.walk(tree):
+              if isinstance(node,ast.Import):
+                  imported.update(a.name.split('.')[0] for a in node.names)
+              elif isinstance(node,ast.ImportFrom) and node.module:
+                  imported.add(node.module.split('.')[0])
+          assert not (imported & {'requests','urllib','httpx','h5py','pandas','subprocess'}), imported
+          for x in ('013a.zip','014a.zip','SNMv3/013','SNMv3/014','MAARSY','zenodo.org','OrbitTrace-April','target_coordinate','F0059','247.17','-14.34','37.62'):
+              assert x not in s, x
+          print('PASS_P20_STRESS_EXACT_PANEL_FREEZE')
+          print('PASS_P20_STRESS_PRELABEL_FIREWALL')
+          print('PASS_P20_STRESS_PRIMARY_PASS_PREREQUISITE')
+          print('PASS_P20_STRESS_NO_EXTERNAL_OR_TARGET_IO')
+          PY
+          grep -F 'P20-STRESS-A' "$p"
+          grep -F 'P20-STRESS-B' "$p"
+          grep -F 'drop fraction `0.10`' "$p"
+          grep -F 'drop fraction `0.20`' "$p"
+          grep -F 'PASS_P20_PREREGISTERED_THINNING_STRESS' "$p"
+          echo PASS_P20_STRESS_SOURCE_FREEZE
+          echo TARGET_REGION_UNAVAILABLE

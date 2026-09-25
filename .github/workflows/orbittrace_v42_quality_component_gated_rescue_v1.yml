@@ -1,0 +1,184 @@
+name: OrbitTrace v42 quality-component gated rescue v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v42_quality_component_gated_rescue_v1/**'
+      - '.github/workflows/orbittrace_v42_quality_component_gated_rescue_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v42-quality-component-gated-rescue-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 31704c312c09be2765ad3f65a0685d1acfd2b055
+          path: frozen-v40
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin runtime and scientific sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/auth input/truth output/pretruth output/result
+          test "$(git hash-object orbittrace_v42_quality_component_gated_rescue_v1/PROTOCOL.md)" = '994998e2b2726859281c87004077faf36ce3f281'
+          test "$(git hash-object orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py)" = 'ad76d79abb9eb0fe82d7d2a7869a446814e6e3a4'
+          test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
+          test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
+          test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable #839 ranker
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - name: Restore immutable #950 pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route in ('sugar','hdbscan'):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71 and f['truth_accessed'] is False
+          h=json.load(open('input/payload/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+          assert len(h['quality_order'])==229 and set(map(str,h['quality_order']))==set(map(str,h['family_ids']))
+          assert h['target_information_access'] is False
+          assert h['maarsy_scientific_access'] is False and h['dms_scientific_access'] is False
+          print('PASS_V42_IMMUTABLE_PRETRUTH_PAYLOAD_AND_QUALITY_ORDER')
+          PY
+      - name: Reproduce exact frozen graph and component identities before truth
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --output output/pretruth
+          echo '2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json' | sha256sum -c -
+          echo 'c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json' | sha256sum -c -
+      - name: Restore and verify authorizing #1091 diagnostic before evaluation truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088402091/zip' -o input/auth.zip
+          echo 'd1943f629964633f44e154252a225f7171c380674ae6e60e5fcbbd3f8b890dd7  input/auth.zip' | sha256sum -c -
+          unzip -q input/auth.zip -d input/auth
+          echo '2edb949dbab2d7cbf6ed5e808e2a049116eb0934b25b356572463b615d730842  input/auth/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json' | sha256sum -c -
+          python - <<'PY'
+          import json
+          r=json.load(open('input/auth/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json'))
+          assert r['verdict']=='PASS_V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC'
+          assert r['joint_direction_supported_both_years'] is True
+          assert r['new_rank_or_score_evaluated'] is False and r['selector_evaluated'] is False
+          assert r['replacement_rule_evaluated'] is False and r['successor_selected'] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_V42_AUTHORIZING_DIAGNOSTIC_PIN')
+          PY
+      - name: Load immutable exposed truth only after pretruth identities and authorizing diagnostic are pinned
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Reproduce exact v31 and evaluate sole v42 gated rescue
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py evaluate \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --graph-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
+            --component-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
+            --authorizing-diagnostic input/auth/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json \
+            --output output/result
+      - name: Enforce scientific/result firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V42_QUALITY_COMPONENT_GATED_RESCUE_RESULT.json'))
+          assert r['parent_v31_reproduction_pass'] is True and len(r['parent_v31_controls'])==4
+          assert r['pretruth_graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['pretruth_component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          assert r['component_count']==196 and r['non_singleton_component_count']==113 and r['singleton_component_count']==83
+          assert r['authorizing_diagnostic_run']==31456963941 and r['authorizing_diagnostic_artifact']==9088402091
+          assert r['authorizing_diagnostic_sha256']=='2edb949dbab2d7cbf6ed5e808e2a049116eb0934b25b356572463b615d730842'
+          assert r['sugar_rule']=='exact v31 unchanged' and r['sugar_modified'] is False
+          assert r['hdb_quality_suppressed_condition']=='quality_rank < exact_v31_rank'
+          assert r['hdb_joint_gate']=='quality_suppressed AND component_opportunity'
+          assert r['hdb_promotion_key']=='quality_rank if joint gate else exact_v31_rank'
+          assert r['order_diagnostics']['sugar']['exact_v31_unchanged'] is True
+          assert r['order_diagnostics']['sugar']['v31_order_sha256']==r['order_diagnostics']['sugar']['v42_total_order_sha256']
+          assert len(r['hdb_candidate_rows'])==229 and len(r['panels'])==4
+          for k in ('quality_suppression_threshold_search','component_opportunity_threshold_search','boolean_combination_search','top_k_selected','oracle_correction_count_used','rank_window_selected','promotion_coefficient_search','promotion_interpolation_search','promotion_bonus_search','budget_specific_rule','year_specific_rule','alternate_quality_order_search','global_quality_fusion','component_score_ordering','radius_search','metric_search','graph_pruning','graph_expansion','component_definition_search','candidate_generation_changed','candidate_membership_changed','feature_search','model_search','k_search','scaling_search','annual_combiner_search','diversity_search','fusion_search','source_quota_selected','oracle_identity_used_for_ranking','truth_aware_group_identity_used_for_ranking','post_result_second_search'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v42_quality_component_gated_rescue_v1/PROTOCOL.md orbittrace_v42_quality_component_gated_rescue_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json input/auth/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json > output/V42_QUALITY_COMPONENT_GATED_RESCUE_SOURCE_SHA256.txt 2>/dev/null || true
+          git -C frozen-v40 rev-parse HEAD > output/frozen_v40_execution_commit.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v42-quality-component-gated-rescue-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

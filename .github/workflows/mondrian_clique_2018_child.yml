@@ -1,0 +1,73 @@
+name: Mondrian clique untouched 2018 child confirmation
+
+on:
+  pull_request:
+    branches:
+      - agent/mondrian-clique-coverage-normalized-development
+    paths:
+      - .github/workflows/mondrian_clique_2018_child.yml
+      - mondrian_clique_2018/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mondrian-clique-2018-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-2018-data-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - name: Run frozen data-only gate
+        run: python mondrian_clique_2018/run_data_gate.py
+      - name: Upload frozen 2018 data evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mondrian-clique-2018-data
+          path: mondrian_clique_2018/results/data_audit
+          if-no-files-found: error
+          retention-days: 90
+
+  fresh-2018-confirmation:
+    needs: fresh-2018-data-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: real_shower_meta_stage0/requirements.txt
+      - name: Install frozen dependencies
+        run: python -m pip install --upgrade pip -r real_shower_meta_stage0/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: mondrian-clique-2018-data
+          path: input
+      - name: Run exact frozen confirmation
+        run: python mondrian_clique_2018/run_confirmation.py --input input --output mondrian_clique_2018/results/confirmation
+      - name: Upload one-shot 2018 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mondrian-clique-2018-confirmation
+          path: mondrian_clique_2018/results/confirmation
+          if-no-files-found: error
+          retention-days: 90

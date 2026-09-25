@@ -1,0 +1,41 @@
+name: OrbitTrace P13 matched v6 strict-manifest continuation audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-literature-freeze
+    paths:
+      - orbittrace_core_halo_p13_literature/STRICT_MANIFEST_V5_CHECKPOINT.md
+      - orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v6.sh
+      - .github/workflows/orbittrace_p13_matched_launcher_child_v6.yml
+      - .github/workflows/orbittrace_p13_matched_v6_checkpoint_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit deterministic continuation from frozen strict manifest
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v5.sh)" = '8bb5da25f850e743d654c800a6bb2b6a41e29ce2'
+          bash -n orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v6.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v6.sh').read_text()
+          c=Path('orbittrace_core_halo_p13_literature/STRICT_MANIFEST_V5_CHECKPOINT.md').read_text()
+          for token in ('9040867805','dd8728116992ff82451df94e2f296fdcce0e83e833ec4fe725639c24a0b2dd41','1c6960eb8dd1c29e1787dd3cd2da58ca0397c73dc21c432caa5b15c2cc1f3204','e7a5dbe6b974d60486d94a5e763b992f97035f0d5b1b0a4e47aba5bddfa92b6e'):
+              assert token in p and token in c,token
+          assert "if p.count(stale)!=1" in p
+          assert "python /tmp/split_strict_manifest_v6.py" in p
+          assert "if src.count(split_old)!=1" in p
+          assert "LAUNCH_P13_MATCHED_TECHNICAL_RECOVERY_V6" in p
+          assert "31323525922" in p
+          assert 'OrbitTrace-April' not in p+c and 'target_coordinate' not in p+c
+          print('PASS_P13_V6_STRICT_MANIFEST_CONTINUATION_SOURCE_AUDIT')
+          PY
+          test ! -e orbittrace_core_halo_p13_literature/LAUNCH_V6.md
+          echo NO_BENCHMARK_EXECUTION_NO_NEW_COMPARATOR_VALUE_ACCESS_NO_TRUTH_NO_TARGET_ACCESS
