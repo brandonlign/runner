@@ -1,0 +1,89 @@
+name: GhostStream external zero-speed-slope sensitivity
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ghoststream_external/run_full_external_replication.py
+      - ghoststream_external/run_full_external_replication_v2.py
+      - .github/workflows/ghoststream_external_zero_slope.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sensitivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-external-zero-slope-sensitivity
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install scientific dependencies
+        run: python -m pip install --upgrade pip numpy pandas scipy requests
+
+      - name: Build controlled zero-speed-slope runner
+        run: |
+          set -euo pipefail
+          cp ghoststream_external/run_full_external_replication.py \
+             ghoststream_external/run_full_external_replication_original.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('ghoststream_external/run_full_external_replication.py')
+          text = path.read_text()
+          old = 'SUNLON_SLOPE=-0.1029483; BETA_SLOPE=-0.0230546; VG_SLOPE=-0.0293492'
+          new = 'SUNLON_SLOPE=-0.1029483; BETA_SLOPE=-0.0230546; VG_SLOPE=0.0'
+          if text.count(old) != 1:
+              raise RuntimeError('Expected exactly one preserved speed-slope definition')
+          path.write_text(text.replace(old, new))
+          print('Set only VG_SLOPE to 0.0 in the runtime copy')
+          PY
+          rm -rf ghoststream_external/results
+          mkdir -p ghoststream_external/results
+
+      - name: Compile schema-complete runner
+        run: |
+          python -m py_compile \
+            ghoststream_external/run_full_external_replication.py \
+            ghoststream_external/run_full_external_replication_v2.py
+
+      - name: Run complete-catalog zero-slope sensitivity
+        run: python ghoststream_external/run_full_external_replication_v2.py
+
+      - name: Record sensitivity protocol and provenance
+        run: |
+          cat > ghoststream_external/results/ZERO_SPEED_SLOPE_PROTOCOL.md <<'EOF'
+          # GhostStream complete-catalog zero-speed-slope sensitivity
+
+          This run uses the preserved schema-complete external-catalog loader and is
+          source-equivalent to the authoritative complete-catalog replication except
+          that the unresolved geocentric-speed drift term is fixed from
+          `-0.0293492 km s^-1 deg^-1` to `0.0`.
+
+          No radiant centre, radiant drift, width, activity interval, orbital threshold,
+          archive range, null construction, significance threshold, or pass/fail gate
+          is changed. The output directory is cleared before execution to prevent stale
+          files from being mistaken for current results.
+          EOF
+          sha256sum \
+            ghoststream_external/run_full_external_replication_original.py \
+            ghoststream_external/run_full_external_replication.py \
+            ghoststream_external/run_full_external_replication_v2.py \
+            .github/workflows/ghoststream_external_zero_slope.yml \
+            ghoststream_external/results/* \
+            > ghoststream_external/results/ZERO_SPEED_SLOPE_SHA256.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-external-zero-speed-slope
+          path: ghoststream_external/results
+          if-no-files-found: error
+          retention-days: 90
