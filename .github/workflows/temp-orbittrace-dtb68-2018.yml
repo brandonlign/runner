@@ -1,0 +1,99 @@
+name: Temporary OrbitTrace DTb68 frozen 2018 replication
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-dtb68-2018.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  replicate-2018:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out frozen DTb68 implementation
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: research/orbittrace-new-discovery-screen-20260828
+          path: frozen-runner
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install compatible GMN scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 scikit-learn==1.5.2 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Apply parser-only pandas compatibility fallback
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('frozen-runner/orbittrace_new_discovery_screen')
+          changed = 0
+          for path in root.glob('*.py'):
+              text = path.read_text(encoding='utf-8')
+              patched = text.replace(', format="mixed"', '').replace(", format='mixed'", '')
+              if patched != text:
+                  path.write_text(patched, encoding='utf-8')
+                  changed += 1
+          print(f'parser-only compatibility patches: {changed} files')
+          PY
+      - name: Execute exact frozen template on untouched 2018 February
+        env:
+          PYTHONPATH: frozen-runner
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          from orbittrace_new_discovery_screen import dtb68_historical_gmn as mod
+
+          # DTB68_2018_GMN_PROTOCOL.md freezes the exact historical code path,
+          # changing only the tested year from 2019-2023 to untouched 2018.
+          mod.YEARS = (2018,)
+          sys.argv = ['dtb68_historical_gmn', '--out', 'dtb68_2018_output']
+          rc = mod.main()
+          if rc:
+              raise SystemExit(rc)
+
+          path = Path('dtb68_2018_output/dtb68_historical_gmn.json')
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          payload['stage'] = 'dtb68_2018_gmn_replication_v1'
+          payload['scientific_protocol'] = 'orbittrace-raw/pipeline/discovery_search/DTB68_2018_GMN_PROTOCOL.md'
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+
+          x = payload['years']['2018']
+          d50 = x['median_d_sh_to_frozen']
+          d90 = x['q90_d_sh_to_frozen']
+          lines = [
+              '# DTb68 untouched 2018 GMN replication result',
+              '',
+              'Frozen protocol: `pipeline/discovery_search/DTB68_2018_GMN_PROTOCOL.md`.',
+              '',
+              '| year | residual rows | members | nights | stations | D50 | D90 | strong recurrence |',
+              '|---:|---:|---:|---:|---:|---:|---:|---|',
+              f"| 2018 | {x['residual_rows']} | {x['members']} | {x['nights']} | {x['stations']} | {('—' if d50 is None else f'{d50:.4f}')} | {('—' if d90 is None else f'{d90:.4f}')} | {x['strong_recurrence']} |",
+              '',
+              'This is a post-selection replication check. A positive result cannot repair the search-level multiplicity failure; a null is not decisive because early GMN coverage may be sparse.',
+          ]
+          Path('dtb68_2018_output/DTB68_2018_GMN_RESULT.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          print('\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dtb68-frozen-2018-gmn-replication
+          path: dtb68_2018_output/
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,176 @@
+name: Temporary OrbitTrace heldout 2019-2021 access ledger v2
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-heldout-access-ledger-v2.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-ledger:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out frozen science provenance
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: d15bd6d4e5f2af51d7d9e229a70b42529c7f7039
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Download immutable prior outputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p full_source transfer_source
+          gh run download 33219756919 --repo brandonlign/runner --name orbittrace-locked-rrf-full-catalogue --dir full_source
+          gh run download 33217537596 --repo brandonlign/runner --dir transfer_source
+          find full_source transfer_source -maxdepth 4 -type f -print | sort
+
+      - name: Build v2 access ledger without heldout queries
+        run: |
+          set -euo pipefail
+          mkdir -p ledger_v2
+          python - <<'PY'
+          import hashlib
+          import json
+          import math
+          from pathlib import Path
+
+          science = Path('orbittrace-raw')
+          full_files = list(Path('full_source').rglob('LOCKED_RRF_FULL_CATALOGUE.json'))
+          assert len(full_files) == 1, full_files
+          full = json.loads(full_files[0].read_text())
+          assert full['stage'] == 'locked-rrf-full-catalogue-orbit-identity-v1'
+          assert full['locked_scan']['member_sha256'] == 'c55e3db626df21faede809cf6b74f808b0c5c13a56672682f6d09f6b11c5d0b3'
+          assert full['screened_family_count'] == 766
+          assert full['resolved_unique_event_count'] == 22756
+          full_by_id = {str(row['family_id']): row for row in full['families']}
+          assert len(full_by_id) == 766
+
+          two = json.loads((science / 'pipeline/discovery_search/results/TWO_YEAR_EXPANSION_RESULT.json').read_text())
+          assert two['version'] == 'two-year-locked-rrf-expansion-v1'
+          assert two['protocol_id'] == 'orbittrace-raw/TWO_YEAR_EXPANSION_PROTOCOL@f168a754'
+          assert two['physical_gate_survivor_count'] == 22
+          two_rows = [row for row in two['rows'] if row.get('phys') is True]
+          assert len(two_rows) == 22
+
+          registry = json.loads((science / 'pipeline/discovery_search/HELDOUT_2019_2021_REGION_REGISTRY.json').read_text())
+          fixed = list(registry['fixed_regions'])
+          assert len(fixed) == 3
+
+          by_month = {}
+          for path in Path('transfer_source').rglob('month_*.json'):
+              try:
+                  month = int(path.stem.split('_')[-1])
+              except ValueError:
+                  continue
+              if month == 4:
+                  continue
+              payload = json.loads(path.read_text())
+              if month in by_month:
+                  raise RuntimeError(f'duplicate transfer month {month}: {path}')
+              by_month[month] = payload
+          assert set(by_month) == {1,2,3,5,6,7,8,9,10,11,12}, sorted(by_month)
+          acrf = []
+          for month in sorted(by_month):
+              for lead in by_month[month].get('discovery_leads', []):
+                  c = lead['physical']['center']
+                  acrf.append({
+                      'source': 'acrf_v35_transfer_heldout_registry',
+                      'name': f"m{month}_{lead['family_id']}",
+                      'family_id': str(lead['family_id']),
+                      'center': {
+                          'sol': float(c['sol']),
+                          'sun_lon': float(c['sun_lon']),
+                          'ecl_lat': float(c['ecl_lat']),
+                          'vg': float(c['vg']),
+                      },
+                      'access_basis': 'conservative_transfer_discovery_lead_registry',
+                  })
+          assert len(acrf) == 47, len(acrf)
+
+          derived = []
+          for row in sorted(two_rows, key=lambda x: int(x['r'])):
+              fid = str(row['id'])
+              assert fid in full_by_id, fid
+              audit = full_by_id[fid]
+              p = audit.get('physical')
+              assert p and p.get('center'), (row, audit)
+              c = p['center']
+              vals = [float(c[k]) for k in ('sol','sun_lon','ecl_lat','vg')]
+              assert all(math.isfinite(v) for v in vals), (fid, vals)
+              derived.append({
+                  'source': 'locked_rrf_two_year_expansion_2019_2021',
+                  'name': f"two_year_rank{int(row['r'])}_{fid}",
+                  'family_id': fid,
+                  'locked_rrf_rank': int(row['r']),
+                  'center': dict(zip(('sol','sun_lon','ecl_lat','vg'), vals)),
+                  'heldout_counts': row.get('h'),
+                  'access_basis': 'phys_true_two_year_result',
+              })
+          assert len(derived) == 22
+          assert len({x['family_id'] for x in derived}) == 22
+
+          records = []
+          for item in fixed:
+              copy = dict(item)
+              copy['access_basis'] = 'historical_fixed_region_registry'
+              records.append(copy)
+          records.extend(acrf)
+          records.extend(derived)
+          assert len(records) == 72, len(records)
+
+          payload = {
+              'version': 'heldout-2019-2021-access-ledger-v2',
+              'protocol': 'pipeline/discovery_search/HELDOUT_2019_2021_ACCESS_LEDGER_V2_PROTOCOL.md',
+              'science_commit': 'd15bd6d4e5f2af51d7d9e229a70b42529c7f7039',
+              'sources': {
+                  'locked_rrf_full_catalogue_run': 33219756919,
+                  'locked_rrf_scan_sha256': 'c55e3db626df21faede809cf6b74f808b0c5c13a56672682f6d09f6b11c5d0b3',
+                  'two_year_result_run': 33194690583,
+                  'two_year_artifact_id': 9695417565,
+                  'two_year_recorded_artifact_sha256': 'a839fff088dd2439c0a382d3612ab72cb2e8d43377680596471850913e1f2d1d',
+                  'acrf_transfer_run': 33217537596,
+              },
+              'counts': {
+                  'historical_fixed': 3,
+                  'acrf_transfer': 47,
+                  'two_year_locked_rrf': 22,
+                  'total_access_records': 72,
+              },
+              'overlap_rule': registry['overlap_rule'],
+              'records': records,
+          }
+          canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+          digest = hashlib.sha256(canonical).hexdigest()
+          payload['canonical_payload_sha256'] = digest
+          out = Path('ledger_v2/HELDOUT_2019_2021_ACCESS_LEDGER_V2.json')
+          out.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+
+          print(f'LEDGER_V2_COUNT={len(records)}')
+          print(f'LEDGER_V2_CANONICAL_SHA256={digest}')
+          print('TWO_YEAR_DERIVED_REGIONS_BEGIN')
+          for x in derived:
+              c=x['center']
+              print(f"{x['locked_rrf_rank']}\t{x['family_id']}\t{c['sol']:.8f}\t{c['sun_lon']:.8f}\t{c['ecl_lat']:.8f}\t{c['vg']:.8f}")
+          print('TWO_YEAR_DERIVED_REGIONS_END')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-heldout-2019-2021-access-ledger-v2
+          path: ledger_v2/HELDOUT_2019_2021_ACCESS_LEDGER_V2.json
+          if-no-files-found: error
+          retention-days: 90

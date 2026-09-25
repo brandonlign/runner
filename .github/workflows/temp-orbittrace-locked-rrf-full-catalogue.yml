@@ -1,0 +1,84 @@
+name: Temporary OrbitTrace locked-RRF full catalogue audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-locked-rrf-full-catalogue.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out frozen scientific audit
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: research/prospective-discovery-20260828
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scientific stack
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Compile audit implementation
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python -m py_compile pipeline/discovery_search/locked_rrf_full_catalogue.py pipeline/discovery_search/locked_rrf_full_catalogue_run.py
+          python - <<'PY'
+          from pipeline.discovery_search.distance import d_sh_matrix
+          import numpy as np
+          x=np.array([[0.5,0.8,10.,20.,30.],[0.6,0.7,15.,25.,35.]])
+          d=d_sh_matrix(x)
+          assert np.allclose(np.diag(d),0.0)
+          assert np.allclose(d,d.T)
+          print('Canonical D_SH diagnostic PASS')
+          PY
+      - name: Download immutable locked-RRF catalogue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p locked_source
+          gh run download 31112651984 --repo brandonlign/runner --name orbittrace-fixed4-locked-rrf-application-pre-reveal --dir locked_source
+          sha256sum locked_source/orbittrace_fixed4_locked_rrf_scan.json.gz
+          test "$(sha256sum locked_source/orbittrace_fixed4_locked_rrf_scan.json.gz | awk '{print $1}')" = "c55e3db626df21faede809cf6b74f808b0c5c13a56672682f6d09f6b11c5d0b3"
+      - name: Audit all 766 frozen families
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python -m pipeline.discovery_search.locked_rrf_full_catalogue_run \
+            --scan ../locked_source/orbittrace_fixed4_locked_rrf_scan.json.gz \
+            --out locked_rrf_full_output
+          python - <<'PY'
+          import json
+          d=json.load(open('locked_rrf_full_output/LOCKED_RRF_FULL_CATALOGUE.json'))
+          assert d['screened_family_count'] == 766, d['screened_family_count']
+          assert d['resolved_unique_event_count'] == 22756, d['resolved_unique_event_count']
+          assert d['xli_control']['family_id'] == 'G88cc88b1e28a', d['xli_control']
+          assert d['xli_control']['pass'] is True, d['xli_control']
+          assert d['preconfirm_lead_count'] == len(d['preconfirm_leads'])
+          print('Full catalogue integrity checks PASS; preconfirm leads=', d['preconfirm_lead_count'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-locked-rrf-full-catalogue
+          path: orbittrace-raw/locked_rrf_full_output/
+          if-no-files-found: warn
+          retention-days: 90

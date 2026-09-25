@@ -1,0 +1,177 @@
+name: Temporary OrbitTrace recurrent-EOM SonotaCo confirmation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-recurrent-eom-sonotaco-confirmation.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  confirm:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out frozen scientific confirmation implementation
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: 4dd22ae48e9fd7facd09343cd8d1818219ee7286
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install frozen confirmation runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            numpy==1.26.4 \
+            pandas==2.2.3 \
+            scipy==1.14.1 \
+            requests==2.32.5 \
+            beautifulsoup4==4.12.3 \
+            click==8.0.4 \
+            future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Verify frozen code and implementation-only safety wrapper
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "4dd22ae48e9fd7facd09343cd8d1818219ee7286"
+          python -m py_compile \
+            pipeline/discovery_search/recurrent_eom_sonotaco_confirmation.py \
+            pipeline/discovery_search/recurrent_eom_sonotaco_confirmation_run.py \
+            pipeline/discovery_search/association.py \
+            pipeline/discovery_search/distance.py
+          python - <<'PY'
+          import json
+          from pipeline.discovery_search import recurrent_eom_sonotaco_confirmation as base
+          from pipeline.discovery_search.recurrent_eom_sonotaco_confirmation_run import serialization_safe_fisher
+
+          odds, p = serialization_safe_fisher([[4, 0], [0, 4]])
+          assert odds is None, (odds, p)
+          assert 0.0 <= p <= 1.0, p
+          json.dumps({'odds': odds, 'p': p}, allow_nan=False)
+
+          adjusted = base.holm_adjust([0.001, 0.01, 0.2])
+          assert all(abs(a-b) < 1e-12 for a,b in zip(adjusted, [0.003, 0.02, 0.2])), adjusted
+          print('serialization and Holm diagnostics PASS')
+          PY
+
+      - name: Download immutable recurrent-EOM discovery artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p source/pre source/adj
+          gh run download 33221502011 \
+            --repo brandonlign/runner \
+            --name orbittrace-recurrent-eom-2025-2026-pre-adjudication \
+            --dir source/pre
+          gh run download 33221502011 \
+            --repo brandonlign/runner \
+            --name orbittrace-recurrent-eom-2025-2026-adjudication \
+            --dir source/adj
+          PRE="$(find source/pre -type f -name 'RECURRENT_EOM_2025_2026_PRE_ADJUDICATION.json' -print -quit)"
+          ADJ="$(find source/adj -type f -name 'RECURRENT_EOM_2025_2026_ADJUDICATION.json' -print -quit)"
+          test -n "$PRE" && test -n "$ADJ"
+          test "$(sha256sum "$PRE" | awk '{print $1}')" = "80c2d0920e742af44e98fb5363e416359556abadd021b21dfa55227784b97015"
+          test "$(sha256sum "$ADJ" | awk '{print $1}')" = "49c6f4d8b8e974d4a29f56d1aba9f2721a245b880aa621d5bbd7e5a798bf3181"
+          mkdir -p frozen_inputs
+          cp "$PRE" frozen_inputs/RECURRENT_EOM_2025_2026_PRE_ADJUDICATION.json
+          cp "$ADJ" frozen_inputs/RECURRENT_EOM_2025_2026_ADJUDICATION.json
+          echo 'immutable discovery artifact SHA checks PASS'
+
+      - name: Freeze all 194 SonotaCo templates before independent-network access
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          mkdir -p sonotaco_confirmation
+          python -m pipeline.discovery_search.recurrent_eom_sonotaco_confirmation_run freeze-templates \
+            --pre ../frozen_inputs/RECURRENT_EOM_2025_2026_PRE_ADJUDICATION.json \
+            --adjudication ../frozen_inputs/RECURRENT_EOM_2025_2026_ADJUDICATION.json \
+            --out sonotaco_confirmation/RECURRENT_EOM_SONOTACO_TEMPLATES.json
+          sha256sum sonotaco_confirmation/RECURRENT_EOM_SONOTACO_TEMPLATES.json \
+            | tee sonotaco_confirmation/TEMPLATE_SHA256.txt
+          python - <<'PY'
+          import json
+          p='sonotaco_confirmation/RECURRENT_EOM_SONOTACO_TEMPLATES.json'
+          d=json.load(open(p))
+          assert d['stage'] == 'recurrent-eom-sonotaco-template-freeze-v1'
+          assert len(d['templates']) == 194
+          assert len({x['family_id'] for x in d['templates']}) == 194
+          c=d['positive_control']
+          assert c['rank'] == 81, c
+          assert c['family_id'] == '8dda131b8699e843676a', c
+          assert c['dominant_gmn_label'] == 'XHE', c
+          assert c['dominant_gmn_label_count'] == 258, c
+          assert c['member_count'] == 261, c
+          print('194-family template freeze + positive-control binding PASS')
+          PY
+
+      - name: Upload immutable pre-SonotaCo template freeze
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-template-freeze
+          path: |
+            orbittrace-raw/sonotaco_confirmation/RECURRENT_EOM_SONOTACO_TEMPLATES.json
+            orbittrace-raw/sonotaco_confirmation/TEMPLATE_SHA256.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Confirm all 194 frozen leads in SonotaCo 2007-2024
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          TEMPLATE_SHA="$(sha256sum sonotaco_confirmation/RECURRENT_EOM_SONOTACO_TEMPLATES.json | awk '{print $1}')"
+          python -m pipeline.discovery_search.recurrent_eom_sonotaco_confirmation_run confirm \
+            --templates sonotaco_confirmation/RECURRENT_EOM_SONOTACO_TEMPLATES.json \
+            --expected-template-sha "$TEMPLATE_SHA" \
+            --out sonotaco_confirmation/RECURRENT_EOM_SONOTACO_CONFIRMATION.json
+          sha256sum sonotaco_confirmation/RECURRENT_EOM_SONOTACO_CONFIRMATION.json \
+            | tee sonotaco_confirmation/RESULT_SHA256.txt
+
+      - name: Verify complete confirmation result
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          p='sonotaco_confirmation/RECURRENT_EOM_SONOTACO_CONFIRMATION.json'
+          d=json.load(open(p))
+          assert d['stage'] == 'recurrent-eom-sonotaco-confirmation-v1'
+          assert d['hypothesis_family_size'] == 194
+          assert len(d['results']) == 194
+          assert len({x['family_id'] for x in d['results']}) == 194
+          assert d['positive_control']['family_id'] == '8dda131b8699e843676a'
+          assert set(map(int, d['sonotaco_archive_metadata'].keys())) == set(range(2007, 2025))
+          assert 0 <= d['formal_sonotaco_replication_count'] <= 194
+          assert len(d['formal_sonotaco_replications']) == d['formal_sonotaco_replication_count']
+          print('POSITIVE_CONTROL_PASS', d['positive_control']['calibration_pass'])
+          print('RAW_GATE_PASS_BEFORE_HOLM', d['raw_replication_gate_pass_count_before_holm_and_prior_access'])
+          print('FORMAL_SONOTACO_REPLICATIONS', d['formal_sonotaco_replication_count'])
+          for x in d['formal_sonotaco_replications']:
+              print('FORMAL', x)
+          PY
+
+      - name: Upload complete SonotaCo confirmation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-confirmation
+          path: orbittrace-raw/sonotaco_confirmation/
+          if-no-files-found: warn
+          retention-days: 90

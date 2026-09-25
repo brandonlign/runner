@@ -1,0 +1,175 @@
+name: Temporary OrbitTrace prospective heldout 2019-2021 confirmation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.github/workflows/temp-orbittrace-prospective-heldout-2019-2021.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out frozen scientific protocol
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: research/prospective-discovery-20260828
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install confirmation dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Compile frozen implementation
+        working-directory: orbittrace-raw
+        run: python -m py_compile pipeline/discovery_search/prospective_heldout_2019_2021.py
+      - name: Download immutable authoritative transfer artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p source_artifacts
+          gh run download 33217537596 --repo brandonlign/runner --dir source_artifacts
+      - name: Prepare immutable 46-candidate confirmation family
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python -m pipeline.discovery_search.prospective_heldout_2019_2021 prepare \
+            --artifact-root ../source_artifacts \
+            --manifest pipeline/discovery_search/PROSPECTIVE_HELDOUT_2019_2021_CANDIDATES.json \
+            --out heldout_prepared.json
+          python - <<'PY'
+          import json
+          d=json.load(open('heldout_prepared.json'))
+          assert d['source_candidate_count'] == 47, d['source_candidate_count']
+          assert d['eligible_candidate_count'] == 46, d['eligible_candidate_count']
+          assert d['months'] == [1,2,3,5,6,9,10,11,12], d['months']
+          excluded={(x['month'],x['family_id']) for x in d['excluded']}
+          assert excluded == {(1,'LEAF2cd04033f0433eb2fcb6a')}, excluded
+          print('Frozen candidate family checks PASS')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-prospective-heldout-prepared
+          path: orbittrace-raw/heldout_prepared.json
+          if-no-files-found: error
+          retention-days: 90
+
+  confirm:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        month: [1,2,3,5,6,9,10,11,12]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out frozen scientific protocol
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: research/prospective-discovery-20260828
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install confirmation dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-prospective-heldout-prepared
+          path: orbittrace-raw/prepared_artifact
+      - name: Run frozen heldout month
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          mkdir -p heldout_output
+          python -m pipeline.discovery_search.prospective_heldout_2019_2021 month \
+            --prepared prepared_artifact/heldout_prepared.json \
+            --month ${{ matrix.month }} \
+            --out heldout_output/heldout_month_${{ matrix.month }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-prospective-heldout-month-${{ matrix.month }}
+          path: orbittrace-raw/heldout_output/
+          if-no-files-found: warn
+          retention-days: 90
+
+  aggregate:
+    needs: confirm
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out frozen scientific protocol
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/orbittrace-raw
+          ref: research/prospective-discovery-20260828
+          token: ${{ secrets.ISEF_REPO_TOKEN }}
+          path: orbittrace-raw
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install aggregation dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install numpy==1.26.4 pandas==1.5.3 scipy==1.14.1 requests==2.32.5 beautifulsoup4==4.12.3 click==8.0.4 future==1.0.0
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-prospective-heldout-prepared
+          path: orbittrace-raw/prepared_artifact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orbittrace-prospective-heldout-month-*
+          path: orbittrace-raw/month_artifacts
+          merge-multiple: true
+      - name: Aggregate and apply 46-candidate Holm correction
+        working-directory: orbittrace-raw
+        run: |
+          set -euo pipefail
+          python -m pipeline.discovery_search.prospective_heldout_2019_2021 aggregate \
+            --results-root month_artifacts \
+            --prepared prepared_artifact/heldout_prepared.json \
+            --out-dir heldout_aggregate
+          python - <<'PY'
+          import json
+          d=json.load(open('heldout_aggregate/prospective_heldout_2019_2021.json'))
+          assert d['candidate_family_size'] == 46, d['candidate_family_size']
+          assert len(d['results']) == 46, len(d['results'])
+          print('Aggregate family checks PASS; formal passes=', d['pass_count'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-prospective-heldout-aggregate
+          path: orbittrace-raw/heldout_aggregate/
+          if-no-files-found: error
+          retention-days: 90
