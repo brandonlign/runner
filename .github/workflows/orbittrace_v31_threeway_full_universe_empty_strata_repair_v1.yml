@@ -1,0 +1,154 @@
+name: OrbitTrace v31 three-way full-universe empty-strata repair v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/audit_empty_strata_repair.py'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-threeway-full-universe-refinement-diagnostic-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 31704c312c09be2765ad3f65a0685d1acfd2b055
+          path: frozen-v40
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pin unchanged diagnostic and result-reporting repair
+        run: |
+          set -euo pipefail
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/freeze input/cross input/payload input/truth output/diag
+          test "$(git hash-object orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/PROTOCOL.md)" = '88e13ee67db71081238f8c6458c50564de235c7c'
+          test "$(git hash-object orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py)" = '739059718a8c1e03f3b9b70f96e74835c5e1d5f2'
+          test "$(git hash-object orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/audit_empty_strata_repair.py)" = 'a8d9071faaf82ed3560d909913e932543dbb79d7'
+          test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
+          test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/audit_empty_strata_repair.py
+
+      - name: Restore exact pretruth-frozen vector from failed reporting run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9089149387/zip' -o input/freeze.zip
+          echo '1db2ced47842d1162a3a8c9e6e8b465c4f2326849791e3e7accf1c3553c4aecb  input/freeze.zip' | sha256sum -c -
+          unzip -p input/freeze.zip freeze/V31_THREEWAY_FULL_UNIVERSE_VECTOR.json > input/freeze/V31_THREEWAY_FULL_UNIVERSE_VECTOR.json
+          python - <<'PY'
+          import json
+          r=json.load(open('input/freeze/V31_THREEWAY_FULL_UNIVERSE_VECTOR.json'))
+          assert r['verdict']=='PASS_V31_THREEWAY_FULL_UNIVERSE_VECTOR_FREEZE'
+          assert r['scientific_role']=='FULL_FIXED_229_HDB_THREEWAY_VECTOR_FROZEN_BEFORE_VALIDATION_OR_OUTCOME_AUDIT'
+          assert r['family_count']==229 and len(r['families'])==229
+          assert r['joint_family_count']==60 and r['threeway_family_count']==58
+          assert r['canonical_sha256_without_self_field']=='54940f5f09e02dfd3fb653775ef45e1e8801dd8227ae2d0ce5d09359507abea6'
+          assert r['threeway_definition']=='joint_signal AND crossroute_positive'
+          for k in ('threshold_selected','top_k_selected','rank_window_selected','neighbor_aggregation_search','alternate_crossroute_statistic_search','boolean_combination_search','new_rank_or_score_evaluated','selector_order_evaluated','replacement_rule_evaluated','promotion_position_evaluated','literature_panel_evaluated','oracle_identity_hardcoded','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          print('PASS_EXACT_PRETRUTH_VECTOR_RESTORED')
+          PY
+
+      - name: Restore exact validation and exposed audit inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088482597/zip' -o input/cross.zip
+          echo 'c709ca3f5aaef103a1cf7668fce7241cb52a4c43b36c0263d5b6b34b8208e6c4  input/cross.zip' | sha256sum -c -
+          unzip -p input/cross.zip diag/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json > input/cross/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json
+          echo '62ed82eeb4f10b4371ec2072af7de527482ab070866693a2230be564ebf6af35  input/cross/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json' | sha256sum -c -
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+
+      - name: Emit preregistered FAIL for undefined empty comparison stratum
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/audit_empty_strata_repair.py \
+            --vector input/freeze/V31_THREEWAY_FULL_UNIVERSE_VECTOR.json \
+            --cross-result input/cross/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json \
+            --hdb-root input/payload/hdbscan \
+            --truth-root input/truth \
+            --output output/diag
+
+      - name: Enforce binding diagnostic failure and firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_THREEWAY_FULL_UNIVERSE_REFINEMENT_DIAGNOSTIC.json'))
+          assert r['verdict']=='FAIL_V31_THREEWAY_FULL_UNIVERSE_REFINEMENT_DIAGNOSTIC'
+          assert r['scientific_role']=='POST_RESULT_INCREMENTAL_FULL_UNIVERSE_SELECTOR_REFINEMENT_DIAGNOSTIC_NO_ORDER_EVALUATED'
+          assert r['family_count']==229 and r['joint_family_count']==60 and r['threeway_family_count']==58 and r['joint_only_family_count']==2
+          assert r['strict_nonempty_subset_of_joint'] is True
+          assert r['threeway_incremental_refinement_supported_both_years'] is False
+          for y in ('2013','2014'):
+              a=r['annual_diagnostics'][y]
+              assert a['interpretation_gate_pass'] is False
+              assert a['joint_only_group_count']==0
+              assert a['diagnostic_group_level_within_joint']['comparison_defined'] is False
+              assert a['diagnostic_group_level_within_joint']['direction_pass'] is False
+              assert a['diagnostic_group_level_within_joint']['risk_ratio'] is None
+          for k in ('new_rank_or_score_evaluated','selector_order_evaluated','replacement_rule_evaluated','promotion_position_evaluated','literature_panel_evaluated','successor_selected','signal_magnitude_used','rank_gap_threshold_search','threshold_search','top_k_search','rank_window_search','neighbor_aggregation_search','alternate_crossroute_statistic_search','boolean_combination_search','or_logic_search','component_size_search','route_specific_rule','year_specific_rule','budget_specific_rule','feature_search','model_search','fusion_search','source_quota_selected','candidate_membership_changed','candidate_generation_changed','oracle_identity_used_for_statistic','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print('BINDING_FAIL_THREEWAY_FULL_UNIVERSE_REFINEMENT')
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/PROTOCOL.md \
+            orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/diagnose.py \
+            orbittrace_v31_threeway_full_universe_refinement_diagnostic_v1/audit_empty_strata_repair.py \
+            input/freeze/V31_THREEWAY_FULL_UNIVERSE_VECTOR.json \
+            input/cross/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json \
+            input/payload.zip input/truth.zip \
+            > output/V31_THREEWAY_EMPTY_STRATA_REPAIR_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-threeway-full-universe-empty-strata-repair-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

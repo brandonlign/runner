@@ -1,0 +1,54 @@
+name: OrbitTrace P18 primary-challenger source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/P18_PROTOCOL.md
+      - .github/workflows/orbittrace_p18_primary_challenger_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove P18 candidate selection and matched gates are frozen before truth
+        run: |
+          set -euo pipefail
+          p=orbittrace_p17_rank_halo_membership_p18/P18_PROTOCOL.md
+          for x in \
+            'sole primary literature challenger' \
+            'P17 core-only membership is retained only as a preregistered diagnostic ablation' \
+            'family existence is exactly the P17/P14 recurrent-core family universe' \
+            'primary rank is exactly the P14 support-safe multiplicity total order' \
+            'evaluator-facing/reportable membership is exactly the already-frozen P17/P15/P12 halo family' \
+            'halo IDs − core IDs' \
+            'no detector, score, distance, threshold, family, member proposal, growth step, merge, or rank may be recomputed' \
+            'SPARSE_STREAM_SUPERIORITY' \
+            'both catalogue HDBSCAN and Sugar in both 2023 and 2025' \
+            '4–9-member mean F1 gain >= +0.10' \
+            'combined 4–24-member mean F1 gain >= +0.10' \
+            'overall macro-F1 delta no lower than -0.10' \
+            'retain at least 80%' \
+            'no mixture, per-family switch, per-size-bin switch, or comparator-specific switch' \
+            '31332157812' '9043232586' \
+            'c0c39d1bd660efbe5e5353b5a33185428a6f60f4a3759be3acd16a15a063012a' \
+            '31331471689' '9043046136' \
+            'a143d59be30a03091ae9a46ce169ff9b12280c99' \
+            'MAARSY 2020/2021' \
+            'OrbitTrace target access remains forbidden'; do
+            grep -F "$x" "$p"
+          done
+          test ! -e orbittrace_p17_rank_halo_membership_p18/MATCHED_PRETRUTH_RUN.md
+          test ! -e orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md
+          test ! -e orbittrace_p17_rank_halo_membership_p18/EXTERNAL_RUN.md
+          if grep -Eq 'target_coordinate|OrbitTrace-April|prior.*rank 59|247\.|-14\.|37\.62|95 canonical' "$p"; then
+            echo 'target-specific information leaked into P18 preregistration' >&2
+            exit 1
+          fi
+          echo PASS_P18_PRIMARY_CHALLENGER_FROZEN_BEFORE_MATCHED_TRUTH
+          echo NO_MATCHED_RESULT_NO_EXTERNAL_RESULT_NO_TARGET_ACCESS

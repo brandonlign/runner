@@ -1,0 +1,53 @@
+name: OrbitTrace final SonotaCo execution freeze v1 audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_execution_v1/**'
+      - '.github/workflows/orbittrace_final_sonotaco_execution_freeze_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit identities, firewall, and fail-closed semantics
+        run: |
+          set -euo pipefail
+          d=orbittrace_final_sonotaco_execution_v1/FINAL_SONOTACO_EXECUTION_FREEZE_V1.md
+          a=orbittrace_final_sonotaco_execution_v1/authorize_final_test_v1.py
+          for x in \
+            'PASS_URC_PAIR_PORTABLE_GENERATOR_GMN_OPERATIONAL_EQUIVALENCE' \
+            'GENERATOR_NUMERIC_ATOL = 1e-12' \
+            'GENERATOR_NUMERIC_RTOL = 1e-12' \
+            '9063270f131b81bb0032026b2742b985ab0f8d5655abb46a1d405d30501b6d7d' \
+            'ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909' \
+            '5d215c5562c0ccce967d81ff0a087ca83b1afda95a269888d2219ef669d198d1' \
+            '493d39cd57f272ee088b1c1c80240c2af99595a5e8a3c91defe693cd460041ac' \
+            '9047392743' \
+            '8acb1986561d44194e2b7ebf5eb725a115eff5ba10b9b5d30a74f63a71a93fbc' \
+            '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb' \
+            'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2' \
+            'cefcc8900a7b3d083f81148427e9f80e2c7192bb25dd9bb635e6677aa23a555c' \
+            '45428174b36b8a5207951bc2c046ced3aa2e9781' \
+            'PASS_FINAL_MAARSY_2022_NO_RETUNING_GENERALIZATION' \
+            'AUTHORIZED_FINAL_SONOTACO_2013_2014_EXECUTION'; do
+            grep -F "$x" "$d" "$a" >/dev/null
+          done
+          python -m py_compile "$a" orbittrace_final_sonotaco_execution_v1/test_authorize_final_test_v1.py
+          cd orbittrace_final_sonotaco_execution_v1
+          python test_authorize_final_test_v1.py
+          test ! -e RUN.md
+          test ! -e FINAL_TEST_RUN.md
+          if grep -REiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|requests\.get|curl |wget |013a\.zip|014a\.zip' .; then
+            echo 'forbidden target/final-data transport surface in execution freeze' >&2
+            exit 1
+          fi
+          echo PASS_FINAL_SONOTACO_EXECUTION_FREEZE_SOURCE_AUDIT
+          echo SONOTACO_VALUES_UNOPENED_TARGET_INACCESSIBLE

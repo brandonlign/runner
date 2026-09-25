@@ -1,0 +1,43 @@
+name: OrbitTrace P18 artifact-only posttruth finalization
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/POSTTRUTH_FINALIZE_RUN.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p18-posttruth-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Finalize only the pinned raw matched artifact without reopening truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          chmod +x orbittrace_p17_rank_halo_membership_p18/run_posttruth_finalize_from_raw.sh
+          orbittrace_p17_rank_halo_membership_p18/run_posttruth_finalize_from_raw.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p18-artifact-only-posttruth-final-result
+          path: output
+          if-no-files-found: error
+          retention-days: 90

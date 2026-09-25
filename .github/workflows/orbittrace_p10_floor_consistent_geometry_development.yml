@@ -1,0 +1,249 @@
+name: OrbitTrace P10 floor-consistent geometry development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p10-floor-consistent-geometry-freeze
+    paths:
+      - orbittrace_floor_consistent_geometry_p10/RUN.md
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-p10-floor-consistent-geometry-development
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Require one-file child and authoritative P9 scientific no-go
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_floor_consistent_geometry_p10/RUN.md'
+          content="$(git show "$HEAD_SHA":orbittrace_floor_consistent_geometry_p10/RUN.md)"
+          test "$(printf '%s\n' "$content" | sed -n '1p')" = 'EXECUTE_P10_AFTER_AUTHORITATIVE_P9_SCIENTIFIC_NO_GO'
+          test "$(printf '%s\n' "$content" | sed -n '2p')" = '31297949121'
+          test "$(printf '%s\n' "$content" | wc -l)" -eq 2
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9033947493" -o /tmp/p9-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('/tmp/p9-meta.json').read_text())
+          assert m['id']==9033947493,m
+          assert m['name']=='orbittrace-bidirectional-reliability-membership-p9-development',m
+          assert m['workflow_run']['id']==31297949121,m
+          assert m['digest']=='sha256:3204ae38df3490bc444e73656c6f4edf746f037c9c138f8b1a779beec59d4398',m
+          assert not m['expired'],m
+          print('PASS_P10_P9_ARTIFACT_METADATA')
+          PY
+          rm -rf /tmp/p9-prereq && mkdir -p /tmp/p9-prereq
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9033947493/zip" -o /tmp/p9-prereq.zip
+          echo '3204ae38df3490bc444e73656c6f4edf746f037c9c138f8b1a779beec59d4398  /tmp/p9-prereq.zip' | sha256sum -c -
+          unzip -q /tmp/p9-prereq.zip -d /tmp/p9-prereq
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/p9-prereq/bidirectional_reliability_membership_p9_development.json').read_text())
+          assert r['verdict']=='FAIL_BIDIRECTIONAL_RELIABILITY_MEMBERSHIP_P9_NO_GO',r['verdict']
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          for k in ('parameter_search','p4_parameter_search','p5_parameter_search','p6_parameter_search','p8_parameter_search','p9_parameter_search','p8_order_statistic_tuning','p9_new_numeric_thresholds'):
+              assert r['configuration'][k] is False,k
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert abs(r['baseline_v8']['macro_f1']-0.1736657194465356)<1e-12
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          assert abs(r['baseline_v8']['mrr']-0.045531138942766655)<1e-15
+          assert r['p9']['qualified_matches']==93
+          assert r['p9']['recovered_at_100']==58
+          assert r['p9']['recovered_at_500']==93
+          assert abs(r['p9']['macro_f1']-0.39452877368464084)<1e-12
+          assert abs(r['p9']['top100_dominant_precision']-0.7196453247474698)<1e-12
+          assert abs(r['p9_large_shower']['mean_recall']-0.25198743607203483)<1e-12
+          assert abs(r['p9_large_shower']['mean_precision']-0.914194013145175)<1e-12
+          assert r['diagnostics']['assigned_nonseed_events']==20451
+          assert r['diagnostics']['proposal_events']==20503
+          assert r['diagnostics']['conflicted_proposal_events']==215
+          assert r['diagnostics']['p9_bidirectionally_reliable_families']==218
+          assert r['diagnostics']['p9_one_sided_reliable_families']==3
+          assert r['diagnostics']['p9_zero_sided_reliable_families']==5
+          assert r['diagnostics']['p9_proposals_from_non_bidirectionally_reliable_families']==0
+          assert r['gates']['qualified_matches_no_regression'] is False
+          for k in ('recovery_at_100_no_regression','top100_dominant_precision_at_least_065','macro_f1_gain_at_least_008','large_shower_mean_recall_at_least_15x_v8','large_shower_mean_precision_at_least_085','p9_pretruth_family_reliability_pattern_reproduced','p9_only_bidirectionally_reliable_families_can_propose'):
+              assert r['gates'][k] is True,k
+          assert r['crossfit_pretruth_sha256']=='904e35b1d2260f6cb2dbc76b534276fbcf5e288d8324016c6a51a61e6328a71b'
+          assert r['model_pretruth_sha256']=='0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f'
+          assert r['membership_pretruth_sha256']=='332f41ac1e60e076be52a67078dbf75ec0d3ba0176cfcb9e20d5e75b073d3db1'
+          assert r['decisions_pretruth_sha256']=='eb55de412869604db3e3a21dc0e4b57d263401608797371470648ec469400cdb'
+          print('PASS_P10_AUTHORITATIVE_P9_SCIENTIFIC_NO_GO_PREREQUISITE')
+          PY
+          git checkout --detach "$BASE_SHA"
+          test ! -e orbittrace_floor_consistent_geometry_p10/RUN.md
+
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: exact-v8
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ghoststream_fixed4_application/requirements.txt
+
+      - name: Install exact frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Reconstruct exact audited P10 and frozen inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/{v3,v6,v8,dsh} output
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/p5.py' | sha256sum -c -
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          echo 'd32648136b58e2f777912d6403d9de3cbd091a8c23e16aedcda0b146f09f38c2  /tmp/p6.py' | sha256sum -c -
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          echo '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54  /tmp/p7.py' | sha256sum -c -
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          echo 'd3bdcdaf18639e36cc02f5106b3a3c816f5e51eb19543f425717ba1c48a26470  /tmp/p8.py' | sha256sum -c -
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          echo '58330c61cf4039f07e80a9746d00eb7281b4e28e674a131d6333e6378695ae31  /tmp/p9.py' | sha256sum -c -
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/run_p10.py
+          echo '638b4f41e51955436557a99f1142c3d3cea91e12a66e2f74925c6bfb79d5e50d  /tmp/run_p10.py' | sha256sum -c -
+          python -m py_compile /tmp/run_p10.py orbittrace_floor_consistent_geometry_p10/run_header_compatible.py
+
+          python orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          echo 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51  /tmp/run_wavelet_catalogue_v3_development.py' | sha256sum -c -
+          test "$(git -C exact-v8 rev-parse HEAD)" = 'c9d6c44704013ba0c9430100e98a29a56b453304'
+          test "$(git -C exact-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          cp exact-v8/orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py input/v3/wavelet_episode_comparator.py
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+          echo 'f76b8448f299ccf078fc5978c0890b9a084f131080db8d2136b5e6dba77edc7b  input/v6/label_free_sparse_support_v6_families.json.gz' | sha256sum -c -
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009728299/zip" -o input/v8.zip
+          echo '88d2d607e05d027015c338f7e23b64a6195e55ae24f1b2ac745f5e9bc6df599e  input/v8.zip' | sha256sum -c -
+          unzip -q input/v8.zip -d input/v8
+          echo 'fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b  input/v8/pooled_year_centroid_v8_development.json' | sha256sum -c -
+          git fetch --no-tags --depth=1 origin agent/orbittrace-literature-comparison-2023-replication
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > input/dsh/literature_comparators.py
+          echo '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a  input/dsh/literature_comparators.py' | sha256sum -c -
+          python -m py_compile input/dsh/literature_comparators.py
+          echo PASS_P10_EXACT_INPUT_IDENTITIES
+
+      - name: Execute one-shot target-excluded P10 development
+        env:
+          PYTHONPATH: exact-v8:input/v3:orbittrace_wavelet_catalogue_v3:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_floor_consistent_geometry_p10/run_header_compatible.py \
+            --base-runner /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --v6-structural-families-json-gz input/v6/label_free_sparse_support_v6_families.json.gz \
+            --v8-result-json input/v8/pooled_year_centroid_v8_development.json \
+            --v8-runner exact-v8/orbittrace_pooled_year_centroid_v8/run_development.py \
+            --dsh-comparator input/dsh/literature_comparators.py \
+            --output output
+          cat output/FLOOR_CONSISTENT_GEOMETRY_MEMBERSHIP_P10_DEVELOPMENT.md
+
+      - name: Enforce frozen P10 result and truth firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/floor_consistent_geometry_membership_p10_development.json').read_text())
+          assert r['verdict'] in {'PASS_FLOOR_CONSISTENT_GEOMETRY_MEMBERSHIP_P10_DEVELOPMENT','FAIL_FLOOR_CONSISTENT_GEOMETRY_MEMBERSHIP_P10_NO_GO'}
+          assert r['configuration']['years']==[2022,2023]
+          assert r['configuration']['blind_exclusion']==[20.0,55.0]
+          assert r['configuration']['family_count']==226
+          for k in ('parameter_search','p4_parameter_search','p5_parameter_search','p6_parameter_search','p8_parameter_search','p9_parameter_search','p10_parameter_search','p8_order_statistic_tuning','p9_new_numeric_thresholds','p10_new_numeric_thresholds','p10_geometry_tuning'):
+              assert r['configuration'][k] is False,k
+          assert r['baseline_v8']['qualified_matches']==95
+          assert r['baseline_v8']['recovered_at_100']==58
+          assert abs(r['baseline_v8']['macro_f1']-0.1736657194465356)<1e-12
+          assert abs(r['baseline_v8']['top100_dominant_precision']-0.6884631112636006)<1e-12
+          integrity=(
+              'v8_baseline_reproduced','exact_dsh_source_identity','p3_exact_five_crossfit_folds','p3_crossfit_frozen_before_truth','p3_decisions_frozen_before_truth','p3_label_values_unread_until_membership_freeze',
+              'p4_coordinate_envelope_frozen_before_truth','p5_joint_seed_support_frozen_before_truth','p6_same_crossfit_model_sets_floor_and_scores_candidate','p6_final_all_family_model_not_used_for_proposal_scoring',
+              'p8_exact_finite_sample_order_statistic_rank','p8_every_surviving_proposal_meets_membership_floor','p9_pretruth_family_reliability_pattern_reproduced','p9_only_bidirectionally_reliable_families_can_propose',
+              'p10_geometry_uses_only_floor_retained_seeds','p10_rank_one_seed_sets_and_frontiers_exactly_inherited','p10_retained_seed_frontier_nonempty','p10_every_surviving_proposal_supported_by_floor_retained_frontier',
+              'p10_no_non_bidirectionally_reliable_family_can_propose','p10_geometry_change_nonvacuous','p10_exactly_50_reliable_rank_gt1_directions_changed_geometry',
+          )
+          assert all(r['gates'][k] is True for k in integrity),{k:r['gates'].get(k) for k in integrity}
+          assert r['diagnostics']['p9_bidirectionally_reliable_families']==218
+          assert r['diagnostics']['p9_one_sided_reliable_families']==3
+          assert r['diagnostics']['p9_zero_sided_reliable_families']==5
+          assert r['diagnostics']['p9_proposals_from_non_bidirectionally_reliable_families']==0
+          assert r['diagnostics']['p10_geometry_changed_reliable_rank_gt1_directions']==50
+          assert r['diagnostics']['p10_geometry_dropped_seeds_total']>0
+          assert all(a['label_value_accessed'] is False for a in r['geometry_audits'])
+          assert all(a['label_value_accessed_only_after_blind_and_dedup'] is True for a in r['truth_audits'])
+          print('ORBITTRACE_P10_RESULT_BEGIN')
+          print(json.dumps({'verdict':r['verdict'],'baseline_v8':r['baseline_v8'],'p10':r['p10'],'baseline_large_shower':r['baseline_large_shower'],'p10_large_shower':r['p10_large_shower'],'gates':r['gates'],'diagnostics':{k:v for k,v in r['diagnostics'].items() if k!='direction_audits'},'hashes':{'crossfit':r['crossfit_pretruth_sha256'],'model':r['model_pretruth_sha256'],'membership':r['membership_pretruth_sha256'],'decisions':r['decisions_pretruth_sha256']}},indent=2,sort_keys=True))
+          print('ORBITTRACE_P10_RESULT_END')
+          PY
+
+      - name: Record immutable environment
+        if: always()
+        run: |
+          set +e
+          mkdir -p output
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+          sha256sum /tmp/run_p10.py orbittrace_floor_consistent_geometry_p10/PROTOCOL.md orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py orbittrace_floor_consistent_geometry_p10/run_header_compatible.py orbittrace_floor_consistent_geometry_p10/SOURCE_SHA256 input/dsh/literature_comparators.py > output/source_sha256.txt 2>/dev/null || true
+          git -C exact-v8 rev-parse HEAD > output/exact_v8_commit.txt 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-floor-consistent-geometry-membership-p10-development
+          path: output
+          if-no-files-found: error
+          retention-days: 90

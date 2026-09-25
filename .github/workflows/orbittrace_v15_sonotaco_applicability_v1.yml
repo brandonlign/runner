@@ -1,0 +1,173 @@
+name: OrbitTrace v15 SonotaCo engineering applicability v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v15-sonotaco-applicability-execution-freeze-v1
+    paths:
+      - 'orbittrace_v15_sonotaco_applicability_v1/RUN.md'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+  PYTHONPATH: .:frozen-v8:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8/orbittrace_sparse_support_multiplicity_v5
+
+jobs:
+  applicability:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out exact frozen SonotaCo applicability parent
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v15-sonotaco-applicability-execution-freeze-v1
+          fetch-depth: 0
+      - name: Enforce one-file child before any artifact/data access
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$HEAD_REF" "$BASE_REF"
+          mapfile -t changed < <(git diff --name-only "origin/$BASE_REF...origin/$HEAD_REF")
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = 'orbittrace_v15_sonotaco_applicability_v1/RUN.md'
+          test "$(git show "origin/$HEAD_REF:orbittrace_v15_sonotaco_applicability_v1/RUN.md")" = 'EXECUTE_V15_SONOTACO_2013_2014_ENGINEERING_APPLICABILITY_V1'
+          test "$(git hash-object orbittrace_v15_sonotaco_applicability_v1/PROTOCOL.md)" = '8c05eedf8acbec957c0f15151066edfce2b5f1ba'
+          test "$(git hash-object orbittrace_v15_sonotaco_applicability_v1/run_applicability.py)" = 'b304edd02195916fff9ea70cc8100e9469ff9f64'
+          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          test "$(git hash-object orbittrace_v15_canonical_events_v1/canonical.py)" = '674eaec2acd8bf908bde797243c9414f0fa9559d'
+          echo PASS_V15_SONOTACO_ONE_FILE_EXECUTION_GUARD
+      - name: Download exact preceding GMN qualification artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-label-free-v8-deployment-qualification-v1
+          path: input/qualification
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31394545821
+      - name: Require exact GMN qualification PASS before SonotaCo input access
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('input/qualification/qualification.json')
+          assert p.is_file()
+          q=json.loads(p.read_text())
+          assert q['verdict']=='PASS_V15_LABEL_FREE_V8_DEPLOYMENT_QUALIFICATION'
+          assert q['years']==[2022,2023]
+          assert q['family_count']==226
+          assert all(q['direct_v8_identity_gates'].values())
+          assert all(q['v15_preservation_gates'].values())
+          assert q['label_dependent_calibration_used'] is False
+          assert q['sonotaco_access'] is False
+          assert q['maarsy_event_access'] is False
+          assert q['dms_access'] is False
+          assert q['target_information_access'] is False
+          print('PASS_EXACT_GMN_QUALIFICATION_PREREQUISITE')
+          PY
+      - name: Download already-exposed frozen SonotaCo label-free preparation
+        uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+      - name: Check out exact promoted v8 source
+        uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: frozen-v8/ghoststream_fixed4_application/requirements.txt
+      - name: Install exact inherited scientific runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+      - name: Restore exact promoted v8 dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v3 input/v6 input/centroid output
+          test "$(git -C frozen-v8 hash-object orbittrace_label_free_sparse_support_v6/run_development.py)" = '7995fc6b75d1fd51eb4b304ace39db28a5a1e876'
+          test "$(git -C frozen-v8 hash-object orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git -C frozen-v8 hash-object orbittrace_sparse_support_multiplicity_v5/run_holdout.py)" = '0136cb1603c947070947d1754bc83910b76415b9'
+          python frozen-v8/orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          test "$(cat output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+
+          git fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9005846925/zip" -o input/v6.zip
+          echo '3c636b05cbfc88c6d6b2b8289b309412174b0025c305ae2f2532678927b2232b  input/v6.zip' | sha256sum -c -
+          unzip -q input/v6.zip -d input/v6
+
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/9009091129/zip" -o input/centroid.zip
+          echo 'a1faacf51e1f4ca2a3a92b20e27d1f07f00e1d32ab33993916379ff36acea062  input/centroid.zip' | sha256sum -c -
+          unzip -q input/centroid.zip -d input/centroid
+          rm -rf output/*
+          python -m py_compile orbittrace_v15_sonotaco_applicability_v1/run_applicability.py
+          echo PASS_V15_SONOTACO_PREDATA_RUNTIME_GUARDS
+      - name: Execute no-truth SonotaCo engineering applicability
+        run: |
+          set -euo pipefail
+          python frozen-v8/orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          python -u orbittrace_v15_sonotaco_applicability_v1/run_applicability.py \
+            --prepared input/prepared \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --source-audit-json output/wavelet_catalogue_v3_source_audit.json \
+            --v6-result-json input/v6/label_free_sparse_support_v6_development.json \
+            --centroid-audit-json input/centroid/component_centroid_source_audit.json \
+            --output output/applicability
+      - name: Preserve applicability PASS or FAIL without scientific evaluation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('output/applicability/applicability.json').read_text())
+          assert r['verdict'] in {
+              'PASS_V15_SONOTACO_2013_2014_ENGINEERING_APPLICABILITY',
+              'FAIL_V15_SONOTACO_2013_2014_ENGINEERING_APPLICABILITY',
+          }
+          assert r['years']==[2013,2014]
+          assert r['truth_mapping_accessed'] is False
+          assert r['comparator_output_accessed'] is False
+          assert r['recovery_metric_computed'] is False
+          assert r['precision_metric_computed'] is False
+          assert r['mrr_computed'] is False
+          assert r['maarsy_event_access'] is False
+          assert r['dms_access'] is False
+          assert r['target_information_access'] is False
+          print('ORBITTRACE_V15_SONOTACO_APPLICABILITY_BEGIN')
+          print(json.dumps(r,indent=2,sort_keys=True))
+          print('ORBITTRACE_V15_SONOTACO_APPLICABILITY_END')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v15-sonotaco-engineering-applicability-v1
+          path: output/applicability
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,0 +1,153 @@
+name: OrbitTrace v41 multiplicity-calibrated component evidence v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v41_multiplicity_calibrated_component_evidence_v1/**'
+      - '.github/workflows/orbittrace_v41_multiplicity_calibrated_component_evidence_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v41-multiplicity-calibrated-component-evidence-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 31704c312c09be2765ad3f65a0685d1acfd2b055
+          path: frozen-v40
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin runtime and scientific sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/truth output/pretruth output/result
+          test "$(git hash-object orbittrace_v41_multiplicity_calibrated_component_evidence_v1/PROTOCOL.md)" = '2e123e0e9a78fa8604f214f4a875b53463bf7776'
+          test "$(git hash-object orbittrace_v41_multiplicity_calibrated_component_evidence_v1/train_evaluate.py)" = 'b775b9f2c83a1d207c8633ef6bc88375d76e0fe3'
+          test "$(git -C frozen-v40 rev-parse HEAD)" = '31704c312c09be2765ad3f65a0685d1acfd2b055'
+          test "$(git -C frozen-v40 hash-object orbittrace_v40_component_best_evidence_representative_v1/train_evaluate.py)" = '710944a43111e72ed286b3a5c06010db619c807f'
+          test "$(git -C frozen-v40 hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git -C frozen-v40 hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v41_multiplicity_calibrated_component_evidence_v1/train_evaluate.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - name: Verify immutable #839 ranker
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+      - name: Restore immutable #950 pretruth payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/v24.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/v24.zip' | sha256sum -c -
+          unzip -q input/v24.zip -d input/payload
+          python - <<'PY'
+          import json
+          for route in ('sugar','hdbscan'):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and m['feature_dimension']==71 and f['truth_accessed'] is False
+          print('PASS_V41_IMMUTABLE_PRETRUTH_PAYLOAD')
+          PY
+      - name: Reproduce exact frozen graph and component identities before truth
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v41_multiplicity_calibrated_component_evidence_v1/train_evaluate.py pretruth \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --output output/pretruth
+          echo '2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json' | sha256sum -c -
+          echo 'c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd  output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json' | sha256sum -c -
+      - name: Load immutable exposed truth only after pretruth identity is frozen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+      - name: Reproduce exact v31 and evaluate sole v41 calibrated component order
+        env:
+          PYTHONPATH: frozen-v40/orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:frozen-v40:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v41_multiplicity_calibrated_component_evidence_v1/train_evaluate.py evaluate \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --graph-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json \
+            --component-file output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json \
+            --output output/result
+      - name: Enforce scientific/result firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/V41_MULTIPLICITY_CALIBRATED_COMPONENT_EVIDENCE_RESULT.json'))
+          assert r['parent_v31_reproduction_pass'] is True and len(r['parent_v31_controls'])==4
+          assert r['pretruth_graph_sha256']=='2f25aa7d9af1df0a350c034b2280a790c3869a7775bf6d7063d0d1e4cc802b25'
+          assert r['pretruth_component_sha256']=='c1b80484502907ad19e0d51d8d48d364f3bf7a27e17576e073fe86ae44f499cd'
+          assert r['component_count']==196 and r['non_singleton_component_count']==113 and r['singleton_component_count']==83
+          assert r['authorizing_diagnostic_run']==31456224004 and r['authorizing_diagnostic_artifact']==9088133149
+          assert r['component_calibrated_evidence']=='q=1-(1-p_min)**member_count'
+          assert r['component_rule_symmetric_across_routes'] is True
+          assert r['component_rule_year_dependent'] is False and r['component_rule_budget_dependent'] is False
+          assert len(r['panels'])==4 and set(r['order_diagnostics'])=={'sugar','hdbscan'}
+          for route in ('sugar','hdbscan'):
+              rows=r['primary_component_rows'][route]
+              assert rows and all(x['calibration_formula']=='q=1-(1-p_min)**member_count' for x in rows)
+          for k in ('effective_component_size_fit','calibration_exponent_search','calibration_coefficient_search','calibration_pseudocount_search','raw_calibrated_blend_search','transfer_threshold_search','route_specific_rule','year_specific_rule','budget_specific_rule','component_evidence_aggregation_search','representative_family_search','secondary_insertion_search','component_size_threshold_search','radius_search','metric_search','graph_pruning','graph_expansion','component_definition_search','feature_search','model_search','k_search','scaling_search','annual_combiner_search','diversity_search','fusion_search','source_quota_selected','candidate_generation_changed','candidate_membership_changed','oracle_identity_used_for_ranking','post_result_second_search'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v41_multiplicity_calibrated_component_evidence_v1/PROTOCOL.md orbittrace_v41_multiplicity_calibrated_component_evidence_v1/train_evaluate.py input/ranker/run_urc_union_ranker.py output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_GRAPH_IDENTITY.json output/pretruth/CROSSROUTE_RADIUS1_PRETRUTH_COMPONENT_CLOSURE_IDENTITY.json > output/V41_MULTIPLICITY_CALIBRATED_COMPONENT_EVIDENCE_SOURCE_SHA256.txt 2>/dev/null || true
+          git -C frozen-v40 rev-parse HEAD > output/frozen_v40_execution_commit.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v41-multiplicity-calibrated-component-evidence-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

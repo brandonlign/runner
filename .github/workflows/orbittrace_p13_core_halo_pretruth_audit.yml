@@ -1,0 +1,77 @@
+name: OrbitTrace P13 core-halo pretruth audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p12-drift-conditioned-freeze
+    paths:
+      - orbittrace_core_halo_p13/**
+      - .github/workflows/orbittrace_p13_core_halo_pretruth_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact P12 and exact P13 source without data access
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2a.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2a.py /tmp/p2.py
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/p3.py /tmp/p4.py
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/p4.py /tmp/p5.py
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/p5.py /tmp/p6.py
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/p6.py /tmp/p7.py
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/p7.py /tmp/p8.py
+          python orbittrace_bidirectional_reliability_p9/apply_p9_patch.py /tmp/p8.py /tmp/p9.py
+          python orbittrace_floor_consistent_geometry_p10/apply_p10_patch.py /tmp/p9.py /tmp/p10.py
+          python orbittrace_density_contrast_p11/apply_p11_patch.py /tmp/p10.py /tmp/p11.py
+          python orbittrace_drift_conditioned_p12/apply_p12_patch.py /tmp/p11.py /tmp/p12.py
+          echo '78e93b5af19a441bc58b00428d2b356218b33f7a4a891a640dd59cb5d4599c32  /tmp/p12.py' | sha256sum -c -
+          python orbittrace_core_halo_p13/apply_p13_patch.py /tmp/p12.py /tmp/p13.py
+          expected="$(tr -d '[:space:]' < orbittrace_core_halo_p13/SOURCE_SHA256)"
+          test "$expected" = '7e5800236e5a3ecc280cbae2513278e4a8bcb24db06f7c999f5e5674083b6834'
+          echo "$expected  /tmp/p13.py" | sha256sum -c -
+          python -m py_compile /tmp/p13.py
+          python - <<'PY'
+          from pathlib import Path
+          p12=Path('/tmp/p12.py').read_text()
+          p13=Path('/tmp/p13.py').read_text()
+          protocol=Path('orbittrace_core_halo_p13/PROTOCOL.md').read_text()
+          freeze_anchor='    (args.output / "p12_decisions_pretruth.json.gz").write_bytes(gzip.compress(decision_raw))\n'
+          i12=p12.index(freeze_anchor)+len(freeze_anchor)
+          i13=p13.index(freeze_anchor)+len(freeze_anchor)
+          assert p12[:i12] == p13[:i13], 'P13 changed P12 computation before complete proposal/assignment freeze'
+          required=(
+              'p13_core_payload = [',
+              '"core_event_ids": sorted(map(str, family["event_ids"]))',
+              'p13_halo_sha = membership_sha',
+              'p13_core_pretruth.sha256','p13_halo_pretruth.sha256',
+              'p13_inherited_scientific_gate_names',
+              'inherited_p12_integrity_nonvacuity_all_pass',
+              'p13_core_qualified_exact_v8','p13_core_recovery100_exact_v8','p13_core_recovery500_exact_v8',
+              'p13_core_mrr_exact_v8','p13_core_top100_precision_exact_v8',
+              'p13_halo_macro_f1_gain_at_least_008','p13_halo_large_shower_mean_recall_at_least_15x_v8','p13_halo_large_shower_mean_precision_at_least_085',
+              'PASS_DUAL_OUTPUT_CORE_HALO_P13_DEVELOPMENT','FAIL_DUAL_OUTPUT_CORE_HALO_P13_NO_GO',
+              '"p13_primary_discovery_metrics_use_core_only": True','"p13_membership_metrics_use_halo_only": True',
+              '"p13_new_numeric_thresholds": False','"p13_parameter_search": False',
+              'dual_output_core_halo_p13_development.json',
+          )
+          for token in required:
+              assert token in p13,token
+          for token in ('5230471622','qualified 95','recovery@100 58','Membership-characterization','both Sugar and catalogue HDBSCAN','20°–55°'):
+              assert token in protocol,token
+          for token in ('OrbitTrace-April','target_coordinate'):
+              assert token not in p13,token
+          print('PASS_P13_CORE_HALO_PRETRUTH_SOURCE_AUDIT')
+          PY
+      - name: Assert contingency has no execution path
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_core_halo_p13/RUN.md
+          test ! -e target
+          echo NO_P13_TRUTH_EXECUTION_NO_TARGET_ACCESS

@@ -1,0 +1,115 @@
+name: OrbitTrace temporal-fair literature benchmark v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+    paths:
+      - 'orbittrace_temporal_fair_literature_v1/run_fair_benchmark.py'
+      - '.github/workflows/orbittrace_temporal_fair_literature_v1.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: orbittrace-temporal-fair-literature-v1
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PYTHONPATH: '.:orbittrace_temporal_fair_literature_v1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-sonotaco-temporal-fairness-correction-v1
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact comparator numerical runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          mkdir -p input/rows input/sources input/recurrent input/truth output
+          git fetch --no-tags --depth=1 origin a15737166cc9e1917f2e3d1b63cc42096008ae2e
+          git show FETCH_HEAD:orbittrace_literature_comparison/literature_comparators.py > orbittrace_temporal_fair_literature_v1/literature_comparators.py
+          test "$(git hash-object orbittrace_temporal_fair_literature_v1/literature_comparators.py)" = 'ab17e1205d72d8ab8361d8ba6cdad2e4c31fdcb2'
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-comparator-source-export-v1
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31346168826
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/recurrent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+      - name: Freeze pooled comparator and recurrent outputs before truth
+        run: |
+          set -euo pipefail
+          test -f input/recurrent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json
+          python -u orbittrace_temporal_fair_literature_v1/run_fair_benchmark.py pretruth \
+            --rows-root input/rows --sources input/sources \
+            --recurrent input/recurrent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json --output output
+          sha256sum output/POOLED_FAIR_PRETRUTH.json > output/PRETRUTH_SHA256.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Evaluate equal-temporal-information benchmark
+        run: |
+          set -euo pipefail
+          python -u orbittrace_temporal_fair_literature_v1/run_fair_benchmark.py evaluate \
+            --pretruth output/POOLED_FAIR_PRETRUTH.json --truth-root input/truth --output output
+          cat output/POOLED_FAIR_RESULT.json
+      - name: Commit immutable result back to branch
+        run: |
+          set -euo pipefail
+          cp output/POOLED_FAIR_RESULT.json orbittrace_temporal_fair_literature_v1/RESULT.json
+          cp output/PRETRUTH_SHA256.txt orbittrace_temporal_fair_literature_v1/PRETRUTH_SHA256.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add orbittrace_temporal_fair_literature_v1/RESULT.json orbittrace_temporal_fair_literature_v1/PRETRUTH_SHA256.txt
+          git commit -m 'Record temporal-fair literature benchmark result'
+          git push origin HEAD:agent/orbittrace-sonotaco-temporal-fairness-correction-v1
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_temporal_fair_literature_v1/run_fair_benchmark.py orbittrace_temporal_fair_literature_v1/literature_comparators.py > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-temporal-fair-literature-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

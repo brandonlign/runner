@@ -1,0 +1,100 @@
+name: OrbitTrace v31 three-way consensus diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_threeway_consensus_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_threeway_consensus_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-threeway-consensus-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin diagnostic source
+        run: |
+          set -euo pipefail
+          mkdir -p input/joint input/cross output/diag
+          test "$(git hash-object orbittrace_v31_threeway_consensus_diagnostic_v1/PROTOCOL.md)" = '7c1cb0dee7e34f573f1b047509253a92bacf4b3c'
+          test "$(git hash-object orbittrace_v31_threeway_consensus_diagnostic_v1/diagnose.py)" = '8fd9d698b51aaab6880f59fa2f8183560a3c9d8d'
+          python -m py_compile orbittrace_v31_threeway_consensus_diagnostic_v1/diagnose.py
+      - name: Restore exact #1091 joint diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088402091/zip' -o input/joint.zip
+          echo 'd1943f629964633f44e154252a225f7171c380674ae6e60e5fcbbd3f8b890dd7  input/joint.zip' | sha256sum -c -
+          unzip -q input/joint.zip -d input/joint
+          echo '2edb949dbab2d7cbf6ed5e808e2a049116eb0934b25b356572463b615d730842  input/joint/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json' | sha256sum -c -
+      - name: Restore exact #1093 cross-route concordance diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088482597/zip' -o input/cross.zip
+          echo 'c709ca3f5aaef103a1cf7668fce7241cb52a4c43b36c0263d5b6b34b8208e6c4  input/cross.zip' | sha256sum -c -
+          unzip -q input/cross.zip -d input/cross
+          echo '62ed82eeb4f10b4371ec2072af7de527482ab070866693a2230be564ebf6af35  input/cross/diag/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json' | sha256sum -c -
+      - name: Diagnose exact three-way conjunction only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_threeway_consensus_diagnostic_v1/diagnose.py \
+            --joint-result input/joint/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json \
+            --cross-result input/cross/diag/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_THREEWAY_CONSENSUS_DIAGNOSTIC.json'))
+          assert r['verdict'] in {'PASS_V31_THREEWAY_CONSENSUS_DIAGNOSTIC','FAIL_V31_THREEWAY_CONSENSUS_DIAGNOSTIC'}
+          assert r['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_THREEWAY_SELECTOR_ORDER_OR_SUCCESSOR_EVALUATED'
+          assert r['joint_source_run']==31456963941 and r['joint_source_artifact']==9088402091
+          assert r['joint_source_result_sha256']=='2edb949dbab2d7cbf6ed5e808e2a049116eb0934b25b356572463b615d730842'
+          assert r['cross_source_run']==31457199102 and r['cross_source_artifact']==9088482597
+          assert r['cross_source_result_sha256']=='62ed82eeb4f10b4371ec2072af7de527482ab070866693a2230be564ebf6af35'
+          assert r['threeway_definition']=='positive_quality_suppression AND component_closure_opportunity AND crossroute_positive'
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          for y in ('2013','2014'):
+              a=r['annual_diagnostics'][y]
+              assert a['recoverable_groups']==18 and a['surfaced_groups']==9 and a['missed_groups']==9 and len(a['rows'])==18
+          for k in ('new_rank_or_score_evaluated','selector_order_evaluated','replacement_rule_evaluated','promotion_position_evaluated','literature_panel_evaluated','successor_selected','signal_magnitude_used','threshold_search','effect_size_threshold_selected','boolean_combination_search','pairwise_fallback_evaluated','or_logic_search','xor_logic_search','rank_window_search','top_k_search','component_size_search','route_specific_rule','year_specific_rule','budget_specific_rule','feature_search','model_search','fusion_search','source_quota_selected','candidate_membership_changed','candidate_generation_changed','oracle_identity_used_for_statistic','post_result_second_search'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_threeway_consensus_diagnostic_v1/PROTOCOL.md orbittrace_v31_threeway_consensus_diagnostic_v1/diagnose.py input/joint/diag/V31_QUALITY_COMPONENT_JOINT_SIGNAL_DIAGNOSTIC.json input/cross/diag/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json > output/V31_THREEWAY_CONSENSUS_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-threeway-consensus-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

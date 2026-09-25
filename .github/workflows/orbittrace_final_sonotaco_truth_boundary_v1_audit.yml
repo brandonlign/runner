@@ -1,0 +1,50 @@
+name: OrbitTrace final SonotaCo truth boundary v1 audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_sonotaco_truth_v1/**'
+      - '.github/workflows/orbittrace_final_sonotaco_truth_boundary_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit mapping identity, truth timing, firewall, and synthetic cases
+        run: |
+          set -euo pipefail
+          p=orbittrace_final_sonotaco_truth_v1/truth_boundary.py
+          d=orbittrace_final_sonotaco_truth_v1/PROTOCOL.md
+          for x in \
+            '30855193522' \
+            'real-shower-meta-data-audit' \
+            'f8ba2446dce96d69652727092189903c40493e2fe741eb746f7fb5181edea778' \
+            '^([A-Z0-9]{3})_JA$' \
+            'pretruth_outputs_frozen' \
+            'truth_accessed_before_freeze' \
+            'pairwise_event_ids_sha256' \
+            'orbittrace_primary_output_sha256' \
+            'comparator_primary_output_sha256' \
+            'target_information_access' \
+            'target_region_access'; do
+            grep -F "$x" "$p" "$d" >/dev/null
+          done
+          if grep -Eiq 'OrbitTrace-April|rank 59|target_ra|target_dec|target_member|requests\.|urllib|curl |wget |013a\.zip|014a\.zip' "$p"; then
+            echo 'forbidden target/archive transport surface in truth-boundary source' >&2
+            exit 1
+          fi
+          python -m py_compile "$p" orbittrace_final_sonotaco_truth_v1/test_truth_boundary.py
+          PYTHONPATH=. python orbittrace_final_sonotaco_truth_v1/test_truth_boundary.py
+          test ! -e orbittrace_final_sonotaco_truth_v1/RUN.md
+          echo PASS_FINAL_SONOTACO_POSTOUTPUT_TRUTH_BOUNDARY_SOURCE_AUDIT
+          echo NO_SONOTACO_VALUES_NO_TARGET_ACCESS
