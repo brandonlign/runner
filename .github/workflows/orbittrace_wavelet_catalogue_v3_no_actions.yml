@@ -1,0 +1,173 @@
+name: OrbitTrace wavelet catalogue v3 action-free recovery
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-support-normalized-wrapper-development
+    paths:
+      - .github/workflows/orbittrace_wavelet_catalogue_v3_no_actions.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: orbittrace-wavelet-catalogue-v3-action-free-recovery
+  cancel-in-progress: true
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      PYTHONPATH: orbittrace_wavelet_catalogue_v3
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Clone exact source commit without checkout action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          git checkout --detach "${SOURCE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+
+      - name: Select built-in Python 3.11 toolcache
+        run: |
+          set -euo pipefail
+          PYTHON_BIN="$(find /opt/hostedtoolcache/Python -type f -path '*/3.11.*/x64/bin/python' | sort -V | tail -n 1)"
+          test -x "${PYTHON_BIN}"
+          echo "PYTHON_BIN=${PYTHON_BIN}" >> "${GITHUB_ENV}"
+          echo "$(dirname "${PYTHON_BIN}")" >> "${GITHUB_PATH}"
+          "${PYTHON_BIN}" --version
+
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          cd repo
+          "${PYTHON_BIN}" -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          "${PYTHON_BIN}" -m pip install --no-deps gmn-python-api==0.0.13
+
+      - name: Run target-free source and implementation audits
+        run: |
+          set -euo pipefail
+          cd repo
+          mkdir -p input/fixed4 output
+          "${PYTHON_BIN}" orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          "${PYTHON_BIN}" -m py_compile \
+            /tmp/run_wavelet_catalogue_v3_development.py \
+            orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
+          "${PYTHON_BIN}" - <<'PY'
+          import importlib.util
+          import sys
+          sys.path.insert(0, 'orbittrace_wavelet_catalogue_v3')
+          import wavelet_episode_comparator as wavelet
+          checks = wavelet.self_test()
+          print({'wavelet': checks})
+          if not all(checks.values()):
+              raise SystemExit('wavelet self-test failed')
+          spec = importlib.util.spec_from_file_location(
+              'wavelet_catalogue_v3_development',
+              '/tmp/run_wavelet_catalogue_v3_development.py',
+          )
+          module = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(module)
+          exact = module.exact_rescore_implementation_self_test()
+          print({'exact_rescore_implementation': exact})
+          if not all(exact.values()):
+              raise SystemExit('exact-rescore implementation equivalence failed')
+          PY
+
+      - name: Retrieve exact frozen fixed4 development baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd repo
+          gh run download 31106001133 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --name orbittrace-fixed4-support-normalized-wrapper-development \
+            --dir input/fixed4
+          test -f input/fixed4/orbittrace_fixed4_support_wrapper_development.json
+          "${PYTHON_BIN}" - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('input/fixed4/orbittrace_fixed4_support_wrapper_development.json').read_text())
+          assert result['verdict'] == 'FAIL_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT'
+          baseline = result['development']['panel_evaluations']['development']['metrics']['persistence']
+          assert baseline['recovered_at_100'] == 61
+          assert baseline['qualified_matches'] == 90
+          assert abs(baseline['top100_dominant_precision'] - 0.6809376504699393) < 1e-15
+          print('PASS_FIXED4_DEVELOPMENT_BASELINE_GUARD')
+          PY
+
+      - name: Run target-excluded wavelet catalogue development
+        run: |
+          set -euo pipefail
+          cd repo
+          "${PYTHON_BIN}" /tmp/run_wavelet_catalogue_v3_development.py \
+            --support-source-parts orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts mondrian_clique_development/source_parts_v2 \
+            --fixed4-baseline-json input/fixed4/orbittrace_fixed4_support_wrapper_development.json \
+            --output output
+          cat output/WAVELET_CATALOGUE_V3_DEVELOPMENT.md
+
+      - name: Enforce frozen result integrity
+        run: |
+          set -euo pipefail
+          cd repo
+          "${PYTHON_BIN}" - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('output/wavelet_catalogue_v3_development.json').read_text())
+          if result.get('verdict') not in {
+              'PASS_WAVELET_CATALOGUE_V3_DEVELOPMENT',
+              'FAIL_WAVELET_CATALOGUE_V3_DEVELOPMENT',
+          }:
+              raise SystemExit(f"invalid verdict: {result.get('verdict')}")
+          config = result['configuration']
+          assert config['years'] == [2022, 2023]
+          assert config['blind_exclusion'] == [20.0, 55.0]
+          assert config['rescue_alpha'] == 1.0 / 129.0
+          assert config['rescue_queue'] == 'fixed4 p <= 1/129; never inserted into wavelet ranking'
+          print(json.dumps({
+              'verdict': result['verdict'],
+              'evaluation': {k: v for k, v in result['evaluation'].items() if k != 'per_label'},
+              'fixed4_baseline': result['fixed4_development_baseline'],
+              'gates': result['gates'],
+          }, indent=2))
+          PY
+
+      - name: Publish immutable result branch without artifact action
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd repo
+          printf '%s\n' \
+            "source_sha=${SOURCE_SHA}" \
+            "workflow_run_id=${GITHUB_RUN_ID}" \
+            "workflow_attempt=${GITHUB_RUN_ATTEMPT}" \
+            "runner_image=ubuntu-22.04" \
+            "python=$(${PYTHON_BIN} --version 2>&1)" \
+            > output/action_free_provenance.txt
+          "${PYTHON_BIN}" -m pip freeze > output/environment.txt
+          find output -type f -size +10M -print0 | xargs -0 -r gzip -9
+          find output -type f -print0 | sort -z | xargs -0 sha256sum > output/result_files_sha256.txt
+          RESULT_ROOT="results/orbittrace-wavelet-catalogue-v3/${GITHUB_RUN_ID}"
+          mkdir -p "${RESULT_ROOT}"
+          cp -a output/. "${RESULT_ROOT}/"
+          RESULT_BRANCH="results/orbittrace-wavelet-catalogue-v3-${GITHUB_RUN_ID}"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git checkout -b "${RESULT_BRANCH}"
+          git add "${RESULT_ROOT}"
+          git commit -m "Record wavelet catalogue v3 development result ${GITHUB_RUN_ID}"
+          git push origin "${RESULT_BRANCH}"
+          echo "RESULT_BRANCH=${RESULT_BRANCH}"

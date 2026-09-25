@@ -1,0 +1,75 @@
+name: GhostStream fixed4 application source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/sonotaco-fixed4-final-development
+    paths:
+      - ghoststream_fixed4_application/**
+      - .github/workflows/ghoststream_fixed4_application_source_audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ghoststream-fixed4-application-source-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CANONICAL_ARTIFACT_ID: '8814798136'
+      CANONICAL_ARTIFACT_SHA256: '716b70313465d5df4bfb092a85a81680e6f618606b71e25470c63c480b6449f5'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ghoststream-fixed4-application-source-audit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Retrieve exact canonical GhostStream artifact without opening scientific values
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input output
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANONICAL_ARTIFACT_ID}/zip" \
+            -o input/ghoststream-canonical.zip
+          echo "${CANONICAL_ARTIFACT_SHA256}  input/ghoststream-canonical.zip" | sha256sum -c -
+      - name: Compile source-only audit
+        run: python -m py_compile ghoststream_fixed4_application/audit_source.py
+      - name: Verify detector and immutable application inputs
+        run: |
+          set -euo pipefail
+          python ghoststream_fixed4_application/audit_source.py \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            input/ghoststream-canonical.zip \
+            output
+          cat output/SOURCE_AUDIT.md
+      - name: Record provenance
+        if: always()
+        run: |
+          mkdir -p output
+          sha256sum \
+            ghoststream_fixed4_application/AUDIT_PROTOCOL.md \
+            ghoststream_fixed4_application/audit_source.py \
+            sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            input/ghoststream-canonical.zip \
+            > output/source_and_input_sha256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+      - name: Upload audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghoststream-fixed4-application-source-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

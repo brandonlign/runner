@@ -1,0 +1,82 @@
+name: OrbitTrace P8 full finite-sample order-stat source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p7-finite-sample-robust-floor-freeze
+    paths:
+      - orbittrace_full_finite_sample_order_stat_p8/**
+      - .github/workflows/orbittrace_p8_full_finite_sample_order_stat_source_audit.yml
+      - .github/workflows/orbittrace_p8_full_finite_sample_order_stat_development.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact lineage and audit fully pinned P8 freeze
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2_canonical_v2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2_canonical_v2.py /tmp/run_p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py' | sha256sum -c -
+          python orbittrace_dual_view_seed_envelope_p4/apply_p4_patch.py /tmp/run_p3.py /tmp/run_p4.py
+          echo '290c4f1b6401eaab6f182760eaeaa2f91cc994854febf465f58f7cacc5d73b2a  /tmp/run_p4.py' | sha256sum -c -
+          python orbittrace_joint_seed_support_p5/apply_p5_patch.py /tmp/run_p4.py /tmp/run_p5.py
+          echo 'b48b3e6a45a7a371eb8e73c70ee217a33a96c596c61b51ebb7dc9c7b60100456  /tmp/run_p5.py' | sha256sum -c -
+          python orbittrace_same_model_crossfit_p6/apply_p6_patch.py /tmp/run_p5.py /tmp/run_p6.py
+          echo 'd32648136b58e2f777912d6403d9de3cbd091a8c23e16aedcda0b146f09f38c2  /tmp/run_p6.py' | sha256sum -c -
+          python orbittrace_finite_sample_robust_floor_p7/apply_p7_patch.py /tmp/run_p6.py /tmp/run_p7.py
+          echo '89cf23c9d58692aedfaf12a9c2b7de4a08d641e6326794d82872f2e18608df54  /tmp/run_p7.py' | sha256sum -c -
+          python orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py /tmp/run_p7.py /tmp/run_p8.py
+          expected="$(tr -d '[:space:]' < orbittrace_full_finite_sample_order_stat_p8/SOURCE_SHA256)"
+          test "$expected" = 'd3bdcdaf18639e36cc02f5106b3a3c816f5e51eb19543f425717ba1c48a26470'
+          echo "$expected  /tmp/run_p8.py" | sha256sum -c -
+          python -m py_compile /tmp/run_p8.py orbittrace_full_finite_sample_order_stat_p8/run_header_compatible.py
+
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/run_p8.py').read_text()
+          protocol=Path('orbittrace_full_finite_sample_order_stat_p8/PROTOCOL.md').read_text()
+          wrapper=Path('orbittrace_full_finite_sample_order_stat_p8/run_header_compatible.py').read_text()
+          workflow=Path('.github/workflows/orbittrace_p8_full_finite_sample_order_stat_development.yml').read_text()
+          source_sha=Path('orbittrace_full_finite_sample_order_stat_p8/SOURCE_SHA256').read_text().strip()
+          assert source_sha=='d3bdcdaf18639e36cc02f5106b3a3c816f5e51eb19543f425717ba1c48a26470'
+          for token in (
+              'int(math.floor(P3_NEGATIVE_TAIL_MAX * (len(sorted_seed_probabilities) + 1)))',
+              'p8_exact_finite_sample_order_statistic_rank','p8_order_statistic_rank_within_seed_vector',
+              'p8_order_statistic_exclusion_budget_not_exceeded','p8_rank_one_directions_keep_inherited_minimum_floor',
+              'p8_every_surviving_proposal_meets_membership_floor','p8_no_p7_unreliable_direction_can_propose',
+              'PASS_FINITE_SAMPLE_10PCT_ORDER_STAT_MEMBERSHIP_P8_DEVELOPMENT','FAIL_FINITE_SAMPLE_10PCT_ORDER_STAT_MEMBERSHIP_P8_NO_GO',
+              '"p8_order_statistic_alpha_source": "P3_NEGATIVE_TAIL_MAX"','"p8_parameter_search": False',
+              'finite_sample_10pct_order_stat_membership_p8_development.json','p8_membership_pretruth.sha256','p8_decisions_pretruth.sha256',
+              'P3_NEGATIVE_TAIL_MAX = 0.10','negative_tail = float(np.mean(pn >= seed_floor))',
+              'scoring_scaler, scoring_classifier = crossfit_runtime_models[scoring_fold]',
+          ):
+              assert token in p, token
+          assert 'P7_ROBUST_FLOOR_MIN_SEEDS' not in p
+          assert 'probabilities = classifier.predict_proba(scaler.transform(features))[:, 1]' not in p
+          for token in ('comment `5229911755`','27 reliable directions','approximately 61.11% of P6 additions','There is exactly one primary P8 configuration','qualified known-shower matches >=95','Sparse-stream superiority against both Sugar and HDBSCAN'):
+              assert token in protocol, token
+          for token in ("EXPECTED_P8_SOURCE = Path('/tmp/run_p8.py')","spec_from_file_location('orbittrace_p8_runtime', EXPECTED_P8_SOURCE)",'module.exact_header_positions = compatible_exact_header_positions','PASS_P8_HEADER_WHITESPACE_COMPAT_SELF_TEST'):
+              assert token in wrapper, token
+          for token in ('EXECUTE_P8_AFTER_AUTHORITATIVE_P7_SCIENTIFIC_NO_GO','31295871142','9033122516','705b53bfca6a743af73d16852da3e880c28a650008c646982ff8af7560394f81','d3bdcdaf18639e36cc02f5106b3a3c816f5e51eb19543f425717ba1c48a26470','p8_rank_gt2_reliable_directions','FINITE_SAMPLE_10PCT_ORDER_STAT_MEMBERSHIP_P8_DEVELOPMENT.md','orbittrace-finite-sample-10pct-order-stat-membership-p8-development'):
+              assert token in workflow, token
+          for token in ('OrbitTrace-April','target_coordinate'):
+              assert token not in p and token not in workflow, token
+          print('PASS_P8_FULL_FINITE_SAMPLE_ORDER_STAT_FULL_FREEZE_AUDIT')
+          PY
+          sha256sum /tmp/run_p8.py orbittrace_full_finite_sample_order_stat_p8/PROTOCOL.md orbittrace_full_finite_sample_order_stat_p8/apply_p8_patch.py orbittrace_full_finite_sample_order_stat_p8/run_header_compatible.py orbittrace_full_finite_sample_order_stat_p8/SOURCE_SHA256 .github/workflows/orbittrace_p8_full_finite_sample_order_stat_development.yml
+
+      - name: Assert source-only firewall
+        run: |
+          set -euo pipefail
+          test ! -e orbittrace_full_finite_sample_order_stat_p8/RUN.md
+          test ! -e target
+          echo NO_P8_TRUTH_EXECUTION_NO_TARGET_ACCESS

@@ -1,0 +1,98 @@
+name: OrbitTrace P13 matched durable status capture v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-launcher-v2
+    paths:
+      - orbittrace_core_halo_p13_literature/STATUS_CAPTURE_V2.md
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Require one-file status child
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'orbittrace_core_halo_p13_literature/STATUS_CAPTURE_V2.md'
+          m="$(git show "$HEAD_SHA":orbittrace_core_halo_p13_literature/STATUS_CAPTURE_V2.md)"
+          test "$(printf '%s\n' "$m" | sed -n '1p')" = 'CAPTURE_P13_MATCHED_DURABLE_STATUS_V2'
+          test "$(printf '%s\n' "$m" | sed -n '2p')" = '31307057800'
+          test "$(printf '%s\n' "$m" | wc -l)" -eq 2
+      - name: Classify run strictly from its own state/artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN=31307057800
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" > /tmp/run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/jobs?per_page=100" > /tmp/jobs.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/artifacts?per_page=100" > /tmp/artifacts.json
+          rm -rf /tmp/a && mkdir -p /tmp/a
+          python - <<'PY'
+          import json,subprocess,os
+          for x in json.load(open('/tmp/artifacts.json')).get('artifacts',[]):
+              d=f"/tmp/a/{x['id']}"; os.makedirs(d,exist_ok=True)
+              subprocess.run(['gh','run','download','31307057800','--repo',os.environ['GITHUB_REPOSITORY'],'--name',x['name'],'--dir',d],check=False)
+          PY
+          python - <<'PY' > /tmp/classification.json
+          import json
+          from pathlib import Path
+          run=json.load(open('/tmp/run.json')); jobs=json.load(open('/tmp/jobs.json')); arts=json.load(open('/tmp/artifacts.json')).get('artifacts',[])
+          finals=list(Path('/tmp/a').rglob('p13_matched_literature_result.json'))
+          p3=list(Path('/tmp/a').rglob('p3_evaluator_result.json'))
+          cps=list(Path('/tmp/a').rglob('*.pkl'))
+          out={'run_id':run.get('id'),'status':run.get('status'),'conclusion':run.get('conclusion'),'head_sha':run.get('head_sha'),'updated_at':run.get('updated_at'),'artifact_count':len(arts),'final_result_count':len(finals),'p3_result_count':len(p3),'checkpoint_count':len(cps),'kind':'IN_PROGRESS','verdict':None,'classification':None,'external_validation_authorized':False,'target_access_authorized':False,'panels':{}}
+          if run.get('status')!='completed':
+              out['kind']='IN_PROGRESS'
+          elif finals:
+              assert len(finals)==1,finals
+              r=json.loads(finals[0].read_text())
+              out['verdict']=r.get('verdict'); out['classification']=r.get('classification'); out['external_validation_authorized']=bool(r.get('external_validation_authorized')); out['target_access_authorized']=bool(r.get('target_access_authorized')); out['panels']=r.get('panels',{})
+              if r.get('verdict')=='PASS_P13_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS': out['kind']='MATCHED_PASS'
+              elif r.get('verdict')=='FAIL_P13_MATCHED_SPARSE_SUPERIORITY_NO_GO': out['kind']='MATCHED_NO_GO'
+              else: out['kind']='RESULT_SCHEMA_ERROR'
+          elif p3:
+              out['kind']='POSTTRUTH_TECHNICAL_INTERRUPTION'
+          elif cps:
+              out['kind']='PRETRUTH_CHECKPOINT_TECHNICAL_NO_RESULT'
+          else:
+              out['kind']='TECHNICAL_NO_RESULT_BEFORE_CHECKPOINT'
+          print(json.dumps(out,sort_keys=True))
+          PY
+          python - <<'PY' > /tmp/body.md
+          import json
+          r=json.load(open('/tmp/classification.json'))
+          print('P13 MATCHED DURABLE STATUS CAPTURE V2')
+          for k in ('run_id','status','conclusion','head_sha','updated_at','artifact_count','checkpoint_count','p3_result_count','final_result_count','kind','verdict','classification','external_validation_authorized','target_access_authorized'):
+              print(f"- {k}: `{r.get(k)}`")
+          for panel,q in r.get('panels',{}).items():
+              print(f"- {panel}: status `{q.get('status')}` sparse `{q.get('sparse_pairwise_pass')}` broad `{q.get('broad_pairwise_pass')}` year sparse `{q.get('year_sparse_pass')}`")
+          PY
+          KIND="$(python -c 'import json; print(json.load(open("/tmp/classification.json"))["kind"])')"
+          case "$KIND" in
+            MATCHED_PASS) TITLE='[MATCHED PASS] P13 beats Sugar/HDBSCAN sparse gates in both years' ;;
+            MATCHED_NO_GO) TITLE='[MATCHED NO-GO] P13 failed frozen Sugar/HDBSCAN sparse benchmark' ;;
+            POSTTRUTH_TECHNICAL_INTERRUPTION) TITLE='[post-truth technical interruption] P13 matched result requires exact continuation' ;;
+            PRETRUTH_CHECKPOINT_TECHNICAL_NO_RESULT) TITLE='[pretruth technical no-result] P13 matched benchmark interrupted after checkpoints' ;;
+            TECHNICAL_NO_RESULT_BEFORE_CHECKPOINT) TITLE='[technical no-result] P13 matched benchmark failed before checkpoints' ;;
+            IN_PROGRESS) TITLE='[in progress] P13 matched Sugar/HDBSCAN benchmark' ;;
+            *) TITLE='[status error] P13 matched benchmark' ;;
+          esac
+          gh pr edit 680 --repo "$GITHUB_REPOSITORY" --title "$TITLE"
+          gh pr comment 680 --repo "$GITHUB_REPOSITORY" --body-file /tmp/body.md
+          cat /tmp/body.md

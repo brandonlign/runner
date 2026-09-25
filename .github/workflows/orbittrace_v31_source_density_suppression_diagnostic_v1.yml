@@ -1,0 +1,209 @@
+name: OrbitTrace v31 source-density suppression diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_source_density_suppression_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_source_density_suppression_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-source-density-suppression-diagnostic-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: 130df7b2645e6b4c2552dbf3c43b87da733cedd1
+          path: frozen-refdiag
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install and pin frozen diagnostic sources
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/ranker input/payload input/truth input/rankgap output/parent output/rankref output/freeze output/diag
+          test "$(git hash-object orbittrace_v31_source_density_suppression_diagnostic_v1/PROTOCOL.md)" = 'daf8ec99379285a034ea4790f5a015697509ccfc'
+          test "$(git hash-object orbittrace_v31_source_density_suppression_diagnostic_v1/diagnose.py)" = 'd32cd7724e110d72e3db9b7e6f703b59a00482c6'
+          test "$(git hash-object orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py)" = '917e3cd6f9310ca1282e0efa58ed0924d03ed4da'
+          test "$(git -C frozen-refdiag rev-parse HEAD)" = '130df7b2645e6b4c2552dbf3c43b87da733cedd1'
+          test "$(git -C frozen-refdiag hash-object orbittrace_v31_same_route_reference_interference_diagnostic_v1/diagnose.py)" = '886285ccdea07f6aca90317f6fe52fda97aa46d3'
+          test "$(git hash-object orbittrace_v22_sonotaco_grouped_oof_ranker_v1/train_evaluate.py)" = '88e67cbb3429de701f7e774ad108f2080b4ffb1b'
+          test "$(git hash-object orbittrace_v24_twohead_worst_prediction_v1/train_evaluate.py)" = 'cb981af547f74664a0956a72547a4ee6037cd438'
+          python -m py_compile orbittrace_v31_source_density_suppression_diagnostic_v1/diagnose.py frozen-refdiag/orbittrace_v31_same_route_reference_interference_diagnostic_v1/diagnose.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - name: Restore immutable #950 payload before #1046 status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip -d input/payload
+          test ! -e input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json
+          python - <<'PY'
+          import json,collections
+          m=json.load(open('input/payload/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+          assert m['truth_accessed'] is False and len(m['family_ids'])==229 and len(m['sources'])==229
+          assert dict(collections.Counter(map(str,m['sources'])))=={'hard':19,'p19':54,'p20':156}
+          assert m['target_information_access'] is False and m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_SOURCE_DENSITY_IMMUTABLE_SOURCE_COUNTS')
+          PY
+
+      - name: Load immutable exposed v31 training truth before #1046 status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test ! -e input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+
+      - name: Reproduce exact v31 before #1046 status
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          test ! -e input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json
+          python -u orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --output output/parent
+
+      - name: Reconstruct exact pre-status v31 rank vector through frozen #1186 freeze
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          test ! -e input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json
+          python -u frozen-refdiag/orbittrace_v31_same_route_reference_interference_diagnostic_v1/diagnose.py freeze \
+            --sugar-root input/payload/sugar --hdbscan-root input/payload/hdbscan \
+            --truth-root input/truth --ranker-source input/ranker/run_urc_union_ranker.py \
+            --parent-result output/parent/V31_LOCAL_GEOMETRY_OOF_RESULT.json \
+            --output output/rankref
+          python - <<'PY'
+          import json
+          v=json.load(open('output/rankref/V31_SAME_ROUTE_REFERENCE_COUNTERFACTUAL_VECTOR.json'))
+          assert v['canonical_family_vector_sha256']=='3c3e7d8d9a19e9ceee191901f14fec6b0ff8678fa4e67b65b1a78572df008301'
+          assert v['rankgap_1046_loaded_before_vector_freeze'] is False
+          print('PASS_SOURCE_DENSITY_PRESTATUS_V31_RANK_VECTOR')
+          PY
+
+      - name: Freeze complete source-density vector before #1046 status
+        run: |
+          set -euo pipefail
+          test ! -e input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json
+          python -u orbittrace_v31_source_density_suppression_diagnostic_v1/diagnose.py freeze \
+            --manifest-file input/payload/hdbscan/V22_PRETRUTH_FEATURE_MANIFEST.json \
+            --rank-vector-file output/rankref/V31_SAME_ROUTE_REFERENCE_COUNTERFACTUAL_VECTOR.json \
+            --output output/freeze
+          python - <<'PY'
+          import json
+          v=json.load(open('output/freeze/V31_SOURCE_DENSITY_VECTOR.json'))
+          assert v['verdict']=='PASS_V31_SOURCE_DENSITY_VECTOR_FREEZE'
+          assert v['family_count']==229 and v['source_counts']=={'hard':19,'p19':54,'p20':156}
+          assert v['v31_fused_order_sha256']=='85ac3f29a443c35b3812cf28c99ef13474fc3e0455458e20b41cec64d942073d'
+          assert v['rankgap_1046_loaded_before_vector_freeze'] is False
+          assert v['source_quota_evaluated'] is False and v['candidate_order_evaluated'] is False and v['successor_selected'] is False
+          assert v['target_information_access'] is False and v['target_region_events_accessed'] is False
+          assert v['maarsy_scientific_access'] is False and v['dms_scientific_access'] is False
+          assert v['blind_exclusion']==[20.0,55.0]
+          print('PASS_SOURCE_DENSITY_VECTOR_FROZEN',v['canonical_family_vector_sha256'])
+          PY
+
+      - name: Restore authoritative #1046 status only after source vector freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9086399760/zip' -o input/rankgap.zip
+          echo 'a2c373df77ef7e0065c1d8aceb1f6e5826f1e30b6286f2331c362d959f1d7f69  input/rankgap.zip' | sha256sum -c -
+          unzip -p input/rankgap.zip diag/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json > input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json
+          echo 'e4e09546e17b9a5da7ce12ad9af4bb7129533fd9b5be846ebc859719f01a9758  input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json' | sha256sum -c -
+
+      - name: Run sole source-density suppression diagnostic
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_source_density_suppression_diagnostic_v1/diagnose.py diagnose \
+            --vector-file output/freeze/V31_SOURCE_DENSITY_VECTOR.json \
+            --rankgap-file input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json \
+            --output output/diag
+
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_SOURCE_DENSITY_SUPPRESSION_DIAGNOSTIC.json'))
+          assert r['verdict'] in {'PASS_V31_SOURCE_DENSITY_SUPPRESSION_DIAGNOSTIC','FAIL_V31_SOURCE_DENSITY_SUPPRESSION_DIAGNOSTIC'}
+          assert r['scientific_role']=='POST_V60_PROPOSAL_SOURCE_DENSITY_MECHANISM_DIAGNOSTIC_ONLY_NO_SOURCE_NORMALIZED_ORDER_EVALUATED'
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          for k in ('source_normalized_candidate_order_evaluated','source_quota_search','source_weight_search','source_specific_outcome_subset_search','threshold_search','top_k_search','rank_window_search','feature_search','metric_search','k_search','scaling_search','annual_combiner_search','diversity_search','fusion_search','alternate_representative_search','budget_specific_rule','year_specific_rule','oracle_identity_used_for_ranking','successor_selected','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY' and r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'],r['annual_diagnostics'])
+          PY
+
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum \
+            orbittrace_v31_source_density_suppression_diagnostic_v1/PROTOCOL.md \
+            orbittrace_v31_source_density_suppression_diagnostic_v1/diagnose.py \
+            frozen-refdiag/orbittrace_v31_same_route_reference_interference_diagnostic_v1/diagnose.py \
+            orbittrace_v31_local_geometry_margin_oof_v1/train_evaluate.py \
+            output/rankref/V31_SAME_ROUTE_REFERENCE_COUNTERFACTUAL_VECTOR.json \
+            output/freeze/V31_SOURCE_DENSITY_VECTOR.json \
+            input/rankgap/V31_HDB_MISSED_LABEL_RANKGAP_DIAGNOSTIC.json \
+            output/diag/V31_SOURCE_DENSITY_SUPPRESSION_DIAGNOSTIC.json \
+            > output/V31_SOURCE_DENSITY_SUPPRESSION_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-source-density-suppression-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

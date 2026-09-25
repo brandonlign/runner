@@ -1,0 +1,203 @@
+name: OrbitTrace wavelet catalogue v3 Windows recovery v2
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-fixed4-support-normalized-wrapper-development
+    paths:
+      - .github/workflows/orbittrace_wavelet_catalogue_v3_windows_recovery_v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: orbittrace-wavelet-catalogue-v3-windows-recovery-v2
+  cancel-in-progress: true
+
+jobs:
+  develop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONPATH: orbittrace_wavelet_catalogue_v3
+      FROZEN_SOURCE_SHA: f930664025250c9861683bef5bdeb0c6d19a4231
+    steps:
+      - name: Clone exact frozen source without marketplace actions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git init source
+          Set-Location source
+          git remote add origin "https://x-access-token:$env:GH_TOKEN@github.com/$env:GITHUB_REPOSITORY.git"
+          git fetch --no-tags --depth=1 origin $env:FROZEN_SOURCE_SHA
+          git checkout --detach FETCH_HEAD
+          $head = (git rev-parse HEAD).Trim()
+          if ($head -ne $env:FROZEN_SOURCE_SHA) { throw "source SHA mismatch: $head" }
+
+      - name: Select built-in Python 3.11 toolcache
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\hostedtoolcache\windows\Python'
+          $version = Get-ChildItem $root -Directory |
+            Where-Object { $_.Name -like '3.11.*' } |
+            Sort-Object { [version]$_.Name } |
+            Select-Object -Last 1
+          if (-not $version) { throw 'Python 3.11 toolcache not found' }
+          $python = Join-Path $version.FullName 'x64\python.exe'
+          if (-not (Test-Path $python)) { throw "Python executable not found: $python" }
+          "PYTHON_BIN=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $python --version
+
+      - name: Install frozen dependencies
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & $env:PYTHON_BIN -m pip install --upgrade pip -r ghoststream_fixed4_application/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'dependency install failed' }
+          & $env:PYTHON_BIN -m pip install --no-deps gmn-python-api==0.0.13
+          if ($LASTEXITCODE -ne 0) { throw 'gmn-python-api install failed' }
+
+      - name: Run target-free source and implementation audits
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path input\fixed4, output, C:\tmp, D:\tmp | Out-Null
+          & $env:PYTHON_BIN orbittrace_wavelet_catalogue_v3/audit_development_source.py
+          if ($LASTEXITCODE -ne 0) { throw 'source audit failed' }
+          $runnerSource = @('D:\tmp\run_wavelet_catalogue_v3_development.py', 'C:\tmp\run_wavelet_catalogue_v3_development.py') |
+            Where-Object { Test-Path $_ } |
+            Select-Object -First 1
+          if (-not $runnerSource) { throw 'decoded development runner not found' }
+          "RUNNER_SOURCE=$runnerSource" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $env:PYTHON_BIN -m py_compile $runnerSource orbittrace_wavelet_catalogue_v3/wavelet_episode_comparator.py
+          if ($LASTEXITCODE -ne 0) { throw 'source compilation failed' }
+          @'
+          import importlib.util
+          import os
+          import sys
+          sys.path.insert(0, 'orbittrace_wavelet_catalogue_v3')
+          import wavelet_episode_comparator as wavelet
+          checks = wavelet.self_test()
+          print({'wavelet': checks})
+          if not all(checks.values()):
+              raise SystemExit('wavelet self-test failed')
+          spec = importlib.util.spec_from_file_location('wavelet_catalogue_v3_development', os.environ['RUNNER_SOURCE'])
+          module = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(module)
+          exact = module.exact_rescore_implementation_self_test()
+          print({'exact_rescore_implementation': exact})
+          if not all(exact.values()):
+              raise SystemExit('exact-rescore implementation equivalence failed')
+          '@ | & $env:PYTHON_BIN -
+          if ($LASTEXITCODE -ne 0) { throw 'implementation audit failed' }
+
+      - name: Retrieve and guard exact frozen fixed4 baseline
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import io
+          import json
+          import os
+          import zipfile
+          from pathlib import Path
+          import requests
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          response = requests.get(
+              f'https://api.github.com/repos/{repo}/actions/runs/31106001133/artifacts',
+              headers=headers,
+              timeout=60,
+          )
+          response.raise_for_status()
+          matches = [a for a in response.json()['artifacts'] if a['name'] == 'orbittrace-fixed4-support-normalized-wrapper-development']
+          if len(matches) != 1:
+              raise SystemExit(f'expected one frozen baseline artifact, found {len(matches)}')
+          archive = requests.get(matches[0]['archive_download_url'], headers=headers, timeout=120)
+          archive.raise_for_status()
+          output = Path('input/fixed4')
+          output.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(archive.content)) as bundle:
+              bundle.extractall(output)
+          result = json.loads((output / 'orbittrace_fixed4_support_wrapper_development.json').read_text())
+          assert result['verdict'] == 'FAIL_SUPPORT_NORMALIZED_WRAPPER_DEVELOPMENT'
+          baseline = result['development']['panel_evaluations']['development']['metrics']['persistence']
+          assert baseline['recovered_at_100'] == 61
+          assert baseline['qualified_matches'] == 90
+          assert abs(baseline['top100_dominant_precision'] - 0.6809376504699393) < 1e-15
+          print('PASS_FIXED4_DEVELOPMENT_BASELINE_GUARD')
+          '@ | & $env:PYTHON_BIN -
+          if ($LASTEXITCODE -ne 0) { throw 'fixed4 baseline guard failed' }
+
+      - name: Run target-excluded wavelet catalogue development
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $arguments = @(
+            $env:RUNNER_SOURCE,
+            '--support-source-parts', 'orbittrace_fixed4_support_wrapper_development/source_parts',
+            '--candidate-payload', 'sonotaco_fixed4_final_development/candidate.py.gz.b64',
+            '--baseline-payload', 'real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64',
+            '--scorer-parts', 'mondrian_clique_development/source_parts_v2',
+            '--fixed4-baseline-json', 'input/fixed4/orbittrace_fixed4_support_wrapper_development.json',
+            '--output', 'output'
+          )
+          & $env:PYTHON_BIN @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'catalogue development failed' }
+          Get-Content output\WAVELET_CATALOGUE_V3_DEVELOPMENT.md
+
+      - name: Enforce and expose complete development result
+        shell: pwsh
+        working-directory: source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          from pathlib import Path
+          result_path = Path('output/wavelet_catalogue_v3_development.json')
+          result = json.loads(result_path.read_text())
+          allowed = {'PASS_WAVELET_CATALOGUE_V3_DEVELOPMENT', 'FAIL_WAVELET_CATALOGUE_V3_DEVELOPMENT'}
+          if result.get('verdict') not in allowed:
+              raise SystemExit(f"invalid verdict: {result.get('verdict')}")
+          config = result['configuration']
+          assert config['years'] == [2022, 2023]
+          assert config['blind_exclusion'] == [20.0, 55.0]
+          assert config['rescue_alpha'] == 1.0 / 129.0
+          assert config['rescue_queue'] == 'fixed4 p <= 1/129; never inserted into wavelet ranking'
+          summary = {
+              'verdict': result['verdict'],
+              'evaluation': {k: v for k, v in result['evaluation'].items() if k != 'per_label'},
+              'fixed4_baseline': result['fixed4_development_baseline'],
+              'gates': result['gates'],
+              'counts': {
+                  'anchor_count': result['anchor_count'],
+                  'component_count': result['component_count'],
+                  'family_count': result['family_count'],
+              },
+          }
+          print('ORBITTRACE_RESULT_SUMMARY_BEGIN')
+          print(json.dumps(summary, indent=2))
+          print('ORBITTRACE_RESULT_SUMMARY_END')
+          for path in sorted(Path('output').glob('*')):
+              if path.is_file():
+                  print(f'OUTPUT_SHA256 {hashlib.sha256(path.read_bytes()).hexdigest()} {path.name} {path.stat().st_size}')
+          print('ORBITTRACE_RESULT_JSON_BEGIN')
+          print(result_path.read_text())
+          print('ORBITTRACE_RESULT_JSON_END')
+          '@ | & $env:PYTHON_BIN -
+          if ($LASTEXITCODE -ne 0) { throw 'result integrity failed' }

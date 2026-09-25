@@ -1,0 +1,112 @@
+name: OrbitTrace P18 matched truth launcher source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p17_rank_halo_membership_p18/prepare_p18_matched_truth_runtime.py
+      - orbittrace_p17_rank_halo_membership_p18/run_matched_truth_once.sh
+      - .github/workflows/orbittrace_p18_matched_truth_once.yml
+      - .github/workflows/orbittrace_p18_matched_truth_launcher_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Prove exact inherited staging, one evaluator invocation, frozen P18 finalizer, and no target/external access
+        run: |
+          set -euo pipefail
+          helper=orbittrace_p17_rank_halo_membership_p18/prepare_p18_matched_truth_runtime.py
+          launcher=orbittrace_p17_rank_halo_membership_p18/run_matched_truth_once.sh
+          wf=.github/workflows/orbittrace_p18_matched_truth_once.yml
+          proto=orbittrace_p17_rank_halo_membership_p18/P18_MATCHED_TRUTH_OPENING_PROTOCOL.md
+          bash -n "$launcher"
+          python -m py_compile "$helper" orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py
+          test "$(git hash-object orbittrace_support_safe_halo_p15/run_matched_evaluator_after_pretruth.sh)" = 'f5d7177a7f58aa4d5150b43755ec8ca838a29c51'
+          test "$(git hash-object "$helper")" = 'f3ea3bd83eb5f70e7ade2beb406ef8b6a7fdadeb'
+          test "$(git hash-object orbittrace_p17_rank_halo_membership_p18/prepare_p18_compatible_p13_finalizer.py)" = 'cb5a66e7481fa4542b28135dc4c8c89ef33b276f'
+          test "$(git hash-object orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py)" = '9f7b8ea6279434e7243ac9debdbf5d5a4a33aadd'
+          test "$(git hash-object "$proto")" = '444c08ed2678a1b2eb6949a043799d63c3ec1a1b'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/finalize_p14_matched_result_transport_v3.py)" = '1e9160c7beb5bc7651dc2b9f03db6211bc639ac6'
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p14_matched_result.py)" = 'd1ce98f443b2039d70421e76dadb6ada77d1b0d5'
+          test "$(git hash-object orbittrace_core_halo_p13_literature/finalize_p3_evaluator_result.py)" = 'a5d812b9956742b51e7e3995a71eb308afa7d095'
+
+          python "$helper" \
+            --parent orbittrace_support_safe_halo_p15/run_matched_evaluator_after_pretruth.sh \
+            --stage-output /tmp/p18_stage.sh \
+            --evaluator-output /tmp/p18_evaluator_once.sh
+          bash -n /tmp/p18_stage.sh
+          bash -n /tmp/p18_evaluator_once.sh
+          test "$(grep -Fc 'python -u input/evaluator/evaluate_frozen_blindsafe.py' /tmp/p18_evaluator_once.sh)" -eq 1
+          test "$(grep -Fc 'prepare_p18_compatible_p13_finalizer.py' /tmp/p18_stage.sh)" -eq 1
+          test "$(grep -Fc 'prepare_transport_compatible_p13_finalizer.py' /tmp/p18_stage.sh)" -eq 0
+          for x in \
+            '9012424187' '8955917326' '8957940764' '8957263372' \
+            '35f629b1dff4d04cdc13aa8224171ec1ab8e06b52836900d66ff978b5c235761' \
+            '8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3' \
+            '2b9e86572f10af447071cb10c56f643c1ad8babfe0d9aa667994ba3639834389' \
+            '77844d700bb14bb9952307fad13eb66cbc62e6a1555e5edd9c8aa0d26968b06e' \
+            '9f44696f99164801ff405dab90f68df3666b0d6734fed464a95e7ed0d6f5f430' \
+            'f4eb716a4b900658fcc658a633d918eca28946f59da75935f1fd5f6bc539bf52'; do
+            grep -F "$x" /tmp/p18_stage.sh
+          done
+
+          for x in \
+            'EXECUTE_P18_MATCHED_TRUTH_ONCE' \
+            "PRETRUTH_NAME='orbittrace-p18-matched-pretruth-checkpoints'" \
+            "r['name']=='OrbitTrace P18 matched pretruth checkpoint transform'" \
+            "r['event']=='pull_request'" \
+            "r['head_branch']=='agent/orbittrace-p18-pretruth-transform-run-v1'" \
+            "m['classification']=='P18_MATCHED_PRETRUTH'" \
+            "m['competitor_cluster_values_accessed'] is False" \
+            "m['known_shower_truth_accessed'] is False" \
+            "m['target_information_access'] is False" \
+            'PASS_P18_MATCHED_TRUTH_HARD_BARRIER_BEFORE_TRUTH' \
+            "progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'" \
+            '/tmp/p18_evaluator_once.sh' \
+            '/tmp/finalize_p18_p13.py' \
+            'finalize_p18_matched_result.py' \
+            'PASS_P18_MATCHED_SPARSE_SUPERIORITY_BOTH_COMPARATORS_BOTH_YEARS' \
+            'FAIL_P18_MATCHED_SPARSE_SUPERIORITY_NO_GO' \
+            "r['target_access_authorized'] is False" \
+            'p18_matched_execution_provenance.json'; do
+            grep -F "$x" "$launcher"
+          done
+          test "$(grep -Fc "progress 'OPEN MATCHED TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE'" "$launcher")" -eq 1
+          test "$(grep -Ec '^/tmp/p18_evaluator_once\.sh$' "$launcher")" -eq 1
+          test "$(grep -Fc ' --evaluator-output /tmp/p18_evaluator_once.sh' "$launcher")" -eq 1
+          test "$(grep -Fc 'python orbittrace_p17_rank_halo_membership_p18/finalize_p18_matched_result.py' "$launcher")" -eq 1
+          grep -F 'orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md' "$wf"
+          grep -F 'orbittrace-p18-matched-literature-result' "$wf"
+          test "$(grep -Fc 'chmod +x orbittrace_p17_rank_halo_membership_p18/run_matched_truth_once.sh' "$wf")" -eq 1
+          test "$(grep -Ec '^          orbittrace_p17_rank_halo_membership_p18/run_matched_truth_once\.sh$' "$wf")" -eq 1
+          test ! -e orbittrace_p17_rank_halo_membership_p18/MATCHED_TRUTH_RUN.md
+
+          for forbidden in \
+            'generate_matched_pretruth' 'promote_p17_checkpoint_to_p18.py' \
+            'apply_support_safe_halo_p15.py' 'apply_reciprocal_support_closure_p17.py' \
+            'MAARSY' 'EXTERNAL_RUN' 'STAGE_A_RUN' 'STAGE_B_RUN'; do
+            if grep -Fq "$forbidden" "$launcher" "$wf" "$helper"; then
+              echo "forbidden posttruth/external surface in P18 matched launcher: $forbidden" >&2
+              exit 1
+            fi
+          done
+          # Target names are allowed only as explicit rejection sentinels; generated runtime must contain neither.
+          test "$(grep -Fc "require('OrbitTrace-April' not in stage_p18 and 'target_coordinate' not in stage_p18" "$helper")" -eq 1
+          test "$(grep -Fc "require('OrbitTrace-April' not in evaluator and 'target_coordinate' not in evaluator" "$helper")" -eq 1
+          test "$(grep -Fc "if grep -Eq 'OrbitTrace-April|target_coordinate' /tmp/p18_stage.sh /tmp/p18_evaluator_once.sh; then" "$launcher")" -eq 1
+          if grep -Eq 'OrbitTrace-April|target_coordinate' /tmp/p18_stage.sh /tmp/p18_evaluator_once.sh; then
+            echo 'target token leaked into generated P18 matched runtime' >&2
+            exit 1
+          fi
+          grep -F 'run the already-frozen blind-safe matched evaluator **once**' "$proto"
+          grep -F 'No P17/P18 detector, halo proposal, family constructor, score, distance, membership model, threshold, merge, or ranking code may run after truth becomes available' "$proto"
+          echo PASS_P18_MATCHED_TRUTH_LAUNCHER_SOURCE_FREEZE
+          echo NO_COMPARATOR_VALUE_INDEXED_NO_MATCHED_TRUTH_OPENED_NO_EXTERNAL_NO_TARGET_ACCESS

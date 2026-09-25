@@ -1,0 +1,50 @@
+name: OrbitTrace P13 matched v5 provenance correction audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-literature-freeze
+    paths:
+      - orbittrace_core_halo_p13_literature/HDBSCAN_2025_ASSIGNMENT_SHA_CORRECTION.md
+      - orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v5.sh
+      - .github/workflows/orbittrace_p13_matched_launcher_child_v5.yml
+      - .github/workflows/orbittrace_p13_matched_v5_provenance_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit one-string pretruth provenance correction
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
+          bash -n orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v5.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v5.sh').read_text()
+          n=Path('orbittrace_core_halo_p13_literature/HDBSCAN_2025_ASSIGNMENT_SHA_CORRECTION.md').read_text()
+          stale='8e7580c52e41e6996d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3'
+          correct='8e7580c52e41e6994d6e46f289a7b916565a4efc512c5549ee83f249d0e81ee3'
+          assert stale in p and correct in p
+          assert stale in n and correct in n
+          for token in ('8955917326','82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89','31071589912','92521152371'):
+              assert token in n,token
+          assert "if src.count(stale)!=1" in p
+          assert "src=src.replace(stale,correct,1)" in p
+          assert "v5 transport anchor count=" in p and "v5 marker anchor count=" in p
+          assert 'LAUNCH_P13_MATCHED_TECHNICAL_RECOVERY_V5' in p and '31323275459' in p
+          for aid,zsha in {
+            '9012424187':'2a953a237d32abfed8cfef110689623ec47e9acc9ed15eddee23a39d358d1bd4',
+            '8955917326':'82e95052eb75349031341ea600aebf8f74d6842f03c0e47edf7cdea6de471a89',
+            '8957940764':'ea77c5111a7be51ff2bb45b16df934f7c808c695d08ac12003025de971df4fdf',
+            '8957263372':'9df4a48f4808180d534086e560e68ae56486f60171510207acd7bd6fedeebbc9'}.items():
+              assert aid in p and zsha in p,(aid,zsha)
+          assert 'OrbitTrace-April' not in p+n and 'target_coordinate' not in p+n
+          print('PASS_P13_V5_PRETRUTH_PROVENANCE_CORRECTION_SOURCE_AUDIT')
+          PY
+          test ! -e orbittrace_core_halo_p13_literature/LAUNCH_V5.md
+          echo NO_BENCHMARK_EXECUTION_NO_ASSIGNMENT_VALUE_PARSE_NO_TRUTH_NO_TARGET_ACCESS

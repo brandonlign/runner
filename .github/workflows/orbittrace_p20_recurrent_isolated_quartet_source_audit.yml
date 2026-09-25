@@ -1,0 +1,138 @@
+name: OrbitTrace P20 recurrent isolated-quartet source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md
+      - orbittrace_p20_recurrent_isolated_quartet/run_development.py
+      - .github/workflows/orbittrace_p20_recurrent_isolated_quartet_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove exact P20 science freeze and target firewall
+        run: |
+          set -euo pipefail
+          s=orbittrace_p20_recurrent_isolated_quartet/run_development.py
+          p=orbittrace_p20_recurrent_isolated_quartet/P20_PROTOCOL.md
+          test "$(git hash-object "$s")" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          test "$(git hash-object "$p")" = '94b732a303bd03d74317cf1101a0af5816bc06fd'
+          python -m py_compile "$s"
+          test ! -e orbittrace_p20_recurrent_isolated_quartet/RUN.md
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          s=Path('orbittrace_p20_recurrent_isolated_quartet/run_development.py').read_text()
+          tree=ast.parse(s)
+          defs={n.name:n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef)}
+          for name in (
+              'isolated_quartets','nearest_other_year','build_recurrent_isolated_quartets',
+              'annual_bin_metrics','main'
+          ):
+              assert name in defs, name
+          isolated=ast.get_source_segment(s,defs['isolated_quartets'])
+          nearest=ast.get_source_segment(s,defs['nearest_other_year'])
+          build=ast.get_source_segment(s,defs['build_recurrent_isolated_quartets'])
+          main=ast.get_source_segment(s,defs['main'])
+
+          for x in (
+              'YEARS = (2022, 2023)',
+              'BLIND = (20.0, 55.0)',
+              'LINK_RADIUS = 1.5',
+              'EXPECTED_V8_FAMILIES = 226',
+              'EXPECTED_V8_QUALIFIED = 95',
+              'EXPECTED_V8_RECOVERY100 = 58',
+              'EXPECTED_V8_RESULT_SHA256 = "fa8f52cf046ced499a378cc6b7d04c52ef92bf0fa3f801049211d190f1c3919b"',
+          ):
+              assert x in s, x
+
+          # Candidate generation and cross-year pairing are label-free by construction.
+          assert 'hidden_labels' not in isolated
+          assert 'hidden_labels' not in nearest
+          assert 'hidden_labels' not in build
+          assert 'component_event_ids' in isolated
+          assert 'if any(eid in component_event_ids for eid in ids)' in isolated
+          assert 'len(ids) == 4 and len(set(ids)) == 4' in isolated
+          assert 'd > LINK_RADIUS' in nearest
+          assert 'if m23.get(q23_id) != q22_id' in build
+          assert 'len(event_ids) == 8' in build
+          assert '"membership_expansion": False' in build
+          assert '"recursion": False' in build
+          assert '"new_scientific_radius": False' in build
+
+          # Exact promoted-v8 backbone is rebuilt before the P20-only layer.
+          assert 'label_free_scan_year' in main
+          assert 'support.build_families(components, base)' in main
+          assert 'repair_year_centroids' in main
+          assert 'mult.score_families' in main
+          assert 'hard_multiplicity = mult.rank_scored' in main
+          assert 'p20_order = hard_multiplicity +' in main
+          assert 'p20_order[:len(hard_multiplicity)] == hard_multiplicity' in main
+
+          # All structural outputs are frozen before first truth evaluation.
+          assert 'prelabel_sha = sha256_json(prelabel_payload)' in main
+          hash_pos=main.index('prelabel_sha = sha256_json(prelabel_payload)')
+          eval_pos=main.index('baseline = mult.evaluate_order(hidden_labels')
+          assert hash_pos < eval_pos
+
+          # Frozen no-search and target-boundary assertions.
+          for x in (
+              '"parameter_search": False',
+              '"threshold_search": False',
+              '"radius_search": False',
+              '"component_floor_search": False',
+              '"variant_search": False',
+              '"no_target_information_access": True',
+          ):
+              assert x in main, x
+
+          # Permit literal survey names in the human-readable claim boundary, but forbid
+          # any implementation surface capable of reaching external/target data.
+          imported=set()
+          for node in ast.walk(tree):
+              if isinstance(node,ast.Import):
+                  imported.update(alias.name.split('.')[0] for alias in node.names)
+              elif isinstance(node,ast.ImportFrom) and node.module:
+                  imported.add(node.module.split('.')[0])
+          assert not (imported & {'requests','urllib','httpx','h5py','pandas','subprocess'}), imported
+          for x in (
+              'F0059','247.17','-14.34','37.62','OrbitTrace-April','target_coordinate',
+              'matched_2023','matched_2025','P18_MATCHED_TRUTH',
+              '9044538272','9044444246','9044259813','9044142249',
+              'SNMv3/','zenodo.org','silseth_thesis_data','kep_collect.h5','kepler',
+          ):
+              assert x not in s, x
+          string_constants=[
+              node.value for node in ast.walk(tree)
+              if isinstance(node,ast.Constant) and isinstance(node.value,str)
+          ]
+          assert any(
+              'No SonotaCo/MAARSY scientific value or OrbitTrace target information is accessed.' in value
+              for value in string_constants
+          )
+
+          print('PASS_P20_AST_LABEL_FIREWALL')
+          print('PASS_P20_EXACT_4PLUS4_RECIPROCAL_RULE')
+          print('PASS_P20_PRELABEL_PAYLOAD_FREEZE')
+          print('PASS_P20_NO_EXTERNAL_OR_TARGET_IO_SURFACE')
+          PY
+          grep -F 'P20 is a preregistered contingency successor frozen **while the exact P19 development run is still in progress' "$p"
+          grep -F 'A P19 pass keeps P20 unexecuted.' "$p"
+          grep -F 'A retained quartet is P20-eligible only if **none** of its four event IDs occurs in any v8 component.' "$p"
+          grep -F 'mutual nearest-neighbor pair' "$p"
+          grep -F 'exactly the eight quartet events' "$p"
+          grep -F 'PASS_P20_RECURRENT_ISOLATED_QUARTET_DEVELOPMENT' "$p"
+          echo PASS_P20_RECURRENT_ISOLATED_QUARTET_SOURCE_FREEZE
+          echo TARGET_REGION_UNAVAILABLE
