@@ -1,0 +1,109 @@
+name: OrbitTrace HDBSCAN fairness recalibration v1
+
+on:
+  push:
+    branches:
+      - agent/orbittrace-sugar-fairness-recalibration-v1-pr
+    paths:
+      - 'orbittrace_hdbscan_fairness_recalibration_v1/**'
+      - '.github/workflows/orbittrace_hdbscan_fairness_recalibration_v1.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'orbittrace_hdbscan_fairness_recalibration_v1/**'
+      - '.github/workflows/orbittrace_hdbscan_fairness_recalibration_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  calibrated-hdbscan:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact HDBSCAN runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            'numpy==1.26.4' 'scipy==1.11.4' 'scikit-learn==1.4.2'
+          python -m pip install --disable-pip-version-check --no-deps 'hdbscan==0.8.44'
+          python -m py_compile orbittrace_hdbscan_fairness_recalibration_v1/run_benchmark.py
+          mkdir -p input/rows input/sources input/recurrent input/truth output
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-sonotaco-label-free-preparation-v2
+          path: input/rows
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31354363306
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-final-comparator-source-export-v1
+          path: input/sources
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31346168826
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-recurrent-eom-sonotaco-v31-benchmark-v1
+          path: input/recurrent
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31829200215
+      - name: Freeze every HDBSCAN grid catalogue before truth scoring
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/sources/hdbscan_2025_runner.py | cut -d' ' -f1)" = \
+            'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'
+          python -u orbittrace_hdbscan_fairness_recalibration_v1/run_benchmark.py pretruth \
+            --rows-root input/rows \
+            --hdb-source input/sources/hdbscan_2025_runner.py \
+            --recurrent input/recurrent/RECURRENT_EOM_SONOTACO_V1_PRETRUTH.json \
+            --output output
+          sha256sum output/PRETRUTH.json > output/PRETRUTH_SHA256.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-v15-exposed-matched-sonotaco-literature-result-v1
+          path: input/truth
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31405109267
+      - name: Cross-year select and evaluate HDBSCAN
+        run: |
+          set -euo pipefail
+          python -u orbittrace_hdbscan_fairness_recalibration_v1/run_benchmark.py evaluate \
+            --pretruth output/PRETRUTH.json \
+            --truth-root input/truth \
+            --output output
+          cat output/RESULT.json
+      - name: Preserve provenance
+        if: always()
+        run: |
+          set +e
+          git rev-parse HEAD > output/execution_commit.txt
+          sha256sum orbittrace_hdbscan_fairness_recalibration_v1/PROTOCOL.md \
+            orbittrace_hdbscan_fairness_recalibration_v1/run_benchmark.py \
+            > output/source_sha256.txt
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-hdbscan-fairness-recalibration-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90
