@@ -1,0 +1,75 @@
+name: OrbitTrace P3 execution source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-crossyear-two-view-membership-p2-freeze
+    paths:
+      - .github/workflows/orbittrace_p3_crossfit_seed_floor_development.yml
+      - .github/workflows/orbittrace_p3_execution_source_audit.yml
+      - orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove exact P2 no-go authorization and P3 source identity
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          w=Path('.github/workflows/orbittrace_p3_crossfit_seed_floor_development.yml').read_text()
+          required=(
+              'EXECUTE_P3_AFTER_AUTHORITATIVE_P2_SCIENTIFIC_NO_GO',
+              "test \"$p2_run\" = '31290580956'",
+              'orbittrace-crossyear-two-view-membership-p2-finalized-development',
+              "FAIL_CROSSYEAR_TWO_VIEW_MEMBERSHIP_P2_NO_GO",
+              "0cc5e2472f65e586cb18febffdbe3109e9e4041a6e09da07aa0bd4903a78c85f",
+              "b077bc16e0a4792e5ae75a2be48801cd0a1404ee282856d73e99e891dfb93a6e",
+              "r['p2']['qualified_matches']==27",
+              "r['p2']['recovered_at_100']==25",
+              'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2_canonical_v2.py',
+              'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/run_p3.py',
+              "67f17772daa51ade7d943d7367463e48d2f70d07",
+              '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2',
+              '85cd11afbdebc4a0315ebf1daf42d10d4993d7ab088dd05301e3234b18340a5a',
+              'run_header_compatible.py',
+              'crossfit_seed_floor_membership_p3_development.json',
+              'PASS_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_DEVELOPMENT',
+              'FAIL_CROSSFIT_SEED_FLOOR_MEMBERSHIP_P3_NO_GO',
+              "r['gates']['p3_label_values_unread_until_membership_freeze'] is True",
+              "r['gates']['p3_every_surviving_proposal_meets_seed_floor'] is True",
+              'orbittrace-crossfit-seed-floor-membership-p3-development',
+          )
+          for token in required: assert token in w, token
+          auth=w.index('Require one-file child and authoritative P2 scientific no-go')
+          runtime=w.index('Reconstruct exact audited P3 and frozen inputs')
+          execute=w.index('Execute one-shot target-excluded P3 development')
+          result=w.index('Enforce frozen P3 result and truth firewall')
+          assert auth < runtime < execute < result
+          assert 'git checkout --detach "$BASE_SHA"' in w
+          assert 'test ! -e orbittrace_crossfit_seed_floor_membership_p3/RUN.md' in w
+          for forbidden in ('OrbitTrace-April','target_coordinate','target reference','STAGE_A_EXECUTION_REQUEST'):
+              assert forbidden not in w, forbidden
+          print('PASS_P3_EXECUTION_SOURCE_AUDIT')
+          PY
+      - name: Reconstruct audited P3 SHA and assert no activation file
+        run: |
+          set -euo pipefail
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_compliance_patch.py orbittrace_crossyear_two_view_membership_p2/run_development.py /tmp/p2_v1.py
+          python orbittrace_crossyear_two_view_membership_p2/apply_protocol_precision_patch_v2.py /tmp/p2_v1.py /tmp/p2.py
+          echo 'f19500f6b0dfe481d845af57f3b4d7ec35e678e2191388b7ff4611f8fb2c4eeb  /tmp/p2.py' | sha256sum -c -
+          python orbittrace_crossfit_seed_floor_membership_p3/apply_p3_patch_v2.py /tmp/p2.py /tmp/p3.py
+          echo 'f6c4c5a76b8b3f35d434aed4f1fb15035be05c40d0e0531c343ff620f3ba8185  /tmp/p3.py' | sha256sum -c -
+          test "$(git hash-object orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py)" = '67f17772daa51ade7d943d7367463e48d2f70d07'
+          python -m py_compile /tmp/p3.py orbittrace_crossfit_seed_floor_membership_p3/run_header_compatible.py
+          test ! -e orbittrace_crossfit_seed_floor_membership_p3/RUN.md
+          test ! -e input
+          test ! -e output
+          test ! -e target
+          echo NO_P3_EXECUTION_NO_TARGET_ACCESS

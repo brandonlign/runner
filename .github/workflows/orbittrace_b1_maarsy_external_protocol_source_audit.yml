@@ -1,0 +1,58 @@
+name: OrbitTrace B1 MAARSY external protocol source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_post_p18_b1/B1_MAARSY_2020_2021_EXTERNAL_PROTOCOL.md
+      - .github/workflows/orbittrace_b1_maarsy_external_protocol_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pre-result B1 external panel, unchanged architecture, fail-closed schema, and no data access
+        run: |
+          set -euo pipefail
+          p=orbittrace_post_p18_b1/B1_MAARSY_2020_2021_EXTERNAL_PROTOCOL.md
+          for x in \
+            'MAARSY 2020 and 2021' \
+            'f563ca63e169e6ddfe846219d8f00384f3451797' \
+            'bbf71f190ca128e3e24f71900fefbd1472cdacb6' \
+            '31325401462' \
+            '3e0bcc3db805f60310ec9b01d6d48f76b29544780119c05e71fc225c04e3fe48' \
+            '10,000 events per bin' \
+            '20°–55°' \
+            'log1p(second-nearest v8 geometry distance, order-1 solar-longitude trajectory residual, median Southworth-Hawkins D_SH' \
+            '3-D Ledoit-Wolf Gaussian' \
+            'N original orbit-valid source seeds / N screened source background' \
+            'activity padding ±6°' \
+            'density `d2 <= 1.5`' \
+            'trajectory residual `<=1.5`' \
+            'log posterior odds strictly `>0`' \
+            '8b848cad728ad2370d1bf538b3ccc7f71d1b65c1f8d483838374aa6e12bbbb0d' \
+            'ARCHITECTURE_INCOMPATIBLE_B1_MAARSY_2020_2021' \
+            'at least 5 eligible truth shower labels' \
+            'at least 4 usable events in each year' \
+            'at least 5 recurrent B1/v8 primary families' \
+            'POWER_INCONCLUSIVE_B1_MAARSY_2020_2021' \
+            'B1 macro-F1 >= core macro-F1 +0.08' \
+            'B1 recall >=1.5x core recall' \
+            'B1 precision >=0.85' \
+            'PASS_B1_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            'FAIL_B1_MAARSY_2020_2021_NO_RETUNING_EXTERNAL' \
+            'remain inaccessible throughout B1 development, fresh matched benchmarking, and this external validation'; do
+            grep -F "$x" "$p"
+          done
+          if grep -Eq 'curl|wget|requests\.|gh run download|EXECUTE_|EXTERNAL_RUN|target_coordinate|OrbitTrace-April|247\.|-14\.|37\.62|prior.*rank 59' "$p"; then
+            echo 'data-access/activation/target-specific surface leaked into B1 external reservation' >&2
+            exit 1
+          fi
+          test ! -e orbittrace_post_p18_b1/EXTERNAL_RUN.md
+          echo PASS_B1_MAARSY_2020_2021_EXTERNAL_PROTOCOL_SOURCE_FREEZE_BEFORE_B1_RESULT
+          echo NO_B1_RESULT_NO_FRESH_MATCHED_RESULT_NO_MAARSY_EVENT_NO_TARGET_ACCESS

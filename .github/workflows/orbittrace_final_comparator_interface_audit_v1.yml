@@ -1,0 +1,93 @@
+name: OrbitTrace final comparator interface audit v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - '.github/workflows/orbittrace_final_comparator_interface_audit_v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: b9bcb48da5b96df4dcd5f09d7ec97b8e6e38f7fd
+          path: sugar-source
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: a15737166cc9e1917f2e3d1b63cc42096008ae2e
+          path: hdbscan-source
+      - name: Decode and inspect source only
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          python - <<'PY'
+          import ast, base64, gzip, hashlib, json
+          from pathlib import Path
+
+          def decode(paths):
+              encoded=''.join(''.join(Path(p).read_text().split()) for p in paths)
+              return gzip.decompress(base64.b64decode(encoded, validate=True))
+
+          sugar=decode([f'sugar-source/orbittrace_literature_comparison/sugar_uncertainty_core_parts/part{i:02d}.b64' for i in range(3)])
+          sugar_runner=decode([f'sugar-source/orbittrace_literature_comparison/sugar_uncertainty_2025_runner_parts/part{i:02d}.b64' for i in range(4)])
+          hdb=decode([f'hdbscan-source/orbittrace_literature_comparison/hdbscan_catalogue_runner_parts/part{i:02d}.b64' for i in range(5)])
+          assert hashlib.sha256(sugar).hexdigest() == '5b7699a2cf07b9b9ac6dee006c66a9b509af73ee3763093fa333d13e1deca0cb'
+          assert hashlib.sha256(hdb).hexdigest() == 'a8b638f56dad2597973178523e8ad15e177a4f57e7fe6159fedc84d754afd3d2'
+
+          def inspect(raw):
+              tree=ast.parse(raw)
+              functions=[]; classes=[]; globals_={}; imports=[]
+              for node in tree.body:
+                  if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                      args=[a.arg for a in node.args.posonlyargs+node.args.args]
+                      defaults=[None]*(len(args)-len(node.args.defaults))
+                      for d in node.args.defaults:
+                          try: defaults.append(ast.literal_eval(d))
+                          except Exception: defaults.append('<expr>')
+                      functions.append({'name':node.name,'args':args,'defaults':defaults,'kwonly':[a.arg for a in node.args.kwonlyargs]})
+                  elif isinstance(node,ast.ClassDef):
+                      classes.append(node.name)
+                  elif isinstance(node,ast.Assign):
+                      try: val=ast.literal_eval(node.value)
+                      except Exception: continue
+                      for t in node.targets:
+                          if isinstance(t,ast.Name) and isinstance(val,(str,int,float,bool,type(None),tuple,list,dict)):
+                              globals_[t.id]=val
+                  elif isinstance(node,ast.Import): imports.extend(a.name for a in node.names)
+                  elif isinstance(node,ast.ImportFrom): imports.append(node.module)
+              return {'functions':functions,'classes':classes,'literal_globals':globals_,'imports':imports}
+
+          audit={
+              'verdict':'PASS_FINAL_COMPARATOR_INTERFACE_SOURCE_AUDIT',
+              'scientific_data_accessed':False,
+              'historical_result_accessed':False,
+              'target_accessed':False,
+              'sugar_core_sha256':hashlib.sha256(sugar).hexdigest(),
+              'sugar_core':inspect(sugar),
+              'sugar_runner_sha256':hashlib.sha256(sugar_runner).hexdigest(),
+              'sugar_runner':inspect(sugar_runner),
+              'hdbscan_sha256':hashlib.sha256(hdb).hexdigest(),
+              'hdbscan_runner':inspect(hdb),
+          }
+          Path('output/final_comparator_interface_audit_v1.json').write_text(json.dumps(audit,indent=2,sort_keys=True)+'\n')
+          for name in ('sugar_core','sugar_runner','hdbscan_runner'):
+              print(name,[(f['name'],f['args'],f['defaults'],f['kwonly']) for f in audit[name]['functions']])
+              print(name,'globals',audit[name]['literal_globals'])
+          print(audit['verdict'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-comparator-interface-audit-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

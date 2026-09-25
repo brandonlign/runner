@@ -1,0 +1,206 @@
+name: OrbitTrace GMN representative-share SonotaCo compatibility v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_gmn_representative_share_sonotaco_compat_v1/**'
+      - '.github/workflows/orbittrace_gmn_representative_share_sonotaco_compat_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-gmn-representative-share-sonotaco-compat-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exact runtime and pin frozen benchmark science before truth
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/gmn input/ranker input/payload input/truth output/pretruth output/result
+          test "$(git hash-object orbittrace_gmn_representative_share_sonotaco_compat_v1/PROTOCOL.md)" = 'fa6dfba88cefdabbbbec3b1e55328a90be4aa698'
+          test "$(git hash-object orbittrace_gmn_representative_share_sonotaco_compat_v1/run_benchmark.py)" = '2a19d8cc09b683d12663e21663dd2fcb4c7ff8c6'
+          python -m py_compile orbittrace_gmn_representative_share_sonotaco_compat_v1/run_benchmark.py
+          echo PASS_REPRESENTATIVE_SHARE_COMPAT_FROZEN_SOURCE_PINS
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-gmn-representative-share-ranking-v1
+          path: input/gmn
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31506465267
+
+      - name: Verify frozen GMN authorization and model before truth
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/gmn/GMN_REPRESENTATIVE_SHARE_RANKING_V1.json | cut -d' ' -f1)" = '862ecbe4ffb30e4f1a26692d4ab1b13e7a632ec2b88bc571adfc8181244459c2'
+          test "$(sha256sum input/gmn/FULL_MODEL_FREEZE.json | cut -d' ' -f1)" = '749d40fd8786b3f09270b098c4d96607bb5f6dd8972b6a389f9b22f629cd15fc'
+          test "$(sha256sum input/gmn/orbittrace_gmn_representative_share_extratrees.joblib | cut -d' ' -f1)" = 'acae7fa4b4702e8d3f823defb5f2b3a3e2922b12c3bb07269b6e354316a558cb'
+          python - <<'PY'
+          import json
+          r=json.load(open('input/gmn/GMN_REPRESENTATIVE_SHARE_RANKING_V1.json'))
+          f=json.load(open('input/gmn/FULL_MODEL_FREEZE.json'))
+          assert r['verdict']=='PASS_GMN_REPRESENTATIVE_SHARE_RANKING_V1'
+          assert r['sonotaco_2013_2014_access'] is False and r['sonotaco_benchmark_authorized_by_this_result'] is True
+          assert f['verdict']=='PASS_GMN_REPRESENTATIVE_SHARE_FULL_MODEL_FREEZE'
+          assert f['deployment_diversity']=={'complete_backfill':True,'family_deletion':False,'lambda':0.8,'scale':1.0}
+          assert f['target_information_access'] is False and f['maarsy_scientific_access'] is False and f['dms_scientific_access'] is False
+          PY
+          echo PASS_REPRESENTATIVE_SHARE_COMPAT_GMN_AUTHORIZATION
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+
+      - name: Verify exact #839 deployment source before truth
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          echo PASS_REPRESENTATIVE_SHARE_COMPAT_EXACT_839_SOURCE
+
+      - name: Restore only immutable #950 pretruth route payload before truth
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9074742322/zip' -o input/payload.zip
+          echo 'd940fa255804866f14bc34b1d72467d17adddcfb7d82c954ed5a8d1668aa307a  input/payload.zip' | sha256sum -c -
+          unzip -q input/payload.zip 'sugar/*' 'hdbscan/*' -d input/payload
+          test ! -e input/payload/result
+          python - <<'PY'
+          import json
+          for route,n in (('sugar',267),('hdbscan',229)):
+              m=json.load(open(f'input/payload/{route}/V22_PRETRUTH_FEATURE_MANIFEST.json'))
+              f=json.load(open(f'input/payload/{route}/family_memberships.json'))
+              assert m['truth_accessed'] is False and f['truth_accessed'] is False
+              assert m['feature_dimension']==71 and m['feature_blocks']=={'raw_839':34,'relative_noncat_839':30,'rank_percentiles':3,'consensus_graph':4}
+              assert len(m['family_ids'])==n and len(f['families'])==n
+              assert m['target_information_access'] is False and m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print('PASS_REPRESENTATIVE_SHARE_COMPAT_PRETRUTH_950_ONLY')
+          PY
+
+      - name: Freeze complete representative-share orders before truth
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.:input/ranker
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_representative_share_sonotaco_compat_v1/run_benchmark.py freeze \
+            --model input/gmn/orbittrace_gmn_representative_share_extratrees.joblib \
+            --gmn-result input/gmn/GMN_REPRESENTATIVE_SHARE_RANKING_V1.json \
+            --gmn-freeze input/gmn/FULL_MODEL_FREEZE.json \
+            --quality-source input/ranker/run_urc_union_ranker.py \
+            --payload-root input/payload \
+            --output output/pretruth
+          python - <<'PY'
+          import json,hashlib
+          p='output/pretruth/PRETRUTH_ORDER_FREEZE.json'
+          r=json.load(open(p))
+          assert r['truth_accessed'] is False
+          assert r['routes']['sugar']['score_sha256']=='51270f33c1a689a638a44d534df1bccebc29a149345bce7096d09b517313dc83'
+          assert r['routes']['sugar']['order_sha256']=='ab60a11644ac5518ac686e44adacd039a8428d9b29c56a24d6ca3764b93a9b93'
+          assert r['routes']['hdbscan']['score_sha256']=='dfcf711a7d61ad05aeb4e4417a9e3ea4786bccad7c91a7ed46b4f951842aab01'
+          assert r['routes']['hdbscan']['order_sha256']=='b9d1fcf75238e09ef3df766fb9eb296e4151a34ace6271b48a101adc5248c2b9'
+          h=hashlib.sha256(open(p,'rb').read()).hexdigest()
+          open('output/pretruth/PRETRUTH_ORDER_FREEZE.sha256','w').write(h+'\n')
+          print('PASS_REPRESENTATIVE_SHARE_COMPAT_COMPLETE_ORDERS_FROZEN_BEFORE_TRUTH',h)
+          PY
+
+      - name: Load immutable exposed SonotaCo truth only after order freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -s output/pretruth/PRETRUTH_ORDER_FREEZE.sha256
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/truth.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/truth.zip' | sha256sum -c -
+          unzip -q input/truth.zip -d input/truth
+          echo PASS_REPRESENTATIVE_SHARE_COMPAT_TRUTH_LOADED_AFTER_ORDER_FREEZE
+
+      - name: Evaluate frozen orders once
+        env:
+          PYTHONPATH: orbittrace_v22_sonotaco_grouped_oof_ranker_v1/stubs:.
+        run: |
+          set -euo pipefail
+          python -u orbittrace_gmn_representative_share_sonotaco_compat_v1/run_benchmark.py evaluate \
+            --payload-root input/payload \
+            --truth-root input/truth \
+            --order-freeze output/pretruth/PRETRUTH_ORDER_FREEZE.json \
+            --output output/result
+
+      - name: Enforce one-shot benchmark firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/result/SONOTACO_COMPATIBILITY_RESULT.json'))
+          assert r['verdict'] in {'PASS_GMN_REPRESENTATIVE_SHARE_SONOTACO_COMPATIBILITY_4_OF_4','FAIL_GMN_REPRESENTATIVE_SHARE_SONOTACO_COMPATIBILITY'}
+          assert r['scientific_role']=='ONE_SHOT_COMPATIBILITY_GENERALIZATION_BENCHMARK_NOT_EXTERNAL_VALIDATION'
+          assert r['route_order_sha256']=={'sugar':'ab60a11644ac5518ac686e44adacd039a8428d9b29c56a24d6ca3764b93a9b93','hdbscan':'b9d1fcf75238e09ef3df766fb9eb296e4151a34ace6271b48a101adc5248c2b9'}
+          assert len(r['panels'])==4 and r['panel_wins']==sum(bool(x['superiority_pair_pass']) for x in r['panels'])
+          for k in ('model_retrained','model_or_target_changed_after_gmn','feature_subset_changed','score_transform_used','diversity_changed','v19_fusion_used','v31_local_geometry_used','source_quota_used','source_normalization_used','route_specific_scientific_rule','budget_specific_rule','topk_or_rank_window_rule','boundary_identity_used','oracle_identity_used_for_ranking','post_result_second_search','target_information_access','target_region_events_accessed','maarsy_scientific_access','dms_scientific_access'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY_COMPATIBILITY_BENCHMARK'
+          assert r['blind_exclusion']==[20.0,55.0]
+          print(r['verdict'],r['panel_wins'],r['panels'])
+          PY
+
+      - name: Preserve benchmark provenance
+        if: always()
+        run: |
+          set +e
+          mkdir -p output/provenance
+          sha256sum \
+            orbittrace_gmn_representative_share_sonotaco_compat_v1/PROTOCOL.md \
+            orbittrace_gmn_representative_share_sonotaco_compat_v1/run_benchmark.py \
+            input/gmn/GMN_REPRESENTATIVE_SHARE_RANKING_V1.json \
+            input/gmn/FULL_MODEL_FREEZE.json \
+            input/gmn/orbittrace_gmn_representative_share_extratrees.joblib \
+            input/ranker/run_urc_union_ranker.py \
+            input/payload.zip \
+            output/pretruth/PRETRUTH_ORDER_FREEZE.json \
+            input/truth.zip \
+            output/result/SONOTACO_COMPATIBILITY_RESULT.json \
+            > output/provenance/SOURCE_INPUT_RESULT_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/provenance/execution_commit.txt
+          python --version > output/provenance/python_version.txt
+          python -m pip freeze > output/provenance/environment.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-gmn-representative-share-sonotaco-compat-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

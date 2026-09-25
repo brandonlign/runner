@@ -1,0 +1,64 @@
+name: OrbitTrace final support interface audit v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - '.github/workflows/orbittrace_final_support_interface_audit_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install frozen runtime dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          mkdir -p input/v3
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          (cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py)
+      - name: Inspect support/base source interface only
+        env:
+          PYTHONPATH: .:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import inspect, pathlib
+          import orbittrace_p19_subthreshold_recurrence.run_development as p19
+          runtime=p19.mult.load_frozen_runtime()
+          support=runtime.load_support_module(pathlib.Path('frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts'))
+          print('support.load_sources',inspect.signature(support.load_sources))
+          print('support.parse_catalogue',inspect.signature(support.parse_catalogue))
+          print('runtime attrs',sorted(x for x in dir(runtime) if 'load' in x.lower() or 'source' in x.lower()))
+          class A: pass
+          a=A(); a.candidate_payload=pathlib.Path('frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64'); a.baseline_payload=pathlib.Path('frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64'); a.scorer_parts=pathlib.Path('frozen-v8/mondrian_clique_development/source_parts_v2')
+          a.fixed4_baseline_json=pathlib.Path('/tmp/nonexistent.json')
+          try:
+              cand,base,scorer=support.load_sources(a)
+              print('load_sources_without_baseline_json=PASS')
+              print('base equatorial_to_ecliptic',inspect.signature(base.equatorial_to_ecliptic))
+              print('base wrap180',inspect.signature(base.wrap180))
+          except Exception as exc:
+              print('load_sources_without_baseline_json=FAIL',type(exc).__name__,str(exc))
+              raise
+          print('PASS_FINAL_SUPPORT_INTERFACE_AUDIT')
+          print('SCIENTIFIC_DATA_ACCESSED=false TARGET_ACCESSED=false')
+          PY

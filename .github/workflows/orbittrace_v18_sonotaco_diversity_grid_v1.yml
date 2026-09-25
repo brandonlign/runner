@@ -1,0 +1,166 @@
+name: OrbitTrace v18 SonotaCo diversity-grid development
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v17-urc-v15-density-port-sonotaco-dev-v1
+    paths:
+      - 'orbittrace_v18_sonotaco_diversity_grid_v1/**'
+      - '.github/workflows/orbittrace_v18_sonotaco_diversity_grid_v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  NUMEXPR_NUM_THREADS: '1'
+
+jobs:
+  develop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v18-sonotaco-diversity-grid-dev-v1
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: c9d6c44704013ba0c9430100e98a29a56b453304
+          path: frozen-v8
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and pin frozen scientific runtime
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip -r frozen-v8/ghoststream_fixed4_application/requirements.txt
+          python -m pip install --no-deps gmn-python-api==0.0.13
+          python -m pip install 'numpy==2.1.3' 'scipy==1.14.1' 'scikit-learn==1.5.2' 'joblib==1.5.3'
+          mkdir -p input/v3 input/ranker input/model input/prepare output/sugar output/hdbscan
+          git -C frozen-v8 fetch --no-tags --depth=1 origin d8258581af143308495bd97bedcc142abbbd951a
+          git -C frozen-v8 show FETCH_HEAD:orbittrace_multi_anchor_energy_v3/multi_anchor_energy_v3.py > input/v3/multi_anchor_energy_v3.py
+          test "$(git hash-object input/v3/multi_anchor_energy_v3.py)" = '2ba4835db23f8f623cdd28d0a4e6113b7954ecb2'
+          rm -f /tmp/run_wavelet_catalogue_v3_development.py
+          ( cd frozen-v8 && python orbittrace_wavelet_catalogue_v3/audit_development_source.py )
+          test "$(cat frozen-v8/output/development_source_sha256.txt)" = 'ef3e69317af59fdac7a030edc77f742fc4772473d7f16b719b5d804cd4117f51'
+          test "$(git hash-object orbittrace_p19_subthreshold_recurrence/run_development.py)" = 'f230fc775b38df1e9d447bba33419abd5f6f6ef1'
+          test "$(git hash-object orbittrace_p20_recurrent_isolated_quartet/run_development.py)" = '6c5c8e02ac7a377ca8253f1e1fc0ad6e60e5e69f'
+          test "$(git hash-object frozen-v8/orbittrace_pooled_year_centroid_v8/run_development.py)" = 'f248df78e1258b132b41aecca6a985a5eb782654'
+          test "$(git hash-object orbittrace_v15_canonical_application_v1/application.py)" = '5b3244dfbcc7bc931925aea42866edc8205113a8'
+          python -m py_compile orbittrace_v18_sonotaco_diversity_grid_v1/run_grid_pretruth.py orbittrace_v18_sonotaco_diversity_grid_v1/evaluate_grid.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-active-urc-ranker-source-export-v1
+          path: input/ranker
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344632499
+      - uses: actions/download-artifact@v4
+        with:
+          name: orbittrace-urc-final-full-gmn-ranker-v1
+          path: input/model
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 31344776617
+      - name: Verify immutable ranker identities
+        run: |
+          set -euo pipefail
+          test "$(sha256sum input/ranker/run_urc_union_ranker.py | cut -d' ' -f1)" = 'dd14e899ac08c4081cfee7d2dac2e54d2f25f78427cc4bee30f30296cd24b990'
+          test "$(sha256sum input/model/urc_final_ranker.joblib | cut -d' ' -f1)" = 'ac48355e8c51de2a9cfa12f23b2a847f5e946fc03336a941f80d98224ee5c909'
+      - name: Restore already-exposed label-free SonotaCo rows only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9050107352/zip' -o input/prepare.zip
+          echo '1296d757b5ea1dd94f9c9077fd769fdc8f00ec06d0881d8548fd1df4608344cc  input/prepare.zip' | sha256sum -c -
+          unzip -q input/prepare.zip -d input/prepare
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('input/prepare/label_free_preparation_manifest.json').read_text())
+          assert m['verdict']=='PASS_FINAL_SONOTACO_LABEL_FREE_PREPARATION'
+          assert m['shower_truth_accessed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False
+          PY
+      - name: Generate all 15 Sugar-route candidates before truth
+        env:
+          PYTHONPATH: .:input/ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v18_sonotaco_diversity_grid_v1/run_grid_pretruth.py \
+            --comparator sugar \
+            --rows-2013 input/prepare/sugar_2013.json --rows-2014 input/prepare/sugar_2014.json \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --active-ranker-source input/ranker/run_urc_union_ranker.py --model-joblib input/model/urc_final_ranker.joblib \
+            --output output/sugar
+      - name: Generate all 15 HDBSCAN-route candidates before truth
+        env:
+          PYTHONPATH: .:input/ranker:input/v3:frozen-v8/orbittrace_wavelet_catalogue_v3:frozen-v8
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v18_sonotaco_diversity_grid_v1/run_grid_pretruth.py \
+            --comparator hdbscan \
+            --rows-2013 input/prepare/hdbscan_2013.json --rows-2014 input/prepare/hdbscan_2014.json \
+            --support-source-parts frozen-v8/orbittrace_fixed4_support_wrapper_development/source_parts \
+            --candidate-payload frozen-v8/sonotaco_fixed4_final_development/candidate.py.gz.b64 \
+            --baseline-payload frozen-v8/real_shower_meta_stage0/run_baseline_ceiling.py.gz.b64 \
+            --scorer-parts frozen-v8/mondrian_clique_development/source_parts_v2 \
+            --active-ranker-source input/ranker/run_urc_union_ranker.py --model-joblib input/model/urc_final_ranker.joblib \
+            --output output/hdbscan
+      - name: Freeze all 30 candidate outputs before truth
+        run: |
+          set -euo pipefail
+          find output/sugar output/hdbscan -path '*/candidate_primary_output.json' -type f | sort | xargs sha256sum > output/V18_ALL_30_PRETRUTH_OUTPUT_SHA256.txt
+          test "$(wc -l < output/V18_ALL_30_PRETRUTH_OUTPUT_SHA256.txt)" -eq 30
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for c in ['sugar','hdbscan']:
+              m=json.loads(Path(f'output/{c}/V18_PRETRUTH_GRID_MANIFEST.json').read_text())
+              assert m['verdict']=='PASS_V18_ALL_15_PRETRUTH_GRID_OUTPUTS_FROZEN'
+              assert len(m['configs'])==15
+              assert m['truth_accessed'] is False and m['target_information_access'] is False and m['maarsy_scientific_access'] is False and m['dms_scientific_access'] is False
+          print(Path('output/V18_ALL_30_PRETRUTH_OUTPUT_SHA256.txt').read_text())
+          PY
+      - name: Load immutable already-exposed truth only after all-grid freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p input/v15-result
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9069505548/zip' -o input/v15-result.zip
+          echo 'cdea3297c234b0b3a8f09c2208649c8607bb3e9a9004d299f6dcc18536ebb797  input/v15-result.zip' | sha256sum -c -
+          unzip -q input/v15-result.zip -d input/v15-result
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('input/v15-result/V15_FINAL_LITERATURE_RESULT.json').read_text())
+          assert r['verdict']=='FAIL_FINAL_LITERATURE_SUPERIORITY'
+          PY
+      - name: Evaluate complete frozen grid and select once
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v18_sonotaco_diversity_grid_v1/evaluate_grid.py --grid-root output --truth-root input/v15-result --output output/V18_EXPOSED_DIVERSITY_GRID_RESULT.json
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v18_sonotaco_diversity_grid_v1/PROTOCOL.md orbittrace_v18_sonotaco_diversity_grid_v1/run_grid_pretruth.py orbittrace_v18_sonotaco_diversity_grid_v1/evaluate_grid.py input/ranker/run_urc_union_ranker.py input/model/urc_final_ranker.joblib > output/V18_SOURCE_MODEL_SHA256.txt 2>/dev/null || true
+          python --version > output/python_version.txt
+          python -m pip freeze > output/environment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v18-sonotaco-diversity-grid-development-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

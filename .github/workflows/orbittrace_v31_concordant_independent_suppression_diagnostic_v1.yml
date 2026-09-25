@@ -1,0 +1,97 @@
+name: OrbitTrace v31 concordant independent-suppression diagnostic v1
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-v31-local-geometry-margin-oof-v1
+    paths:
+      - 'orbittrace_v31_concordant_independent_suppression_diagnostic_v1/**'
+      - '.github/workflows/orbittrace_v31_concordant_independent_suppression_diagnostic_v1.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/orbittrace-v31-concordant-independent-suppression-diagnostic-v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin diagnostic source
+        run: |
+          set -euo pipefail
+          mkdir -p input/rank input/quality output/diag
+          test "$(git hash-object orbittrace_v31_concordant_independent_suppression_diagnostic_v1/PROTOCOL.md)" = '2d5eefdfad88c6a8c6ba16235420c4fb2734dfbb'
+          test "$(git hash-object orbittrace_v31_concordant_independent_suppression_diagnostic_v1/diagnose.py)" = '49ab2407ae11a3dc2e7cea3ec4606cb25ef35250'
+          python -m py_compile orbittrace_v31_concordant_independent_suppression_diagnostic_v1/diagnose.py
+      - name: Restore authoritative #1066 rank-disagreement diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9087524827/zip' -o input/rank.zip
+          echo '35ce469b2babec1d1790a5e73651e9366a7fa2478718c7547748863e39608466  input/rank.zip' | sha256sum -c -
+          unzip -q input/rank.zip -d input/rank
+          test -f input/rank/diag/V31_CROSSROUTE_RANK_DISAGREEMENT_DIAGNOSTIC.json
+      - name: Restore authoritative #1086 quality-suppression diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            'https://api.github.com/repos/brandonlign/runner/actions/artifacts/9088169870/zip' -o input/quality.zip
+          echo 'b0f9499280f9e8cc4d1f6f8a04d4871a306ea085a8eaee03bba0d002c35d5641  input/quality.zip' | sha256sum -c -
+          unzip -q input/quality.zip -d input/quality
+          test -f input/quality/diag/V31_QUALITY_SUPPRESSION_DIAGNOSTIC.json
+      - name: Diagnose exact dual-positive conjunction only
+        run: |
+          set -euo pipefail
+          python -u orbittrace_v31_concordant_independent_suppression_diagnostic_v1/diagnose.py \
+            --rank-result input/rank/diag/V31_CROSSROUTE_RANK_DISAGREEMENT_DIAGNOSTIC.json \
+            --quality-result input/quality/diag/V31_QUALITY_SUPPRESSION_DIAGNOSTIC.json \
+            --output output/diag
+      - name: Enforce diagnostic-only firewall
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          r=json.load(open('output/diag/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC.json'))
+          assert r['verdict'] in {'PASS_V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC','FAIL_V31_CONCORDANT_INDEPENDENT_SUPPRESSION_DIAGNOSTIC'}
+          assert r['scientific_role']=='POST_RESULT_DIAGNOSTIC_ONLY_NO_CONCORDANT_SELECTOR_OR_SUCCESSOR_EVALUATED'
+          assert r['rank_source_run']==31454523913 and r['rank_source_artifact']==9087524827
+          assert r['quality_source_run']==31456339844 and r['quality_source_artifact']==9088169870
+          assert set(r['annual_diagnostics'])=={'2013','2014'}
+          for y in ('2013','2014'):
+              a=r['annual_diagnostics'][y]
+              assert a['recoverable_groups']==18 and a['surfaced_groups']==9 and a['missed_groups']==9 and len(a['groups'])==18
+          for k in ('new_rank_or_score_evaluated','selector_evaluated','replacement_rule_evaluated','successor_selected','signal_magnitude_used','sum_search','product_search','ratio_search','absolute_value_search','coefficient_search','nonzero_threshold_search','or_logic_search','rank_window_search','top_k_search','component_size_search','route_specific_rule','year_specific_rule','budget_specific_rule','feature_search','model_search','fusion_search','source_quota_selected','candidate_membership_changed','candidate_generation_changed','oracle_identity_used_for_statistic','post_result_second_search'):
+              assert r[k] is False
+          assert r['sonotaco_role']=='EXPOSED_DEVELOPMENT_ONLY'
+          assert r['maarsy_scientific_access'] is False and r['dms_scientific_access'] is False
+          assert r['target_information_access'] is False and r['target_region_events_accessed'] is False
+          assert r['blind_exclusion']==[20.0,55.0]
+          PY
+      - name: Record provenance
+        if: always()
+        run: |
+          set +e
+          sha256sum orbittrace_v31_concordant_independent_suppression_diagnostic_v1/PROTOCOL.md orbittrace_v31_concordant_independent_suppression_diagnostic_v1/diagnose.py input/rank.zip input/quality.zip > output/V31_CONCORDANT_INDEPENDENT_SUPPRESSION_SOURCE_SHA256.txt 2>/dev/null || true
+          git rev-parse HEAD > output/execution_commit.txt
+          python --version > output/python_version.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-v31-concordant-independent-suppression-diagnostic-v1
+          path: output
+          if-no-files-found: error
+          retention-days: 90

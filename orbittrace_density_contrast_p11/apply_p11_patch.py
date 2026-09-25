@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import base64
+import hashlib
+import json
+import sys
+import zlib
+from pathlib import Path
+
+EXPECTED_P10_SHA256="638b4f41e51955436557a99f1142c3d3cea91e12a66e2f74925c6bfb79d5e50d"
+EXPECTED_P11_SHA256="914913d0462ea6793af3836cef945f14a03cca205ac0755ed6cdadb63b8752f9"
+PATCH_B64='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'
+
+def sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: apply_p11_patch.py EXACT_P10 OUTPUT")
+    source=Path(sys.argv[1]); output=Path(sys.argv[2])
+    raw=source.read_bytes()
+    actual=sha(raw)
+    if actual != EXPECTED_P10_SHA256:
+        raise RuntimeError(f"exact P10 source SHA changed: {actual}")
+    patches=json.loads(zlib.decompress(base64.b64decode(PATCH_B64)).decode("utf-8"))
+    lines=raw.decode("utf-8").splitlines(keepends=True)
+    for patch in sorted(patches,key=lambda x:int(x["s"]),reverse=True):
+        lines[int(patch["s"]):int(patch["e"])]=str(patch["r"]).splitlines(keepends=True)
+    text="".join(lines)
+    result=sha(text.encode("utf-8"))
+    if result != EXPECTED_P11_SHA256:
+        raise RuntimeError(f"P11 transform SHA mismatch: {result}")
+    if "OrbitTrace-April" in text or "target_coordinate" in text:
+        raise RuntimeError("forbidden target-specific token introduced")
+    output.write_text(text,encoding="utf-8")
+    print(f"P11_INPUT_P10_SHA256={EXPECTED_P10_SHA256}")
+    print(f"P11_OUTPUT_SHA256={result}")
+    print("P11_PATCH_SCOPE=exact P10 plus precommitted local 1-NN density-contrast held-seed order-statistic candidate veto; no new alpha/features/model/rank or parameter search")
+    return 0
+
+if __name__=="__main__":
+    raise SystemExit(main())

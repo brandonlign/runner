@@ -1,0 +1,60 @@
+name: OrbitTrace final MAARSY normalizer v1 synthetic audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - 'orbittrace_final_maarsy_normalizer_v1/**'
+      - '.github/workflows/orbittrace_final_maarsy_normalizer_v1_audit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install exact numerical dependency
+        run: python -m pip install --disable-pip-version-check numpy==2.1.3
+      - name: Compile and run synthetic normalization tests
+        run: |
+          set -euo pipefail
+          python -m py_compile orbittrace_final_maarsy_normalizer_v1/normalizer.py orbittrace_final_maarsy_normalizer_v1/test_normalizer.py
+          PYTHONPATH=. python orbittrace_final_maarsy_normalizer_v1/test_normalizer.py
+      - name: Prove module has no HDF5 file/network loader or target surface
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast, pathlib
+          p=pathlib.Path('orbittrace_final_maarsy_normalizer_v1/normalizer.py')
+          tree=ast.parse(p.read_text()); imports=set()
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import): imports.update(x.name.split('.')[0] for x in n.names)
+              elif isinstance(n,ast.ImportFrom) and n.module: imports.add(n.module.split('.')[0])
+          forbidden={'requests','urllib','http','socket','subprocess','h5py','tarfile','gmn_python_api'}
+          assert not imports.intersection(forbidden), imports.intersection(forbidden)
+          low=p.read_text().lower()
+          for x in ('orbittrace-april','target_ra','target_dec','target_member','sonotaco'):
+              assert x not in low, x
+          print('PASS_FINAL_MAARSY_NORMALIZER_NO_DATA_TRANSPORT_NO_TARGET_SURFACE')
+          PY
+      - name: Record frozen source identities
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          sha256sum orbittrace_final_maarsy_normalizer_v1/PROTOCOL.md orbittrace_final_maarsy_normalizer_v1/normalizer.py orbittrace_final_maarsy_normalizer_v1/test_normalizer.py > output/source_sha256.txt
+          printf '%s\n' 'maarsy_2020_2021_scientific_access=false' >> output/source_sha256.txt
+          printf '%s\n' 'sonotaco_2013_2014_scientific_access=false' >> output/source_sha256.txt
+          printf '%s\n' 'target_information_access=false' >> output/source_sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbittrace-final-maarsy-normalizer-v1-synthetic-audit
+          path: output
+          if-no-files-found: error
+          retention-days: 90

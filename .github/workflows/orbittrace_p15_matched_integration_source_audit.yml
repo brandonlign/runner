@@ -1,0 +1,58 @@
+name: OrbitTrace P15 matched integration source audit
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p15-support-safe-halo-freeze
+    paths:
+      - orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py
+      - orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py
+      - .github/workflows/orbittrace_p15_matched_integration_source_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Generate and audit P15 matched pretruth shell without data access
+        run: |
+          set -euo pipefail
+          test "$(git hash-object orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh)" = '1fb46484a51bb7d7edd60c865dcf5341550277a1'
+          test "$(git hash-object orbittrace_support_safe_rank_p14/generate_matched_pretruth_direct_v3.py)" = 'af257d4b4902f9783acecd6df52f111415e5188c'
+          grep -F "MATCHED_P15_SHA256='23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6'" orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          python -m py_compile orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py orbittrace_support_safe_halo_p15/apply_support_safe_halo_p15.py
+          python orbittrace_support_safe_halo_p15/generate_matched_pretruth_p15.py orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/p15_pretruth.sh
+          bash -n /tmp/p15_pretruth.sh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/p15_pretruth.sh').read_text()
+          required=(
+            'PASS_P15_MATCHED_SUPPORT_SAFE_HALO_SOURCE_ACTIVE',
+            '23d309f6702ed0aa6769381963ea64701ae59c97376a0bae536b527fbc978fe6',
+            'apply_support_safe_halo_p15.py /tmp/p12_panel_v3.py /tmp/p12_panel.py',
+            '/tmp/finalize_p15_checkpoint.py',
+            '--base-p14-transport-finalizer /tmp/finalize_p14_transport_checkpoint.py',
+            "p15_halo_availability_frozen_before_truth'] is True",
+            "p15_min_direction_negatives_unchanged']==128",
+            "p15_no_padding_resampling_or_relaxation'] is True",
+            'PASS_P14_BOTH_MATCHED_CHECKPOINTS_FROZEN_BEFORE_TRUTH_OR_CLUSTER_VALUES',
+            'exit 0',
+          )
+          for x in required: assert x in p,x
+          for x in ('OPEN TRUTH + COMPETITOR CLUSTER VALUES EXACTLY ONCE','evaluate_frozen_blindsafe.py','finalize_p3_evaluator_result.py','OrbitTrace-April','target_coordinate'):
+              assert x not in p,x
+          assert p.count('apply_support_safe_halo_p15.py /tmp/p12_panel_v3.py /tmp/p12_panel.py')==1
+          assert p.count("progress 'P14 HARD TWO-PANEL PRETRUTH BARRIER — STOP BEFORE TRUTH'")==1
+          final=Path('orbittrace_support_safe_halo_p15/finalize_pretruth_checkpoint_p15.py').read_text()
+          for x in ('p15_unavailable_directions','p15_availability_sha256','p15_secondary_characterization_only','competitor_cluster_values_accessed','known_shower_truth_accessed'):
+              assert x in final,x
+          for x in ('OrbitTrace-April','target_coordinate'):
+              assert x not in final,x
+          print('PASS_P15_MATCHED_INTEGRATION_GENERATED_SOURCE_AUDIT')
+          PY
+          echo NO_COMPARATOR_DOWNLOAD_NO_ARCHIVE_NO_TRUTH_NO_EXTERNAL_NO_TARGET_ACCESS

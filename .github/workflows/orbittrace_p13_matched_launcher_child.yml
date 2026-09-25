@@ -1,0 +1,52 @@
+name: OrbitTrace P13 matched technical recovery v3
+
+on:
+  pull_request:
+    branches:
+      - agent/orbittrace-p13-matched-launcher-v2
+    paths:
+      - orbittrace_core_halo_p13_literature/LAUNCH_V3.md
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: orbittrace-p13-matched-literature-execution
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/checkout@v4
+        with:
+          repository: brandonlign/runner
+          ref: ffe8351b9ee8df4418fb4926fab782d66180e276
+          path: exact-lit
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Execute frozen technical recovery launcher
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          cp orbittrace_core_halo_p13_literature/run_p13_matched_launcher_v3.sh /tmp/run_p13_matched_launcher_v3.sh
+          chmod +x /tmp/run_p13_matched_launcher_v3.sh
+          /tmp/run_p13_matched_launcher_v3.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orbittrace-p13-matched-literature-launcher-v3
+          path: |
+            pretruth
+            output
+          if-no-files-found: warn
+          retention-days: 90
